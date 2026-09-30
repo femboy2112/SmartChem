@@ -7453,6 +7453,345 @@ def m_s17_20():
     return honest, bad
 
 
+# -- 0.9.5 S16: the canonical bound (automorphism pruning, ceilings, distinct-once canonical_work, placement DFS cap,
+# the E floor, the typed front-door refusal, the enumeration cache's size bound and clear generation) ----------------
+
+from smartchem.category import Bond, Molecule  # noqa: E402 -- the S16 mutants build graphs directly
+
+def _s16_diff():
+    """The committed S16 differential (its VERBATIM copy of the pre-S16 search is the oracle for the pruning mutant)."""
+    here = str(Path(__file__).resolve().parent)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import v0_9_5_canonical_differential as cdiff
+    return cdiff
+
+
+@contextlib.contextmanager
+def _s16_cold():
+    """Every cache above canonical() emptied on entry AND exit: a patched canonicaliser changes answers under
+    unchanged keys, so an honest entry would mask the mutant (or the mutant's entry leak into the next arm)."""
+    from smartchem.capability import requirements as req_m
+    from smartchem.experiment import kinetics as kin_m
+    from smartchem.smiles import resonance_canonical
+
+    def clear():
+        for fn in (Molecule.canonical, resonance_canonical, stock_mod._structure_key, req_m._resolved_name_key,
+                   kin_m._side_key_from_smiles):
+            fn.cache_clear()
+        ENUMERATION_CACHE.clear()
+    clear()
+    try:
+        yield
+    finally:
+        clear()
+
+
+def _s16_search_forms(search) -> list:
+    """Canonical forms (uncached) of the pruning oracle corpus under ``search``: relabellings of the one-cell-two-orbit
+    graph plus symmetric chemistry -- the corpus where an unsound prune moves a form."""
+    import random as _random
+
+    import smartchem.category as cat_m
+    cdiff = _s16_diff()
+    rng = _random.Random(95)
+    corpus = [cdiff.two_orbit_cell()] * 12 + [parse_smiles(s) for s in (
+        "C1C2CC3CC1CC(C2)C3", "C12C3C4C1C5C2C3C45", "CC(C)(C)c1cc(C(C)(C)C)cc(C(C)(C)C)c1")]
+    corpus += [cdiff.random_family(rng, kind) for kind in ("star", "ring", "dendrimer") for _ in range(6)]
+    inputs = [cdiff.relabel(m, rng) for m in corpus]
+    with _patch(cat_m, "_canonical_by_individualisation", search), _s16_cold():
+        return [Molecule.canonical.__wrapped__(m) for m in inputs], [cdiff.old_canonical(m) for m in inputs]
+
+
+@mutant("M-S16a", "S16: a sibling pruned on a stored permutation that does NOT fix the individualised prefix",
+        "category._canonical_by_individualisation (orbits of the PREFIX STABILISER only)")
+def m_s16a():
+    """Honest: the pruned search returns the byte-identical form the unpruned (verbatim pre-S16) search returns.
+    Mutant: the prefix test dropped -- orbits come from automorphisms that move an individualised vertex, so a pruned
+    child is no longer an automorphic image of an explored sibling UNDER THIS NODE: forms move, or the cell-onto-cell
+    guard downstream refuses inputs the honest search canonicalises -- either way the canonicaliser changed."""
+    import smartchem.category as cat_m
+    real = cat_m._canonical_by_individualisation
+    new, old = _s16_search_forms(real)
+    honest = new == old
+    bad = _src_mutant(real, ("                if any(g[p] != p for p in prefix):\n                    continue\n", ""))
+    try:
+        new2, old2 = _s16_search_forms(bad)
+    except AssertionError:
+        return honest, True
+    return honest, new2 != old2
+
+
+@mutant("M-S16n", "S16: a derived pruning generator trusted without verifying it is an automorphism",
+        "category._canonical_by_individualisation (verified_automorphism: symbols, bonds with orders, cell onto cell)")
+def m_s16n():
+    """Stimulus: a corrupted derivation (each atom sent to the reference leaf's atom at the MIRRORED label) -- what a
+    derivation bug would produce.  Honest: the verification refuses it by name ("... refusing to prune on it": the
+    symbols/bonds check or the cell-onto-cell check) before any prune.
+    Mutant: both verifications removed -- the bogus generator is used, and the search no longer refuses by that law
+    (it prunes on it, or dies of it)."""
+    import smartchem.category as cat_m
+    real = cat_m._canonical_by_individualisation
+    corrupt = ("            g[old] = reference[new]\n", "            g[old] = reference[n - 1 - new]\n")
+
+    def refusal(search):
+        try:
+            _s16_search_forms(search)
+        except AssertionError as exc:
+            return str(exc)
+        except Exception as exc:  # noqa: BLE001 -- any other outcome is "not refused by the verification law"
+            return f"{type(exc).__name__}: {exc}"
+        return None
+    law = "refusing to prune on it"
+    honest = law in (refusal(_src_mutant(real, corrupt)) or "")
+    bad = _src_mutant(real, corrupt,
+                      ("raise AssertionError(\n                \"individualisation derived",
+                       "AssertionError(\n                \"individualisation derived"),
+                      ("                    if g[u] not in cellset:", "                    if False:"))
+    return honest, law not in (refusal(bad) or "")
+
+
+def _s16_ceiling(cap_name: str, anchor: str, molecule: Molecule, cap: int, words: str):
+    """Honest: with ``cap_name`` lowered to ``cap`` the canonicaliser refuses ``molecule`` naming the ceiling.
+    Mutant: that ceiling's test removed -- the same call answers."""
+    import smartchem.category as cat_m
+    with _patch(cat_m, cap_name, cap), _s16_cold():
+        honest_exc = None
+        try:
+            Molecule.canonical.__wrapped__(molecule)
+        except cat_m.CanonicalBoundExceeded as exc:
+            honest_exc = exc
+        bad = _src_mutant(cat_m._canonical_by_individualisation, (anchor, anchor.replace("if ", "if False and ", 1)))
+        with _patch(cat_m, "_canonical_by_individualisation", bad):
+            try:
+                Molecule.canonical.__wrapped__(molecule)
+                answered = True
+            except cat_m.CanonicalBoundExceeded:
+                answered = False
+    return honest_exc is not None and words in str(honest_exc), answered
+
+
+@mutant("M-S16b", "S16: the search-NODE ceiling removed (the internal-node grind is unbounded again)",
+        "category._canonical_by_individualisation (nodes >= _MAX_INDIVIDUALISATION_NODES)")
+def m_s16b():
+    return _s16_ceiling("_MAX_INDIVIDUALISATION_NODES", "if nodes[0] >= _MAX_INDIVIDUALISATION_NODES:",
+                        parse_smiles("C1C2CC3CC1CC(C2)C3"), 5, "search nodes")
+
+
+@mutant("M-S16c", "S16: the nodes x atoms ceiling removed ([CH5000] grinds 610 s under the node cap)",
+        "category._canonical_by_individualisation ((nodes + 1) * n > _MAX_INDIVIDUALISATION_ATOM_NODES)")
+def m_s16c():
+    star = Molecule(("C",) + ("H",) * 200, frozenset(Bond(0, i, 1) for i in range(1, 201)))
+    return _s16_ceiling("_MAX_INDIVIDUALISATION_ATOM_NODES",
+                        "if (nodes[0] + 1) * n > _MAX_INDIVIDUALISATION_ATOM_NODES:", star, 5_000, "atom-refinements")
+
+
+@mutant("M-S16d", "S16: the LEAF ceiling removed",
+        "category._canonical_by_individualisation (leaves > _MAX_INDIVIDUALISATION_LEAVES)")
+def m_s16d():
+    return _s16_ceiling("_MAX_INDIVIDUALISATION_LEAVES", "if leaves[0] > _MAX_INDIVIDUALISATION_LEAVES:",
+                        _s16_diff().two_orbit_cell(), 1, "leaves")
+
+
+@mutant("M-S16e", "S16: canonical() charges nothing (its candidates and search nodes go unbooked)",
+        "category.Molecule.canonical (_charge_work(...) on both paths)")
+def m_s16e():
+    """Honest: a canonical_work budget of 64 refuses the poor-man methyl acetate load (VerificationBudgetExceeded on
+    canonical_work), and the default-budget receipt books the load's canonical work.  Mutant: canonical() books 0 on
+    both paths -- the receipt drops to what the placement search alone charges."""
+    import smartchem.category as cat_m
+    payload = _poor_thick()
+    tight = VerificationPolicy(budget=VerificationBudget(canonical_work=64))
+    with _s16_cold():
+        _ok, exc = _attempt(lambda: load_response(copy.deepcopy(payload), tight))
+        booked = load_response(copy.deepcopy(payload)).receipt.work.canonical_work
+    honest = isinstance(exc, VerificationBudgetExceeded) and exc.counter == "canonical_work" and booked > 0
+    bad = _src_mutant(cat_m.Molecule.canonical.__wrapped__,
+                      ("_charge_work(budget)", "_charge_work(0)"),
+                      ("_charge_work(1)", "_charge_work(0)"),
+                      ("on_node=lambda: _charge_work(n)", "on_node=lambda: _charge_work(0)"))
+    bad = ver_mod.work_transparent_cache(8192)(getattr(bad, "__wrapped__", bad))   # the installed cache, fresh
+    with _patch(cat_m.Molecule, "canonical", bad), _s16_cold():
+        booked2 = load_response(copy.deepcopy(payload)).receipt.work.canonical_work
+    return honest, booked2 < booked
+
+
+def _s16_receipts() -> tuple:
+    """(cold, warm, after-enumeration-clear) WorkLedgers of the poor-man methyl acetate thick load."""
+    payload = _poor_thick()
+    with _s16_cold():
+        cold = load_response(copy.deepcopy(payload)).receipt.work
+        warm = load_response(copy.deepcopy(payload)).receipt.work
+        ENUMERATION_CACHE.clear()
+        after = load_response(copy.deepcopy(payload)).receipt.work
+    return cold, warm, after
+
+
+@mutant("M-S16f", "S16: a process-cache HIT replays nothing (the load pays only for what happened to be cold)",
+        "verification._through_cache (context._replay(hit[1]))")
+def m_s16f():
+    cold, warm, after = _s16_receipts()
+    honest = cold == warm == after and cold.canonical_work > 0
+    bad = _src_mutant(ver_mod._through_cache, ("            context._replay(hit[1])\n", "            pass\n"))
+    with _patch(ver_mod, "_through_cache", bad):
+        c2, w2, _a2 = _s16_receipts()
+    return honest, w2.canonical_work < c2.canonical_work
+
+
+@mutant("M-S16g", "S16: distinct-once dropped -- every reference re-charges its node's cold work",
+        "verification.VerificationContext._replay + _through_cache (the per-load charged set / memo)")
+def m_s16g():
+    """Honest: within one load a node costs its cold work once -- a second reference is free, and the receipt is the
+    same cold, warm and after a clear.  Mutant: the per-load memo bypassed and the charged-set test removed -- each
+    reference pays again, so a warm load (all hits) pays more than a cold one."""
+    m = parse_smiles("C1C2CC3CC1CC(C2)C3")
+
+    def twice():
+        ctx = ver_mod.VerificationContext(VerificationPolicy(budget=VerificationBudget.unlimited()))
+        with ctx.activate():
+            m.canonical()
+            once = ctx.meter.consumed("canonical_work")
+            m.canonical()
+        return once, ctx.meter.consumed("canonical_work")
+    with _s16_cold():
+        once, both = twice()
+    cold, warm, after = _s16_receipts()
+    honest = once == both > 0 and cold == warm == after
+    bad_through = _src_mutant(ver_mod._through_cache, ("        held = context._canonical_memo.get(node)\n",
+                                                        "        held = None\n"))
+    bad_replay = _src_mutant(ver_mod.VerificationContext._replay, ("        if node not in charged:\n",
+                                                                   "        if True:\n"))
+    with _patch(ver_mod, "_through_cache", bad_through), _patch(ver_mod.VerificationContext, "_replay", bad_replay):
+        with _s16_cold():
+            once2, both2 = twice()
+    return honest, both2 > once2
+
+
+@mutant("M-S16h", "S16: the per-load memo not kept -- a process-LRU eviction mid-load buys a recomputation",
+        "verification._through_cache (context._canonical_memo[node] = ...)")
+def m_s16h():
+    m = parse_smiles("C1C2CC3CC1CC(C2)C3")
+
+    def evict_and_recall():
+        ctx = ver_mod.VerificationContext(VerificationPolicy(budget=VerificationBudget.unlimited()))
+        with ctx.activate(), _s16_cold():
+            m.canonical()
+            Molecule.canonical.cache_clear()
+            m.canonical()
+            return Molecule.canonical.cache_info().misses
+    honest = evict_and_recall() == 0
+    bad = _src_mutant(ver_mod._through_cache, ("        context._canonical_memo[node] = (value, closure)\n", "", 1),
+                      ("            context._canonical_memo[node] = hit\n", "", 1))
+    with _patch(ver_mod, "_through_cache", bad):
+        recomputed = evict_and_recall()
+    return honest, recomputed > 0
+
+
+@mutant("M-S16i", "S16 / C3-F1: the enumeration-work floor removed (an empty helper pool predicts W = 0)",
+        "verification.predicted_enumeration_work (max(1, sum(...)))")
+def m_s16i():
+    ma = parse_smiles("CC(=O)OC")
+    honest = ver_mod.predicted_enumeration_work(ma, ()) == (10, 100)
+    bad = _src_mutant(ver_mod.predicted_enumeration_work, ("max(1, sum(len(r.bonds) for r in set(reagents)))",
+                                                            "sum(len(r.bonds) for r in set(reagents))"))
+    with _patch(ver_mod, "predicted_enumeration_work", bad):
+        zero = ver_mod.predicted_enumeration_work(ma, ()) == (0, 0)
+    return honest, zero
+
+
+@mutant("M-S16j", "S16: an over-bound graph escapes resolve_identity as a bare NotImplementedError (exit 70)",
+        "identity_parse.resolve_identity (except CanonicalBoundExceeded -> IdentityOutOfBounds)")
+def m_s16j():
+    import io
+    from contextlib import redirect_stderr, redirect_stdout
+
+    import smartchem.category as cat_m
+    import smartchem.identity_parse as ip_m
+    from smartchem import cli
+
+    neo2 = "C(C(C)(C)C)(C(C)(C)C)(C(C)(C)C)C(C)(C)C"
+
+    def front_door():
+        with _s16_cold():
+            try:
+                ip_m.resolve_identity(neo2)
+                kind = None
+            except Exception as exc:  # noqa: BLE001 -- the CLASS is the fact
+                kind = type(exc)
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                code = cli.main(["recompile", neo2])
+        return kind, code
+    with _patch(cat_m, "_MAX_INDIVIDUALISATION_NODES", 5):
+        kind, code = front_door()
+        honest = kind is ip_m.IdentityOutOfBounds and code == 2
+        bad = _src_mutant(ip_m.resolve_identity, ("    except CanonicalBoundExceeded as exc:",
+                                                  "    except ZeroDivisionError as exc:"))
+        with _patch(ip_m, "resolve_identity", bad):
+            kind2, code2 = front_door()
+    return honest, kind2 is not ip_m.IdentityOutOfBounds and code2 == 70
+
+
+@mutant("M-S16k", "S16 / C6-F4: the placement DFS walks dead ends unbounded again (only complete placements capped)",
+        "smiles._min_constitution_placement (walked[0] >= node_limit)")
+def m_s16k():
+    import smartchem.smiles as sm_m
+    kekule = "C1=CC=C2C=CC=CC2=C1"
+    with _patch(sm_m, "_MAX_PLACEMENT_DFS_NODES", 2), _s16_cold():
+        honest_exc = None
+        try:
+            sm_m.parse_smiles(kekule)
+        except sm_m.SmilesError as exc:
+            honest_exc = exc
+        bad = _src_mutant(sm_m._min_constitution_placement, ("        if walked[0] >= node_limit:",
+                                                              "        if False and walked[0] >= node_limit:"))
+        with _patch(sm_m, "_min_constitution_placement", bad):
+            parsed, _e = _attempt(lambda: sm_m.parse_smiles(kekule))
+    honest = honest_exc is not None and "exceeded 2 search nodes" in str(honest_exc)
+    return honest, parsed is not None
+
+
+def _s16_size_arm() -> int:
+    """Entries left in a cache bounded to 250 retained units after three Molecule-bearing entries (99 + 119 + 109)."""
+    def value(atoms):
+        chain = Molecule(("C",) * atoms, frozenset(Bond(i, i + 1, 1) for i in range(atoms - 1)))
+        return (("t", (chain,)),), True
+    cache = ver_mod.EnumerationCache(max_transforms=1_000, max_entries=100, max_entry_transforms=100,
+                                     max_retained_size=250, max_entry_size=120)
+    for key, atoms in (("a", 50), ("b", 60), ("c", 55)):
+        cache.get_or_compute(key, lambda a=atoms: value(a))
+    return cache.stats().entries
+
+
+@mutant("M-S16l", "S16 / C3-F3: the enumeration cache weighs transform COUNT again (retained size read as 0)",
+        "verification.retained_size (atoms + bonds of every held Molecule)")
+def m_s16l():
+    honest = _s16_size_arm() == 2
+    bad = _src_mutant(ver_mod.retained_size, ("total += len(obj.atoms) + len(obj.bonds)", "total += 0"))
+    with _patch(ver_mod, "retained_size", bad):
+        kept = _s16_size_arm()
+    return honest, kept == 3
+
+
+def _s16_inflight_clear(get_or_compute) -> int:
+    cache = ver_mod.EnumerationCache()
+
+    def compute():
+        cache.clear()                                        # a concurrent clear() lands mid-computation
+        return (("stale",), True)
+    get_or_compute(cache, "k", compute)
+    return cache.stats().entries
+
+
+@mutant("M-S16m", "S16 / C3-F4: a value computed before clear() is stored after it (no generation check)",
+        "verification.EnumerationCache.get_or_compute (self._generation == generation)")
+def m_s16m():
+    honest = _s16_inflight_clear(ver_mod.EnumerationCache.get_or_compute) == 0
+    bad = _src_mutant(ver_mod.EnumerationCache.get_or_compute,
+                      ("self._enabled and self._generation == generation and key not in self._entries",
+                       "self._enabled and key not in self._entries"))
+    return honest, _s16_inflight_clear(bad) == 1
+
+
 # =================================================================================================================
 # runner
 # =================================================================================================================

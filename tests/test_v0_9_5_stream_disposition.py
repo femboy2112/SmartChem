@@ -483,19 +483,20 @@ def test_the_species_key_is_the_s7_structure_key_and_the_name_fold():
 
 def test_an_asgiven_identity_maps_to_the_struct_asgiven_prefix(monkeypatch):
     import smartchem.smiles as smiles_mod
+    from smartchem.experiment import stock
 
     monkeypatch.setattr(smiles_mod, "resonance_identity", lambda m: "asgiven:" + "0" * 64)
+    # the key is stock's now (S7): bypass its memo so the patched canonicaliser is actually consulted
+    monkeypatch.setattr(stock, "_structure_key", stock._structure_key.__wrapped__)
     assert species_key(_METHANOL, "x") == "struct-asgiven:" + "0" * 64
 
 
-def test_the_species_key_agrees_with_stock_structure_key_once_s7_lands():
+def test_the_species_key_is_stock_structure_key():
     from smartchem.experiment import stock
 
-    authority = getattr(stock, "structure_key", None)
-    if authority is None:
-        pytest.skip("S7 stock.structure_key not in this tree yet (integration makes this live)")
     for m in (_METHANOL, _O_XYLENE, _kekule_alternate(_O_XYLENE), _CHLORO_O_XYLENE):
-        assert species_key(m, "x") == authority(m)
+        assert species_key(m, "x") == stock.structure_key(m)
+    assert species_key(None, "  Sodium   BICARBONATE ") == "name:" + stock.normalize_material_name("sodium bicarbonate")
 
 
 # -- leaf property, role-table drift guard, coverage ledger ------------------------------------------------------------------
@@ -521,15 +522,16 @@ def test_the_module_is_a_leaf_it_never_loads_capability_or_service():
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_the_role_tables_mirror_the_waste_projection_until_it_imports_them():
+def test_the_role_tables_have_one_owner_and_waste_imports_them():
     import smartchem.capability.waste as waste
     import smartchem.stream_disposition as sd
 
-    assert sd.SPENT_STREAM_ROLES == waste._SPENT_STREAM_ROLES
-    assert sd.SPENT_STREAM_OP_ROLES == waste._SPENT_STREAM_OP_ROLES
-    assert sd.SPENT_STREAM_OP_KINDS == waste._SPENT_STREAM_OP_KINDS
-    assert sd.CONSUMED_ROLES == waste._CONSUMED_ROLES
-    assert sd.CATALYST_ROLES == waste._CATALYST_ROLES
+    # identity, not equality: one copy of each table, bound into waste under its historical name
+    assert sd.SPENT_STREAM_ROLES is waste._SPENT_STREAM_ROLES
+    assert sd.SPENT_STREAM_OP_ROLES is waste._SPENT_STREAM_OP_ROLES
+    assert sd.SPENT_STREAM_OP_KINDS is waste._SPENT_STREAM_OP_KINDS
+    assert sd.CONSUMED_ROLES is waste._CONSUMED_ROLES
+    assert sd.CATALYST_ROLES is waste._CATALYST_ROLES
 
 
 def test_the_new_field_has_a_waste_ledger_row_and_coverage_stays_complete():

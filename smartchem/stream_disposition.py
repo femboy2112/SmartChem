@@ -99,8 +99,9 @@ LEGAL_SUBJECT_KINDS: "dict[DispositionValue, frozenset[SubjectKind]]" = {
 #: derives a disposition, so a bare DERIVED here would be an unbacked label wearing a lab coat.
 CERTIFYING_DISPOSITION_EVIDENCE: "frozenset[EvidenceKind]" = frozenset({EvidenceKind.SOURCE_QUOTED})
 
-#: The stream/residual role tables ``capability/waste.py`` keys its obligations on (identical members; the waste
-#: consumer imports these back when it lands -- until then a test pins the two copies equal).
+#: The stream/residual role tables ``capability/waste.py`` keys its obligations on. THIS is the one copy: waste imports
+#: these objects (it cannot be the owner -- this leaf must never load the capability package), so the subject universe
+#: and the obligations it discharges can never disagree about which role makes a stream.
 SPENT_STREAM_ROLES: "frozenset[ProcedureMaterialRole]" = frozenset({
     ProcedureMaterialRole.WASH, ProcedureMaterialRole.RINSE, ProcedureMaterialRole.DRY,
     ProcedureMaterialRole.SOLVENT, ProcedureMaterialRole.NEUTRALIZE,
@@ -123,26 +124,26 @@ RECOVERY_OP_KINDS: "frozenset[OperationKind]" = frozenset({
 _STRUCT_PREFIX = "struct:"
 _STRUCT_ASGIVEN = "struct-asgiven:"
 _NAME_PREFIX = "name:"
-_ASGIVEN = "asgiven:"
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 
 
 # -- structural keys (pure functions of ONE step) ----------------------------------------------------------------------
 
 def _fold_name(text: str) -> str:
-    """strip + casefold + collapse internal whitespace (the one name normaliser S8 hands to ``stock``)."""
-    return " ".join(text.strip().casefold().split())
+    """strip + casefold + collapse internal whitespace -- delegated to S8's ONE name fold
+    (``stock.normalize_material_name``); a private copy here would be a second opinion on spelling."""
+    from .experiment.stock import normalize_material_name  # lazy: keeps this module a cheap leaf
+
+    return normalize_material_name(text)
 
 
 def _structure_key(molecule: "Molecule") -> str:
-    """``"struct:" + resonance_identity(m)``; an ``asgiven:`` fallback maps to ``"struct-asgiven:" + ...``. Byte-for-byte
-    the key S7's ``stock.structure_key`` produces (freeze §7) -- retarget to that one authority once it lands."""
-    from .smiles import resonance_identity  # lazy, as step.py's _ident: keeps this module a cheap leaf
+    """``"struct:" + resonance_identity(m)`` (``"struct-asgiven:" + ...`` on the canonicaliser's fallback) -- delegated
+    to S7's ONE structure key, ``stock.structure_key`` (freeze §7). A subject key and a waste obligation key are
+    therefore the same string by construction, not by two implementations agreeing today."""
+    from .experiment.stock import structure_key  # lazy: stock loads no capability/service module, but stays off import
 
-    ident = resonance_identity(molecule)
-    if ident.startswith(_ASGIVEN):
-        return _STRUCT_ASGIVEN + ident[len(_ASGIVEN):]
-    return _STRUCT_PREFIX + ident
+    return structure_key(molecule)
 
 
 def reaction_signature(step_like: object) -> str:

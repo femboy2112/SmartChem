@@ -43,6 +43,11 @@ algebra assigns (D29.1 / Foreman N4), exact keys on the capability codec's nodes
 candidates (D29.2 C6-NEW-1), and the ledger sweep's own-law lock (D29.3 C6-test: a mislabelled check is flagged, not
 merely "refused").  M190 now reads re-execution with D29.1 held out in both arms (D29.1 masks its forgery on every load).
 
+0.9.5 S10 (StreamDisposition consumption): M-SD1/3/5/6/7/8/9/13/14 are Lane C's derive-side M-SD mutants; M-SD2d/4d/16d
+read the derive-time twins of the vocabulary's construction laws on a FORGED record (the construction legs are the
+vocabulary's own); M-SD24 (one disposition, one obligation) and M-SD25 (D-C4 envelope-catalyst attribution) pin the two
+laws this incision added.
+
 Run:  .venv/bin/python experiments/v0_9_mutation_calibration.py
       (dev only: SMARTCHEM_MUT_ONLY=M38,M104 runs a subset -- retirements then read VOID; the gate is the full run)
 """
@@ -75,6 +80,7 @@ import smartchem.experiment.stock as stock_mod
 import smartchem.legacy_v08 as legacy_mod  # 0.9.5 I2: the frozen v0.8 kernel's home (M108/M116 patch it HERE)
 import smartchem.material_spec as spec_mod
 import smartchem.service as svc
+import smartchem.stream_disposition as sd_mod
 from smartchem.algebra_profiles import DEFAULT_ROUTE_ALGEBRA_PROFILE, resolve_algebra_profile
 from smartchem.capability.assess import AxisResult, assess
 from smartchem.capability.enums import (
@@ -154,6 +160,7 @@ from smartchem.procedure_evidence import (
     ProcedureOperation,
 )
 from smartchem.process_constraints import Agitation, Attention, ProcessBounds, ProcessRequirements
+from smartchem.provenance import SourceCitation, SourceReview
 from smartchem.service import (
     CompilationRequest,
     CompilationResponse,
@@ -5207,6 +5214,246 @@ def m217():
     with _patch_item(ledger.TRANSPORT_LEDGER[table], field, relabel):
         exc = refusal()
         bad = exc is not None and not own(exc)
+    return honest, bad
+
+
+# =================================================================================================================
+# 0.9.5 S10 -- StreamDisposition CONSUMPTION (Lane C's M-SD family, the legs that live in derive_waste: law L1, the
+# derive-time admissibility checks, D-C1 / D-C2 / D-C4). The construction-time legs (the L2 table, the evidence set,
+# duplicate subjects, step binding) belong to the vocabulary. A "forged" record below skipped construction on purpose
+# (object.__new__), so the derive-time check under test is the only thing between it and a discharge.
+# =================================================================================================================
+
+_SD_URL = "https://example.test/s10-consumption-mutants"
+_SD_SRC = SourceCitation(_SD_URL, SourceReview.ACCEPTED)
+_H2SO4 = _mol("OS(=O)(=O)O")
+_UNRECORDED_CAT = _mol("CC(C)(C)c1ccccc1")   # no hazard record by structure or by the fixture names below
+_AN, _HAZ, _OFFGAS = WasteCapability.AQUEOUS_NEUTRAL, WasteCapability.HAZARDOUS, WasteCapability.OFFGAS_CAPTURE
+_SD_ROUTED, _SD_CC, _SD_RECOVERED = (sd_mod.DispositionValue.ROUTED, sd_mod.DispositionValue.CONSUMED_COMPLETELY,
+                                     sd_mod.DispositionValue.RECOVERED)
+
+
+def _sd_route(*extra_ops, source=_SD_SRC, **envelope_kw) -> ExperimentRoute:
+    """The micro esterification on a SOURCED procedure (op #1 ADD/REACTION + ``extra_ops``)."""
+    return _micro_route(extra_ops=extra_ops, procedure_over={"source": source}, **envelope_kw)
+
+
+def _sd_with(route: ExperimentRoute, *dispositions) -> ExperimentRoute:
+    step = route.steps[0]
+    procedure = dc.replace(step.envelope.procedure, stream_dispositions=tuple(dispositions))
+    return ExperimentRoute(ROUTE_SCHEMA, (dc.replace(step, envelope=dc.replace(step.envelope, procedure=procedure)),)
+                           + route.steps[1:])
+
+
+def _sd_subject(route: ExperimentRoute, kind, *, index=None, core=None):
+    found = [s for s in sd_mod.stream_subjects(route.steps[0]) if s.kind is kind
+             and (index is None or s.index == index) and (core is None or s.core == core)]
+    assert len(found) == 1, found
+    return found[0]
+
+
+def _sd(subject, value=None, *, category=None, via_op=None):
+    value = _SD_ROUTED if value is None else value
+    if value is _SD_ROUTED and category is None:
+        category = _AN
+    return sd_mod.StreamDisposition(subject, value, EvidenceKind.SOURCE_QUOTED, _SD_URL, category=category,
+                                    via_op=via_op)
+
+
+def _sd_forge(subject, value, *, evidence=EvidenceKind.SOURCE_QUOTED, category=None, via_op=None):
+    forged = object.__new__(sd_mod.StreamDisposition)
+    for name, v in (("subject", subject), ("value", value), ("evidence", evidence), ("locator", _SD_URL),
+                    ("category", category), ("via_op", via_op)):
+        object.__setattr__(forged, name, v)
+    return forged
+
+
+def _sd_flip(route, marker: str, *edits):
+    """Honest: ``marker`` is still an OPEN obligation of ``route``. Mutant (``edits`` on derive_waste): it vanished."""
+    honest = any(marker in u for u in waste_mod.derive_waste(route)[2])
+    bad = not any(marker in u for u in _src_mutant(waste_mod.derive_waste, *edits)(route)[2])
+    return honest, bad
+
+
+def _sd_twin_rinses():
+    return _sd_route(_op(OperationKind.ADD, material_uses=(_use("cold water", ProcedureMaterialRole.RINSE),
+                                                           _use("cold water", ProcedureMaterialRole.RINSE))))
+
+
+@mutant("M-SD1", "a disposition matched by its CORE, not the exact subject: one statement settles a twin stream",
+        "waste.derive_waste (exact-subject lookup, L1)")
+def m_sd1():
+    route = _sd_twin_rinses()
+    route = _sd_with(route, _sd(_sd_subject(route, sd_mod.SubjectKind.USE_STREAM, index=0)))
+    return _sd_flip(route, "spent workup stream 'cold water'",
+                    ("by_subject[s_index] = {d.subject: d for", "by_subject[s_index] = {d.subject.core: d for"),
+                    ("by_subject[s_index].get(subject)", "by_subject[s_index].get(subject.core)", 2))
+
+
+@mutant("M-SD3", "the accepted-source gate dropped: an UNREVIEWED procedure's statement discharges",
+        "waste.derive_waste (_refusal: procedure.is_sourced)")
+def m_sd3():
+    route = _sd_route(_op(OperationKind.FILTER), source=SourceCitation(_SD_URL, SourceReview.UNREVIEWED))
+    route = _sd_with(route, _sd(_sd_subject(route, sd_mod.SubjectKind.OP_STREAM)))
+    return _sd_flip(route, "op #2 FILTER/OTHER leaves a spent stream", ("if not procedure.is_sourced:", "if False:"))
+
+
+def _sd_routed_filter(category):
+    route = _sd_route(_op(OperationKind.FILTER))
+    return _sd_with(route, _sd(_sd_subject(route, sd_mod.SubjectKind.OP_STREAM), category=category))
+
+
+@mutant("M-SD5", "a ROUTED discharge that does not add its category (a bench lacking it is no longer BLOCKED)",
+        "waste.derive_waste (_credit: routed.add)")
+def m_sd5():
+    route, marker = _sd_routed_filter(_AN), "op #2 FILTER/OTHER leaves a spent stream"
+    cats, _r, unresolved = waste_mod.derive_waste(route)
+    honest = (_AN in cats and not any(marker in u for u in unresolved)
+              and _micro_assess(route, _micro_profile()).waste.status is CapabilityStatus.BLOCKED)
+    bad_derive = _src_mutant(waste_mod.derive_waste, ("routed.add(disposition.category)", "None"))
+    m_cats, _m_r, m_unresolved = bad_derive(route)
+    with _patch(waste_mod, "derive_waste", bad_derive):
+        m_status = _micro_assess(route, _micro_profile()).waste.status
+    bad = (_AN not in m_cats and not any(marker in u for u in m_unresolved)
+           and m_status is not CapabilityStatus.BLOCKED)
+    return honest, bad
+
+
+@mutant("M-SD6", "the ROUTED category replaced by a constant AQUEOUS_NEUTRAL", "waste.derive_waste (_credit)")
+def m_sd6():
+    route = _sd_routed_filter(_HAZ)
+    honest = waste_mod.derive_waste(route)[0] == frozenset({_HAZ})
+    bad = _src_mutant(waste_mod.derive_waste, ("routed.add(disposition.category)",
+                                               "routed.add(WasteCapability.AQUEOUS_NEUTRAL)"))(route)[0] == {_AN}
+    return honest, bad
+
+
+@mutant("M-SD7", "a routed category REPLACES the derived categories (L1 monotone violated)",
+        "waste.derive_waste (derived | routed union)")
+def m_sd7():
+    route = _sd_route(_op(OperationKind.ADD, material_uses=(_use("sulfuric acid", ProcedureMaterialRole.CATALYST,
+                                                                identity=_H2SO4),)),
+                      _op(OperationKind.FILTER))
+    route = _sd_with(route, _sd(_sd_subject(route, sd_mod.SubjectKind.OP_STREAM), category=_AN))
+    honest = waste_mod.derive_waste(route)[0] == frozenset({_HAZ, _AN})
+    bad_cats = _src_mutant(waste_mod.derive_waste, ("return frozenset(categories | routed),",
+                                                    "return frozenset(routed or categories),"))(route)[0]
+    return honest, _HAZ not in bad_cats
+
+
+@mutant("M-SD8", "residual/catalyst de-duplication restored ROUTE-WIDE: step 1 hides step 2's input (D-C2)",
+        "waste.derive_waste (per-step seen sets)")
+def m_sd8():
+    route = _two_step_route(_MICRO_BASE_USES, ())
+    marker = f"step 2 input {_ACETIC!r} has no typed procedure use"
+    return _sd_flip(route, marker,
+                    ("        catalyst_seen, residual_seen = set(), set()  # D-C2: PER STEP", "        pass  #"),
+                    ('    contradicted: "set[str]" = set()\n',
+                     '    contradicted: "set[str]" = set()\n    catalyst_seen, residual_seen = set(), set()\n'))
+
+
+@mutant("M-SD9", "spent-stream uses de-duplicated by NAME again: discharging one twin settles both (D-C1)",
+        "waste.derive_waste (per-use USE_STREAM obligations)")
+def m_sd9():
+    route = _sd_twin_rinses()
+    route = _sd_with(route, _sd(_sd_subject(route, sd_mod.SubjectKind.USE_STREAM, index=0)))
+    return _sd_flip(route, "spent workup stream 'cold water'",
+                    ('    spent: "set[tuple[int, StreamSubject]]" = set()',
+                     '    _names: set = set()\n    spent: "set[tuple[int, StreamSubject]]" = set()'),
+                    ("if use.role in _SPENT_STREAM_ROLES:",
+                     "if use.role in _SPENT_STREAM_ROLES and not (use.name.strip().casefold() in _names "
+                     "or _names.add(use.name.strip().casefold())):"))
+
+
+def _sd_water(route):
+    return _sd_subject(route, sd_mod.SubjectKind.BYPRODUCT, core=stock_mod.structure_key(_WATER))
+
+
+@mutant("M-SD13", "the fate-compatibility check removed: OFFGAS_CAPTURE settles a CONDENSED byproduct",
+        "waste.derive_waste (_refusal: fate law)")
+def m_sd13():
+    route = _sd_route(temperature=Interval(298.15, 298.15, "K"))
+    route = _sd_with(route, _sd(_sd_water(route), category=_OFFGAS))
+    handling_fate = verify_handling(route).steps[0].byproducts[0].fate
+    honest_c, _r, honest_u = waste_mod.derive_waste(route)
+    bad_derive = _src_mutant(waste_mod.derive_waste, (
+        "if fate is Fate.CONDENSED and disposition.category is WasteCapability.OFFGAS_CAPTURE:", "if False:"))
+    bad_c, _br, bad_u = bad_derive(route)
+    honest = (handling_fate is Fate.CONDENSED and _OFFGAS not in honest_c
+              and any("contradicts the derived CONDENSED fate" in u for u in honest_u))
+    return honest, _OFFGAS in bad_c and not any("empty GHS" in u for u in bad_u)
+
+
+@mutant("M-SD14", "the L3 hazard-known precondition removed: a species with NO hazard record is routed",
+        "waste.derive_waste (_refusal: L3)")
+def m_sd14():
+    route = _sd_route()
+    route = _sd_with(route, _sd(_sd_water(route)))
+    handling = _handling_with_byproducts(route, hazard_name=None, fate=Fate.CONDENSED,
+                                         reason="fixture: condensed co-product, hazard UNASSESSED")
+    with _patch(waste_mod, "verify_handling", lambda r, **kw: handling):
+        return _sd_flip(route, "NO hazard assessment",
+                        ("if subject.kind in (SubjectKind.BYPRODUCT, SubjectKind.RESIDUAL) and not hazard_known():",
+                         "if False:"))
+
+
+@mutant("M-SD4d", "a forged CONSUMED_COMPLETELY discharges a BYPRODUCT (derive-time kind x value law dropped)",
+        "waste.derive_waste (_refusal: admissible values)")
+def m_sd4d():
+    route = _sd_route()
+    route = _sd_with(route, _sd_forge(_sd_water(route), _SD_CC))
+    return _sd_flip(route, "empty GHS) -- benign species", ("if disposition.value not in allowed:", "if False:"))
+
+
+@mutant("M-SD2d", "a forged AUTHOR_INFERRED disposition discharges (derive-time evidence law dropped)",
+        "waste.derive_waste (_refusal: SOURCE_QUOTED only)")
+def m_sd2d():
+    route = _sd_route(_op(OperationKind.FILTER))
+    route = _sd_with(route, _sd_forge(_sd_subject(route, sd_mod.SubjectKind.OP_STREAM), _SD_ROUTED,
+                                      evidence=EvidenceKind.AUTHOR_INFERRED, category=_AN))
+    return _sd_flip(route, "op #2 FILTER/OTHER leaves a spent stream",
+                    ("if disposition.evidence not in CERTIFYING_DISPOSITION_EVIDENCE:", "if False:"))
+
+
+@mutant("M-SD16d", "a forged RECOVERED with no via_op discharges a use stream (derive-time via_op law dropped)",
+        "waste.derive_waste (_refusal: RECOVERED via_op)")
+def m_sd16d():
+    route = _sd_route(_op(OperationKind.ADD, material_uses=(_use("brine", ProcedureMaterialRole.WASH),)))
+    route = _sd_with(route, _sd_forge(_sd_subject(route, sd_mod.SubjectKind.USE_STREAM), _SD_RECOVERED))
+    return _sd_flip(route, "spent workup stream 'brine'",
+                    ("if kinds.get(disposition.via_op) not in RECOVERY_OP_KINDS:", "if False:"))
+
+
+@mutant("M-SD24", "one disposition discharges MORE than one obligation (L1 one-for-one dropped)",
+        "waste.derive_waste (_refusal: spent)")
+def m_sd24():
+    """Two differently-named CATALYST uses of ONE unrecorded species: two catalyst-residual obligations, ONE subject."""
+    route = _sd_route(_op(OperationKind.ADD, material_uses=(
+        _use("catalyst x", ProcedureMaterialRole.CATALYST, identity=_UNRECORDED_CAT),
+        _use("catalyst y", ProcedureMaterialRole.CATALYST, identity=_UNRECORDED_CAT))), _op(OperationKind.FILTER))
+    residual = _sd_subject(route, sd_mod.SubjectKind.RESIDUAL, core=stock_mod.structure_key(_UNRECORDED_CAT))
+    route = _sd_with(route, _sd(residual, _SD_RECOVERED, via_op=3))
+
+    def open_catalysts(derive):
+        return sum("catalyst residual" in u and "not consumed" in u for u in derive(route)[2])
+
+    honest = open_catalysts(waste_mod.derive_waste) == 1
+    bad = open_catalysts(_src_mutant(waste_mod.derive_waste, ("if (s_index, subject) in spent:", "if False:"))) == 0
+    return honest, bad
+
+
+@mutant("M-SD25", "an envelope catalyst is not attributed to its covering typed use: its statement can never land "
+        "(D-C4)", "waste.derive_waste (envelope-catalyst attribution)")
+def m_sd25():
+    route = _sd_route(_op(OperationKind.ADD, material_uses=(
+        _use("catalyst x", ProcedureMaterialRole.CATALYST, identity=_UNRECORDED_CAT),)), _op(OperationKind.FILTER),
+        catalysts=("Catalyst X",))
+    residual = _sd_subject(route, sd_mod.SubjectKind.RESIDUAL, core=stock_mod.structure_key(_UNRECORDED_CAT))
+    route = _sd_with(route, _sd(residual, _SD_RECOVERED, via_op=3))
+    marker = "catalyst residual 'Catalyst X' (step 1 envelope catalyst) is not consumed"
+    honest = not any(marker in u for u in waste_mod.derive_waste(route)[2])
+    bad = any(marker in u for u in _src_mutant(waste_mod.derive_waste, (
+        "None if cover is None else _residual(s_index, cover)", "None"))(route)[2])
     return honest, bad
 
 

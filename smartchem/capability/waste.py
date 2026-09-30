@@ -40,6 +40,31 @@ Round V X-high amendments (barrier D17):
   a spent stream minted a fake waste obligation for the wrong reason. Materials are typed uses; the medium reader
   is deleted.
 
+0.9.5 S10 (freeze §6) -- the CONSUMPTION of :mod:`smartchem.stream_disposition`:
+
+* **Law L1 (exact key, one for one, monotone).** An obligation that has a structural subject (BYPRODUCT, RESIDUAL,
+  OP_STREAM, USE_STREAM) looks its disposition up by EXACT :class:`~smartchem.stream_disposition.StreamSubject`
+  equality inside its own step's procedure. A matching disposition moves exactly ONE obligation from ``unresolved``
+  to ``reasons`` (a disposition that already discharged one discharges no second); ``ROUTED`` ADDS its category. A
+  disposition never deletes a derived category -- derived and routed categories are kept apart and UNIONED.
+* **It discharges only when** the procedure source is ACCEPTED (``is_sourced`` -- the vocabulary deliberately does
+  not refuse an unaccepted source at construction, so this gate is real), the evidence is SOURCE_QUOTED, the value is
+  one THIS obligation admits (a byproduct / op stream: ROUTED only; a use stream / catalyst residual: ROUTED or
+  RECOVERED; a SUBSTRATE/REACTANT residual: CONSUMED_COMPLETELY too, iff the step net-consumes that identity),
+  RECOVERED names a DISTILL/FILTER/SEPARATE ``via_op`` of the same procedure, a species-level ROUTED has a known
+  hazard record (L3), and ROUTED does not contradict a derived fate (OFFGAS vs CONDENSED). A present disposition that
+  fails any of these discharges nothing and says why in ``unresolved`` -- the obligation stays UNKNOWN, never BLOCKED.
+  The construction-time refusals in the vocabulary are the loud layer; these derive-time checks are the second,
+  independent one (a hand-forged record that skipped construction still discharges nothing it should not).
+* **The latent defects discharge would otherwise make unsound are fixed here.** D-C1: a spent-stream-role use is ONE
+  obligation PER USE (same-named uses no longer collapse into one discharge target). D-C2: residual and catalyst
+  de-duplication is PER STEP (a step-1 residual no longer hides step 2's own obligation for the same species -- a
+  strict superset of obligations on such routes, the safe direction). D-C4: an envelope catalyst that a same-step
+  typed CATALYST use exact-fold-covers is attributed to THAT use's RESIDUAL subject (with no covering use it has no
+  subject at all, like untyped op material and untyped step input -- excluded kinds that no disposition can reach).
+  With no dispositions, the output is byte-identical to the pre-S10 projection on every route that repeats no species
+  across steps.
+
 Every reason quotes the real ``Fate``. Nothing here decides FIT/BLOCKED/UNKNOWN (that fold is assess's).
 """
 from __future__ import annotations
@@ -48,26 +73,42 @@ from ..experiment.handling import Fate, verify_handling
 from ..experiment.step import ExperimentRoute
 from ..experiment.stock import normalize_material_name as _norm_text
 from ..experiment.stock import structure_key
-from ..procedure_evidence import OperationKind, OperationRole, ProcedureMaterialRole
+from ..procedure_evidence import ProcedureMaterialRole
+from ..stream_disposition import CATALYST_ROLES as _CATALYST_ROLES
+from ..stream_disposition import CERTIFYING_DISPOSITION_EVIDENCE, RECOVERY_OP_KINDS
+from ..stream_disposition import CONSUMED_ROLES as _CONSUMED_ROLES
+from ..stream_disposition import SPENT_STREAM_OP_KINDS as _SPENT_STREAM_OP_KINDS
+from ..stream_disposition import SPENT_STREAM_OP_ROLES as _SPENT_STREAM_OP_ROLES
+from ..stream_disposition import SPENT_STREAM_ROLES as _SPENT_STREAM_ROLES
+from ..stream_disposition import (
+    DispositionValue,
+    StreamSubject,
+    SubjectKind,
+    op_core,
+    reaction_signature,
+    species_key,
+    use_core,
+)
 from .enums import WasteCapability
 
 __all__ = ["derive_waste"]
 
 
-#: workup material roles whose use is itself a spent process stream (kept from Round IV F49).
-_SPENT_STREAM_ROLES = frozenset({
-    ProcedureMaterialRole.WASH, ProcedureMaterialRole.RINSE, ProcedureMaterialRole.DRY,
-    ProcedureMaterialRole.SOLVENT, ProcedureMaterialRole.NEUTRALIZE,
-})
-#: operations that GENERATE a spent stream whatever their typed uses say (D9).
-_SPENT_STREAM_OP_ROLES = frozenset({OperationRole.WASH, OperationRole.RECRYSTALLIZATION})
-_SPENT_STREAM_OP_KINDS = frozenset({
-    OperationKind.SEPARATE, OperationKind.FILTER, OperationKind.DRY, OperationKind.DISTILL,
-})
-#: roles that are consumed into the product -- their leftover is an unresolved residual.
-_CONSUMED_ROLES = frozenset({ProcedureMaterialRole.SUBSTRATE, ProcedureMaterialRole.REACTANT})
-#: the role whose use is a certain (unconsumed) residual -- resolved HAZARDOUS on real GHS, else unresolved.
-_CATALYST_ROLES = frozenset({ProcedureMaterialRole.CATALYST})
+# The role tables this module keys its obligations on live in :mod:`smartchem.stream_disposition` -- ONE copy, bound
+# here under their historical private names (the mutation gate patches ``waste._SPENT_STREAM_ROLES`` by name, and a
+# patch of this module's binding still reaches derive_waste). Ownership sits with the leaf because the dependency only
+# runs one way: ``experiment/step.py`` loads the leaf, and the leaf may never load the capability package.
+#   _SPENT_STREAM_ROLES      workup material roles whose use is itself a spent process stream (Round IV F49)
+#   _SPENT_STREAM_OP_ROLES   operation roles that GENERATE a spent stream whatever their typed uses say (D9)
+#   _SPENT_STREAM_OP_KINDS   operation kinds that do the same (D9)
+#   _CONSUMED_ROLES          consumed into the product -- the leftover is an unresolved residual
+#   _CATALYST_ROLES          a certain (unconsumed) residual -- resolved HAZARDOUS on real GHS, else unresolved
+
+#: S10 -- which disposition values may discharge which obligation (the derive-time half of freeze §6's L2; the
+#: vocabulary's construction table is the loud half, this is the independent one).
+_ROUTED_ONLY: "frozenset[DispositionValue]" = frozenset({DispositionValue.ROUTED})
+_ROUTED_OR_RECOVERED: "frozenset[DispositionValue]" = frozenset({DispositionValue.ROUTED, DispositionValue.RECOVERED})
+_ANY_VALUE: "frozenset[DispositionValue]" = frozenset(DispositionValue)
 
 
 def _check_role_totality() -> None:
@@ -113,19 +154,95 @@ def _resolve_hazard(identity, name: "str | None"):
     return hazard
 
 
+
+
 def derive_waste(
     route: ExperimentRoute,
 ) -> "tuple[frozenset[WasteCapability], tuple[str, ...], tuple[str, ...]]":
-    """``(categories, reasons, unresolved)`` for ``route`` under barrier D9 -- pure, route-only.
+    """``(categories, reasons, unresolved)`` for ``route`` under barrier D9 + S10 -- pure, route-only.
 
-    ``reasons`` name the facts that EARNED a category; ``unresolved`` names every stream whose routing could not
-    be positively determined (assess caps the waste axis at UNKNOWN on any). Both are sorted, de-duplicated.
+    ``reasons`` name the facts that EARNED a category (and every obligation a stream disposition discharged);
+    ``unresolved`` names every stream whose routing could not be positively determined (assess caps the waste axis at
+    UNKNOWN on any). Both are sorted, de-duplicated.
     """
     if type(route) is not ExperimentRoute:
         raise TypeError("route must be a smartchem.experiment.step.ExperimentRoute")
-    categories: "set[WasteCapability]" = set()
+    categories: "set[WasteCapability]" = set()     # DERIVED from the chemistry; no disposition ever removes one (L1)
+    routed: "set[WasteCapability]" = set()         # ADDED by ROUTED dispositions; unioned in, never swapped in
     reasons: "set[str]" = set()
     unresolved: "set[str]" = set()
+
+    # -- S10: the exact-subject disposition table, built ONLY for steps whose procedure carries dispositions (the
+    # disposition-free majority never computes a signature, a subject or a core -- and never changes a byte) ----------
+    signatures: "dict[int, str]" = {}
+    by_subject: "dict[int, dict]" = {}
+    for s_index, step in enumerate(route.steps, start=1):
+        procedure = step.envelope.procedure
+        if procedure is not None and procedure.stream_dispositions:
+            signatures[s_index] = reaction_signature(step)
+            by_subject[s_index] = {d.subject: d for d in procedure.stream_dispositions}
+    spent: "set[tuple[int, StreamSubject]]" = set()    # L1: one disposition, one obligation
+
+    def _subject(s_index: int, kind: SubjectKind, core_of, *args, ordinal=None, index=None) -> "StreamSubject | None":
+        sig = signatures.get(s_index)
+        return None if sig is None else StreamSubject(kind, sig, ordinal, index, core_of(*args))
+
+    def _residual(s_index: int, use) -> "StreamSubject | None":
+        return _subject(s_index, SubjectKind.RESIDUAL, species_key, use.identity, use.name)
+
+    def _refusal(s_index, subject, disposition, allowed, fate, hazard_known) -> "str | None":
+        """Why ``disposition`` may NOT discharge this obligation, or ``None``. Every check is fail-closed: a refusal
+        keeps the obligation unresolved (UNKNOWN), it never converts a source claim into a BLOCKED."""
+        if (s_index, subject) in spent:
+            return "it has already discharged one obligation (L1: one disposition, one obligation)"
+        procedure = route.steps[s_index - 1].envelope.procedure
+        if not procedure.is_sourced:
+            return "the procedure source is not an ACCEPTED citation, so nothing it states discharges an obligation"
+        if disposition.evidence not in CERTIFYING_DISPOSITION_EVIDENCE:
+            return f"{disposition.evidence.value} evidence cannot certify a disposition (SOURCE_QUOTED only)"
+        if disposition.value not in allowed:
+            return f"{disposition.value.value} cannot discharge this obligation (freeze §6 kind x value law)"
+        if disposition.value is DispositionValue.RECOVERED:
+            kinds = {op.ordinal: op.kind for op in procedure.operations}
+            if kinds.get(disposition.via_op) not in RECOVERY_OP_KINDS:
+                return (f"RECOVERED via_op={disposition.via_op!r} names no DISTILL/FILTER/SEPARATE operation of this "
+                        "procedure")
+        if disposition.value is DispositionValue.ROUTED:
+            if type(disposition.category) is not WasteCapability:
+                return "ROUTED carries no WasteCapability category"
+            if subject.kind in (SubjectKind.BYPRODUCT, SubjectKind.RESIDUAL) and not hazard_known():
+                return "the species has no hazard record, so a species-level routing cannot be checked (L3)"
+            if fate is Fate.OFFGAS and disposition.category is not WasteCapability.OFFGAS_CAPTURE:
+                return f"ROUTED({disposition.category.value}) contradicts the derived OFFGAS fate"
+            if fate is Fate.CONDENSED and disposition.category is WasteCapability.OFFGAS_CAPTURE:
+                return "ROUTED(OFFGAS_CAPTURE) contradicts the derived CONDENSED fate"
+        return None
+
+    def _credit(s_index, subject, disposition, label: str, effect: str) -> None:
+        """The ONE place a disposition takes effect: mark it spent, ADD a routed category, name it in ``reasons``."""
+        spent.add((s_index, subject))
+        if disposition.value is DispositionValue.ROUTED:
+            routed.add(disposition.category)
+        what = disposition.value.value + (f"({disposition.category.value})" if disposition.category is not None
+                                          else "") + (f" via op #{disposition.via_op}" if disposition.via_op else "")
+        reasons.add(f"waste: {label} -- the sourced procedure states {what} [{disposition.evidence.value} @ "
+                    f"{disposition.locator}]; {effect} (S10)")
+
+    def _settle(s_index, subject, allowed, label: str, *, fate=None, hazard_known=lambda: True) -> bool:
+        """True iff a disposition DISCHARGES this one obligation (the caller then skips its unresolved line). A
+        present-but-refused disposition leaves the obligation open and records why."""
+        if subject is None:
+            return False
+        disposition = by_subject[s_index].get(subject)
+        if disposition is None:
+            return False
+        why = _refusal(s_index, subject, disposition, allowed, fate, hazard_known)
+        if why is not None:
+            unresolved.add(f"waste: {label} -- a stream disposition ({disposition.value.value}) is present but "
+                           f"discharges nothing: {why}")
+            return False
+        _credit(s_index, subject, disposition, label, "this obligation is discharged")
+        return True
 
     # -- byproducts ---------------------------------------------------------------------------------------------
     handling = verify_handling(route)
@@ -133,37 +250,39 @@ def derive_waste(
     for step_handling in handling.steps:
         for flag in step_handling.hazards:
             ghs_by_name.setdefault(flag.name, tuple(flag.ghs_codes))
-    for b in handling.all_byproducts:
-        fate = b.fate.value if isinstance(b.fate, Fate) else str(b.fate)
-        label = f"byproduct {b.molecule!r} (fate={fate})"
-        if b.hazard_name is None:
-            unresolved.add(f"waste: {label} has NO hazard assessment -- its disposal routing is UNKNOWN, never "
-                           "benign by negation (F48)")
-            continue
-        if b.hazard_name not in ghs_by_name:
-            unresolved.add(f"waste: {label} names hazard record {b.hazard_name!r} but no GHS flag for it is "
-                           "present in the handling ledger -- routing UNKNOWN")
-            continue
-        codes = ghs_by_name[b.hazard_name]
-        if b.fate is Fate.OFFGAS:
-            categories.add(WasteCapability.OFFGAS_CAPTURE)
-            reasons.add(f"waste: {label} evolves as an off-gas ({b.reason}) -- needs OFFGAS_CAPTURE")
-        if codes:
-            categories.add(WasteCapability.HAZARDOUS)
-            reasons.add(f"waste: {label} carries sourced GHS {', '.join(codes)} ({b.hazard_name}) -- HAZARDOUS")
-            if b.fate is Fate.UNKNOWN:
-                unresolved.add(f"waste: {label} is hazardous ({b.hazard_name}) but its phase is UNASSESSED -- "
-                               "which stream carries it is UNKNOWN")
-        else:
-            # F76: an empty GHS profile clears the SPECIES, never the STREAM (phase/pH/co-residents unknown).
-            unresolved.add(f"waste: {label} ({b.hazard_name}, empty GHS) -- benign species, untyped waste stream "
-                           "(phase/pH/co-residents unestablished); never AQUEOUS_NEUTRAL (F76)")
+    for s_index, step_handling in enumerate(handling.steps, start=1):
+        for b in step_handling.byproducts:
+            fate = b.fate.value if isinstance(b.fate, Fate) else str(b.fate)
+            label = f"byproduct {b.molecule!r} (fate={fate})"
+            subject = _subject(s_index, SubjectKind.BYPRODUCT, structure_key, b.molecule)
+            if b.hazard_name is None:
+                # L3 always refuses here (no hazard record); the call only records a present disposition's refusal.
+                if not _settle(s_index, subject, _ROUTED_ONLY, label, fate=b.fate, hazard_known=lambda: False):
+                    unresolved.add(f"waste: {label} has NO hazard assessment -- its disposal routing is UNKNOWN, never "
+                                   "benign by negation (F48)")
+                continue
+            if b.hazard_name not in ghs_by_name:
+                unresolved.add(f"waste: {label} names hazard record {b.hazard_name!r} but no GHS flag for it is "
+                               "present in the handling ledger -- routing UNKNOWN")
+                continue
+            codes = ghs_by_name[b.hazard_name]
+            if b.fate is Fate.OFFGAS:
+                categories.add(WasteCapability.OFFGAS_CAPTURE)
+                reasons.add(f"waste: {label} evolves as an off-gas ({b.reason}) -- needs OFFGAS_CAPTURE")
+            if codes:
+                categories.add(WasteCapability.HAZARDOUS)
+                reasons.add(f"waste: {label} carries sourced GHS {', '.join(codes)} ({b.hazard_name}) -- HAZARDOUS")
+                if b.fate is Fate.UNKNOWN:
+                    if not _settle(s_index, subject, _ROUTED_ONLY, label, fate=b.fate):
+                        unresolved.add(f"waste: {label} is hazardous ({b.hazard_name}) but its phase is UNASSESSED -- "
+                                       "which stream carries it is UNKNOWN")
+            else:
+                # F76: an empty GHS profile clears the SPECIES, never the STREAM (phase/pH/co-residents unknown).
+                if not _settle(s_index, subject, _ROUTED_ONLY, label, fate=b.fate):
+                    unresolved.add(f"waste: {label} ({b.hazard_name}, empty GHS) -- benign species, untyped waste stream "
+                                   "(phase/pH/co-residents unestablished); never AQUEOUS_NEUTRAL (F76)")
 
     # -- residuals (F77), role consistency (F-7), untyped introductions (F-6), spent streams (D9) ------------------
-    catalyst_seen: "set[str]" = set()
-    residual_seen: "set[str]" = set()
-    stream_names_seen: "set[str]" = set()
-
     # F-7 pre-pass: every name a known-identity CATALYST use carries while its own step NET-CONSUMES that structure.
     # Computed before any catalyst is read, so neither the use nor a same-named envelope catalyst (read first, and
     # deduplicated by name) can ever earn the resolved catalyst category for a consumed reactant.
@@ -178,7 +297,9 @@ def derive_waste(
                         and step.net_consumes(use.identity)):
                     contradicted.add(use.name.strip().casefold())
 
-    def _catalyst(identity, name: str, where: str) -> None:
+    # ``catalyst_seen`` / ``residual_seen`` are (re)bound PER STEP in the loop below (D-C2); this closure reads the
+    # current step's set at call time.
+    def _catalyst(s_index: int, identity, name: str, where: str, subject: "StreamSubject | None") -> None:
         key = name.strip().casefold()
         if key in contradicted:
             unresolved.add(
@@ -190,20 +311,35 @@ def derive_waste(
             return
         catalyst_seen.add(key)
         hazard = _resolve_hazard(identity, name)
+        label = f"catalyst residual {name!r} ({where})"
         if hazard is not None and hazard.ghs_codes:
             categories.add(WasteCapability.HAZARDOUS)
             reasons.add(f"waste: catalyst residual {name!r} ({where}) is not consumed and carries sourced GHS "
                         f"{', '.join(hazard.ghs_codes)} ({hazard.name}) -- HAZARDOUS")
+            # No open obligation to discharge: a disposition here is ADDITIVE only (a ROUTED category joins the
+            # derived HAZARDOUS, a RECOVERED is noted) -- the derived category stays whatever the source says (L1).
+            disposition = None if subject is None else by_subject[s_index].get(subject)
+            if disposition is not None and _refusal(s_index, subject, disposition, _ROUTED_OR_RECOVERED, None,
+                                                    lambda: True) is None:
+                _credit(s_index, subject, disposition, label, "additive only -- the derived HAZARDOUS stays (L1)")
         else:
             why = "no hazard record" if hazard is None else f"{hazard.name}, empty GHS -- benign species, untyped stream"
-            unresolved.add(f"waste: catalyst residual {name!r} ({where}) is not consumed ({why}) -- its disposal "
-                           "routing is UNKNOWN")
+            if not _settle(s_index, subject, _ROUTED_OR_RECOVERED, label, hazard_known=lambda: hazard is not None):
+                unresolved.add(f"waste: catalyst residual {name!r} ({where}) is not consumed ({why}) -- its disposal "
+                               "routing is UNKNOWN")
 
     for s_index, step in enumerate(route.steps, start=1):
-        for cat in step.envelope.catalysts:
-            _catalyst(None, cat, f"step {s_index} envelope catalyst")
-        # Part IV: ``envelope.medium`` is condition PROSE / provenance only -- it is never read as a stream.
+        catalyst_seen, residual_seen = set(), set()  # D-C2: PER STEP -- step 1 never answers for step 2's species
         procedure = step.envelope.procedure
+        typed_catalysts = () if procedure is None else tuple(
+            u for op in procedure.operations for u in op.material_uses if u.role in _CATALYST_ROLES)
+        for cat in step.envelope.catalysts:
+            # D-C4: the envelope string names no stream of its own; its residual IS the covering typed CATALYST use's
+            # (same exact-fold rule as F-6). No covering use -> no subject (an excluded kind: untyped, never reachable).
+            cover = next((u for u in typed_catalysts if _name_covers(u.name, cat)), None)
+            _catalyst(s_index, None, cat, f"step {s_index} envelope catalyst",
+                      None if cover is None else _residual(s_index, cover))
+        # Part IV: ``envelope.medium`` is condition PROSE / provenance only -- it is never read as a stream.
         covered: "set[str]" = set()
         if procedure is not None:
             for op in procedure.operations:
@@ -215,11 +351,12 @@ def derive_waste(
                             f"waste: step {s_index} op #{op.ordinal} {op.kind.value}/{op.role.value} introduces "
                             f"untyped material {raw.strip()!r} -- its fate is untyped, so its disposal routing is "
                             "UNKNOWN (F-6)")
-                for use in op.material_uses:
+                for index, use in enumerate(op.material_uses):
                     if use.identity is not None:
                         covered.add(structure_key(use.identity))
                     if use.role in _CATALYST_ROLES:
-                        _catalyst(use.identity, use.name, f"step {s_index} op #{op.ordinal} CATALYST use")
+                        _catalyst(s_index, use.identity, use.name, f"step {s_index} op #{op.ordinal} CATALYST use",
+                                  _residual(s_index, use))
                         if use.identity is not None and step.net_consumes(use.identity):
                             residual_seen.add(structure_key(use.identity))
                     elif use.role in _CONSUMED_ROLES:
@@ -227,13 +364,24 @@ def derive_waste(
                                else f"name:{use.name.strip().casefold()}")
                         if key not in residual_seen:
                             residual_seen.add(key)
-                            unresolved.add(
-                                f"waste: unreacted/excess {use.name!r} ({use.role.value}) residual -- full "
-                                "consumption or recovery is not typed, so its disposal routing is UNKNOWN (F77)")
+                            subject = _residual(s_index, use)
+                            # CONSUMED_COMPLETELY is admissible only for an identity the balanced step net-consumes.
+                            allowed = (_ANY_VALUE if subject is not None and use.identity is not None
+                                       and step.net_consumes(use.identity) else _ROUTED_OR_RECOVERED)
+                            if not _settle(s_index, subject, allowed, f"step {s_index} residual {use.name!r}",
+                                           hazard_known=lambda use=use: _resolve_hazard(use.identity, use.name)
+                                           is not None):
+                                unresolved.add(
+                                    f"waste: unreacted/excess {use.name!r} ({use.role.value}) residual -- full "
+                                    "consumption or recovery is not typed, so its disposal routing is UNKNOWN (F77)")
                     if use.role in _SPENT_STREAM_ROLES:
-                        nkey = use.name.strip().casefold()
-                        if nkey not in stream_names_seen:
-                            stream_names_seen.add(nkey)
+                        # D-C1: ONE obligation PER USE (never de-duplicated by name): two same-named washes are two
+                        # physical streams, and a disposition on one must leave the other open.
+                        subject = _subject(s_index, SubjectKind.USE_STREAM, use_core, use, ordinal=op.ordinal,
+                                           index=index)
+                        if not _settle(s_index, subject, _ROUTED_OR_RECOVERED,
+                                       f"step {s_index} op #{op.ordinal} use[{index}] spent workup stream "
+                                       f"{use.name!r}"):
                             unresolved.add(
                                 f"waste: spent workup stream {use.name!r} ({use.role.value}) -- the sourced "
                                 "procedure declares no disposal routing, so its waste handling is UNKNOWN (F49)")
@@ -244,9 +392,12 @@ def derive_waste(
                         what = ", ".join(sorted(set(op.materials)))
                     else:
                         what = "no named materials"
-                    unresolved.add(
-                        f"waste: step {s_index} op #{op.ordinal} {op.kind.value}/{op.role.value} leaves a spent "
-                        f"stream ({what}) -- no disposal routing is sourced, so it is UNKNOWN (D9)")
+                    subject = _subject(s_index, SubjectKind.OP_STREAM, op_core, op, ordinal=op.ordinal)
+                    if not _settle(s_index, subject, _ROUTED_ONLY,
+                                   f"step {s_index} op #{op.ordinal} {op.kind.value}/{op.role.value} spent stream"):
+                        unresolved.add(
+                            f"waste: step {s_index} op #{op.ordinal} {op.kind.value}/{op.role.value} leaves a spent "
+                            f"stream ({what}) -- no disposal routing is sourced, so it is UNKNOWN (D9)")
         # every reactant/reagent no typed use covers is an unresolved residual (no procedure => all of them).
         for molecule in tuple(step.reactants) + tuple(step.reagents):
             key = structure_key(molecule)
@@ -257,4 +408,4 @@ def derive_waste(
                 f"waste: step {s_index} input {molecule!r} has no typed procedure use -- any unreacted/excess "
                 "residual's disposal routing is UNKNOWN (F77; no stoichiometry guessed)")
 
-    return frozenset(categories), tuple(sorted(reasons)), tuple(sorted(unresolved))
+    return frozenset(categories | routed), tuple(sorted(reasons)), tuple(sorted(unresolved))

@@ -249,6 +249,15 @@ class CappedScissionProvider(TransformProvider):
     # enumerate_transforms below), so the service refuses an empty-reagent request under a capped-only algebra.
     reagentless_capable = False
 
+    def __post_init__(self) -> None:
+        # 0.9.5 (Wave C3 F2): the typed knobs ARE behaviour identity -- only NON-string manifest values fold into the
+        # semantic descriptor -- so a knob given as a string (``ring_aware="yes"``) would steer enumeration while
+        # dropping out of the registry digest (a bad enumeration-cache hit).  A knob is exactly its declared type.
+        if type(self.max_reactant_cuts) is not int or self.max_reactant_cuts < 1:
+            raise TypeError(f"max_reactant_cuts must be a positive int, got {self.max_reactant_cuts!r}")
+        if type(self.ring_aware) is not bool:
+            raise TypeError(f"ring_aware must be a bool, got {self.ring_aware!r}")
+
     @property
     def capability_manifest(self) -> tuple:
         return (

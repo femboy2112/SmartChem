@@ -100,9 +100,10 @@ them together (each PRESENT member is still re-derived).
 from __future__ import annotations
 
 import hmac
+import contextvars
+import functools
 import importlib
 import json
-import functools
 from dataclasses import dataclass, field
 from dataclasses import replace as dataclasses_replace
 from enum import Enum
@@ -4787,6 +4788,13 @@ def _replay_chemistry(kind: str, replayed) -> tuple:
     return (kind, shapes if kind == "route" else tuple(sorted(shapes)))
 
 
+def _owned_replay(replay):
+    """0.9.5 (Wave C3 F5): a decoded dossier OWNS its replay -- a deep copy of the carried JSON -- so a caller editing
+    its input dict after the load cannot change the evidence a loaded response (and its receipt) describe."""
+    import copy
+    return None if replay is None else copy.deepcopy(replay)
+
+
 def _memoised_reconstruction(kind: str, payload, build) -> "object":
     context = current_context()
     if context is None:
@@ -5404,7 +5412,7 @@ def ranked_summary_from_payload(payload: dict) -> RankedRouteSummary:
         payload["equilibrium_verdict"],
         payload["kinetics_verdict"],
         tuple(_process_requirements_from_payload(p) for p in payload["process_requirements"]),
-        replay_payload=payload.get("replay_payload"),
+        replay_payload=_owned_replay(payload.get("replay_payload")),
         # 0.9 Round III (D12) / Round V (D11): present on a current summary, absent on a legacy one (both checked above)
         # -> legacy decodes as None = NOT_REQUESTED.  A present assessment is reconstructed exactly and re-derived on
         # load by CAPABILITY-REBIND-ON-LOAD.
@@ -5524,7 +5532,7 @@ def ranked_dag_summary_from_payload(payload: dict) -> RankedDAGSummary:
         # types are validated BEFORE any conversion (:func:`_exact_hold_triple`) -- the int()/float() coercion that
         # silently turned ``["1", true, "99999"]`` into a legal-looking hold is gone, as ``_exact_int_pair`` did for edges.
         tuple(_exact_hold_triple(t) for t in payload["serial_holds"]),
-        replay_payload=payload.get("replay_payload"),
+        replay_payload=_owned_replay(payload.get("replay_payload")),
     )
 
 
@@ -5832,18 +5840,29 @@ def _resolve_load_policy(policy: "VerificationPolicy | None", legacy: dict) -> V
            if value is not _LEGACY_TRUST_DEFAULTS[name]})
 
 
+#: True while a response load runs on this thread/task (the nested-load guard of ``_verification_scope``).
+_LOAD_IN_PROGRESS: "contextvars.ContextVar[bool]" = contextvars.ContextVar("smartchem_load_in_progress", default=False)
+
+
 def _verification_scope(load):
     """Run ``load`` inside ONE per-load :class:`~smartchem.verification.VerificationContext` (barrier section 4): the
     work meter every budget charge books against and the reconstruction memo.  A load already inside a context (the
     one :func:`load_response` installs) reuses it; a bare call gets a fresh one, discarded on return."""
     @functools.wraps(load)
     def scoped(payload, **kwargs):
-        if current_context() is not None:
-            return load(payload, **kwargs)
-        legacy = {name: kwargs.get(name, default) for name, default in _LEGACY_TRUST_DEFAULTS.items()}
-        context = VerificationContext(_resolve_load_policy(kwargs.get("policy"), legacy))
-        with context.activate():
-            return load(payload, **kwargs)
+        if _LOAD_IN_PROGRESS.get():
+            raise RuntimeError("a response load was started inside another load; each load owns ONE verification "
+                               "context (budget meter, memo, receipt) -- refused (0.9.5)")
+        token = _LOAD_IN_PROGRESS.set(True)
+        try:
+            if current_context() is not None:          # the context load_response installed for THIS load
+                return load(payload, **kwargs)
+            legacy = {name: kwargs.get(name, default) for name, default in _LEGACY_TRUST_DEFAULTS.items()}
+            context = VerificationContext(_resolve_load_policy(kwargs.get("policy"), legacy))
+            with context.activate():
+                return load(payload, **kwargs)
+        finally:
+            _LOAD_IN_PROGRESS.reset(token)
     return scoped
 
 

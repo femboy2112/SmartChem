@@ -557,3 +557,43 @@ def test_c2_a_short_producer_keyfile_is_refused(tmp_path, monkeypatch):
         ti.resolve_producer_key()
     keyfile.write_bytes(b"k" * 32)
     assert ti.resolve_producer_key() == b"k" * 32
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Wave C3 hardening: typed provider knobs, owned replay evidence, one context per load
+# ---------------------------------------------------------------------------------------------------------------------
+
+def test_c3_a_provider_knob_is_exactly_its_declared_type():
+    """Wave C3 F2: string-valued manifest entries are prose and stay out of the registry digest, so a knob given as a
+    string (ring_aware="yes" vs "") steered enumeration while sharing one enumeration-cache key."""
+    from smartchem.transform_provider import CappedScissionProvider
+    for bad in (dict(ring_aware="yes"), dict(ring_aware=""), dict(max_reactant_cuts="2"), dict(max_reactant_cuts=True),
+                dict(max_reactant_cuts=0)):
+        with pytest.raises(TypeError):
+            CappedScissionProvider(**bad)
+    assert CappedScissionProvider(ring_aware=True, max_reactant_cuts=2).ring_aware is True
+
+
+def test_c3_a_loaded_response_owns_its_replay_evidence(honest):
+    """Wave C3 F5: the loaded response aliased the caller's mutable replay list -- editing the input dict after the load
+    changed the evidence a response (and its receipt) describe."""
+    _resp, thick, _thin = honest
+    payload = copy.deepcopy(thick)
+    loaded = load_response(payload).response
+    before = json.dumps(loaded.ranked_route_dossiers[0].replay_payload, sort_keys=True)
+    payload["ranked_route_dossiers"][0]["replay_payload"][0]["target"]["atoms"][0] = "Xx"
+    assert json.dumps(loaded.ranked_route_dossiers[0].replay_payload, sort_keys=True) == before
+
+
+def test_c3_a_load_inside_a_load_is_refused(honest, monkeypatch):
+    """Wave C3: a nested load would silently merge its budget meter, memo and receipt counts into the outer load's."""
+    import smartchem.service as svc
+    _resp, thick, _thin = honest
+    original = svc.CompilationResponse._check_ranking_coherence
+
+    def nested(self):
+        svc.response_from_payload(copy.deepcopy(thick))          # a second load started from inside the first
+        return original(self)
+    monkeypatch.setattr(svc.CompilationResponse, "_check_ranking_coherence", nested)
+    with pytest.raises(RuntimeError, match="started inside another load"):
+        load_response(copy.deepcopy(thick))

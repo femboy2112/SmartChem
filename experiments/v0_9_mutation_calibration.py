@@ -61,6 +61,12 @@ F-2 / F-1 / F-4 (M248-M250); S11's advisory_when, read like M207 (M251).  S10's 
 the existing M-SD family, not duplicated: wrong-subject discharge = M-SD1, non-certifying evidence = M-SD2d,
 CONSUMED_COMPLETELY on a byproduct = M-SD4d, RECOVERED without via_op = M-SD16d, a deleted derived category = M-SD7.
 The three packaging mutants live in ``experiments/v0_9_5_install_matrix.py --self-test`` (they need a built wheel).
+The Wave C hostile-review hardening laws get theirs here, one each (M253-M263): C2 the pre-decode HMAC (M253, a decode
+spy) and producer/consumer key parity at signing and at the keyfile (M254/M255); C3 the exactly-typed ``ring_aware``
+knob (M256), owned replay evidence on both summary decoders (M257) and the nested-load refusal (M258); C7 the
+filesystem-only implementation digest (M259), the import-time home-less key path (M260) and the ASCII-terminal CLI
+(M261); C8 the thin-wire replay refusal (M262) and the INVALID answer's re-execution (M263).  C8 F7 (a required
+``algebra_profile``) is not duplicated: the v0.7 harness's re-read M16 already kills it.
 
 Run:  .venv/bin/python experiments/v0_9_mutation_calibration.py
       (dev only: SMARTCHEM_MUT_ONLY=M38,M104 runs a subset -- retirements then read VOID; the gate is the full run)
@@ -1275,7 +1281,11 @@ def m38():
     second layer that would mask this leg; the leg is SOLE guard on a THIN-labelled payload that still carries some
     replays (D27.4 and the canonical D27.7 stand aside there) -- so the witness drops one dossier's replay and relabels
     the wire THIN_ADVISORY (public digest recomputed). The fast methyl-acetate answer carries no PROCESS_SPECIFIED
-    dossier, so the thin-PS law does not refuse first."""
+    dossier, so the thin-PS law does not refuse first.
+
+    0.9.5 (Wave C8 F6, a newer independent law) refuses ANY thin payload that carries a replay, at dispatch -- this
+    witness included (M262 pins that law).  Per the harness rule, M38 reads its own layer, the rebind equality, with C8
+    F6 held out in BOTH arms (never by weakening it): the loader is reached through ``svc`` so the hold-out applies."""
     resp = _fast_profile_response()
     profile = resp.request.capability_profile
     bottle_ids = {b.material_id for b in profile.material_inventory}
@@ -1289,12 +1299,20 @@ def m38():
     payload["transport_mode"] = svc.TRANSPORT_THIN_ADVISORY
     del payload["ranked_route_dossiers"][-1]["replay_payload"]
     _public_digest(payload, forged)
-    _loaded, err = _try_load(payload)
-    honest = err is not None and "replayed evidence does not support" in err
-    bad_cc = _src_mutant(CompilationResponse._check_capability_coherence, (
-        "if r.capability_assessment != rederived:", "if False:"))
-    with _patch(CompilationResponse, "_check_capability_coherence", bad_cc):
-        loaded, _err = _try_load(payload)
+
+    def try_load():
+        try:
+            return svc.response_from_payload(copy.deepcopy(payload)), None
+        except ValueError as exc:
+            return None, str(exc)
+
+    with _patch(svc, "response_from_payload", _bad_loader(_C8_F6_DISPATCH)):
+        _loaded, err = try_load()
+        honest = err is not None and "replayed evidence does not support" in err
+        bad_cc = _src_mutant(CompilationResponse._check_capability_coherence, (
+            "if r.capability_assessment != rederived:", "if False:"))
+        with _patch(CompilationResponse, "_check_capability_coherence", bad_cc):
+            loaded, _err = try_load()
     bad = (loaded is not None and not loaded.request.capability_profile.material_inventory
            and any(bid in " ".join(d.capability_assessment.material.reasons)
                    for d in loaded.ranked_route_dossiers for bid in bottle_ids))
@@ -6615,6 +6633,356 @@ def m251():
         over_claim = "CompilationResponse.outcome" not in ledger.partially_advisory_fields()
         flagged = disclosure_mismatch()
     return honest, boundary_real and over_claim and flagged
+
+
+# =================================================================================================================
+# 0.9.5 Wave C hostile-review hardening (C2 / C3 / C7 / C8): ONE mutant per law, M253-M263, on the real code.  Each
+# law already had a test in tests/test_v0_9_5_loader_laws.py or tests/test_v0_9_5_release_invariants.py; none had a
+# mutant, so none had proof that the test notices the law's absence.  Now they do.  (C8 F7 -- the required
+# ``algebra_profile`` request key -- is not here: the v0.7 harness's re-read M16 already kills it.)
+# =================================================================================================================
+
+_WAVE_C_KEY = b"0.9.5-wave-c-mutant-key-32-bytes"  # >= the 16-byte floor: a key BOTH sides accept
+#: C8 F6's dispatch refusal (a THIN_ADVISORY payload carrying any replay_payload) -- M262 removes it to show the law's
+#: absence; M38 holds it out in BOTH arms, because its thin-with-replays witness now meets this law first.
+_C8_F6_DISPATCH = ('if payload.get("transport_mode") == TRANSPORT_THIN_ADVISORY and any(', "if False and any(")
+
+
+@contextlib.contextmanager
+def _env_without(name: str):
+    """``os.environ`` minus ``name`` for the block, restored EXACTLY on exit (a producer-key fixture must not read a
+    developer's real ``SMARTCHEM_PRODUCER_KEY`` -- nor leave one behind)."""
+    had, old = name in os.environ, os.environ.get(name)
+    os.environ.pop(name, None)
+    try:
+        yield
+    finally:
+        if had:
+            os.environ[name] = old
+
+
+@mutant("M253", "C2 F1: the pre-decode HMAC removed -- a keyed consumer decodes a keyless forgery before refusing it",
+        "service.response_from_payload (producer_signature over the CLAIMED result_digest, before any decode)")
+def m253():
+    """Wave C2 F1: a KEYED consumer authenticates the claimed wire digest before any decode, so a keyless forgery costs
+    it one HMAC, not a molecule decode.  test_c2's forgery: a signed payload with a forged diagnostics line, every public
+    digest recomputed, the original signature re-attached.  Honest: refused with ZERO request decodes (a
+    ``request_from_payload`` spy).  Mutant: the pre-decode block removed -- the post-decode HMAC still refuses with the
+    same words, so the verdict alone cannot tell; the spy can: the forger's request was decoded first."""
+    lt = _loader_tests()
+    signed = response_to_payload(_rc("poor"), signing_key=_WAVE_C_KEY)
+    forged = copy.deepcopy(signed)
+    forged["diagnostics"] = list(forged["diagnostics"]) + ["forged line"]
+    forged = lt._reforge(forged)                    # every public digest recomputed; the signature cannot follow
+    forged["producer_signature"] = signed["producer_signature"]
+    policy = VerificationPolicy.authenticated(_WAVE_C_KEY)
+    decodes: list = []
+    real = svc.request_from_payload
+
+    def spy(payload):
+        decodes.append(1)
+        return real(payload)
+
+    def load():
+        decodes.clear()
+        _l, exc = _attempt(lambda: load_response(copy.deepcopy(forged), policy))
+        return exc, len(decodes)
+
+    with _patch(svc, "request_from_payload", spy):
+        exc, n = load()
+        honest = exc is not None and "producer_signature does not verify" in str(exc) and n == 0
+        # built INSIDE the spy patch: the re-compiled loader's globals snapshot must see the spy, or it sees nothing
+        bad_loader = _bad_loader(("if verification_key is not None:\n        claimed_signature",
+                                  "if False:\n        claimed_signature"))
+        with _patch(svc, "response_from_payload", bad_loader):
+            exc2, n2 = load()
+    return honest, exc2 is not None and "producer_signature does not verify" in str(exc2) and n2 >= 1
+
+
+@mutant("M254", "C2 F4: a producer signs with a key shorter than 16 bytes -- a signature no consumer policy can check",
+        "service.response_to_payload (the producer-side signing_key floor)")
+def m254():
+    """Wave C2 F4, the producer leg of key parity: ``VerificationPolicy`` refuses a key under 16 bytes, so the producer
+    must refuse to sign with one.  Honest: ``response_to_payload(signing_key=b"short")`` raises.  Mutant: the floor
+    removed -- a signed payload ships whose key the consumer side refuses to even hold (an orphan signature)."""
+    resp, short = _rc("poor"), b"short"
+    _p, exc = _attempt(lambda: svc.response_to_payload(resp, signing_key=short))
+    honest = exc is not None and "signing_key must be bytes of at least 16 bytes" in str(exc)
+    bad_producer = _src_mutant(svc.response_to_payload, (
+        "if signing_key is not None and (type(signing_key) is not bytes or len(signing_key) < "
+        "_PRODUCER_KEY_MIN_BYTES):", "if False:"))
+    with _patch(svc, "response_to_payload", bad_producer):
+        signed, _e = _attempt(lambda: svc.response_to_payload(resp, signing_key=short))
+    _pol, consumer_refuses = _attempt(lambda: VerificationPolicy.authenticated(short))
+    return honest, signed is not None and signed["producer_signature"] is not None and consumer_refuses is not None
+
+
+@mutant("M255", "C2 F4: a producer keyfile shorter than 16 bytes resolves as the signing key",
+        "transport_integrity.resolve_producer_key (the keyfile floor)")
+def m255():
+    """Wave C2 F4, the keyfile leg: the env key had a 16-byte floor, the ``~/.smartchem/producer.key`` file did not.
+    Honest: a 9-byte keyfile is refused.  Mutant: the keyfile floor removed -- the short key resolves and is handed to
+    the producer, while the consumer policy refuses that same key."""
+    import tempfile
+
+    import smartchem.transport_integrity as ti
+
+    key = None
+    with tempfile.TemporaryDirectory() as scratch, _env_without(ti._PRODUCER_KEY_ENV):
+        keyfile = Path(scratch) / "producer.key"
+        keyfile.write_bytes(b"too-short")
+        with _patch(ti, "_PRODUCER_KEY_PATH", keyfile):
+            _k, exc = _attempt(ti.resolve_producer_key)
+            honest = exc is not None and "a producer key must be at least 16 bytes" in str(exc)
+            # the env-key floor has no trailing comment; only the keyfile floor matches this anchor
+            bad_resolve = _src_mutant(ti.resolve_producer_key, ("if len(key) < _PRODUCER_KEY_MIN_BYTES:  # 0.9.5",
+                                                                "if False:  # 0.9.5"))
+            with _patch(ti, "resolve_producer_key", bad_resolve):
+                key, _e = _attempt(ti.resolve_producer_key)
+    _pol, consumer_refuses = _attempt(lambda: VerificationPolicy.authenticated(key))
+    return honest, key == b"too-short" and consumer_refuses is not None
+
+
+@mutant("M256", "C3 F2: ring_aware accepts a STRING -- 'yes' and '' steer enumeration apart under ONE registry digest",
+        "transform_provider.CappedScissionProvider.__post_init__ (ring_aware is exactly a bool)")
+def m256():
+    """Wave C3 F2: string manifest values are prose and stay OUT of the registry digest, so a knob given as a string
+    steers enumeration invisibly to the enumeration-cache key.  ``ring_aware`` is the knob where that bites (a
+    stringly ``max_reactant_cuts`` fails loudly downstream; a truthy/falsy string does not).  Honest: the string knob
+    is refused at construction.  Mutant: the ring_aware type check removed -- ``"yes"`` and ``""`` build registries with
+    EQUAL digests whose lactone enumerations DIFFER, and the cache serves one's answer for the other."""
+    from smartchem.transform_provider import CappedScissionProvider, TransformProviderRegistry
+
+    try:
+        CappedScissionProvider(ring_aware="yes")
+        honest = False
+    except TypeError:
+        honest = True
+    lactone, reagents = _mol("O=C1CCCO1"), (_WATER,)
+    bad_post = _src_mutant(CappedScissionProvider.__post_init__, ("if type(self.ring_aware) is not bool:", "if False:"))
+    with _patch(CappedScissionProvider, "__post_init__", bad_post):
+        yes = TransformProviderRegistry((CappedScissionProvider(ring_aware="yes"),))
+        no = TransformProviderRegistry((CappedScissionProvider(ring_aware=""),))
+        truth_yes = yes.enumerate(lactone, reagents, budget=1000)
+        truth_no = no.enumerate(lactone, reagents, budget=1000)
+        ENUMERATION_CACHE.clear()
+        try:
+            cached_enumerate(yes, lactone, reagents, budget=1000)
+            served = cached_enumerate(no, lactone, reagents, budget=1000)
+        finally:
+            ENUMERATION_CACHE.clear()
+    return honest, yes.digest == no.digest and truth_yes != truth_no and served == truth_yes
+
+
+@mutant("M257", "C3 F5: _owned_replay aliases the caller's JSON -- editing the input after load edits the evidence",
+        "service._owned_replay (deep copy, both summary decoders: route + DAG)")
+def m257():
+    """Wave C3 F5: a decoded dossier OWNS its replay.  Honest: an edit to the input payload after the load leaves the
+    loaded response's replay evidence byte-identical -- on a route dossier AND a DAG dossier (the two call sites).
+    Mutant: ``_owned_replay`` returns its argument -- the same edit reaches through into the loaded answer on both."""
+    def edits_leak(payload: dict, key: str) -> bool:
+        loaded = load_response(payload).response
+        dossier = getattr(loaded, key)[0]
+        before = json.dumps(dossier.replay_payload, sort_keys=True)
+        carried = payload[key][0]["replay_payload"]
+        (carried[0] if type(carried) is list else carried)["_mut_edit"] = "Xx"   # a post-load edit of the input
+        return json.dumps(dossier.replay_payload, sort_keys=True) != before
+
+    route, dag = _poor_thick(), response_to_payload(_rc("shallow_dag"))
+    assert dag["ranked_dag_dossiers"], "setup: the DAG fixture must carry a DAG dossier"
+
+    def leaks() -> tuple:
+        return (edits_leak(copy.deepcopy(route), "ranked_route_dossiers"),
+                edits_leak(copy.deepcopy(dag), "ranked_dag_dossiers"))
+
+    honest = leaks() == (False, False)
+    bad_owned = _src_mutant(svc._owned_replay, ("return None if replay is None else copy.deepcopy(replay)",
+                                                "return replay"))
+    with _patch(svc, "_owned_replay", bad_owned):
+        bad = leaks() == (True, True)
+    return honest, bad
+
+
+@mutant("M258", "C3: the nested-load guard removed -- a load inside a load merges into the outer load's receipt",
+        "service._verification_scope (_LOAD_IN_PROGRESS refuses a load started inside another)")
+def m258():
+    """Wave C3: each load owns ONE verification context.  test_c3's nesting: a second load started from inside the
+    first (via ``_check_ranking_coherence``, fired once per outer load).  Honest: refused with a RuntimeError.
+    Mutant: the guard removed from a re-built ``_verification_scope`` -- the inner load silently reuses the outer
+    context, and the outer receipt's work ledger counts both (it no longer equals a plain load's)."""
+    thick = _poor_thick()
+    plain = load_response(copy.deepcopy(thick))
+    original = CompilationResponse._check_ranking_coherence
+    fired: list = []
+
+    def nested(self):
+        if not fired:                                 # once per outer load (the inner load re-enters this check)
+            fired.append(1)
+            svc.response_from_payload(copy.deepcopy(thick))
+        return original(self)
+
+    def outer():
+        fired.clear()
+        try:
+            return load_response(copy.deepcopy(thick)), None
+        except RuntimeError as exc:
+            return None, exc
+
+    with _patch(CompilationResponse, "_check_ranking_coherence", nested):
+        _l, exc = outer()
+        honest = exc is not None and "started inside another load" in str(exc)
+        bad_scope = _src_mutant(svc._verification_scope, ("if _LOAD_IN_PROGRESS.get():", "if False:"))
+        with _patch(svc, "response_from_payload", bad_scope(svc.response_from_payload.__wrapped__)):
+            loaded, _exc2 = outer()
+    return honest, loaded is not None and loaded.receipt.work != plain.receipt.work
+
+
+@mutant("M259", "C7 F1: the implementation digest off the filesystem collapses to a hash of the version string",
+        "program._compiler_source_paths (non-directory package + empty manifest refusals)")
+def m259():
+    """Wave C7 F1: imported from a zip, the source glob finds nothing.  Both C7 guards are the law (the non-directory
+    refusal, and the empty-manifest refusal behind it -- either alone still fails closed, so the mutant restores the
+    pre-C7 body with both gone).  Honest: a package path inside ``smartchem.zip`` refuses.  Mutant: the digest returns
+    -- and equals the hash of the version string alone: approval bound to NO code."""
+    import hashlib
+    import tempfile
+
+    import smartchem.program as program_mod
+    from smartchem import __version__
+
+    codeless = hashlib.sha256(b"\0version\0" + __version__.encode("utf-8")).hexdigest()
+    on_disk = program_mod._compiler_implementation_digest()
+
+    def digest():
+        try:
+            return program_mod._compiler_implementation_digest(), None
+        except RuntimeError as exc:
+            return None, exc
+
+    with tempfile.TemporaryDirectory() as scratch:
+        with _patch(program_mod, "__file__", str(Path(scratch) / "smartchem.zip" / "smartchem" / "program.py")):
+            got, exc = digest()
+            honest = got is None and exc is not None and "not a directory" in str(exc) and on_disk != codeless
+            bad_paths = _src_mutant(program_mod._compiler_source_paths, ("if not package.is_dir():", "if False:"),
+                                    ("if not paths:", "if False:"))
+            with _patch(program_mod, "_compiler_source_paths", bad_paths):
+                got2, _e = digest()
+    return honest, got2 == codeless
+
+
+@mutant("M260", "C7 F2: Path.home() unguarded -- `import smartchem.transport_integrity` crashes in a home-less container",
+        "transport_integrity._default_producer_key_path (resolved without raising, at import)")
+def m260():
+    """Wave C7 F2 is an IMPORT-time law (the module computes ``_PRODUCER_KEY_PATH`` when it loads), so a function-level
+    patch cannot witness it: the module's OWN source is re-executed as a fresh module under a home-less
+    ``Path.home``, with the same anchored-edit discipline (the anchor must occur exactly once in the file).  Honest:
+    the import survives and resolves no key.  Mutant: the guard catches nothing (``except ():``) -- the import itself
+    raises, which is what took ``import smartchem.service`` down in an arbitrary-UID container."""
+    import pathlib
+    import types
+
+    import smartchem.transport_integrity as ti
+
+    source = Path(ti.__file__).read_text(encoding="utf-8")
+    anchor = "except RuntimeError:\n        return None"
+    assert source.count(anchor) == 1, f"mutation anchor for transport_integrity found {source.count(anchor)}x"
+
+    def no_home():
+        raise RuntimeError("Could not determine home directory.")
+
+    def import_from(text: str):
+        module = types.ModuleType("smartchem._mut_transport_integrity")
+        module.__package__, module.__file__ = "smartchem", ti.__file__
+        try:
+            exec(compile(text, ti.__file__, "exec", dont_inherit=True), module.__dict__)  # noqa: S102 -- in-repo source
+        except RuntimeError as exc:
+            return None, exc
+        return module, None
+
+    with _patch(pathlib.Path, "home", staticmethod(no_home)), _env_without(ti._PRODUCER_KEY_ENV):
+        module, exc = import_from(source)
+        honest = (exc is None and module._PRODUCER_KEY_PATH is None and module.resolve_producer_key() is None)
+        broken, exc2 = import_from(source.replace(anchor, "except ():\n        return None"))
+    return honest, broken is None and exc2 is not None and "home directory" in str(exc2)
+
+
+@mutant("M261", "C7 F9: the CLI's stream reconfigure removed -- `plan CuSO4·5H2O` on an ASCII terminal exits 70",
+        "cli.main (std streams reconfigured errors=backslashreplace)")
+def m261():
+    """Wave C7 F9, in process: stdout an ASCII-strict text stream.  Honest: the human render degrades its glyphs to
+    backslash escapes and the verb exits 0.  Mutant: the reconfigure removed -- the render hits a UnicodeEncodeError
+    (exit 70, or the exception escapes the verb): a correct answer lost to the terminal."""
+    import io
+
+    import smartchem.cli as cli_mod
+
+    def plan():
+        raw = io.BytesIO()
+        out, err = io.TextIOWrapper(raw, encoding="ascii", errors="strict"), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                rc = cli_mod.main(["plan", "CuSO4·5H2O"])
+            except UnicodeEncodeError:
+                rc = "escaped"
+        with contextlib.suppress(UnicodeEncodeError):
+            out.flush()
+        return rc, raw.getvalue(), err.getvalue()
+
+    rc, shown, _err = plan()
+    honest = rc == 0 and b"\\" in shown
+    bad_main = _src_mutant(cli_mod.main, ('stream.reconfigure(errors="backslashreplace")', "pass"))
+    with _patch(cli_mod, "main", bad_main):
+        rc2, _shown2, err2 = plan()
+    return honest, rc2 == "escaped" or (rc2 == 70 and "UnicodeEncodeError" in err2)
+
+
+@mutant("M262", "C8 F6: a THIN_ADVISORY payload carrying replays loads through response_from_payload again",
+        "service.response_from_payload (the thin-wire replay refusal at dispatch)")
+def m262():
+    """Wave C8 F6: a canonical payload relabelled THIN_ADVISORY (replays kept, digest recomputed).  Honest: BOTH public
+    loaders refuse it with the dispatch law's words.  Mutant: the dispatch refusal removed -- the two loaders disagree
+    again: ``response_from_payload`` accepts it while ``load_response`` still refuses (its receipt guard cannot mint a
+    re-derived count on a thin wire).  Two public loaders, two verdicts -- the defect, restored."""
+    lt = _loader_tests()
+    relabel = copy.deepcopy(_poor_thick())
+    relabel["transport_mode"] = "THIN_ADVISORY"
+    relabel = lt._reforge(relabel)
+
+    def both():
+        _a, rfp = _attempt(lambda: svc.response_from_payload(copy.deepcopy(relabel)))
+        _b, lr = _attempt(lambda: load_response(copy.deepcopy(relabel)))
+        return rfp, lr
+
+    law = "THIN_ADVISORY payload carries a replay_payload"
+    rfp, lr = both()
+    honest = all(e is not None and law in str(e) for e in (rfp, lr))
+    with _patch(svc, "response_from_payload", _bad_loader(_C8_F6_DISPATCH)):
+        rfp2, lr2 = both()
+    return honest, rfp2 is None and lr2 is not None and law not in str(lr2)
+
+
+@mutant("M263", "C8 F2: _reexecution_root_work raises on an unparseable target -- an honest INVALID answer cannot "
+                "re-execute", "service._reexecution_root_work (an unparseable target predicts 0 work)")
+def m263():
+    """Wave C8 F2: the rerun's root-work charge resolved the carried target and raised when it did not parse, so a
+    re-executing consumer could load NO honest INVALID_INPUT answer.  Honest: the pinned INVALID answer re-executes
+    (one re-execution booked).  Mutant: the IdentityParseError re-raised instead of predicting 0 -- the honest answer
+    is refused, and by the parse error, not by any finding about the payload."""
+    from smartchem.identity_parse import IdentityParseError
+
+    req = build_recompile_request("not-a-real-name-zzz")
+    resp = run_compilation(req)
+    assert resp.outcome.value == "INVALID_INPUT", "setup: an honest INVALID_INPUT answer"
+    payload = response_to_payload(resp)
+    policy = VerificationPolicy(expected_request_digest=req.semantic_digest, expected_capability_question_digest=None,
+                                require_reexecution=True)
+    loaded, _e = _attempt(lambda: load_response(copy.deepcopy(payload), policy))
+    honest = loaded is not None and loaded.receipt.reexecuted and loaded.receipt.work.reexecutions == 1
+    bad_root = _src_mutant(svc._reexecution_root_work, ("except IdentityParseError:\n        return 0",
+                                                        "except IdentityParseError:\n        raise"))
+    with _patch(svc, "_reexecution_root_work", bad_root):
+        refused, exc = _attempt(lambda: load_response(copy.deepcopy(payload), policy))
+    return honest, refused is None and isinstance(exc, IdentityParseError)
 
 
 # =================================================================================================================

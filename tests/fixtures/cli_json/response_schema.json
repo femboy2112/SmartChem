@@ -50,7 +50,7 @@
     "tool_version": "str",
     "transform_registry_digest": "str (sha256)"
   },
-  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha20",
+  "descriptor_version": "smartchem.service/compilation-response-schema-v1alpha21",
   "identity_loss_fields": {
     "affected_claims": "array[str] (sorted, distinct)",
     "feature": "str",
@@ -79,7 +79,7 @@
     "gaps": "array[str] (undeclared constrained composability/physical/process dimensions)",
     "kinetics_verdict": "str (DAG-THERMO-01: worst-node rate regime; ranking-only, NEVER a grade)",
     "process_requirements": "array[object(per-step declared process facts)|null] (DAG-BENCH-01: the PROCESS component is re-derived on load via evaluate_dag_process_requirements, one entry per DAG step in the DAG's own order, null for an undeclared step; part of identity)",
-    "replay_payload": "array[object(step-replay)] (D5/ONLOAD-REDERIVE: the thick, complete per-step evidence the process component is RE-DERIVED from on load -- the same step-replay shape as the ranked route summary's, procedure operations carrying material_uses; emitted on the CANONICAL_VERIFIED wire (the default), compare=False so outside the bare result_digest)",
+    "replay_payload": "array[object(step-replay)] (D5/ONLOAD-REDERIVE: the thick, complete per-step evidence the process component is RE-DERIVED from on load -- the same step-replay shape as the ranked route summary's, procedure operations carrying material_uses and the procedure its stream_dispositions; emitted on the CANONICAL_VERIFIED wire (the default), compare=False so outside the bare result_digest)",
     "route_digest": "str (sha256; == the matching DAG candidate_digest)",
     "schema_version": "str",
     "selectivity_verdict": "str (DAG-THERMO-01: worst-node sourced selectivity)",
@@ -98,7 +98,7 @@
     "process_requirements": "array[object(per-step declared process facts)|null] (PROCESS-ADMIT-01: the evidence process admission is RE-DERIVED from on load, one entry per route step in order, null for an undeclared step; part of route identity)",
     "readiness": "object(RouteReadiness: per_step + route_open_obligations -- the typed Sec 3/4/8 obligation ladder this route's readiness_tier is projected from; RE-DERIVED on load from the thick replay_payload when present)",
     "readiness_tier": "str (enum(FORMAL_CANDIDATE/REACTION_VOUCHED/CONDITIONS_SUPPORTED/PROCESS_SPECIFIED); DERIVED -- see readiness, the source of truth)",
-    "replay_payload": "array[object(step-replay)] (D5/ONLOAD-REDERIVE: the thick, complete per-step evidence -- molecules + full 11-field envelope incl. the sourced procedure, whose operations carry material_uses: array[object(procedure-material-use incl. specification: object(MaterialSpecification)|null and phase: object(PhaseClaim: phase, evidence, note)|null -- an evidence-graded phase; only certifying evidence can decide a phase match or mismatch)] -- the readiness ladder is RE-DERIVED from on load; emitted on the CANONICAL_VERIFIED wire (the default), compare=False so outside the bare result_digest)",
+    "replay_payload": "array[object(step-replay)] (D5/ONLOAD-REDERIVE: the thick, complete per-step evidence -- molecules + full 11-field envelope incl. the sourced procedure, whose operations carry material_uses: array[object(procedure-material-use incl. specification: object(MaterialSpecification)|null and phase: object(PhaseClaim: phase, evidence, note)|null -- an evidence-graded phase; only certifying evidence can decide a phase match or mismatch)], and whose procedure carries stream_dispositions: array[object(StreamDisposition: subject{kind, step_signature, ordinal, index, core}, value, evidence (SOURCE_QUOTED only), locator, category|null, via_op|null) -- bound to the replayed step on load)] -- the readiness ladder is RE-DERIVED from on load; emitted on the CANONICAL_VERIFIED wire (the default), compare=False so outside the bare result_digest)",
     "route_digest": "str (sha256; == the matching candidate_digest)",
     "schema_version": "str",
     "selectivity_verdict": "str"
@@ -125,7 +125,7 @@
     "standard_status": "str|null (section 8.2 status)",
     "transport_mode": "enum(CANONICAL_VERIFIED/THIN_ADVISORY) (D5: CANONICAL_VERIFIED ships the re-derivable replay_payload and is re-derived fail-closed on load; THIN_ADVISORY is the lean opt-out on which PROCESS_SPECIFIED is inadmissible. FOLDED into result_digest so a downgrade-strip is a detectable identity change)"
   },
-  "response_schema_version": "smartchem.service/compilation-response-v1alpha17",
+  "response_schema_version": "smartchem.service/compilation-response-v1alpha18",
   "search_receipt_view_fields": {
     "candidate_enumeration_complete": "bool",
     "candidate_limit": "int|null (null: no engine stops on a distinct emitted-candidate cap)",

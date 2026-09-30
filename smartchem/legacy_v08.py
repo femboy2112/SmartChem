@@ -42,6 +42,8 @@ _V08_OMITTED_FIELDS: "dict[str, dict[str, object]]" = {
     "smartchem.service.CompilationRequest": {"capability_profile": None, "capability_profile_origin": ""},
     "smartchem.service.RankedRouteSummary": {"capability_assessment": None},
     "smartchem.procedure_evidence.ProcedureOperation": {"material_uses": ()},
+    # 0.9.5 S10: a v0.8 procedure could not state a stream disposition (the field did not exist).
+    "smartchem.procedure_evidence.ProcedureEvidence": {"stream_dispositions": ()},
     # X-high D14: the temperature FLOOR a v0.8 (physical-bounds-v1alpha1) box could not express.  The legacy decode
     # also keeps the stored v1alpha1 id on the object, so the re-encoded bytes are exactly main@df1b38d's.
     "smartchem.constraints.PhysicalBounds": {"min_temperature_k": None},
@@ -106,6 +108,8 @@ def _route_identity(route: object, *, legacy: bool) -> str:
 _V09_ONLY_WIRE_KEYS = frozenset({
     "capability_question_digest", "capability_profile", "capability_profile_origin", "capability_assessment",
     "material_uses", "specification",
+    # 0.9.5 S10: a v0.8 procedure could not state a stream disposition.
+    "stream_dispositions",
     # X-high D14: the temperature floor exists only on the 0.9 wire (a v1alpha1 constraints box cannot carry it).
     "min_temperature_k",
 })
@@ -128,14 +132,16 @@ def _v09_only_keys(payload: object) -> "list[str]":
 def _migrate_legacy_v08_dossier(dossier: dict) -> dict:
     """Decode-side migration of ONE legacy route/DAG dossier (D11): every replayed procedure operation gains the
     0.9 ``material_uses`` slot at its ONLY v0.8-expressible value, ``[]`` (a v0.8 procedure could not type an
-    auxiliary).  Returns a copy; the caller's payload is not mutated.  Digests are still verified under the frozen
-    v0.8 rule, which omits exactly that default -- so this adds no identity, it only lets the current codec decode."""
+    auxiliary), and every replayed procedure gains ``stream_dispositions = []`` (0.9.5 S10) for the same reason.
+    Returns a copy; the caller's payload is not mutated.  Digests are still verified under the frozen v0.8 rule, which
+    omits exactly those defaults -- so this adds no identity, it only lets the current codec decode."""
     import copy
     migrated = copy.deepcopy(dossier)
     for step in migrated.get("replay_payload") or ():
         envelope = step.get("envelope") if isinstance(step, dict) else None
         procedure = envelope.get("procedure") if isinstance(envelope, dict) else None
         if isinstance(procedure, dict):
+            procedure["stream_dispositions"] = []  # 0.9.5 S10: its only v0.8-expressible value
             for op in procedure.get("operations") or ():
                 if isinstance(op, dict):
                     op["material_uses"] = []
@@ -143,11 +149,13 @@ def _migrate_legacy_v08_dossier(dossier: dict) -> dict:
 
 
 def _without_material_uses(envelope: "object") -> "object":
-    """X-high D27.1 (legacy leg): ``envelope`` with every procedure operation's ``material_uses`` emptied -- the ONE
-    0.9-only slot a v0.8 envelope could not carry (the frozen v0.8 rule omits exactly that default), so a v0.8 envelope
-    is compared with today's corpus lookup modulo it."""
+    """X-high D27.1 (legacy leg): ``envelope`` with every procedure operation's ``material_uses`` emptied and the
+    procedure's ``stream_dispositions`` (0.9.5 S10) emptied -- the 0.9-only slots a v0.8 envelope could not carry (the
+    frozen v0.8 rule omits exactly those defaults), so a v0.8 envelope is compared with today's corpus lookup modulo
+    them."""
     procedure = getattr(envelope, "procedure", None)
     if procedure is None:
         return envelope
     operations = tuple(dataclasses_replace(op, material_uses=()) for op in procedure.operations)
-    return dataclasses_replace(envelope, procedure=dataclasses_replace(procedure, operations=operations))
+    return dataclasses_replace(envelope, procedure=dataclasses_replace(procedure, operations=operations,
+                                                                       stream_dispositions=()))

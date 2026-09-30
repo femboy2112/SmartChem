@@ -950,7 +950,7 @@
         }
       ],
       "route_digest": "1421b62b5244f3e89bd5104ebd6b0c0ba1fc9e61164ec422c24d22bd0133419d",
-      "schema_version": "smartchem.service/ranked-route-summary-v1alpha5",
+      "schema_version": "smartchem.service/ranked-route-summary-v1alpha6",
       "selectivity_verdict": "UNKNOWN"
     },
     {
@@ -1361,6 +1361,10 @@
                       {
                         "type": "str",
                         "value": "waste: step 2 input C2H4O2 has no typed procedure use -- any unreacted/excess residual's disposal routing is UNKNOWN (F77; no stoichiometry guessed)"
+                      },
+                      {
+                        "type": "str",
+                        "value": "waste: step 2 input CH4O has no typed procedure use -- any unreacted/excess residual's disposal routing is UNKNOWN (F77; no stoichiometry guessed)"
                       },
                       {
                         "type": "str",
@@ -2109,7 +2113,7 @@
         }
       ],
       "route_digest": "f7c119782ddee0ca89a262072b8974112de9f3df74bcad875e0130fd84d66217",
-      "schema_version": "smartchem.service/ranked-route-summary-v1alpha5",
+      "schema_version": "smartchem.service/ranked-route-summary-v1alpha6",
       "selectivity_verdict": "UNKNOWN"
     }
   ],
@@ -2710,8 +2714,8 @@
     },
     "transform_grammar": "CAPPED_SCISSION_LINEAR"
   },
-  "result_digest": "82f03daf8314239a40ccc76e1519a900b20d369586586d0579a98b6e5fa06682",
-  "schema_version": "smartchem.service/compilation-response-v1alpha17",
+  "result_digest": "9227b31b351c72af606b28c450abc741650d323f8620a291538f3d5b1b10c8d2",
+  "schema_version": "smartchem.service/compilation-response-v1alpha18",
   "search_space_status": "COMPLETE_CANDIDATE_SET",
   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
   "transport_mode": "CANONICAL_VERIFIED"

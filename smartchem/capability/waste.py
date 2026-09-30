@@ -295,12 +295,12 @@ def derive_waste(
             for use in op.material_uses:
                 if (use.role in _CATALYST_ROLES and use.identity is not None
                         and step.net_consumes(use.identity)):
-                    contradicted.add(use.name.strip().casefold())
+                    contradicted.add(_norm_text(use.name))  # S8: the ONE name fold
 
     # ``catalyst_seen`` / ``residual_seen`` are (re)bound PER STEP in the loop below (D-C2); this closure reads the
     # current step's set at call time.
     def _catalyst(s_index: int, identity, name: str, where: str, subject: "StreamSubject | None") -> None:
-        key = name.strip().casefold()
+        key = _norm_text(name)  # S8: the ONE name fold
         if key in contradicted:
             unresolved.add(
                 f"waste: catalyst {name!r} ({where}) is NET-CONSUMED by its step's balanced reaction -- a role "
@@ -361,7 +361,7 @@ def derive_waste(
                             residual_seen.add(structure_key(use.identity))
                     elif use.role in _CONSUMED_ROLES:
                         key = (structure_key(use.identity) if use.identity is not None
-                               else f"name:{use.name.strip().casefold()}")
+                               else f"name:{_norm_text(use.name)}")  # S8: the ONE name fold
                         if key not in residual_seen:
                             residual_seen.add(key)
                             subject = _residual(s_index, use)

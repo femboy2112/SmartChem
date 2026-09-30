@@ -251,7 +251,10 @@ COMPILATION_REQUEST_SCHEMA = "smartchem.service/compilation-request-v1alpha7"
 # dossiers.  Load gains an optional consumer capability-question pin (``expected_capability_question_digest``), the
 # verified-admission re-projection now carries the request's capability profile, and the 0.8 thin law refuses any tier
 # AT OR ABOVE PROCESS_SPECIFIED.  The WIP-only v1alpha16 id is NOT migrated (never released).
-COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha17"
+# v1alpha18 (0.9.5 S10): the replayed ProcedureEvidence carries ``stream_dispositions`` (embeds ranked-route/-DAG
+# summary v1alpha6).  The 0.9.0a1 pre-release v1alpha17 id is NOT migrated (S14: SemVer pre-releases carry no
+# compatibility promise; only the frozen v0.8 generation keeps a legacy read leg).
+COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha18"
 # The versioned descriptor of the --json response SHAPE (standard 14.3 "stable versioned response schema").  It is
 # bumped only when a field is added/removed/renamed -- never when a derived digest changes -- so it is the durable
 # pin CLI-JSON-01's golden guards, distinct from the per-value response schema version above.
@@ -260,7 +263,8 @@ COMPILATION_RESPONSE_SCHEMA = "smartchem.service/compilation-response-v1alpha17"
 # ``min_temperature_k``; the origin is content-bound); the replay disclosure names the PhaseClaim ``phase`` object of a
 # procedure material use; ``accepted_legacy_schema_versions`` gains the released ``ranked_dag_summary`` and
 # ``physical_bounds`` ids; ``capability_question_digest`` discloses the consumer pin.
-COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha20"
+# v1alpha21 (0.9.5 S10): the replay disclosure names the procedure's ``stream_dispositions``.
+COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response-schema-v1alpha21"
 # CLI-CAN-02 brick 2: the thin, digestible per-route ranking summary that POPULATES the response's
 # ``ranked_route_dossiers``.  It is projected off a drafter :class:`~smartchem.experiment.drafter.RouteFit` so the
 # heavy ExperimentRoute/thermo object graph never enters the response payload; it carries the section-11 bench-fit
@@ -269,7 +273,9 @@ COMPILATION_RESPONSE_SCHEMA_DESCRIPTOR = "smartchem.service/compilation-response
 # v1alpha5 (0.9 RC Round V X-high, D18): the replay ProcedureMaterialUse ``phase`` is an evidence-graded PhaseClaim
 # object ({phase, evidence, note}) instead of an ungraded scalar -- an author's inference can no longer certify a phase
 # match (FIT) or mismatch (BLOCKED).  The WIP-only v1alpha4 id is NOT migrated (never released).
-RANKED_ROUTE_SUMMARY_SCHEMA = "smartchem.service/ranked-route-summary-v1alpha5"
+# v1alpha6 (0.9.5 S10): the replayed ProcedureEvidence gains ``stream_dispositions``.  The 0.9.0a1 v1alpha5 id is NOT
+# migrated (S14).
+RANKED_ROUTE_SUMMARY_SCHEMA = "smartchem.service/ranked-route-summary-v1alpha6"
 # -- the explicit v0.8 legacy whitelist (D11).  Every exact-equality version check accepts the CURRENT id or exactly
 # ONE of these (mapped to its migration); any other id is refused precisely ("unsupported schema version X
 # (supported: ...)").  These are the ids released at main@df1b38d (0.8.0a1); the migration tests read them from the
@@ -295,12 +301,16 @@ LEGACY_V08_PHYSICAL_BOUNDS_SCHEMA = PHYSICAL_BOUNDS_SCHEMA_V1
 # change Round III/V shipped under the released v1alpha4 id.  The released v1alpha4 shape is decoded ONLY as LEGACY
 # (``LEGACY_V08_RANKED_DAG_SUMMARY_SCHEMA``): refused if it carries any 0.9-only key at any depth, its replay operations
 # migrated to ``material_uses=[]`` (their only v0.8-expressible value), and paired only with a legacy v0.8 response.
-RANKED_DAG_SUMMARY_SCHEMA = "smartchem.service/ranked-dag-summary-v1alpha5"
+# v1alpha6 (0.9.5 S10): the replayed ProcedureEvidence gains ``stream_dispositions``.  The 0.9.0a1 v1alpha5 id is NOT
+# migrated (S14).
+RANKED_DAG_SUMMARY_SCHEMA = "smartchem.service/ranked-dag-summary-v1alpha6"
 
 
 def _unsupported_schema(kind: str, got: object, current: str, legacy: str) -> ValueError:
     """The ONE precise refusal every schema-version gate raises for an id that is neither current nor whitelisted."""
-    return ValueError(f"unsupported {kind} schema_version {got!r} (supported: {current!r}; legacy {legacy!r})")
+    return ValueError(f"unsupported {kind} schema_version {got!r} (supported: {current!r}; legacy {legacy!r}); a "
+                      f"payload of any other generation -- a 0.9.x pre-release alpha included (0.9.5 S14) -- is not "
+                      f"migrated: recompile it under this version")
 
 
 # -- the FROZEN v0.8 digest rule (D11, verify-only) -- ``_V08_OMITTED_FIELDS``, ``_v08_canonical_payload``, ``_v08_digest``
@@ -4344,6 +4354,64 @@ def _procedure_operation_from_payload(payload) -> ProcedureOperation:
     )
 
 
+_STREAM_SUBJECT_FIELDS = frozenset({"kind", "step_signature", "ordinal", "index", "core"})
+_STREAM_DISPOSITION_FIELDS = frozenset({"subject", "value", "evidence", "locator", "category", "via_op"})
+
+
+def _stream_disposition_to_payload(disposition) -> dict:
+    """0.9.5 S10: one StreamDisposition as ``{subject: {kind, step_signature, ordinal, index, core}, value, evidence,
+    locator, category, via_op}`` (enums by ``.value``; ``category``/``via_op``/``ordinal``/``index`` null when absent)."""
+    subject = disposition.subject
+    return {
+        "subject": {"kind": subject.kind.value, "step_signature": subject.step_signature,
+                    "ordinal": subject.ordinal, "index": subject.index, "core": subject.core},
+        "value": disposition.value.value,
+        "evidence": disposition.evidence.value,
+        "locator": disposition.locator,
+        "category": None if disposition.category is None else disposition.category.value,
+        "via_op": disposition.via_op,
+    }
+
+
+def _optional_exact_int(value: object, what: str) -> "int | None":
+    if value is not None and (isinstance(value, bool) or type(value) is not int):
+        raise TypeError(f"{what} must be null or an exact int")
+    return value
+
+
+def _stream_disposition_from_payload(payload: object):
+    """Reconstruct one StreamDisposition through its OWN ``__post_init__`` (SOURCE_QUOTED only, L2 kind x value table,
+    category iff ROUTED, via_op iff RECOVERED). Exact key sets at both levels; wire types checked before construction
+    (a bool cannot pose as an ordinal/index/via_op). Binding to the replayed step is ``ExperimentStep``'s check."""
+    from .capability.enums import WasteCapability
+    from .material_spec import EvidenceKind
+    from .stream_disposition import DispositionValue, StreamDisposition, StreamSubject, SubjectKind
+    if type(payload) is not dict or set(payload) != _STREAM_DISPOSITION_FIELDS:
+        raise ValueError("stream disposition must contain exactly the versioned fields; refused")
+    subject = payload["subject"]
+    if type(subject) is not dict or set(subject) != _STREAM_SUBJECT_FIELDS:
+        raise ValueError("stream disposition subject must contain exactly {kind, step_signature, ordinal, index, "
+                         "core}; refused")
+    if not all(type(subject[k]) is str for k in ("kind", "step_signature", "core")):
+        raise TypeError("stream disposition subject kind/step_signature/core must be strings")
+    if not all(type(payload[k]) is str for k in ("value", "evidence", "locator")):
+        raise TypeError("stream disposition value/evidence/locator must be strings")
+    if payload["category"] is not None and type(payload["category"]) is not str:
+        raise TypeError("stream disposition category must be null or a string")
+    return StreamDisposition(
+        StreamSubject(SubjectKind(subject["kind"]), subject["step_signature"],
+                      _optional_exact_int(subject["ordinal"], "subject ordinal"),
+                      _optional_exact_int(subject["index"], "subject index"), subject["core"]),
+        DispositionValue(payload["value"]),
+        EvidenceKind(payload["evidence"]),
+        payload["locator"],
+        category=None if payload["category"] is None else WasteCapability(payload["category"]),
+        via_op=_optional_exact_int(payload["via_op"], "via_op"),
+    )
+
+
+
+
 def _procedure_evidence_to_payload(ev) -> "dict | None":
     """A canonical JSON-ready dict for one step's sourced PROCEDURE evidence, or ``null`` for a step whose envelope
     carries none.  The citation/whole-procedure fields/operations reuse the flat codecs above, so a lossy round trip
@@ -4364,6 +4432,8 @@ def _procedure_evidence_to_payload(ev) -> "dict | None":
         "analytical_verification": _evidence_field_to_payload(ev.analytical_verification),
         "evidence_scope": ev.evidence_scope,
         "unresolved_omissions": list(ev.unresolved_omissions),
+        # 0.9.5 S10: already canonically sorted by ProcedureEvidence; digest-covered on the object.
+        "stream_dispositions": [_stream_disposition_to_payload(d) for d in ev.stream_dispositions],
     }
 
 
@@ -4392,6 +4462,8 @@ def _procedure_evidence_from_payload(payload) -> "ProcedureEvidence | None":
         type(o) is not str for o in payload["unresolved_omissions"]
     ):
         raise TypeError("unresolved_omissions must be a list of strings")
+    if type(payload["stream_dispositions"]) is not list:
+        raise TypeError("stream_dispositions must be a list")
     return ProcedureEvidence(
         payload["reaction_scope"],
         _source_from_payload(payload["source"]),
@@ -4406,6 +4478,7 @@ def _procedure_evidence_from_payload(payload) -> "ProcedureEvidence | None":
         _evidence_field_from_payload(payload["analytical_verification"]),
         payload["evidence_scope"],
         tuple(payload["unresolved_omissions"]),
+        tuple(_stream_disposition_from_payload(d) for d in payload["stream_dispositions"]),
     )
 
 
@@ -6442,7 +6515,10 @@ def response_schema() -> dict:
                               "carry material_uses: array[object(procedure-material-use incl. specification: "
                               "object(MaterialSpecification)|null and phase: object(PhaseClaim: phase, evidence, note)|"
                               "null -- an evidence-graded phase; only certifying evidence can decide a phase match or "
-                              "mismatch)] -- the readiness ladder is RE-DERIVED from on load; emitted on the "
+                              "mismatch)], and whose procedure carries stream_dispositions: array[object("
+                              "StreamDisposition: subject{kind, step_signature, ordinal, index, core}, value, evidence "
+                              "(SOURCE_QUOTED only), locator, category|null, via_op|null) -- bound to the replayed step "
+                              "on load)] -- the readiness ladder is RE-DERIVED from on load; emitted on the "
                               "CANONICAL_VERIFIED wire (the default), compare=False so outside the bare result_digest)",
             "capability_assessment": "object(CapabilityAssessment: per-axis + overall verdict of this route against the "
                                      "request's declared profile)|null (0.9 D12: null = NOT_REQUESTED; compare=True so "
@@ -6475,7 +6551,8 @@ def response_schema() -> dict:
                             "edges + process_requirements and does not move the route identity)",
             "replay_payload": "array[object(step-replay)] (D5/ONLOAD-REDERIVE: the thick, complete per-step evidence "
                               "the process component is RE-DERIVED from on load -- the same step-replay shape as the "
-                              "ranked route summary's, procedure operations carrying material_uses; emitted on the "
+                              "ranked route summary's, procedure operations carrying material_uses and the procedure "
+                              "its stream_dispositions; emitted on the "
                               "CANONICAL_VERIFIED wire (the default), compare=False so outside the bare result_digest)",
         },
         "affordability_frontier_entry_fields": {

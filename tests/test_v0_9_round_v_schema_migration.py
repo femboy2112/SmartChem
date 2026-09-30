@@ -402,7 +402,9 @@ def test_unknown_request_version_is_refused_precisely(bad):
 
 @pytest.mark.parametrize("bad", ["smartchem.service/compilation-response-v1alpha12",
                                  "smartchem.service/compilation-response-v1alpha16",
-                                 "smartchem.service/compilation-response-v1alpha18", "garbage"])
+                                 # 0.9.5 S14: the 0.9.0a1 pre-release id is refused like any other non-current id
+                                 "smartchem.service/compilation-response-v1alpha17",
+                                 "smartchem.service/compilation-response-v1alpha19", "garbage"])
 def test_unknown_response_version_is_refused_precisely(bad):
     payload = _load("response_isopentyl_acetate.json")
     payload["schema_version"] = bad

@@ -512,3 +512,48 @@ def test_c7_3_a_forged_dag_step_is_refused_by_d29_1():
     for kw in _modes(req):
         with pytest.raises(ValueError, match=r"DAG dossier .* is not a transform the carried algebra .*\(D29\.1\)"):
             response_from_payload(copy.deepcopy(forged), **kw)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Wave C2 hardening: authenticate before decode; producer / consumer key parity
+# ---------------------------------------------------------------------------------------------------------------------
+
+def test_c2_keyed_consumer_refuses_a_forgery_before_any_decode(honest, monkeypatch):
+    """Wave C2 F1: a keyless forger's payload reached molecule decode (request target canonicalisation) BEFORE the
+    HMAC check, so even an authenticated() / paranoid() verifier did the forger's work.  The claimed wire digest is now
+    authenticated first -- fails if the request is decoded before the signature refuses."""
+    resp, _thick, _thin = honest
+    signed = response_to_payload(resp, signing_key=_KEY)
+    forged = copy.deepcopy(signed)
+    forged["diagnostics"] = list(forged["diagnostics"]) + ["forged line"]
+    forged = _reforge(forged)                       # every public digest recomputed; the signature cannot follow
+    forged["producer_signature"] = signed["producer_signature"]
+    calls = _spy_request_decode(monkeypatch)
+    with pytest.raises(ValueError, match="producer_signature does not verify"):
+        load_response(forged, VerificationPolicy.authenticated(_KEY))
+    assert calls == []
+    unsigned = copy.deepcopy(forged)
+    unsigned["producer_signature"] = None
+    with pytest.raises(ValueError, match="producer_signature is required but the payload is unsigned"):
+        load_response(unsigned, VerificationPolicy.authenticated(_KEY))
+    assert calls == []
+
+
+def test_c2_a_producer_cannot_sign_with_a_key_no_consumer_accepts(honest):
+    """Wave C2 F4: the consumer policy refuses keys shorter than 16 bytes, so the producer must too."""
+    resp, _thick, _thin = honest
+    for bad in (b"short", "a-str-not-bytes-at-all-32-chars!"):
+        with pytest.raises(ValueError, match="signing_key must be bytes of at least 16 bytes"):
+            response_to_payload(resp, signing_key=bad)
+
+
+def test_c2_a_short_producer_keyfile_is_refused(tmp_path, monkeypatch):
+    import smartchem.transport_integrity as ti
+    keyfile = tmp_path / "producer.key"
+    keyfile.write_bytes(b"too-short")
+    monkeypatch.delenv(ti._PRODUCER_KEY_ENV, raising=False)
+    monkeypatch.setattr(ti, "_PRODUCER_KEY_PATH", keyfile)
+    with pytest.raises(ValueError, match="a producer key must be at least 16 bytes"):
+        ti.resolve_producer_key()
+    keyfile.write_bytes(b"k" * 32)
+    assert ti.resolve_producer_key() == b"k" * 32

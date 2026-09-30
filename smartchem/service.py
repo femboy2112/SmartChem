@@ -91,7 +91,11 @@ CompilationResponse.outcome, CompilationResponse.standard_status, CompilationRes
 CompilationResponse.wire.search_space_status are re-derived (a single-field relabel is refused, D27.3 / D27.8) but are
 functions of the advisory IR search status and candidate set: a CONSISTENT rewrite of what the search found -- every
 candidate deleted, the receipt re-counted, the status set to COMPLETE -- moves them with it and loads a "no route"
-answer; only ``require_reexecution`` or the producer HMAC closes that.
+answer; only ``require_reexecution`` or the producer HMAC closes that.  For the same reason (0.9.5, Wave C2 F3) the
+member SETS of CompilationResponse.ranked_route_dossiers, CompilationResponse.ranked_dag_dossiers and
+CompilationResponse.affordability_frontier, and Section81ReceiptView.results_returned, are bound to the advisory
+candidate set and receipt count: a consistent deletion of a candidate with its dossier, frontier entry and count moves
+them together (each PRESENT member is still re-derived).
 """
 from __future__ import annotations
 
@@ -162,6 +166,7 @@ from .transform_provider import ProviderUse, search_algebra_digest
 from .search import REFUSED_8_2_STATUSES, STANDARD_8_2_STATUSES, section_8_3_label
 from .transport_integrity import (  # 0.9.5 I1: the ONE home of the wire fold; bound here so M189 still bites
     _BODY_DIGEST_EXCLUDED_KEYS,
+    _PRODUCER_KEY_MIN_BYTES,
     _TRANSPORT_MODES,
     TRANSPORT_CANONICAL_VERIFIED,
     TRANSPORT_THIN_ADVISORY,
@@ -5781,6 +5786,9 @@ def response_to_payload(response: CompilationResponse, *, signing_key: bytes | N
     # HMAC below authenticates everything this payload says, not only the alias-invariant result identity.
     digest = _transport_bound_result_digest(response.result_digest, transport_mode, _payload_body_digest(payload))
     payload["result_digest"] = digest
+    if signing_key is not None and (type(signing_key) is not bytes or len(signing_key) < _PRODUCER_KEY_MIN_BYTES):
+        # 0.9.5 (Wave C2 F4): a producer must not sign with a key no consumer policy accepts (barrier section 2).
+        raise ValueError(f"signing_key must be bytes of at least {_PRODUCER_KEY_MIN_BYTES} bytes")
     payload["producer_signature"] = None if signing_key is None else _sign_result_digest(digest, signing_key)
     return payload
 
@@ -5966,6 +5974,17 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
         raise ValueError(
             "a TARGET_FILE response cannot be verified on load: its target is a path to mutable external state and the "
             "loader never reads a payload-supplied path; recompile locally from the file; refused (0.9.5 S6)")
+    # 0.9.5 (Wave C2 F1): a KEYED consumer authenticates the CLAIMED wire digest here, before any decode -- the producer
+    # signs exactly that string -- so a keyless forgery costs the verifier one HMAC, not a molecule decode.  The full
+    # check below still binds the claimed digest to the reconstructed body.
+    if verification_key is not None:
+        claimed_signature = payload.get("producer_signature")
+        if claimed_signature is None:
+            if require_signature:
+                raise ValueError("producer_signature is required but the payload is unsigned")
+        elif type(payload["result_digest"]) is not str or not hmac.compare_digest(
+                str(claimed_signature), _sign_result_digest(payload["result_digest"], verification_key)):
+            raise ValueError("producer_signature does not verify: the payload was tampered or signed by another key")
     ir_payload = payload["compilation_ir"]
     response = CompilationResponse(
         payload["schema_version"],

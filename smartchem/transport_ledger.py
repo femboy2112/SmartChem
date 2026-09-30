@@ -97,6 +97,10 @@ _CANDIDATE_POST = _IR + "CandidateSummary.__post_init__"
 _CONSISTENT_REWRITE = ("0.9.5 S11: a function of the ADVISORY IR search status / candidate set -- a single-field relabel is "
                        "refused, but a CONSISTENT rewrite of what the search found (the D25.3 boundary) moves it with "
                        "them; only require_reexecution or the producer HMAC closes that")
+_CONSISTENT_DELETION = ("0.9.5 (Wave C2 F3): the member SET is bound to the IR candidate set and the receipt count, which are "
+                        "advisory search output -- a CONSISTENT deletion of a candidate together with its dossier, frontier "
+                        "entry and the receipt count (the D25.3 boundary) moves it with them; each PRESENT member is still "
+                        "re-derived; only require_reexecution or the producer HMAC closes the deletion")
 _THIN_VERDICT = ("thin: no replay, so only the process axis (PROCESS-ADMIT-01) is re-derived; PROCESS_SPECIFIED and "
                  "CAPABILITY_FIT are refused on a thin wire, and verified admission fail-closes above-FORMAL claims")
 _SEARCH_OUTPUT = ("search output: a CONSISTENT rewrite (the D25.3 boundary; ATK5d's INCOMPLETE->COMPLETE flip) is "
@@ -136,15 +140,18 @@ TRANSPORT_LEDGER: dict[str, dict[str, LedgerEntry]] = {
                                    advisory_when="a decompile's incompleteness line is its receipt's own stop_reason "
                                                  "(advisory search output)"),
         "ranked_route_dossiers": LedgerEntry(RE, (_COMPLETE, _RANKING), "set == the IR's route candidates (D24.14); "
-                                             "order and every member re-derived (D27.4)", thin=ADV),
+                                             "order and every member re-derived (D27.4)", thin=ADV,
+                                             advisory_when=_CONSISTENT_DELETION),
         "affordability_frontier": LedgerEntry(RE, (_RANKING, _POST, _FRONTIER), "== _route_frontier over the replayed "
-                                              "routes (D27.4); thin keeps only the hard-blocker channel", thin=ADV),
+                                              "routes (D27.4); thin keeps only the hard-blocker channel", thin=ADV,
+                                              advisory_when=_CONSISTENT_DELETION),
         "provider_snapshots": LedgerEntry(ADV, note="caller-attached dated provenance: HMAC only (re-execution cannot "
                                           "reproduce a fetch time)"),
         "parse_receipt_summary": LedgerEntry(ADV, note="provenance of how the request was READ (outside the result "
                                              "identity, SVC-REQ-01); HMAC + re-execution"),
         "ranked_dag_dossiers": LedgerEntry(RE, (_COMPLETE, _RANKING), "set == the IR's DAG candidates iff the box "
-                                           "constrains (D24.14); order and members re-derived (D27.4)", thin=ADV),
+                                           "constrains (D24.14); order and members re-derived (D27.4)", thin=ADV,
+                                           advisory_when=_CONSISTENT_DELETION),
     },
     "CompilationResponse.wire": {
         "exit_code": LedgerEntry(RE, (_LOAD,), "round-trip: == the reconstructed response's",
@@ -250,7 +257,7 @@ TRANSPORT_LEDGER: dict[str, dict[str, LedgerEntry]] = {
         "transforms_considered": LedgerEntry(ADV, note="search telemetry"),
         "candidates_emitted": LedgerEntry(ADV, note="search telemetry (>= results_returned by construction)"),
         "results_returned": LedgerEntry(RE, (_COMPLETE,), "an int (never null, D28.3) == the carried candidate count, "
-                                        "every kind (D27.5)"),
+                                        "every kind (D27.5)", advisory_when=_CONSISTENT_DELETION),
         "candidates_rejected_by_reason": LedgerEntry(ADV, note="search telemetry"),
         "cut_enumeration_complete": LedgerEntry(ADV, note=_SEARCH_OUTPUT),
         "candidate_enumeration_complete": LedgerEntry(ADV, note=_SEARCH_OUTPUT),

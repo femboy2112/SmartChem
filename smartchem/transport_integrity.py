@@ -131,7 +131,11 @@ def resolve_producer_key(*, create: bool = False) -> bytes | None:
             raise ValueError(f"{_PRODUCER_KEY_ENV} must decode to at least {_PRODUCER_KEY_MIN_BYTES} bytes")
         return key
     if _PRODUCER_KEY_PATH.exists():
-        return _PRODUCER_KEY_PATH.read_bytes()
+        key = _PRODUCER_KEY_PATH.read_bytes()
+        if len(key) < _PRODUCER_KEY_MIN_BYTES:  # 0.9.5 (Wave C2 F4): the same floor as the env key and the consumer
+            raise ValueError(f"{_PRODUCER_KEY_PATH} holds {len(key)} bytes; a producer key must be at least "
+                             f"{_PRODUCER_KEY_MIN_BYTES} bytes")
+        return key
     if create:
         _PRODUCER_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
         key = secrets.token_bytes(32)

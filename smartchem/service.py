@@ -155,6 +155,7 @@ from .capability import (
     resolve_capability_profile,
 )
 from .identity import IdentityLoss, MatchLayer, refines
+from .category import CanonicalBoundExceeded
 from .identity_parse import IdentityParseError, InputKind, resolve_target
 from .procedure_evidence import (
     EvidenceField,
@@ -1035,7 +1036,10 @@ def _recompile_normalized_identity(target_input: str, input_kind: InputKind) -> 
     feature_losses = representation_losses_for(target_input, resolved.features) if resolved.features else ()
     if feature_losses:
         return ""
-    return _structure_ident(resolved.molecule)
+    try:
+        return _structure_ident(resolved.molecule)
+    except CanonicalBoundExceeded:
+        return ""  # 0.9.5 (S16 integration): past a canonicaliser ceiling -- "does not collapse"; run time says INVALID
 
 
 def build_recompile_request(
@@ -2325,7 +2329,7 @@ class CompilationResponse:
         try:
             registry = resolve_algebra_profile(self.request.algebra_profile)
             reagents = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in self.request.helper_reagents)
-        except (IdentityParseError, ValueError) as exc:
+        except (IdentityParseError, ValueError, CanonicalBoundExceeded) as exc:
             raise ValueError(f"the carried request's algebra / helper reagents cannot be re-read ({exc}); refused "
                              f"(D29.1){self._legacy_hint()}") from exc
         budget = self.request.search_bounds.value("cut_budget")
@@ -3741,7 +3745,7 @@ def _rederive_request_context(request: CompilationRequest) -> _RequestContext:
                                      bounds.value("max_edges")),
             registry_digest, "FORMULA_EDGE", None, frozenset(),
         )
-    except IdentityParseError as exc:
+    except (IdentityParseError, CanonicalBoundExceeded) as exc:
         raise ValueError(f"the carried request no longer parses ({exc})") from exc
 
 
@@ -3818,6 +3822,11 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
         reagents, available = _canonical_helper_molecules(request)
     except IdentityParseError as exc:
         return _invalid(request, str(exc))
+    except CanonicalBoundExceeded as exc:
+        # 0.9.5 (S16 integration): the front door canonicalised this graph, but this canonical() runs on a NEW atom
+        # labelling and node counts depend on the labelling -- an input just under a ceiling at parse time can cross it
+        # here.  Same state as IdentityOutOfBounds: no identity established -> INVALID_INPUT (exit 2), never exit 70.
+        return _invalid(request, f"the target (or a helper / stock structure) exceeds the canonicaliser's bounds: {exc}")
     # D24.11: ONE implementation shared with the load-time re-derivation (_rederive_identity_losses) -- the producer
     # and the verifier can never compute a target's section-5.3 losses two different ways.
     identity_losses = _recompile_identity_losses(request.target_input, target_features)
@@ -6310,9 +6319,15 @@ def _reexecution_root_work(request: CompilationRequest) -> int:
         reagents = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in request.helper_reagents)
     except IdentityParseError:
         return 0
+    except CanonicalBoundExceeded:
+        return 0  # run_compilation answers INVALID_INPUT for it too (S16 integration); the rerun reproduces that
     if target is None:
         return 0
-    return predicted_enumeration_work(target.canonical(), reagents)[1]
+    try:
+        canonical_target = target.canonical()
+    except CanonicalBoundExceeded:
+        return 0
+    return predicted_enumeration_work(canonical_target, reagents)[1]
 
 
 # -- 0.9 capability HUMAN render (D12a -- ONE renderer, so `recompile` and `plan` expose the SAME semantics the JSON

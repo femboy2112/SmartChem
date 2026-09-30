@@ -66,7 +66,7 @@ spy) and producer/consumer key parity at signing and at the keyfile (M254/M255);
 knob (M256), owned replay evidence on both summary decoders (M257) and the nested-load refusal (M258); C7 the
 filesystem-only implementation digest (M259), the import-time home-less key path (M260) and the ASCII-terminal CLI
 (M261); C8 the thin-wire replay refusal (M262), the INVALID answer's re-execution (M263) and deep payload text
-as a refusal in every text loader (M264).  C8 F7 (a required
+as a refusal in every text loader (M264); S16 integration: a ceiling crossed after the front door is INVALID (M265).  C8 F7 (a required
 ``algebra_profile``) is not duplicated: the v0.7 harness's re-read M16 already kills it.
 
 Run:  .venv/bin/python experiments/v0_9_mutation_calibration.py
@@ -7009,6 +7009,42 @@ def m264():
         crashed = all(outcome(f) == "crash" for f in (svc.load_response_text, svc.deserialize_response,
                                                        svc.deserialize_request))
     return honest, crashed
+
+
+@mutant("M265", "S16 integration: a ceiling crossed on the service's relabelled target escapes run_compilation (exit 70)",
+        "service._run_recompile (CanonicalBoundExceeded -> INVALID_INPUT)")
+def m265():
+    import smartchem.identity_parse as ip_mod
+    from smartchem.category import CanonicalBoundExceeded
+
+    class Crosses:
+        def __init__(self, molecule):
+            self._molecule = molecule
+
+        def canonical(self):
+            raise CanonicalBoundExceeded("simulated: the relabelled copy crossed the node ceiling")
+
+        def __getattr__(self, name):
+            return getattr(self._molecule, name)
+
+    req = build_recompile_request("smiles:CCO")
+    real = ip_mod.resolve_identity
+
+    def crossing(text, kind):
+        return dc.replace(real(text, kind), molecule=Crosses(real(text, kind).molecule))
+
+    with _patch(ip_mod, "resolve_identity", crossing):
+        resp, _exc = _attempt(lambda: svc.run_compilation(req))
+        honest = resp is not None and resp.exit_code == 2
+        bad_run = _src_mutant(svc._run_recompile, ("    except CanonicalBoundExceeded as exc:",
+                                                    "    except ZeroDivisionError as exc:"))
+        with _patch(svc, "_run_recompile", bad_run):
+            try:
+                svc.run_compilation(req)
+                escaped = False
+            except CanonicalBoundExceeded:
+                escaped = True
+    return honest, escaped
 
 
 # =================================================================================================================

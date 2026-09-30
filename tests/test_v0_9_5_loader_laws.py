@@ -634,3 +634,58 @@ def test_c8_f4_deeply_nested_text_is_a_refusal_in_every_text_loader():
     for loader in (svc.load_response_text, svc.deserialize_response, svc.deserialize_request):
         with pytest.raises(ValueError, match="nests deeper than the JSON decoder"):
             loader(deep)
+
+
+# -- S16 integration: a canonicaliser ceiling crossed AFTER the front door (a new atom labelling) is INVALID, never 70 --
+
+class _CrossesCeiling:
+    """A resolved molecule whose NEXT canonical() crosses a ceiling -- node counts depend on the atom labelling, so an
+    input just under a ceiling at parse time can cross it on the service's relabelled copy (S16 report)."""
+
+    def __init__(self, molecule):
+        self._molecule = molecule
+
+    def canonical(self):
+        from smartchem.category import CanonicalBoundExceeded
+        raise CanonicalBoundExceeded("simulated: the relabelled copy crossed the node ceiling")
+
+    def __getattr__(self, name):
+        return getattr(self._molecule, name)
+
+
+def _crossing_resolver(monkeypatch):
+    import smartchem.identity_parse as ip
+
+    real = ip.resolve_identity
+    monkeypatch.setattr(ip, "resolve_identity", lambda text, kind: dc.replace(
+        real(text, kind), molecule=_CrossesCeiling(real(text, kind).molecule)))
+
+
+def test_s16i_run_compilation_answers_invalid_when_the_relabelled_target_crosses_a_ceiling(monkeypatch):
+    """Pre-fix FAILS: CanonicalBoundExceeded (a NotImplementedError) escaped run_compilation -> CLI exit 70."""
+    req = build_recompile_request("smiles:CCO")
+    _crossing_resolver(monkeypatch)
+    resp = run_compilation(req)
+    assert resp.outcome.value == "INVALID_INPUT" and resp.exit_code == 2
+    assert "canonicaliser's bounds" in resp.diagnostics[0]
+
+
+def test_s16i_the_loader_side_readers_refuse_or_charge_zero(monkeypatch):
+    """Pre-fix FAILS: the load-time request re-derivation and the re-execution root-work charge let the
+    NotImplementedError escape the loader (not a refusal class)."""
+    req = build_recompile_request("smiles:CCO")
+    _crossing_resolver(monkeypatch)
+    with pytest.raises(ValueError, match="no longer parses"):
+        svc._rederive_request_context(req)
+    assert svc._reexecution_root_work(req) == 0
+
+
+def test_s16i_the_normalized_identity_never_raises_past_a_ceiling(monkeypatch):
+    """Its own docstring: 'It NEVER raises'. Pre-fix FAILS: _structure_ident's canonical() escaped the builder."""
+    from smartchem.category import CanonicalBoundExceeded
+
+    def crosses(_molecule):
+        raise CanonicalBoundExceeded("simulated")
+
+    monkeypatch.setattr(svc, "_structure_ident", crosses)
+    assert svc._recompile_normalized_identity("CCO", InputKind.SMILES) == ""

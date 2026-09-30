@@ -1387,6 +1387,22 @@ def build_decompile_request(
 # -- the response ------------------------------------------------------------------------------------------------
 
 
+def _assess_route(profile: "CapabilityProfile", route: "object", *, readiness: "RouteReadiness | None" = None,
+                  identity_losses: "tuple[IdentityLoss, ...]" = ()) -> "CapabilityAssessment":
+    """The ONE capability-assessment expression: ``assess(profile, compile_capability_requirements(route), readiness)``.
+
+    The producer (:meth:`RankedRouteSummary.of_fit`, which already holds the route's readiness and passes it) and the
+    loader (:meth:`CompilationResponse._check_capability_coherence`, which re-evaluates it from the replayed route under
+    the response's ``identity_losses``) both call this, so "what a route's assessment IS" has a single author instead of
+    two hand-kept copies (0.9.5 E2, Lane A D3).  Requirements are compiled BEFORE readiness is (re-)evaluated -- the
+    loader's historical evaluation order, kept so even an exception surfaces from the same call it always did.
+    """
+    requirements = compile_capability_requirements(route)
+    if readiness is None:
+        readiness = evaluate_route(route, identity_losses=identity_losses)
+    return assess_capability(profile, requirements, readiness)
+
+
 @dataclass(frozen=True)
 class RankedRouteSummary(Digestible):
     """One route's section-11 bench-fit disposition, ranked best-first in the response (CLI-CAN-02 brick 2).
@@ -1535,9 +1551,7 @@ class RankedRouteSummary(Digestible):
         readiness = evaluate_route(fit.route, identity_losses=identity_losses)
         capability_assessment = None
         if capability_profile is not None:
-            capability_assessment = assess_capability(
-                capability_profile, compile_capability_requirements(fit.route), readiness,
-            )
+            capability_assessment = _assess_route(capability_profile, fit.route, readiness=readiness)
         return cls(
             RANKED_ROUTE_SUMMARY_SCHEMA,
             fit.route.digest,
@@ -2899,10 +2913,7 @@ class CompilationResponse:
                     f"ranked route {r.route_digest} carries replay evidence that reconstructs to a DIFFERENT route "
                     f"({route.digest}) -- substituted capability evidence; refused (0.9 D12)"
                 )
-            rederived = assess_capability(
-                profile, compile_capability_requirements(route),
-                evaluate_route(route, identity_losses=self.identity_losses),
-            )
+            rederived = _assess_route(profile, route, identity_losses=self.identity_losses)
             if r.capability_assessment != rederived:
                 raise ValueError(
                     f"ranked route {r.route_digest} claims a capability_assessment (overall "
@@ -3028,9 +3039,7 @@ class CompilationResponse:
             # process-exclusion hardness: authenticated from the digest-covered per-step requirements (no replay
             # needed), exactly as ``_affordability_frontier`` sources channel-1 hardness under a process box.
             if process_active:
-                proc = evaluate_process_requirements(summary.process_requirements, process)
-                if proc.status is ProcessFitStatus.EXCLUDED:
-                    rederived_hard |= set(proc.exclusions)
+                rederived_hard |= set(_process_hard_blockers(summary, process))
             # catalyst + fiction: re-derived from the route reconstructed out of the thick replay payload.  A missing
             # payload leaves these two channels unverifiable (see the BOUNDARY) -- the process channel above still bites.
             if summary.replay_payload is not None:
@@ -3205,13 +3214,7 @@ class CompilationResponse:
         if not self.request.constraints.process.constrains_anything:
             return ()
         bounds = self.request.constraints.process
-        out: "list[str]" = []
-        for r in self.ranked_route_dossiers:
-            if r.fit_status == "FITS":
-                out.append(r.route_digest)
-            elif evaluate_process_requirements(r.process_requirements, bounds).status is ProcessFitStatus.EXCLUDED:
-                out.append(r.route_digest)
-        return tuple(out)
+        return tuple(r.route_digest for r in self.ranked_route_dossiers if _frontier_admissible(r, bounds))
 
     @property
     def process_selection_status(self) -> str:
@@ -3577,6 +3580,34 @@ def _route_material_quantity(route: "object") -> "float | None":
     return float(sum(amount for _m, amount in reqs))
 
 
+def _frontier_admissible(summary: "RankedRouteSummary", bounds: ProcessBounds) -> bool:
+    """DISPOSITION-ACTIVATE-01's frontier-admission predicate under a process box: the summary is FITS, or its
+    RE-DERIVED process status (:func:`evaluate_process_requirements` over its carried per-step requirements) is
+    EXCLUDED -- a genuine reaction the bench cannot run, ranked REAL_BUT_HARD.
+
+    The ONE author of that rule (0.9.5 E3, Lane A D7): the producer's :func:`_route_frontier` admits with it and
+    :attr:`CompilationResponse._frontier_admissible_route_digests` bounds a constructed response with it.  They used
+    to be two hand-copied bodies; had they ever drifted, an honest producer would have refused to construct its own
+    answer.  Now they cannot -- one rule, two callers, nothing to reconcile.
+    """
+    if summary.fit_status == "FITS":
+        return True
+    return evaluate_process_requirements(summary.process_requirements, bounds).status is ProcessFitStatus.EXCLUDED
+
+
+def _process_hard_blockers(summary: "RankedRouteSummary", bounds: ProcessBounds) -> "tuple[str, ...]":
+    """Channel-1 (REAL_BUT_HARD) hardness under an active process box: the RE-DERIVED process exclusions of the
+    summary's carried per-step requirements when that status is EXCLUDED, else ``()``.
+
+    Shared by the producer (:func:`_affordability_frontier`, which stamps it into ``hard_blockers``) and the loader
+    (:meth:`CompilationResponse._check_frontier_coherence`, which refuses a claim looser than it) -- 0.9.5 E3, Lane A
+    D8.  Only the process channel is shared here: the catalyst/fiction channels were already the same oracle calls on
+    both sides, and the off-box free-text exclusions are not re-derivable at all (the documented boundary).
+    """
+    proc = evaluate_process_requirements(summary.process_requirements, bounds)
+    return tuple(proc.exclusions) if proc.status is ProcessFitStatus.EXCLUDED else ()
+
+
 def _affordability_frontier(routes: "tuple", ranked: "tuple", *, process_bounds: "ProcessBounds | None" = None) -> "tuple":
     """The section-10.4 Pareto affordability frontier over the ranked routes (COST-VEC-01 live wiring).
 
@@ -3626,8 +3657,7 @@ def _affordability_frontier(routes: "tuple", ranked: "tuple", *, process_bounds:
         # authenticated reason.  A physical/composability-only EXCLUDED route re-derives to a non-EXCLUDED process
         # status here, so it contributes no hardness and is not admitted (see run_compilation's frontier admission).
         if process_bounds is not None and process_bounds.constrains_anything:
-            _proc = evaluate_process_requirements(summary.process_requirements, process_bounds)
-            hard = tuple(_proc.exclusions) if _proc.status is ProcessFitStatus.EXCLUDED else ()
+            hard = _process_hard_blockers(summary, process_bounds)
         else:
             hard = tuple(summary.exclusions) if summary.fit_status == "EXCLUDED" else ()
         # ... plus CATALYST-OBTAIN-01: a step declaring a catalyst the poor man cannot positively obtain -- an
@@ -3795,6 +3825,29 @@ def _rederive_identity_losses(request: CompilationRequest) -> "tuple[IdentityLos
     return tuple(sorted(losses, key=lambda loss: loss.digest))
 
 
+def _canonical_helper_molecules(request: CompilationRequest) -> "tuple[tuple, tuple]":
+    """``(reagents, available)``: the request's helper reagents and declared stock, each resolved (AUTO) and
+    CANONICALISED -- the exact molecules the search runs on and the terminal set is built from.
+
+    0.9.5 E4 (Lane A D4), the part of the request-context mirror that IS one computation: :func:`_run_recompile` and
+    :func:`_rederive_request_context` both call this at the point they always derived these tuples, so the verifier's
+    D26.1 terminal digest can no longer drift from the producer's by a canonicalisation typo.  Raises exactly what
+    :func:`resolve_target` raises; each caller keeps its own refusal wrapper.
+    """
+    reagents = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in request.helper_reagents)
+    available = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in request.stock_materials)
+    return reagents, available
+
+
+def _canonical_commodities(request: CompilationRequest) -> tuple:
+    """The poor-man commodity inventory, canonicalised, when the terminal policy enables it; else ``()``.  Shared by
+    the producer and the D26.1 re-derivation for the same reason as :func:`_canonical_helper_molecules`."""
+    if request.terminal_policy.commodities_enabled:
+        from .data.reagents import commodity_inventory
+        return tuple(m.canonical() for m in commodity_inventory())
+    return ()
+
+
 @dataclass(frozen=True)
 class _RequestContext:
     """X-high D26.1: the search context a carried request IMPLIES, re-derived by the producer's OWN formulas."""
@@ -3825,13 +3878,8 @@ def _rederive_request_context(request: CompilationRequest) -> _RequestContext:
             if resolved.molecule is None:
                 raise ValueError("the carried RECOMPILE target resolves to no structure")
             target = resolved.molecule.canonical()
-            reagents = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in request.helper_reagents)
-            available = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in request.stock_materials)
-            if request.terminal_policy.commodities_enabled:
-                from .data.reagents import commodity_inventory
-                commodities = tuple(m.canonical() for m in commodity_inventory())
-            else:
-                commodities = ()
+            reagents, available = _canonical_helper_molecules(request)
+            commodities = _canonical_commodities(request)
             mode = _GRAMMAR_TO_MODE[request.transform_grammar]
             registry_digest = search_algebra_digest(
                 _GRAMMAR_TO_MODE_TOPOLOGY[mode], resolve_algebra_profile(request.algebra_profile))
@@ -3875,13 +3923,7 @@ def _route_frontier(request: CompilationRequest, routes: "tuple", ranked: "tuple
     if not request.constraints.process.constrains_anything:
         return _affordability_frontier(routes, ranked)
     pbounds = request.constraints.process
-
-    def _admit(r: "object") -> bool:
-        if r.fit_status == "FITS":
-            return True
-        return evaluate_process_requirements(r.process_requirements, pbounds).status is ProcessFitStatus.EXCLUDED
-
-    admitted = tuple(r for r in ranked if _admit(r))
+    admitted = tuple(r for r in ranked if _frontier_admissible(r, pbounds))
     admitted_ids = {r.route_digest for r in admitted}
     return _affordability_frontier(tuple(r for r in routes if r.digest in admitted_ids), admitted,
                                    process_bounds=pbounds)
@@ -3936,8 +3978,7 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
         # (a one-way-law break, invisible on paracetamol only because its search is INCOMPLETE with zero candidates).
         # Canonicalising here makes the EXECUTION presentation-invariant, so the collapse the digest claims is real.
         target, target_features = resolved.molecule.canonical(), resolved.features
-        reagents = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in request.helper_reagents)
-        available = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in request.stock_materials)
+        reagents, available = _canonical_helper_molecules(request)
     except IdentityParseError as exc:
         return _invalid(request, str(exc))
     # D24.11: ONE implementation shared with the load-time re-derivation (_rederive_identity_losses) -- the producer
@@ -3961,11 +4002,7 @@ def _run_recompile(request: CompilationRequest) -> CompilationResponse:
             "empty; capped-scission requires at least one cutting reagent",
         )
 
-    if request.terminal_policy.commodities_enabled:
-        from .data.reagents import commodity_inventory
-        commodities = tuple(m.canonical() for m in commodity_inventory())  # canonical, per the target/reagent note above
-    else:
-        commodities = ()
+    commodities = _canonical_commodities(request)  # canonical, per the target/reagent note above
 
     # Section 7: a target already on the terminal stock terminates before any expansion.  Checked structurally
     # (canonical STRUCTURE identity), never by parsing a diagnostic string -- the same identity the search uses.

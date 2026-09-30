@@ -942,26 +942,20 @@ def assess(
         procurement, attention_care, monetary,
     )
 
-    overall_reasons: "list[str]" = []
-    if any(axis.status is CapabilityStatus.BLOCKED for axis in axes):
-        overall = CapabilityStatus.BLOCKED
-        overall_reasons.append("overall: at least one required capability axis is BLOCKED")
+    # 0.9.5 (one authority): the verdict is the ONE fold -- the same function CapabilityAssessment re-checks on
+    # construction; only the reason TEXT is chosen here, from the verdict.
+    tier = route_readiness.tier
+    overall = _fold_overall(axes, tier)
+    if overall is CapabilityStatus.BLOCKED:
+        reason = "overall: at least one required capability axis is BLOCKED"
     elif any(axis.status is CapabilityStatus.UNKNOWN for axis in axes):
-        overall = CapabilityStatus.UNKNOWN
-        overall_reasons.append("overall: at least one required capability axis is UNKNOWN")
+        reason = "overall: at least one required capability axis is UNKNOWN"
+    elif overall is CapabilityStatus.UNKNOWN:
+        reason = (f"overall: every axis fits/is unconstrained, but route readiness tier {tier!r} is below "
+                  "PROCESS_SPECIFIED -- CAPABILITY_FIT requires PROCESS_SPECIFIED or higher (HARD LAW)")
     else:
-        tier = route_readiness.tier
-        if tier_rank(tier) < tier_rank(PROCESS_SPECIFIED):
-            overall = CapabilityStatus.UNKNOWN
-            overall_reasons.append(
-                f"overall: every axis fits/is unconstrained, but route readiness tier {tier!r} is below "
-                "PROCESS_SPECIFIED -- CAPABILITY_FIT requires PROCESS_SPECIFIED or higher (HARD LAW)"
-            )
-        else:
-            overall = CapabilityStatus.FIT
-            overall_reasons.append(
-                "overall: every required axis fits and route readiness tier is PROCESS_SPECIFIED or higher"
-            )
+        reason = "overall: every required axis fits and route readiness tier is PROCESS_SPECIFIED or higher"
+    overall_reasons: "list[str]" = [reason]
 
     return CapabilityAssessment(
         schema_version=CAPABILITY_ASSESSMENT_SCHEMA,

@@ -296,21 +296,29 @@ def m14() -> bool:
 # 15. a response's request profile and IR algebra are rebound inconsistently on LOAD -> MUST refuse (SS4).
 @mutant("M15 response-algebra-rebind-must-refuse-on-load")
 def m15() -> bool:
+    """A certified-algebra answer carried under a legacy-algebra request must be refused by the load-time rebind.
+
+    0.9.5 re-read (the v0.9 harness's M190 pattern): X-high D26.1 (``_check_request_answer_coherence``) now re-derives
+    the IR's request and transform-registry digests from the carried request by its OWN route, so it refused this
+    tamper in the mutant arm as well -- a masked survivor on the merged-0.9 tree d26f0eb.  D26.1 is held out of BOTH
+    arms (never weakened): honest = refused by the 0.7 rebind ("algebra-rebind mismatch"), mutant = loads once the
+    rebind resolves the wrong registry."""
     cert = run_compilation(_req("certified-route-v07", ()))
     frank = replace(cert, request=_req("legacy-capped-v1"))  # legacy request + certified IR (coherent tamper)
-    try:
-        response_from_payload(response_to_payload(frank))
-        real_refuses = False
-    except ValueError:
-        real_refuses = True
-    # MUTANT: the load-time rebind check resolves the WRONG registry (ignores the request's profile), so expected
-    # always matches the IR -> the coherent cross-profile rebind loads.
-    with _patch(svc, "resolve_algebra_profile", lambda pid: ap.ALGEBRA_PROFILES["certified-route-v07"]):
+    with _patch(svc.CompilationResponse, "_check_request_answer_coherence", lambda self: None):
         try:
             response_from_payload(response_to_payload(frank))
-            mutant_loads = True
-        except ValueError:
-            mutant_loads = False
+            real_refuses = False
+        except ValueError as exc:
+            real_refuses = "algebra-rebind mismatch" in str(exc)
+        # MUTANT: the load-time rebind check resolves the WRONG registry (ignores the request's profile), so expected
+        # always matches the IR -> the coherent cross-profile rebind loads.
+        with _patch(svc, "resolve_algebra_profile", lambda pid: ap.ALGEBRA_PROFILES["certified-route-v07"]):
+            try:
+                response_from_payload(response_to_payload(frank))
+                mutant_loads = True
+            except ValueError:
+                mutant_loads = False
     return real_refuses and mutant_loads
 
 

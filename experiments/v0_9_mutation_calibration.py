@@ -48,6 +48,20 @@ read the derive-time twins of the vocabulary's construction laws on a FORGED rec
 vocabulary's own); M-SD24 (one disposition, one obligation) and M-SD25 (D-C4 envelope-catalyst attribution) pin the two
 laws this incision added.
 
+0.9.5 RC gates (barrier V0_9_5_ARCHITECTURE_FREEZE.md section 12 + section 14 A1): M218-M252, one mutant per law on the
+real code -- the enumeration cache key's four coordinates and its content-binding (M218-M221, M252: a WRONG cached
+answer served to a call differing only in that coordinate), cache on/off identity (M222: the reduced table cached
+process-wide makes accept/refuse depend on history); the work budget (M223 exhaustion skips D29.1, M224 charged after
+the work, M225 swallowed by the broad except, M226 charged per call-site, M227 the payload-node charge removed); S1 thin
+/ legacy under the canonical requirement (M228/M229); the receipt's token, two coherence legs and the VerifiedLoad
+pairing (M230-M233); S3 / S4 / S5 (+ the step-count false refusal) / S6 (M234-M238, forgeries from
+tests/test_v0_9_5_loader_laws.py); the C7-3 DAG legs of D29.1 and D27.1 (M239/M240); S7 literal / formula /
+requirement-side keys (M241-M243); S8 (M244); S9 states / phase (M245/M246); the source-subject transplant (M247); S15
+F-2 / F-1 / F-4 (M248-M250); S11's advisory_when, read like M207 (M251).  S10's section-12 disposition laws map onto
+the existing M-SD family, not duplicated: wrong-subject discharge = M-SD1, non-certifying evidence = M-SD2d,
+CONSUMED_COMPLETELY on a byproduct = M-SD4d, RECOVERED without via_op = M-SD16d, a deleted derived category = M-SD7.
+The three packaging mutants live in ``experiments/v0_9_5_install_matrix.py --self-test`` (they need a built wheel).
+
 Run:  .venv/bin/python experiments/v0_9_mutation_calibration.py
       (dev only: SMARTCHEM_MUT_ONLY=M38,M104 runs a subset -- retirements then read VOID; the gate is the full run)
 """
@@ -81,6 +95,7 @@ import smartchem.legacy_v08 as legacy_mod  # 0.9.5 I2: the frozen v0.8 kernel's 
 import smartchem.material_spec as spec_mod
 import smartchem.service as svc
 import smartchem.stream_disposition as sd_mod
+import smartchem.verification as ver_mod
 from smartchem.algebra_profiles import DEFAULT_ROUTE_ALGEBRA_PROFILE, resolve_algebra_profile
 from smartchem.capability.assess import AxisResult, assess
 from smartchem.capability.enums import (
@@ -166,6 +181,7 @@ from smartchem.service import (
     CompilationResponse,
     TransformGrammar,
     build_recompile_request,
+    load_response,
     ranked_summary_from_payload,
     request_from_payload,
     request_to_payload,
@@ -175,6 +191,18 @@ from smartchem.service import (
 )
 from smartchem.smiles import parse_smiles
 from smartchem.structure import structure_by_name
+from smartchem.verification import (
+    ENUMERATION_CACHE,
+    PinState,
+    SearchOutputTrust,
+    VerificationBudget,
+    VerificationBudgetExceeded,
+    VerificationPolicy,
+    VerificationReceipt,
+    VerifiedLoad,
+    cached_enumerate,
+    set_enumeration_cache_enabled,
+)
 
 # `smartchem/capability/__init__.py` does `from .assess import ..., assess`, which REBINDS the package's own `assess`
 # attribute from the submodule to the FUNCTION -- read the module straight out of `sys.modules` instead.
@@ -5455,6 +5483,916 @@ def m_sd25():
     bad = any(marker in u for u in _src_mutant(waste_mod.derive_waste, (
         "None if cover is None else _residual(s_index, cover)", "None"))(route)[2])
     return honest, bad
+
+
+# =================================================================================================================
+# 0.9.5 RC gates (barrier V0_9_5_ARCHITECTURE_FREEZE.md section 12 + section 14 A1): ONE mutant per law, M218-M252 --
+# the enumeration cache (section 4), the work budget (section 5), S1, the out-of-band receipt (section 3), S3-S6, the
+# C7-3 DAG legs, S7/S8/S9, the source-subject transplant (section 8), S15 and S11.  Every forgery is built OUTSIDE
+# the patch that breaks its law, and every patch is anchored on the real production source.  (S10's disposition laws
+# are the M-SD family above -- see the header for the map; nothing there needed a second copy.)
+# =================================================================================================================
+
+_RC_CACHE: dict = {}
+_RC_PAIR = dict(max_depth=2, helper_reagents=("water", "acetic acid"), capability_profile="poor-man")
+_RC_DAG = dict(helper_reagents=("water", "acetic acid"), grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT,
+               process=ProcessBounds.of(max_total_minutes=30.0))
+_LOADER_TESTS: list = []
+_MATERIAL_TESTS: list = []
+_TIGHT_W = VerificationPolicy(budget=VerificationBudget(work_per_target=100))  # methyl acetate's target is W = 200
+_D291_CHARGE = "context.meter.charge_enumeration(predicted_enumeration_work(step.target, reagents)[1])"
+
+
+def _rc(name: str):
+    """The small honest compilations the 0.9.5 mutants start from (cached; built OUTSIDE any patch context)."""
+    if name not in _RC_CACHE:
+        builders = {
+            # the loader-law tests' "honest": methyl acetate, two canonical routes, a capability question
+            "poor": lambda: build_recompile_request(_FAST_TARGET, max_depth=2, capability_profile="poor-man"),
+            "narrow": lambda: build_recompile_request(_FAST_TARGET, max_routes=1, **_RC_PAIR),
+            "wide": lambda: build_recompile_request(_FAST_TARGET, max_routes=100, **_RC_PAIR),
+            "shallow_dag": lambda: build_recompile_request(_FAST_TARGET, max_depth=1, **_RC_DAG),
+            "deep_dag": lambda: build_recompile_request(_FAST_TARGET, max_depth=3, **_RC_DAG),
+            # the one DAG world whose steps carry a SHIPPED corpus envelope (Fischer esterification of salicylic acid)
+            "mesal_dag": lambda: build_recompile_request(
+                "smiles:COC(=O)c1ccccc1O", max_depth=2, helper_reagents=("water",),
+                stock_materials=("salicylic acid", "methanol"), grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT,
+                process=ProcessBounds.of(max_total_minutes=30.0)),
+        }
+        _RC_CACHE[name] = run_compilation(builders[name]())
+    return _RC_CACHE[name]
+
+
+def _test_module(cache: list, filename: str, alias: str):
+    """A committed test file as a module: its forgery builders ARE the witnesses (the harness asks the test)."""
+    if not cache:
+        import importlib.util
+
+        path = Path(__file__).resolve().parents[1] / "tests" / filename
+        spec = importlib.util.spec_from_file_location(alias, path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        cache.append(module)
+    return cache[0]
+
+
+def _loader_tests():
+    return _test_module(_LOADER_TESTS, "test_v0_9_5_loader_laws.py", "_rc_loader_law_tests")
+
+
+def _material_tests():
+    return _test_module(_MATERIAL_TESTS, "test_v0_9_5_material_identity.py", "_rc_material_identity_tests")
+
+
+def _indent_of(fn, anchor: str) -> str:
+    """The leading whitespace of the ONE line of ``fn``'s dedented source holding ``anchor`` (for a multi-line edit)."""
+    src = textwrap.dedent(inspect.getsource(getattr(fn, "__func__", fn)))
+    (line,) = [ln for ln in src.splitlines() if anchor in ln]
+    return line[:len(line) - len(line.lstrip())]
+
+
+def _attempt(call):
+    """``(result, None)`` or ``(None, the ValueError)`` -- the exception object, so its CLASS can be read."""
+    try:
+        return call(), None
+    except ValueError as exc:
+        return None, exc
+
+
+def _poor_thick() -> dict:
+    return response_to_payload(_rc("poor"))
+
+
+# -- section 4: the enumeration cache key is the full argument VALUE + the registry's content digest ------------------
+
+def _cache_arms(edit: str, first: tuple, second: tuple):
+    """Honest: two ``cached_enumerate`` calls differing ONLY in one key coordinate each get their own enumeration.
+    Mutant (``enumeration_cache_key`` returns ``edit``): the second call is served the FIRST call's output."""
+    (reg1, t1, r1, b1), (reg2, t2, r2, b2) = first, second
+    truth = reg2.enumerate(t2, r2, budget=b2)
+    ENUMERATION_CACHE.clear()
+    try:
+        a = cached_enumerate(reg1, t1, r1, budget=b1)
+        b = cached_enumerate(reg2, t2, r2, budget=b2)
+    finally:
+        ENUMERATION_CACHE.clear()
+    honest = a != truth and b == truth
+    bad_key = _src_mutant(ver_mod.enumeration_cache_key, ("return (registry.digest, target, tuple(reagents), budget)",
+                                                          edit))
+    with _patch(ver_mod, "enumeration_cache_key", bad_key):
+        a2 = cached_enumerate(reg1, t1, r1, budget=b1)
+        b2 = cached_enumerate(reg2, t2, r2, budget=b2)
+    return honest, b2 == a2 and b2 != truth
+
+
+def _cache_world():
+    certified = resolve_algebra_profile("certified-route-v07")
+    return certified, _mol("CC(=O)OC"), (_WATER, _ACETIC)
+
+
+@mutant("M218", "the enumeration cache key omits the REGISTRY digest: another algebra's transforms are served",
+        "verification.enumeration_cache_key (registry.digest coordinate)")
+def m218():
+    """cyclohexene, no helper reagents: the certified algebra emits its Diels-Alder retro, the legacy capped algebra
+    (a mediated cleavage needs a reagent) emits nothing.  Keyed without the registry, one answers for the other."""
+    chx = _mol("C1CC=CCC1")
+    return _cache_arms("return (target, tuple(reagents), budget)",
+                       (resolve_algebra_profile("legacy-capped-v1"), chx, (), 1000),
+                       (resolve_algebra_profile("certified-route-v07"), chx, (), 1000))
+
+
+@mutant("M219", "the enumeration cache key omits the TARGET: methyl acetate's transforms answer for ethyl acetate",
+        "verification.enumeration_cache_key (target coordinate)")
+def m219():
+    reg, target, reagents = _cache_world()
+    return _cache_arms("return (registry.digest, tuple(reagents), budget)",
+                       (reg, target, reagents, 1000), (reg, _mol("CC(=O)OCC"), reagents, 1000))
+
+
+@mutant("M220", "the enumeration cache key omits the REAGENT tuple: a (water, acetic acid) pool answers for (water,)",
+        "verification.enumeration_cache_key (reagent coordinate)")
+def m220():
+    reg, target, reagents = _cache_world()
+    return _cache_arms("return (registry.digest, target, budget)",
+                       (reg, target, reagents, 1000), (reg, target, (_WATER,), 1000))
+
+
+@mutant("M221", "the enumeration cache key omits the cut BUDGET: a truncated enumeration answers for a complete one",
+        "verification.enumeration_cache_key (budget coordinate)")
+def m221():
+    reg, target, reagents = _cache_world()
+    return _cache_arms("return (registry.digest, target, tuple(reagents))",
+                       (reg, target, reagents, 3), (reg, target, reagents, 1000))
+
+
+@mutant("M252", "the enumeration cache keyed on provider IDENTITY, not content: stale after a provider knob change",
+        "verification.enumeration_cache_key (registry.digest is content-bound; ids/versions are not)")
+def m252():
+    """Barrier section 4, M-C2: a provider SEMANTIC change (``max_reactant_cuts`` 1 -> 2) keeps every provider id and
+    version but moves ``registry.digest``.  Keyed on (id, version) pairs, the cache serves the pre-change answer."""
+    from smartchem.transform_provider import CappedScissionProvider, TransformProviderRegistry
+
+    one = TransformProviderRegistry((CappedScissionProvider(),))
+    two = TransformProviderRegistry((dc.replace(CappedScissionProvider(), max_reactant_cuts=2),))
+    assert one.digest != two.digest, "setup: a knob change must move the content digest"
+    target = _mol("CC(=O)OCC(C)C")
+    return _cache_arms("return (tuple((p.provider_id, p.provider_version) for p in registry.providers), target, "
+                       "tuple(reagents), budget)",
+                       (one, target, (_WATER, _ACETIC), 1000), (two, target, (_WATER, _ACETIC), 1000))
+
+
+@mutant("M222", "cache on vs off NOT identical: D29.1's REDUCED shape table cached process-wide by target",
+        "service.CompilationResponse._check_replay_step_transforms (the per-load emitted table)")
+def m222():
+    """Barrier section 4: only the RAW enumeration is cached; the shape/centre reduction and the budget charge stay per
+    load.  Honest: cold, warm and cache-off loads are byte-identical in body AND work ledger, and a tight
+    ``work_per_target`` refuses whatever an earlier load left behind.  Mutant: the per-load ``emitted`` table made
+    process-level (keyed by the carried target alone) -- a warm load charges nothing, so its ledger differs from the
+    cold one and the tight budget that refuses a cold load now ACCEPTS: accept/refuse depends on process history."""
+    thick = _poor_thick()
+
+    def arms():
+        ENUMERATION_CACHE.clear()
+        cold = load_response(copy.deepcopy(thick))
+        warm = load_response(copy.deepcopy(thick))
+        set_enumeration_cache_enabled(False)
+        try:
+            off = load_response(copy.deepcopy(thick))
+        finally:
+            set_enumeration_cache_enabled(True)
+        tight, _exc = _attempt(lambda: load_response(copy.deepcopy(thick), _TIGHT_W))
+        bodies = {json.dumps(response_to_payload(x.response), sort_keys=True) for x in (cold, warm, off)}
+        return len(bodies) == 1, cold.receipt.work == warm.receipt.work == off.receipt.work, tight is not None
+
+    honest = arms() == (True, True, False)
+    bad_chk = _src_mutant(CompilationResponse._check_replay_step_transforms, (
+        'emitted: "dict[str, dict[tuple, list]]" = {}', "emitted = _MUT_PROCESS_TABLES"))
+    bad_chk.__globals__["_MUT_PROCESS_TABLES"] = {}
+    with _patch(CompilationResponse, "_check_replay_step_transforms", bad_chk):
+        bad = arms() == (True, False, True)
+    return honest, bad
+
+
+# -- section 5: the verification budget -- charged BEFORE the work, re-raised ahead of the broad except, never a skip -
+
+def _charge_or_skip(context, work: int) -> bool:
+    """The mutant's "helpful" budget: exhaustion reported as False (skip the check) instead of refusing the load."""
+    try:
+        context.meter.charge_enumeration(work)
+    except VerificationBudgetExceeded:
+        return False
+    return True
+
+
+@mutant("M223", "budget exhaustion SKIPS D29.1 instead of refusing: a payload over work_per_target loads",
+        "service.CompilationResponse._check_replay_step_transforms (the D29.1 enumeration charge)")
+def m223():
+    thick = _poor_thick()
+    _l, exc = _attempt(lambda: load_response(copy.deepcopy(thick), _TIGHT_W))
+    honest = isinstance(exc, VerificationBudgetExceeded) and exc.counter == "work_per_target"
+    bad_chk = _src_mutant(CompilationResponse._check_replay_step_transforms, (
+        _D291_CHARGE, "if not _mut_charge_or_skip(context, predicted_enumeration_work(step.target, reagents)[1]): "
+                      "continue"))
+    bad_chk.__globals__["_mut_charge_or_skip"] = _charge_or_skip
+    with _patch(CompilationResponse, "_check_replay_step_transforms", bad_chk):
+        loaded, _exc = _attempt(lambda: load_response(copy.deepcopy(thick), _TIGHT_W))
+    return honest, loaded is not None
+
+
+@mutant("M224", "the D29.1 budget charge moved AFTER enumerate: the bounded work is done before it is refused",
+        "service.CompilationResponse._check_replay_step_transforms (charge-before-work)")
+def m224():
+    """Honest: the over-budget load is refused with ZERO enumerations performed.  Mutant: the same refusal arrives,
+    but only after the enumeration it was meant to prevent -- a budget that bounds nothing (an enumeration spy)."""
+    thick = _poor_thick()
+    calls: list = []
+    real = svc.cached_enumerate
+
+    def spy(*args, **kwargs):
+        calls.append(1)
+        return real(*args, **kwargs)
+
+    def run_tight():
+        calls.clear()
+        _l, exc = _attempt(lambda: load_response(copy.deepcopy(thick), _TIGHT_W))
+        return exc, len(calls)
+
+    with _patch(svc, "cached_enumerate", spy):
+        exc, n = run_tight()
+        honest = isinstance(exc, VerificationBudgetExceeded) and n == 0
+        indent = _indent_of(CompilationResponse._check_replay_step_transforms, "for et in cleavages:")
+        bad_chk = _src_mutant(CompilationResponse._check_replay_step_transforms, (_D291_CHARGE, "pass"), (
+            "for et in cleavages:", f"if context is not None: {_D291_CHARGE}\n{indent}for et in cleavages:"))
+        with _patch(CompilationResponse, "_check_replay_step_transforms", bad_chk):
+            exc2, n2 = run_tight()
+    return honest, isinstance(exc2, VerificationBudgetExceeded) and n2 >= 1
+
+
+@mutant("M225", "the D29.1 budget charge moved INSIDE the broad except: VerificationBudgetExceeded is re-labelled",
+        "service.CompilationResponse._check_replay_step_transforms (charge outside the try)")
+def m225():
+    """Honest: the refusal IS a ``VerificationBudgetExceeded`` (verification did not complete -- raise the budget).
+    Mutant: charged inside D29.1's ``except Exception`` -- the budget refusal is swallowed and re-labelled as "the
+    carried algebra cannot be put to the replayed step" (a false claim about the payload, not about the budget)."""
+    thick = _poor_thick()
+    _l, exc = _attempt(lambda: load_response(copy.deepcopy(thick), _TIGHT_W))
+    honest = isinstance(exc, VerificationBudgetExceeded)
+    call = "cleavages, _complete = cached_enumerate(registry, step.target, reagents, budget=budget)"
+    bad_chk = _src_mutant(CompilationResponse._check_replay_step_transforms, (_D291_CHARGE, "pass"), (
+        call, f"_ = {_D291_CHARGE} if context is not None else None; {call}"))
+    with _patch(CompilationResponse, "_check_replay_step_transforms", bad_chk):
+        _l2, exc2 = _attempt(lambda: load_response(copy.deepcopy(thick), _TIGHT_W))
+    bad = (exc2 is not None and not isinstance(exc2, VerificationBudgetExceeded)
+           and "cannot be put to the replayed step's target" in str(exc2))
+    return honest, bad
+
+
+@mutant("M226", "_memoised_reconstruction charges per CALL-SITE, not once: a 2-dossier load exceeds dossiers=2",
+        "service._memoised_reconstruction (charge inside the memo build)")
+def m226():
+    thick = _poor_thick()
+    assert len(_rc("poor").ranked_route_dossiers) == 2, "setup: the poor-man fixture carries exactly two routes"
+    policy = VerificationPolicy(budget=VerificationBudget(dossiers=2))
+    loaded, _e = _attempt(lambda: load_response(copy.deepcopy(thick), policy))
+    honest = loaded is not None and loaded.receipt.work.dossiers == 2
+    bad_memo = _src_mutant(svc._memoised_reconstruction, (
+        "return context.memo(kind, payload, charged)",
+        "context.meter.charge_dossier(len(payload) if type(payload) is list else 0); "
+        "return context.memo(kind, payload, build)"))
+    with _patch(svc, "_memoised_reconstruction", bad_memo):
+        _l, exc = _attempt(lambda: load_response(copy.deepcopy(thick), policy))
+    return honest, isinstance(exc, VerificationBudgetExceeded) and exc.counter == "dossiers"
+
+
+def _bad_loader(*edits):
+    """``response_from_payload`` re-compiled from its own source with ``edits`` (its decorator re-applied): patch it on
+    ``svc`` and reach it through ``load_response`` / ``svc.response_from_payload`` -- never the name this harness
+    imported at the top, which still points at the honest function."""
+    return _src_mutant(svc.response_from_payload.__wrapped__, *edits)
+
+
+@mutant("M227", "the payload-node charge removed: a payload over payload_nodes loads undecoded-first",
+        "service.response_from_payload (charge_payload_nodes before any decode)")
+def m227():
+    thick = _poor_thick()
+    policy = VerificationPolicy(budget=VerificationBudget(payload_nodes=50))
+    _l, exc = _attempt(lambda: load_response(copy.deepcopy(thick), policy))
+    honest = isinstance(exc, VerificationBudgetExceeded) and exc.counter == "payload_nodes"
+    with _patch(svc, "response_from_payload", _bad_loader(("context.meter.charge_payload_nodes(payload)", "pass"))):
+        loaded, _e = _attempt(lambda: load_response(copy.deepcopy(thick), policy))
+    return honest, loaded is not None and loaded.receipt.work.payload_nodes == 0
+
+
+# -- S1: require_canonical_transport refuses THIN and legacy at dispatch ----------------------------------------------
+
+_CANONICAL_ONLY = VerificationPolicy(require_canonical_transport=True)
+
+
+@mutant("M228", "a THIN_ADVISORY payload accepted under require_canonical_transport (S1)",
+        "service.response_from_payload (S1 transport_mode dispatch)")
+def m228():
+    """Read at S1's own layer, ``response_from_payload(policy=...)``: ``load_response``'s receipt guard independently
+    refuses to MINT a canonical receipt for a thin load (defence in depth), so the dispatch law is witnessed where it
+    lives -- the response a caller receives."""
+    thin = response_to_payload(_rc("poor"), include_replay=False)
+    _l, exc = _attempt(lambda: svc.response_from_payload(copy.deepcopy(thin), policy=_CANONICAL_ONLY))
+    honest = exc is not None and "0.9.5 S1" in str(exc)
+    with _patch(svc, "response_from_payload", _bad_loader(
+            ('if payload.get("transport_mode") != TRANSPORT_CANONICAL_VERIFIED:', "if False:"))):
+        loaded, _e = _attempt(lambda: svc.response_from_payload(copy.deepcopy(thin), policy=_CANONICAL_ONLY))
+    return honest, loaded is not None
+
+
+@mutant("M229", "a LEGACY v0.8 payload accepted under require_canonical_transport (S1)",
+        "service.response_from_payload (S1 schema-generation dispatch)")
+def m229():
+    """The v0.8 fixture declares CANONICAL_VERIFIED, so only the generation leg stands between it and a canonical
+    consumer (its "canonical" skips D27.1 / D27.4 / D29.1)."""
+    legacy = _v08("response_ethyl_acetate_smiles.json")
+    assert legacy["transport_mode"] == "CANONICAL_VERIFIED", "setup: the legacy fixture must declare canonical"
+    _l, exc = _attempt(lambda: svc.response_from_payload(copy.deepcopy(legacy), policy=_CANONICAL_ONLY))
+    honest = exc is not None and "not canonical under 0.9 semantics" in str(exc)
+    with _patch(svc, "response_from_payload", _bad_loader(("if version != COMPILATION_RESPONSE_SCHEMA:", "if False:"))):
+        loaded, _e = _attempt(lambda: svc.response_from_payload(copy.deepcopy(legacy), policy=_CANONICAL_ONLY))
+    return honest, loaded is not None and loaded.is_legacy_v08
+
+
+# -- section 3: the receipt is out of band, loader-minted, coherent, and paired ---------------------------------------
+
+def _plain_receipt():
+    return load_response(copy.deepcopy(_poor_thick())).receipt
+
+
+@mutant("M230", "the receipt's token check removed: a VerificationReceipt constructs outside the loader",
+        "verification.VerificationReceipt.__post_init__ (the private issuing token)")
+def m230():
+    real = _plain_receipt()
+    kw = {f.name: getattr(real, f.name) for f in dc.fields(VerificationReceipt)}
+    try:
+        VerificationReceipt(**kw)
+        honest = False
+    except TypeError:
+        honest = True
+    bad_post = _src_mutant(VerificationReceipt.__post_init__, ("if _token is not _RECEIPT_TOKEN:", "if False:"))
+    with _patch(VerificationReceipt, "__post_init__", bad_post):
+        forged = VerificationReceipt(**kw)
+    return honest, isinstance(forged, VerificationReceipt) and forged.satisfies(real.policy)
+
+
+def _receipt_lie(anchor: str, **lie):
+    """Honest: the coherence guard refuses a receipt the loader could only mint by lying (``lie`` over a real plain
+    load's facets).  Mutant: that one guard leg removed -- the lie is minted and believed."""
+    real = _plain_receipt()
+    facets = {f.name: getattr(real, f.name) for f in dc.fields(VerificationReceipt) if f.name != "search_output"}
+    facets.update(lie)
+    minted, exc = _attempt(lambda: ver_mod._issue_receipt(**facets))
+    honest = minted is None and exc is not None and "incoherent VerificationReceipt" in str(exc)
+    bad_chk = _src_mutant(VerificationReceipt._check_coherence, (anchor, "if False:"))
+    with _patch(VerificationReceipt, "_check_coherence", bad_chk):
+        minted, _exc = _attempt(lambda: ver_mod._issue_receipt(**facets))
+    return honest, minted
+
+
+@mutant("M231", "a receipt records reexecuted=True without re-execution (the coherence leg removed)",
+        "verification.VerificationReceipt._check_coherence (reexecuted == policy.require_reexecution)")
+def m231():
+    honest, minted = _receipt_lie("if self.reexecuted != policy.require_reexecution:", reexecuted=True)
+    bad = (minted is not None and minted.reexecuted and not minted.policy.require_reexecution
+           and minted.search_output is SearchOutputTrust.REEXECUTED)
+    return honest, bad
+
+
+@mutant("M232", "a receipt records request_pin CHECKED with no pin supplied (the coherence leg removed)",
+        "verification.VerificationReceipt._check_coherence (request_pin vs policy.expected_request_digest)")
+def m232():
+    honest, minted = _receipt_lie(
+        "if (self.request_pin is PinState.CHECKED) != (policy.expected_request_digest is not None):",
+        request_pin=PinState.CHECKED)
+    bad = (minted is not None and minted.request_pin is PinState.CHECKED
+           and minted.policy.expected_request_digest is None)
+    return honest, bad
+
+
+@mutant("M233", "the VerifiedLoad pairing check removed: a receipt from ANOTHER load staples to this response",
+        "verification.VerifiedLoad.__post_init__ (receipt.response_result_digest == response.result_digest)")
+def m233():
+    mine = load_response(copy.deepcopy(_poor_thick()))
+    other = load_response(response_to_payload(_d27("plain")))
+    assert mine.response.result_digest != other.response.result_digest, "setup: two different answers"
+    stapled, exc = _attempt(lambda: ver_mod._issue_verified_load(other.response, mine.receipt))
+    honest = stapled is None and exc is not None and "cannot be paired" in str(exc)
+    bad_post = _src_mutant(VerifiedLoad.__post_init__, ("if self.receipt.response_result_digest != actual:",
+                                                        "if False:"))
+    with _patch(VerifiedLoad, "__post_init__", bad_post):
+        stapled, _exc = _attempt(lambda: ver_mod._issue_verified_load(other.response, mine.receipt))
+    return honest, stapled is not None and stapled.receipt is mine.receipt
+
+
+# -- S3 / S4 / S5 / S6: the Wave-A structure-theorem laws (forgeries = tests/test_v0_9_5_loader_laws.py) -------------
+
+@mutant("M234", "S3 count law dropped: a 3-route answer loads under a pinned max_routes=1 request",
+        "service.CompilationResponse._check_receipt_bounds (results_returned <= result_limit)")
+def m234():
+    """Lane G F1: the max_routes=100 search output carried under the max_routes=1 request (receipt bounds kept =
+    the request's).  S3 is a construction law (A3), so the mutant arm re-forges under the patch, as the keyless forger
+    who could then build the response would."""
+    lt = _loader_tests()
+    forged = json.loads(json.dumps(lt._transplant_search(response_to_payload(_rc("narrow")),
+                                                         response_to_payload(_rc("wide")))))
+    _l, err = _try_load(forged)
+    honest = err is not None and "(0.9.5 S3)" in err
+    bad_chk = _src_mutant(CompilationResponse._check_receipt_bounds, (
+        "and receipt.results_returned > receipt.result_limit):", "and False):"))
+    with _patch(CompilationResponse, "_check_receipt_bounds", bad_chk):
+        loaded, _err = _try_load(lt._reforge(copy.deepcopy(forged)))
+    bad = (loaded is not None
+           and len(loaded.ranked_route_dossiers) > loaded.compilation_ir.search_receipt.result_limit == 1)
+    return honest, bad
+
+
+def _respelled_duplicate() -> dict:
+    """test_s4's forgery: the wide answer plus ONE route with every molecule's atoms renumbered (a new route digest,
+    the same chemistry), re-ranked and re-tallied by the producer's own helpers, every public pin recomputed."""
+    lt = _loader_tests()
+    honest = _rc("wide")
+    req = honest.request
+    replays = [d.replay_payload for d in honest.ranked_route_dossiers]
+    replays.append(lt._renumbered(replays[0], seed=7))
+    routes = tuple(svc._reconstruct_route(r) for r in replays)
+    assert len({r.digest for r in routes}) == len(routes), "setup: the renumbered copy must carry a NEW route digest"
+    ranked = svc._ranked_summaries(routes, req.constraints.bounds, honest.identity_losses,
+                                   process=req.constraints.process, capability_profile=req.capability_profile)
+    forged = copy.deepcopy(response_to_payload(honest))
+    forged["ranked_route_dossiers"] = [svc.ranked_summary_to_payload(s, include_replay=True) for s in ranked]
+    forged["affordability_frontier"] = [svc.affordability_entry_to_payload(e)
+                                        for e in svc._route_frontier(req, routes, ranked)]
+    ir = forged["compilation_ir"]
+    schema = ir["candidates"][0]["schema_version"]
+    ir["candidates"] = sorted(({"schema_version": schema, "candidate_kind": "ROUTE", "candidate_digest": s.route_digest,
+                                "equation": s.equation, "readiness_tier": "FORMAL_CANDIDATE"} for s in ranked),
+                              key=lambda c: c["candidate_digest"])
+    ir["search_receipt"]["results_returned"] = len(ranked)
+    ir["search_receipt"]["candidates_emitted"] = max(ir["search_receipt"]["candidates_emitted"] or 0, len(ranked))
+    note = svc.constraint_note(req.constraints.bounds, fit_counts=svc._fit_counts(ranked),
+                               process=req.constraints.process)
+    forged["diagnostics"] = list(ir["diagnostics"]) + ([note] if note else [])
+    return lt._reforge(forged)
+
+
+@mutant("M235", "S4 one-chemistry-one-dossier dropped: an atom-renumbered duplicate route loads as a second answer",
+        "service.CompilationResponse._check_request_answer_coherence (the structure-chemistry key)")
+def m235():
+    forged = _respelled_duplicate()
+    _l, err = _try_load(forged)
+    honest = err is not None and "(0.9.5 S4)" in err
+    bad_chk = _src_mutant(CompilationResponse._check_request_answer_coherence, ("if shape in seen_chemistry:",
+                                                                                "if False:"))
+    with _patch(CompilationResponse, "_check_request_answer_coherence", bad_chk):
+        loaded, _err = _try_load(forged)
+    return honest, loaded is not None and len(loaded.ranked_route_dossiers) == len(_rc("wide").ranked_route_dossiers) + 1
+
+
+def _deeper_dags() -> dict:
+    """test_s5's forgery: the max_depth=3 convergent answers under the pinned max_depth=1 request, the IR and
+    response diagnostics re-derived for the shallow request, every public pin recomputed."""
+    import smartchem.compilation_ir as cir_mod
+
+    lt = _loader_tests()
+    shallow, deep = _rc("shallow_dag"), _rc("deep_dag")
+    assert max(svc._dag_height(svc._reconstruct_dag(d.replay_payload)) for d in deep.ranked_dag_dossiers) > 1
+    forged = lt._transplant_search(response_to_payload(shallow), response_to_payload(deep))
+    ir = forged["compilation_ir"]
+    ir["diagnostics"] = list(cir_mod.recompile_ir_diagnostics(
+        target_in_terminal_stock=False, complete_within_bounds=ir["search_status"] == "COMPLETE_WITHIN_BOUNDS",
+        status_value=ir["search_status"], has_candidates=bool(ir["candidates"]),
+        mode=svc._GRAMMAR_TO_MODE[shallow.request.transform_grammar], max_depth=1))
+    deep_wire = response_to_payload(deep)
+    forged["diagnostics"] = ir["diagnostics"] + deep_wire["diagnostics"][len(deep_wire["compilation_ir"]["diagnostics"]):]
+    return lt._reforge(forged)
+
+
+@mutant("M236", "S5 DAG-height law dropped: a max_depth=3 convergent answer loads under a max_depth=1 request",
+        "service.CompilationResponse._check_request_answer_coherence (_dag_height <= max_depth)")
+def m236():
+    forged = _deeper_dags()
+    _l, err = _try_load(forged)
+    honest = err is not None and "(0.9.5 S5)" in err
+    bad_chk = _src_mutant(CompilationResponse._check_request_answer_coherence, (
+        'if kind == "DAG" and _dag_height(replayed) > request.search_bounds.value("max_depth"):', "if False:"))
+    with _patch(CompilationResponse, "_check_request_answer_coherence", bad_chk):
+        loaded, _err = _try_load(forged)
+    return honest, loaded is not None and bool(loaded.ranked_dag_dossiers)
+
+
+@mutant("M237", "S5 measured as STEP COUNT instead of height: an honest convergent DAG is refused",
+        "service.CompilationResponse._check_request_answer_coherence (_dag_height, not len(steps))")
+def m237():
+    """The false-REFUSAL direction of S5: honest convergent DAGs carry MORE steps than max_depth (branches), never a
+    greater height.  Honest: the max_depth=2 convergent answer loads (and does carry a DAG of more than 2 steps, so the
+    arm discriminates).  Mutant: the law measures ``len(steps)`` -- the honest answer is refused."""
+    resp = _d27("dag")
+    assert any(len(svc._reconstruct_dag(d.replay_payload).steps) > 2 for d in resp.ranked_dag_dossiers), \
+        "setup: an honest DAG with more steps than max_depth"
+    payload = response_to_payload(resp)
+    loaded, _err = _try_load(payload)
+    honest = loaded is not None
+    bad_chk = _src_mutant(CompilationResponse._check_request_answer_coherence, ("_dag_height(replayed)",
+                                                                                "len(replayed.steps)", 2))
+    with _patch(CompilationResponse, "_check_request_answer_coherence", bad_chk):
+        _l, err = _try_load(payload)
+    return honest, err is not None and "(0.9.5 S5)" in err
+
+
+@mutant("M238", "S6 TARGET_FILE refusal dropped: the loader opens a payload-supplied path under require_reexecution",
+        "service.response_from_payload (S6 TARGET_FILE dispatch refusal)")
+def m238():
+    """Honest: an IR-less TARGET_FILE answer is refused (S6) and the payload's path is never opened.  Mutant: the S6
+    block removed -- re-execution resolves the carried request and OPENS the file the payload named (an ``open``
+    spy; whatever the load then decides, the verifier already performed I/O on attacker-chosen input)."""
+    import builtins
+    import os
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as scratch:
+        path = os.path.join(scratch, "target.txt")
+        Path(path).write_text("not a molecule zzz")
+        answer = run_compilation(build_recompile_request(path, input_kind=InputKind.TARGET_FILE, max_depth=1))
+        payload = response_to_payload(answer)
+        opened: list = []
+        real_open = builtins.open
+
+        def spy(file, *args, **kwargs):
+            if str(file).startswith(scratch):
+                opened.append(str(file))
+            return real_open(file, *args, **kwargs)
+
+        def load():
+            opened.clear()
+            _r, exc = _attempt(lambda: svc.response_from_payload(copy.deepcopy(payload), require_reexecution=True))
+            return exc, list(opened)
+
+        with _patch(builtins, "open", spy):
+            exc, seen = load()
+            honest = exc is not None and "(0.9.5 S6)" in str(exc) and seen == []
+            bad_loader = _bad_loader((
+                'if type(request_payload) is dict and request_payload.get("input_kind") == '
+                'InputKind.TARGET_FILE.value:', "if False:"))
+            with _patch(svc, "response_from_payload", bad_loader):
+                _exc2, seen2 = load()
+    return honest, bool(seen2)
+
+
+# -- C7-3: the DAG legs of D29.1 and D27.1 (ledger parity with the route legs) ---------------------------------------
+
+_DAG_LEG = '("DAG", self.ranked_dag_dossiers, lambda p: _reconstruct_dag(p).steps),'
+
+
+def _reforge_dags(resp, new_dags) -> dict:
+    """The coherent keyless DAG forger (test_c7_3's): re-rank the forged DAGs with the producer's OWN helpers and
+    rebuild every dependent field -- dossiers, IR candidates, receipt count, constraint + DAG-bench notes."""
+    import smartchem.compilation_ir as cir_mod
+    from smartchem.experiment.drafter import ConstraintBox
+
+    req = resp.request
+    box = ConstraintBox.of_bounds(req.constraints.bounds, process=req.constraints.process)
+    ranked = svc.ranked_dag_dossiers(tuple(new_dags), box)
+    cands = tuple(sorted((cir_mod.CandidateSummary(cir_mod.CANDIDATE_SUMMARY_SCHEMA, "DAG", r.route_digest, r.equation,
+                                                   "FORMAL_CANDIDATE") for r in ranked),
+                         key=lambda c: c.candidate_digest))
+    ir2 = dc.replace(resp.compilation_ir, candidates=cands,
+                     search_receipt=dc.replace(resp.compilation_ir.search_receipt, results_returned=len(cands)))
+    diags = list(ir2.diagnostics)
+    for note in (svc.constraint_note(req.constraints.bounds, fit_counts=None, process=req.constraints.process),
+                 svc._dag_bench_note(tuple(new_dags), box)):
+        if note is not None:
+            diags.append(note)
+    return response_to_payload(dc.replace(resp, compilation_ir=ir2, ranked_dag_dossiers=ranked,
+                                          diagnostics=tuple(diags)))
+
+
+@mutant("M239", "C7-3: the DAG leg dropped from D29.1 -- a DAG step's byproduct isomer swap loads",
+        "service.CompilationResponse._check_replay_step_transforms (the DAG table)")
+def m239():
+    """test_c7_3's forgery: a DAG step's acetic-acid byproduct swapped for the same-formula isomer methyl formate
+    (envelope re-looked-up, the whole DAG answer reforged).  Honest: D29.1 refuses it on the DAG leg.  Mutant: D29.1
+    walks only the route table -- the swap loads."""
+    from smartchem.experiment.dag import DAG_SCHEMA, SynthesisDAG
+
+    resp = _d27("dag")
+    dags = [svc._reconstruct_dag(d.replay_payload) for d in resp.ranked_dag_dossiers]
+    acetic = {"C": 2, "H": 4, "O": 2}
+    di, si, pi = next((di, si, pi) for di, d in enumerate(dags) for si, s in enumerate(d.steps)
+                      for pi, p in enumerate(s.products)
+                      if svc._structure_ident(p) != svc._structure_ident(s.target) and p.formula == acetic
+                      and (si, svc._structure_ident(p)) not in {(a, svc._structure_ident(m)) for a, _b, m in d.edges})
+    steps = list(dags[di].steps)
+    products = list(steps[si].products)
+    products[pi] = _mol("COC=O").canonical()
+    swapped = dc.replace(steps[si], products=tuple(products))
+    steps[si] = dc.replace(swapped, envelope=rt._conditions_for(svc._ReplayedTransform(swapped)))
+    new_dags = list(dags)
+    new_dags[di] = SynthesisDAG(DAG_SCHEMA, tuple(steps))
+    forged = _reforge_dags(resp, new_dags)
+    _l, err = _try_load(forged)
+    honest = err is not None and "DAG dossier" in err and "(D29.1)" in err
+    bad_chk = _src_mutant(CompilationResponse._check_replay_step_transforms, (_DAG_LEG, ""))
+    with _patch(CompilationResponse, "_check_replay_step_transforms", bad_chk):
+        loaded, _err = _try_load(forged)
+    return honest, loaded is not None
+
+
+@mutant("M240", "C7-3: the DAG leg dropped from D27.1 -- a DAG step's corpus envelope stripped to unknown() loads",
+        "service.CompilationResponse._check_corpus_evidence_coherence (the DAG table)")
+def m240():
+    """The mesal convergent world carries a SHIPPED corpus envelope on a DAG step.  Honest: stripping it to unknown()
+    (the whole DAG answer reforged) is refused on the DAG leg (D28.1's branch of the D27.1 check).  Mutant: the corpus
+    check walks only the route table -- the stripped evidence loads."""
+    from smartchem.experiment.dag import DAG_SCHEMA, SynthesisDAG
+
+    resp = _rc("mesal_dag")
+    unknown = ConditionEnvelope.unknown()
+    dags = [svc._reconstruct_dag(d.replay_payload) for d in resp.ranked_dag_dossiers]
+    di, si = next((di, si) for di, d in enumerate(dags) for si, s in enumerate(d.steps) if s.envelope != unknown)
+    steps = list(dags[di].steps)
+    steps[si] = dc.replace(steps[si], envelope=unknown)
+    new_dags = list(dags)
+    new_dags[di] = SynthesisDAG(DAG_SCHEMA, tuple(steps))
+    forged = _reforge_dags(resp, new_dags)
+    _l, err = _try_load(forged)
+    honest = err is not None and "DAG dossier" in err and "(D28.1)" in err
+    bad_chk = _src_mutant(CompilationResponse._check_corpus_evidence_coherence, (_DAG_LEG, ""))
+    with _patch(CompilationResponse, "_check_corpus_evidence_coherence", bad_chk):
+        loaded, _err = _try_load(forged)
+    bad = loaded is not None and any(
+        s.envelope == unknown for d in loaded.ranked_dag_dossiers for s in svc._reconstruct_dag(d.replay_payload).steps)
+    return honest, bad
+
+
+# -- S7 / S8 / S9 and the source-subject transplant -------------------------------------------------------------------
+
+@mutant("M241", "S7: structure_key LITERAL (bond-order spelling): a Kekule-flipped salicylic acid reads BLOCKED",
+        "stock._structure_key (resonance_identity)")
+def m241():
+    """Lane D's end-to-end control, both directions: a parsed bottle x a graph-surgery Kekule-flipped requirement (and
+    the reverse).  Honest: not BLOCKED.  Mutant: the pre-0.9.5 literal key -- the very molecule asked for is
+    'absent from every declared bottle' (the C7-2 false-BLOCKED)."""
+    mt = _material_tests()
+
+    def statuses():
+        sal, flipped = mt._salicylic_pair()
+        return [assess_mod._material_axis((mt._req(identity=want),), (mt._bottle(have),)).status
+                for have, want in ((sal, flipped), (flipped, sal))]
+
+    honest = all(s is not CapabilityStatus.BLOCKED for s in statuses())
+    with _patch(stock_mod, "_structure_key", mt._literal_key):
+        bad = all(s is CapabilityStatus.BLOCKED for s in statuses())
+    return honest, bad
+
+
+@mutant("M242", "S7: structure_key a FORMULA key: o-/m-/p-xylene collide and an o-xylene bottle serves p-xylene",
+        "stock._structure_key (constitution-level, never formula-level)")
+def m242():
+    """The other direction of S7's coarsening: resonance-only, never constitution.  (M3 pins the same collapse on
+    ethanol / dimethyl ether; this is the section-12 xylene triple, end to end.)"""
+    mt = _material_tests()
+    xylenes = {n: _mol(s) for n, s in (("o", "Cc1ccccc1C"), ("m", "Cc1cccc(C)c1"), ("p", "Cc1ccc(C)cc1"))}
+
+    def arms():
+        keys = {stock_mod.structure_key(m) for m in xylenes.values()}
+        status = assess_mod._material_axis((mt._req(identity=xylenes["p"]),), (mt._bottle(xylenes["o"]),)).status
+        return len(keys), status
+
+    hk, hs = arms()
+    honest = hk == 3 and hs is CapabilityStatus.BLOCKED
+    with _patch(stock_mod, "_structure_key", lambda m: "struct:formula:" + repr(sorted(m.formula.items()))):
+        mk, ms = arms()
+    return honest, mk == 1 and ms is not CapabilityStatus.BLOCKED
+
+
+@mutant("M243", "S7: a literal digest reintroduced on the REQUIREMENT side only: a name-listed bottle is lost",
+        "capability.requirements.structure_key (name_resolves_to both sides)")
+def m243():
+    """Honest: 'salicylic acid' resolves to its Kekule-flipped structure, so a NAME-keyed bottle is a possible
+    (UNKNOWN) source for the flipped leaf.  Mutant: the requirement module keys literally again (stock untouched) --
+    the name no longer resolves, and the bottle becomes a proof of ABSENCE (BLOCKED)."""
+    mt = _material_tests()
+
+    def arms():
+        requirements_mod._resolved_name_key.cache_clear()
+        _sal, flipped = mt._salicylic_pair()
+        resolves = requirements_mod.name_resolves_to("salicylic acid", flipped)
+        status = assess_mod._material_axis((mt._req(identity=flipped),), (mt._bottle("salicylic acid"),)).status
+        return resolves, status
+
+    try:
+        honest = arms() == (True, CapabilityStatus.UNKNOWN)
+        with _patch(requirements_mod, "structure_key", mt._literal_key):
+            bad = arms() == (False, CapabilityStatus.BLOCKED)
+    finally:
+        requirements_mod._resolved_name_key.cache_clear()
+    return honest, bad
+
+
+@mutant("M244", "S8: a second name fold in waste (strip+casefold, no whitespace collapse): a covered raw material "
+        "reads untyped", "capability.waste._norm_text (the ONE stock-owned fold)")
+def m244():
+    route = _sd_route(_op(OperationKind.ADD, materials=("sulfuric  acid",), material_uses=(
+        _use("sulfuric acid", ProcedureMaterialRole.CATALYST, identity=_H2SO4),)))
+    marker = "introduces untyped material"
+    honest = not any(marker in u for u in waste_mod.derive_waste(route)[2])
+    with _patch(waste_mod, "_norm_text", lambda name: name.strip().casefold()):
+        bad = any(marker in u for u in waste_mod.derive_waste(route)[2])
+    return honest, bad
+
+
+@mutant("M245", "S9 B-narrow dropped on component STATES: a stock state claims SOURCE_QUOTED with no source",
+        "stock.MaterialComponent.__post_init__ (_STOCK_CLAIM_REFUSED_EVIDENCE on states)")
+def m245():
+    from smartchem.experiment.stock import MATERIAL_COMPONENT_SCHEMA
+    from smartchem.material_spec import SaturationState
+
+    def build():
+        return MaterialComponent(MATERIAL_COMPONENT_SCHEMA, "brine", "active", 0.0, 1.0,
+                                 states=(StateClaim(SaturationState.SATURATED, EvidenceKind.SOURCE_QUOTED),))
+
+    built, exc = _attempt(build)
+    honest = built is None and exc is not None and "operator's declaration" in str(exc)
+    bad_post = _src_mutant(MaterialComponent.__post_init__, ("if claim.evidence in _STOCK_CLAIM_REFUSED_EVIDENCE:",
+                                                             "if False:"))
+    with _patch(MaterialComponent, "__post_init__", bad_post):
+        built, _exc = _attempt(build)
+    return honest, built is not None and built.states[0].evidence is EvidenceKind.SOURCE_QUOTED
+
+
+@mutant("M246", "S9 B-narrow dropped on PHASE evidence: a stock bottle's phase claims SOURCE_QUOTED with no source",
+        "stock.StockMaterial.__post_init__ (_STOCK_CLAIM_REFUSED_EVIDENCE on phase_evidence)")
+def m246():
+    def build():
+        return StockMaterial(STOCK_MATERIAL_SCHEMA, "b", "b", (MaterialComponent.known("brine", "active", 0.0, 1.0),),
+                             Phase.AQUEOUS_SOLUTION, "fixture", phase_evidence=EvidenceKind.SOURCE_QUOTED)
+
+    built, exc = _attempt(build)
+    honest = built is None and exc is not None and "operator's declaration" in str(exc)
+    bad_post = _src_mutant(StockMaterial.__post_init__, ("if self.phase_evidence in _STOCK_CLAIM_REFUSED_EVIDENCE:",
+                                                         "if False:"))
+    with _patch(StockMaterial, "__post_init__", bad_post):
+        built, _exc = _attempt(build)
+    return honest, built is not None and built.phase_evidence is EvidenceKind.SOURCE_QUOTED
+
+
+@contextlib.contextmanager
+def _digest_blind_to(cls, name: str):
+    """The digest (``canonical_payload`` walks ``fields()`` with ``compare``) stops seeing ``cls.name`` -- restored on
+    exit.  ``__eq__`` was generated at class creation and is untouched: only the IDENTITY a digest binds goes blind."""
+    fld = cls.__dataclass_fields__[name]
+    old = fld.compare
+    fld.compare = False
+    try:
+        yield
+    finally:
+        fld.compare = old
+
+
+@mutant("M247", "source-subject transplant: the NaCl interval moved onto another material moves NO digest",
+        "stock.MaterialComponent digest (identity_key folded into canonical_payload)")
+def m247():
+    """Barrier section 8: evidence proves ARITHMETIC, placement fixes the subject -- so the minimum the brief demands
+    is that transplanting a sourced number onto another material moves the component AND the stock digest.  Mutant:
+    the component digest blind to ``identity_key`` -- the brine's derived interval relabelled 'potassium chloride'
+    is digest-identical to the original, component and bottle alike."""
+    brine = material_library.sodium_chloride_saturated_wash(quantity=StockQuantity.of("250", "mL"))
+    nacl = brine.components[0]
+    assert nacl.identity_key == "sodium chloride" and nacl.evidence is not None, "setup: the sourced NaCl component"
+    moved = dc.replace(nacl, identity_key="potassium chloride")
+    elsewhere = dc.replace(brine, components=(moved,) + brine.components[1:])
+
+    def moves():
+        return nacl.digest != moved.digest, brine.digest != elsewhere.digest
+
+    honest = moves() == (True, True)
+    with _digest_blind_to(MaterialComponent, "identity_key"):
+        bad = moves() == (False, False)
+    return honest, bad
+
+
+# -- S15 (barrier A1): the three front-door misparse fixes ----------------------------------------------------------
+
+@mutant("M248", "S15 F-2: blanket whitespace deletion restored -- 'CuSO4 5H2O' silently reads CuH2O46S",
+        "formula_expr.normalize_formula_text (_drop_safe_whitespace)")
+def m248():
+    import smartchem.formula_expr as fe_mod
+
+    def read():
+        try:
+            return dict(fe_mod.parse_formula_expr("CuSO4 5H2O").to_formula().counts)
+        except fe_mod.FormulaSyntaxError:
+            return None
+
+    honest = read() is None
+    bad_norm = _src_mutant(fe_mod.normalize_formula_text, ("return _drop_safe_whitespace(work, text)",
+                                                           'return "".join(work.split())'))
+    with _patch(fe_mod, "normalize_formula_text", bad_norm):
+        bad = read() == {"Cu": 1, "S": 1, "O": 46, "H": 2}
+    return honest, bad
+
+
+@mutant("M249", "S15 F-1: str.isdigit restored in _parse_bracket -- '[³]' escapes as a bare ValueError (CLI exit 70)",
+        "smiles._parse_bracket (isdecimal digit runs)")
+def m249():
+    import io
+
+    import smartchem.smiles as smiles_mod
+    from smartchem.cli import main as cli_main
+
+    def plan(text: str):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = cli_main(["plan", text])
+        return rc, err.getvalue()
+
+    rc, err = plan("[³]")
+    honest = rc == 2 and "ERROR_INTERNAL" not in err
+    bad_bracket = _src_mutant(smiles_mod._parse_bracket, ("body[i].isdecimal()", "body[i].isdigit()", 3))
+    with _patch(smiles_mod, "_parse_bracket", bad_bracket):
+        rc2, err2 = plan("[³]")
+    return honest, rc2 == 70 and "ERROR_INTERNAL" in err2
+
+
+@mutant("M250", "S15 F-4: str.isdigit restored in the ring-closure lexer -- AUTO silently reads 'S²N²' as a ring",
+        "smiles._parse_skeleton_stereo (isdecimal ring labels; the ONE walk every skeleton reader shares)")
+def m250():
+    import smartchem.smiles as smiles_mod
+    from smartchem.identity_parse import IdentityParseError, resolve_identity
+
+    def read():
+        try:
+            return dict(resolve_identity("S²N²", InputKind.AUTO).formula.counts)
+        except IdentityParseError:
+            return None
+
+    honest = read() is None
+    bad_lexer = _src_mutant(smiles_mod._parse_skeleton_stereo, ('elif ch.isdecimal() or ch == "%":',
+                                                                'elif ch.isdigit() or ch == "%":'))
+    with _patch(smiles_mod, "_parse_skeleton_stereo", bad_lexer):
+        misread = read()
+    return honest, misread is not None and misread.get("S") == 1 and misread.get("N") == 1
+
+
+# -- S11: the ledger does not over-claim the search-output fields -----------------------------------------------------
+
+def _consistent_no_route_rewrite() -> dict:
+    """test_s11's forgery: a CONSISTENT 'no route' rewrite of the whole advisory search output (IR status + receipt +
+    candidates + dossiers + outcome + diagnostics), every public pin recomputed -- the disclosed D25.3 boundary."""
+    import smartchem.compilation_ir as cir_mod
+
+    lt = _loader_tests()
+    resp = _rc("wide")
+    req = resp.request
+    forged = response_to_payload(resp)
+    forged["ranked_route_dossiers"], forged["affordability_frontier"] = [], []
+    ir, rc = forged["compilation_ir"], forged["compilation_ir"]["search_receipt"]
+    ir["candidates"] = []
+    ir["search_status"] = rc["status"] = "COMPLETE_WITHIN_BOUNDS"
+    ir["standard_status"] = rc["standard_status"] = forged["standard_status"] = \
+        cir_mod.SearchStatus("COMPLETE_WITHIN_BOUNDS").standard_name
+    rc.update(results_returned=0, candidates_emitted=0, cut_enumeration_complete=True,
+              candidate_enumeration_complete=True, result_limit_saturated=False, stop_reason="",
+              candidates_rejected_by_reason=[])
+    ir["diagnostics"] = list(cir_mod.recompile_ir_diagnostics(
+        target_in_terminal_stock=False, complete_within_bounds=True, status_value="COMPLETE_WITHIN_BOUNDS",
+        has_candidates=False, mode="routes", max_depth=2))
+    note = svc.constraint_note(req.constraints.bounds, fit_counts=None, process=req.constraints.process)
+    forged["diagnostics"] = ir["diagnostics"] + ([note] if note else [])
+    forged["outcome"] = "NO_ROUTE_COMPLETE"
+    return lt._reforge(forged)
+
+
+@mutant("M251", "S11: the advisory_when dropped from CompilationResponse.outcome -- the ledger over-claims RE",
+        "transport_ledger CompilationResponse.outcome advisory_when (+ the service docstring cross-check)")
+def m251():
+    """M207's reading, on the S11 entry: honest -- the disclosed boundary really loads keylessly (a consistent
+    'no route' rewrite, receipt search_output ADVISORY) and the ledger's partially-advisory set equals the service
+    docstring's disclosure.  Mutant: the entry's ``advisory_when`` dropped -- the ledger claims RE_DERIVED_ON_LOAD
+    unconditionally while the forgery still loads, and the docstring cross-check of tests/test_transport_ledger.py
+    flags the mismatch."""
+    import smartchem.transport_ledger as ledger
+
+    lt = _ledger_tests()
+    loaded = load_response(copy.deepcopy(_consistent_no_route_rewrite()))
+    boundary_real = (loaded.response.outcome.value == "NO_ROUTE_COMPLETE"
+                     and loaded.receipt.search_output is SearchOutputTrust.ADVISORY)
+
+    def disclosure_mismatch() -> bool:
+        doc = svc.__doc__
+        partial = doc[doc.index("What a KEYLESS consumer must treat as advisory"):].partition("Partially advisory")[2]
+        return {f"{t}.{f}" for t, f in lt._TOKEN.findall(partial)} != set(ledger.partially_advisory_fields())
+
+    honest = boundary_real and not disclosure_mismatch()
+    table = ledger.TRANSPORT_LEDGER["CompilationResponse"]
+    with _patch_item(table, "outcome", dc.replace(table["outcome"], advisory_when="")):
+        over_claim = "CompilationResponse.outcome" not in ledger.partially_advisory_fields()
+        flagged = disclosure_mismatch()
+    return honest, boundary_real and over_claim and flagged
 
 
 # =================================================================================================================

@@ -16,6 +16,20 @@ Writes ``OUTDIR/install_matrix.json`` + ``install_matrix.md`` (+ ``raw/`` output
 every environment agrees on every command.  Interpreters that are not available are DECLARED
 in the results; an untested interpreter is never claimed.  Needs ``uv`` and network access to
 PyPI (numpy/scipy are resolved fresh: the matrix is a clean-install test, not a pinned one).
+
+    python experiments/v0_9_5_install_matrix.py --self-test --wheel W.whl --source-tree T [--work D]
+
+``--self-test`` is the matrix's own mutation gate (barrier section 12, the three packaging mutants): a
+checker that cannot see a broken install is decoration.  It installs the wheel into ONE scratch venv
+(the first available supported interpreter), confirms the unmutated install agrees with the source on
+the probed commands (else the gate is vacuous and fails), then injects each defect into the INSTALLED
+copy and requires the matrix's own comparison to catch it: (1) ``smartchem/evidence/manifest.schema.json``
+deleted -> the package-data command must differ; (2) the installed ``cli.py`` patched so ``--version``
+prints another string -> installed must differ from source; (3) a sibling ``pyproject.toml`` dropped next
+to the installed package -> the REAL implementation digest must NOT move (S12), while a mutant copy of
+``_compiler_implementation_digest`` that folds that ambient file in MUST be seen to move.  Each defect is
+undone before the next.  Exit 0 iff all three are detected; 1 if any is missed; 2 if the self-test
+could not run (no interpreter / the install failed) -- never a claimed pass it did not earn.
 """
 from __future__ import annotations
 
@@ -155,15 +169,157 @@ def check_location(python: Path, cwd: Path, env: dict[str, str], site_root: Path
     return None
 
 
+# -- --self-test: the three packaging mutants (barrier section 12) ---------------------------------------------------
+
+#: The commands the self-test probes -- a subset of COMMANDS, compared exactly as the matrix compares them.
+SELF_TEST_COMMANDS = ("package_data", "version_script", "implementation_digest")
+#: The version print the CLI mutant rewrites (anchored: it must occur exactly once in the installed cli.py).
+CLI_VERSION_ANCHOR = 'print(f"smartchem {__version__}")'
+#: The pre-S12 defect, re-created as a MUTANT COPY of the installed ``_compiler_implementation_digest``: an ambient
+#: ``<package parent>/pyproject.toml`` folded into the digest.  Anchored on the version fold (exactly once), run
+#: against the installed module's own globals -- the installed file itself is never edited for this one.
+MUTANT_DIGEST_CMD = (
+    "import inspect, textwrap, smartchem.program as p\n"
+    "src = textwrap.dedent(inspect.getsource(p._compiler_implementation_digest))\n"
+    "anchor = 'digest.update(b\"\\\\0version\\\\0\")'\n"
+    "assert src.count(anchor) == 1, 'mutant anchor drifted'\n"
+    "src = src.replace(anchor, 'ambient = root.parent / \"pyproject.toml\"\\n    if ambient.is_file():\\n'\n"
+    "                  '        digest.update(ambient.read_bytes())\\n    ' + anchor)\n"
+    "g = dict(vars(p)); exec(src, g); print(g['_compiler_implementation_digest']())\n"
+)
+
+
+def _probe(names: tuple[str, ...], python: Path | str, venv_bin: Path | None, cwd: Path,
+           env: dict[str, str]) -> dict[str, dict]:
+    table = {name: (kind, args) for name, kind, args in COMMANDS}
+    return {n: _run(build_argv(*table[n], python=python, venv_bin=venv_bin), cwd, env) for n in names}
+
+
+def _differs(got: dict, want: dict) -> list[str]:
+    """The matrix's own comparison: which of rc / stdout / stderr differ from the source reference."""
+    return [k for k in ("rc", "stdout", "stderr") if got[k] != want[k]]
+
+
+def _drop_pycache(module_file: Path) -> None:
+    # a stale .pyc must never answer for an edited (or restored) source file -- remove this module's cached bytecode
+    for pyc in (module_file.parent / "__pycache__").glob(f"{module_file.stem}.*.pyc"):
+        pyc.unlink()
+
+
+def self_test(args: argparse.Namespace) -> int:
+    work = (args.work or Path(tempfile.mkdtemp(prefix="smartchem-matrix-selftest-"))).resolve()
+    work.mkdir(parents=True, exist_ok=True)
+    neutral = work / "cwd"
+    neutral.mkdir(exist_ok=True)
+    pythons, unavailable = find_pythons()
+    if not pythons:
+        print(f"SELF-TEST COULD NOT RUN: no supported interpreter available ({', '.join(unavailable)})")
+        return 2
+    ver, python = next(iter(pythons.items()))
+    root = work / f"selftest-py{ver}"
+    try:
+        vpy = make_env(python, root, args.wheel)
+    except subprocess.CalledProcessError as exc:
+        print(f"SELF-TEST COULD NOT RUN: wheel install failed on {ver}:\n{(exc.stderr or b'').decode()[-2000:]}")
+        return 2
+    env, vbin = _hermetic_env(), root / "bin"
+    loc = _run([str(vpy), "-c", "import smartchem; print(smartchem.__file__)"], neutral, env)
+    pkg = Path(loc["stdout"].decode().strip()).resolve().parent
+    if root.resolve() not in pkg.parents:
+        print(f"SELF-TEST COULD NOT RUN: smartchem imported from {pkg}, not the scratch venv {root}")
+        return 2
+
+    src_env = _hermetic_env({"PYTHONPATH": str(args.source_tree.resolve())})
+    reference = _probe(SELF_TEST_COMMANDS, args.source_python, None, neutral, src_env)
+    rows: list[tuple[str, bool, str]] = []
+
+    # sanity: the UNMUTATED install agrees with the source, or every "detection" below would be vacuous
+    baseline = _probe(SELF_TEST_COMMANDS, vpy, vbin, neutral, env)
+    drift = {n: _differs(baseline[n], reference[n]) for n in SELF_TEST_COMMANDS if _differs(baseline[n], reference[n])}
+    rows.append(("baseline: the unmutated install agrees with the source", not drift, f"differs: {drift}" if drift
+                 else "rc/stdout/stderr identical on every probed command"))
+
+    # (1) runtime package data missing from the installed copy -> the package-data check must FAIL
+    data = pkg / "evidence" / "manifest.schema.json"
+    saved = data.read_bytes()
+    data.unlink()
+    try:
+        got = _probe(("package_data",), vpy, vbin, neutral, env)["package_data"]
+    finally:
+        data.write_bytes(saved)
+    diff = _differs(got, reference["package_data"])
+    rows.append(("(1) manifest.schema.json deleted -> package-data check FAILED", bool(diff),
+                 f"differs in {diff} (rc {got['rc']})"))
+
+    # (2) the installed CLI diverges from the source CLI -> installed != source must be reported
+    cli = pkg / "cli.py"
+    original = cli.read_text(encoding="utf-8")
+    if original.count(CLI_VERSION_ANCHOR) != 1:
+        print(f"SELF-TEST COULD NOT RUN: CLI anchor {CLI_VERSION_ANCHOR!r} found {original.count(CLI_VERSION_ANCHOR)}x")
+        return 2
+    cli.write_text(original.replace(CLI_VERSION_ANCHOR, 'print(f"smartchem {__version__}+self-test-mutant")'),
+                   encoding="utf-8")
+    _drop_pycache(cli)
+    try:
+        got = _probe(("version_script",), vpy, vbin, neutral, env)["version_script"]
+    finally:
+        cli.write_text(original, encoding="utf-8")
+        _drop_pycache(cli)
+    diff = _differs(got, reference["version_script"])
+    rows.append(("(2) installed cli.py --version patched -> installed != source", bool(diff),
+                 f"differs in {diff}: {got['stdout'].decode().strip()!r}"))
+
+    # (3) S12: an ambient sibling pyproject.toml must not move the REAL digest -- and a digest that reads it is caught
+    ambient = pkg.parent / "pyproject.toml"
+    if ambient.exists():
+        print(f"SELF-TEST COULD NOT RUN: {ambient} already exists (not a clean scratch venv)")
+        return 2
+
+    def digests() -> tuple[str, str]:
+        real = _probe(("implementation_digest",), vpy, vbin, neutral, env)["implementation_digest"]
+        mut = _run([str(vpy), "-c", MUTANT_DIGEST_CMD], neutral, env)
+        if real["rc"] != 0 or mut["rc"] != 0:
+            raise RuntimeError(f"digest probe failed: real rc={real['rc']} mutant rc={mut['rc']} "
+                               f"{(real['stderr'] + mut['stderr']).decode()[-800:]}")
+        return real["stdout"].decode().strip(), mut["stdout"].decode().strip()
+
+    real_before, mut_before = digests()
+    ambient.write_text('[project]\nname = "not-smartchem"\nversion = "0.0.0"\n', encoding="utf-8")
+    try:
+        real_after, mut_after = digests()
+    finally:
+        ambient.unlink()
+    source_digest = reference["implementation_digest"]["stdout"].decode().strip()
+    s12_holds = real_before == real_after == source_digest
+    rows.append(("(3a) S12: sibling pyproject.toml does NOT move the real implementation digest", s12_holds,
+                 f"{real_before[:16]} -> {real_after[:16]} (source {source_digest[:16]})"))
+    rows.append(("(3b) a digest copy reading the ambient pyproject.toml is DETECTED", mut_before != mut_after,
+                 f"{mut_before[:16]} -> {mut_after[:16]}"))
+
+    print(f"0.9.5 install matrix --self-test (py{ver}: {python}; wheel {args.wheel.name})")
+    for label, ok, detail in rows:
+        print(f"  [{'OK' if ok else 'MISSED'}] {label}\n        {detail}")
+    passed = all(ok for _l, ok, _d in rows)
+    print(f"\nSELF-TEST {'PASS: all three packaging mutants detected' if passed else 'FAIL'} "
+          f"({sum(ok for _l, ok, _d in rows)}/{len(rows)} checks)")
+    return 0 if passed else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--wheel", type=Path, required=True)
     ap.add_argument("--sdist", type=Path)
     ap.add_argument("--source-tree", type=Path, required=True)
     ap.add_argument("--source-python", default="/home/leah/SmartChem/.venv/bin/python")
-    ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--out", type=Path, help="output directory (required unless --self-test)")
     ap.add_argument("--work", type=Path, help="scratch dir for venvs (default: a fresh temp dir)")
+    ap.add_argument("--self-test", action="store_true",
+                    help="run the three packaging mutants against ONE scratch install instead of the matrix")
     args = ap.parse_args(argv)
+    if args.self_test:
+        return self_test(args)
+    if args.out is None:
+        ap.error("the following arguments are required: --out")
     out = args.out.resolve()
     (out / "raw").mkdir(parents=True, exist_ok=True)
     work = (args.work or Path(tempfile.mkdtemp(prefix="smartchem-matrix-"))).resolve()

@@ -8,6 +8,7 @@ Each law has a test that FAILS on the pre-0.9.5 behaviour:
 from __future__ import annotations
 
 import importlib
+import os
 import re
 import shutil
 import subprocess
@@ -130,3 +131,44 @@ def test_package_data_is_present_in_the_package_directory():
 def test_sdist_manifest_prunes_unrunnable_trees(pruned):
     manifest = (ROOT / "MANIFEST.in").read_text(encoding="utf-8")
     assert re.search(rf"^prune {pruned}\s*$", manifest, re.M)
+
+
+# -- Wave C7 hardening -------------------------------------------------------------------------------------------------
+
+def test_c7_the_implementation_digest_fails_closed_off_the_filesystem(monkeypatch, tmp_path):
+    """Wave C7 F1: imported from a zip the source glob found nothing and the digest collapsed to a hash of the version
+    string -- approval bound to no code.  A non-directory package now refuses."""
+    import smartchem.program as program
+    monkeypatch.setattr(program, "__file__", str(tmp_path / "smartchem.zip" / "smartchem" / "program.py"))
+    with pytest.raises(RuntimeError, match="not a directory"):
+        program._compiler_implementation_digest()
+
+
+def test_c7_the_producer_key_path_survives_a_home_less_environment(monkeypatch):
+    """Wave C7 F2: `import smartchem.service` crashed in an arbitrary-UID container (no HOME, no passwd entry) because
+    the keyfile path was computed with Path.home() at import time."""
+    import pathlib
+
+    import smartchem.transport_integrity as ti
+
+    def no_home():
+        raise RuntimeError("Could not determine home directory.")
+    monkeypatch.setattr(pathlib.Path, "home", staticmethod(no_home))
+    assert ti._default_producer_key_path() is None
+    monkeypatch.setattr(ti, "_PRODUCER_KEY_PATH", None)
+    monkeypatch.delenv(ti._PRODUCER_KEY_ENV, raising=False)
+    assert ti.resolve_producer_key() is None
+    with pytest.raises(ValueError, match="no home directory"):
+        ti.resolve_producer_key(create=True)
+
+
+def test_c7_the_human_render_degrades_on_an_ascii_terminal():
+    """Wave C7 F9: `plan CuSO4·5H2O` (human) under PYTHONIOENCODING=ascii exited 70 with UnicodeEncodeError."""
+    env = {**os.environ, "PYTHONIOENCODING": "ascii"}
+    proc = subprocess.run([sys.executable, "-m", "smartchem", "plan", "CuSO4·5H2O"], capture_output=True, env=env,
+                          cwd=ROOT, timeout=300)
+    assert proc.returncode == 0, proc.stderr.decode("ascii", "replace")[-400:]
+
+
+def test_c7_the_sdist_ships_the_compatibility_contract():
+    assert "include COMPATIBILITY.md" in (ROOT / "MANIFEST.in").read_text()

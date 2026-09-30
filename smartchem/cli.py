@@ -735,6 +735,11 @@ def _dispatch(command: str, rest: list[str]) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    # 0.9.5 (Wave C7 F9): a terminal that cannot encode a render's Unicode (PYTHONIOENCODING=ascii) must degrade the
+    # glyphs, never crash the verb with exit 70; bytes on a UTF-8 stream are unchanged.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="backslashreplace")
     if argv and argv[0] in ("-V", "--version"):
         from . import __version__
         print(f"smartchem {__version__}")

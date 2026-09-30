@@ -108,7 +108,16 @@ def _transport_bound_result_digest(base_digest: str, transport_mode: str, body_d
 # ``null``), so every existing caller and golden fixture is unchanged.
 
 _PRODUCER_KEY_ENV = "SMARTCHEM_PRODUCER_KEY"
-_PRODUCER_KEY_PATH = Path.home() / ".smartchem" / "producer.key"
+def _default_producer_key_path() -> "Path | None":
+    # 0.9.5 (Wave C7 F2): resolved without raising -- an arbitrary-UID container has no home directory, and an
+    # import-time Path.home() made `import smartchem.service` itself crash there.
+    try:
+        return Path.home() / ".smartchem" / "producer.key"
+    except RuntimeError:
+        return None
+
+
+_PRODUCER_KEY_PATH = _default_producer_key_path()
 _PRODUCER_KEY_MIN_BYTES = 16
 
 
@@ -130,13 +139,15 @@ def resolve_producer_key(*, create: bool = False) -> bytes | None:
         if len(key) < _PRODUCER_KEY_MIN_BYTES:
             raise ValueError(f"{_PRODUCER_KEY_ENV} must decode to at least {_PRODUCER_KEY_MIN_BYTES} bytes")
         return key
-    if _PRODUCER_KEY_PATH.exists():
+    if _PRODUCER_KEY_PATH is not None and _PRODUCER_KEY_PATH.exists():
         key = _PRODUCER_KEY_PATH.read_bytes()
         if len(key) < _PRODUCER_KEY_MIN_BYTES:  # 0.9.5 (Wave C2 F4): the same floor as the env key and the consumer
             raise ValueError(f"{_PRODUCER_KEY_PATH} holds {len(key)} bytes; a producer key must be at least "
                              f"{_PRODUCER_KEY_MIN_BYTES} bytes")
         return key
     if create:
+        if _PRODUCER_KEY_PATH is None:
+            raise ValueError(f"no home directory to create a producer key in; set {_PRODUCER_KEY_ENV}")
         _PRODUCER_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
         key = secrets.token_bytes(32)
         _PRODUCER_KEY_PATH.write_bytes(key)

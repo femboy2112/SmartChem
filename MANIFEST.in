@@ -4,6 +4,7 @@
 include README.md
 include LICENSE
 include pyproject.toml
+include COMPATIBILITY.md
 prune tests
 prune experiments
 prune docs

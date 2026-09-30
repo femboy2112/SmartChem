@@ -118,6 +118,16 @@ def _sdist_files(path: Path) -> list[dict[str, object]]:
 
 
 def build(repo: Path, ref: str, out: Path) -> dict[str, object]:
+    # 0.9.5 (Wave C7 F3): the wheel's zip mode bits follow the builder's umask (077 vs 002 gave different wheel
+    # bytes); pin it so the artifact is a function of the commit alone.
+    previous_umask = os.umask(0o022)
+    try:
+        return _build(repo, ref, out)
+    finally:
+        os.umask(previous_umask)
+
+
+def _build(repo: Path, ref: str, out: Path) -> dict[str, object]:
     out.mkdir(parents=True, exist_ok=True)
     if out.resolve().is_relative_to(repo.resolve()):
         raise SystemExit("build_release: --out must be outside the repository (never commit build outputs)")

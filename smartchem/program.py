@@ -155,9 +155,16 @@ def _compiler_source_paths() -> tuple[Path, ...]:
     ``site-packages/pyproject.toml`` would have moved it).  Nothing ambient may enter.
     """
     package = Path(__file__).resolve().parent
-    return tuple(
-        sorted(package.rglob("*.py"), key=lambda item: item.relative_to(package).as_posix())
-    )
+    # 0.9.5 (Wave C7 F1): fail CLOSED -- imported from a zip (or any non-directory loader) the glob finds nothing and
+    # the digest would collapse to a hash of the version string alone, binding approval to NO code.
+    if not package.is_dir():
+        raise RuntimeError(f"cannot bind the compiler implementation digest: {package} is not a directory (a zipped "
+                           f"or otherwise non-filesystem install); refused")
+    paths = tuple(sorted((item for item in package.rglob("*.py") if item.is_file()),  # C7 F6: files only
+                         key=lambda item: item.relative_to(package).as_posix()))
+    if not paths:
+        raise RuntimeError(f"cannot bind the compiler implementation digest: no source files under {package}; refused")
+    return paths
 
 
 def _compiler_implementation_digest() -> str:

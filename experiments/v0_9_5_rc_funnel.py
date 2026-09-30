@@ -120,6 +120,8 @@ def _match(exp, obs, path=""):
     if isinstance(exp, dict):
         if "s" in exp and "before" not in exp and isinstance(obs, str) and obs.startswith("policy API absent"):
             return PENDING, {exp["s"]}, [f"{path}: PENDING({exp['s']}) feature absent"]
+        if "s" in exp and "before" not in exp:   # the feature landed: `s` is the facet's tag, not an observed field
+            return _match({k: v for k, v in exp.items() if k != "s"}, obs, path)
         if "s" in exp and "before" in exp:
             sid = exp["s"]
             core = {k: v for k, v in exp.items() if k not in ("s", "before")}
@@ -644,17 +646,55 @@ def _local_module(name: str):
 
 
 def _stream_disposition_facet(route, reqs, profile, meoh):
-    """The S10 half: three SOURCE_QUOTED dispositions reach FIT; each single deletion -> UNKNOWN; no AQUEOUS_NEUTRAL -> BLOCKED.
-    Feature-detected; an API that differs from barrier §6 is reported PENDING_API_UNVERIFIED, never a pass."""
+    """The S10 half (barrier section 6): three SOURCE_QUOTED dispositions -- ROUTED(AQUEOUS_NEUTRAL) on the water
+    byproduct, ROUTED(AQUEOUS_NEUTRAL) on the FILTER op's stream, CONSUMED_COMPLETELY on the methanol residual -- reach
+    CAPABILITY_FIT under the exactly-sufficient bench; deleting any one -> not FIT; a bench without AQUEOUS_NEUTRAL ->
+    BLOCKED.  A model-level synthetic witness, NOT a real procedure.  Feature-detected (PENDING while S10 is absent)."""
     if _local_module("smartchem.stream_disposition") is None:
         return {"status": "PENDING_FEATURE_ABSENT"}
-    try:  # pragma: no cover -- the S10 module does not exist at the frozen base; written against barrier §6 and UNVERIFIED
-        sd = importlib.import_module("smartchem.stream_disposition")
-        raise NotImplementedError(
-            f"barrier §6 names {[n for n in ('StreamDisposition', 'SubjectKind') if hasattr(sd, n)]}; the witness builder "
-            "must be finalised against the landed API (subject constructors are not specified by the barrier)")
-    except (AttributeError, TypeError, ImportError, NotImplementedError) as exc:
-        return {"status": "PENDING_API_UNVERIFIED", "detail": str(exc)[:200]}
+    from smartchem.capability.assess import assess
+    from smartchem.capability.enums import WasteCapability
+    from smartchem.capability.requirements import compile_capability_requirements
+    from smartchem.experiment.readiness import evaluate_route
+    from smartchem.experiment.step import ROUTE_SCHEMA, ExperimentRoute
+    from smartchem.material_spec import EvidenceKind
+    from smartchem.stream_disposition import DispositionValue, StreamDisposition, SubjectKind, stream_subjects
+
+    step = route.steps[0]
+    subjects = stream_subjects(step)
+
+    def one(kind):
+        found = [x for x in subjects if x.kind is kind]
+        if len(found) != 1:
+            raise AssertionError(f"witness: expected exactly one {kind.value} subject, found {len(found)}")
+        return found[0]
+    water, op3, methanol = one(SubjectKind.BYPRODUCT), one(SubjectKind.OP_STREAM), one(SubjectKind.RESIDUAL)
+    locator = "https://example.test/synthetic-zero-fit-witness#disposition"
+    an = WasteCapability.AQUEOUS_NEUTRAL
+    dispositions = (
+        StreamDisposition(water, DispositionValue.ROUTED, EvidenceKind.SOURCE_QUOTED, locator, category=an),
+        StreamDisposition(op3, DispositionValue.ROUTED, EvidenceKind.SOURCE_QUOTED, locator, category=an),
+        StreamDisposition(methanol, DispositionValue.CONSUMED_COMPLETELY, EvidenceKind.SOURCE_QUOTED, locator),
+    )
+
+    def with_(ds):
+        procedure = dc.replace(step.envelope.procedure, stream_dispositions=tuple(ds))
+        return ExperimentRoute(ROUTE_SCHEMA, (dc.replace(step, envelope=dc.replace(step.envelope, procedure=procedure)),))
+
+    def overall(ds, prof=profile):
+        r = with_(ds)
+        a = assess(prof, compile_capability_requirements(r), evaluate_route(r))
+        return "CAPABILITY_FIT" if a.is_capability_fit else a.overall.value
+
+    deletions = sorted({overall(tuple(d for d in dispositions if d is not dropped)) for dropped in dispositions})
+    return {
+        "status": "OK",
+        "with_three_dispositions": {
+            "overall": overall(dispositions),
+            "unresolved": len(compile_capability_requirements(with_(dispositions)).waste.unresolved)},
+        "delete_any_one_disposition": {"overall": deletions[0] if len(deletions) == 1 else deletions},
+        "bench_without_AQUEOUS_NEUTRAL": {"overall": overall(dispositions, dc.replace(profile, waste_handling=frozenset()))},
+    }
 
 
 # ---- held-out, lateral, CLI, legacy, wire ---------------------------------------------------------------------------

@@ -124,7 +124,7 @@
   "response_schema_descriptor_id": "smartchem.service/compilation-response-schema-v1alpha20",
   "response_schema_sha": "41079792c7f8718be616373f1714121e1d43a3e15db8cb8c45093e317158e180",
   "transport_ledger_entries": 97,
-  "transport_ledger_sha": "9022a00487d7c7174396fed1beda6e4f9bfd82f76634c665d5e4450a5ad36b63",
+  "transport_ledger_sha": "55a2cd7cb69d64f68817638b314a63ee2bed96e12b932f0db2ba553bbb9fc528",
   "transport_status_counts": {
    "BOUND_TO_REQUEST": 21,
    "DIGEST_ONLY_ADVISORY": 19,
@@ -898,18 +898,18 @@
      "msg": "ranked route d94500451dacf7217b81c8fbdc74541ca798a76bad9188a1fe0ba100813bf90e claims readiness tier PROCESS_SPECIFIED on a THIN_ADVISORY transport -- PROCESS_SPECIFIED is not admissible on an unsigned thin wire (the producer must serialize "
     }
    },
-   "request_capability_question_digest": "1654f1b322af9a570ed9e7247eb654ac4be65a52d800669d6a8d2f0d77fd3d2a",
-   "request_payload_sha": "62e2bf404554b9e29fa9cdc6f61bdceefa2d2f89f314ee22b1b5117346ba30ea",
+   "request_capability_question_digest": "50107260e7b000d41ac3adbbf31fed0f24965070b38ff3038bb016ba129a63a2",
+   "request_payload_sha": "365e5c9af5620e9961e5576e1ac051b3cb6150028d48504413622e89c94fb59c",
    "request_semantic_digest": "3f71762e8cf117cecc084000f7b87ab853b0bc2e87ce0ad69bd9e0f2cecff7f3",
    "response": {
     "admissible_route_digests": [],
-    "capability_question_digest": "1654f1b322af9a570ed9e7247eb654ac4be65a52d800669d6a8d2f0d77fd3d2a",
+    "capability_question_digest": "50107260e7b000d41ac3adbbf31fed0f24965070b38ff3038bb016ba129a63a2",
     "dags": [],
     "exit_code": 4,
     "frontier_sha": "871552835ebb3fa0556f46c293b1ff3e71ea58eed0cd5d31e96cf2645179c839",
     "ir_sha": "2a6220cd20cba032c48cd192a278c20e18e24da0426bf8928116de7482f59fe1",
     "outcome": "INCOMPLETE",
-    "result_digest": "86049da4f526a108c75e7c7838e94897bda6521255fa83be54dfa53fe5525adf",
+    "result_digest": "a40f4af3b4ce84a091290c5a3c2674219ec81ae830e8c771c6ee6254ca85aa1e",
     "routes": [
      {
       "capability": {
@@ -926,10 +926,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "9d75135c0dff41790a22f70897c71aa7978f7805112ac656a21f701dfe89f576",
+       "digest": "3cd330112d61d8e990913c26854ef37453880a68862cd3d429e344c9e63408d8",
        "overall": "UNKNOWN"
       },
-      "dossier_sha": "be2fd9c518c62fe87e066183734d9e92dd60b6a4d1b6f0e9939dd44bbbce68c8",
+      "dossier_sha": "41f5cfda0f93d5447a44357202ae5d6f9c0592e0e0e5485876f3883615ee0cc8",
       "fit_status": "UNCONSTRAINED",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "18c432ef3d277207f0bc9170cbcfddb88ae0cdf74ce6d6c72c83441632c654d9"
@@ -949,10 +949,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "5533690fba2bba6a96493ad484483ab212eafd7c235052e4fea5719a604d9c6f",
+       "digest": "2c8f945ed1932a8b4a1d5f5a6cdc38d942753c6876ca234b71ca33733ad89125",
        "overall": "UNKNOWN"
       },
-      "dossier_sha": "3f1146cf1838c88375285b639c4a8384234b64fba9c0503899c1d4e98f16997b",
+      "dossier_sha": "1ae5acbb7223a0c52e61d8d69637e66a83d99e897d6ebe2be8131bb4b4a51456",
       "fit_status": "UNCONSTRAINED",
       "readiness_tier": "PROCESS_SPECIFIED",
       "route_digest": "d94500451dacf7217b81c8fbdc74541ca798a76bad9188a1fe0ba100813bf90e"
@@ -972,10 +972,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "e11dfab7e58ccde7d24179144ee715499874f7607e0b9226ae35921bac0326cb",
+       "digest": "c57eea2fa6ca5dfd02e1d17aff1c8bfc3d0b153ecf18cc5e1d1e5d1e0c4b87c7",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "d969a53b09108b441e3f1680689a47322df9e598b893642b3803b32f201af1de",
+      "dossier_sha": "7d3b3051bbeeb7ceff1286dc7e5f0bb5905ec78d46cf6973f0e03a6010273d1b",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "84ffbf450dc3b8a4fa8bfcb259d41b1ff49d690f10d80ca0d848fd11f71b8375"
@@ -995,10 +995,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "3f5a08324841778c5d161f78ce507113dbc8b54e9f8a02fc6c6563472cf63a30",
+       "digest": "87553803ca68c6234868d23b5f5800ce7ade6c919cda593239e079699454e16f",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "71d8b45f71ef8baeac5ea7c9e46d78a54991ed8ef3a06660ee52a30ae106ffd4",
+      "dossier_sha": "d4a7db6d1663b19bca3fa722e19ca67a3f51b69b3c8b6e01dd81c8a5eebf84b8",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "dca8adb158554c484a1eb23adbd480a3620f7cf51e12dd93db0af612596b7343"
@@ -1018,10 +1018,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "ed4e71533eb1fe7b0926d1543005625bc761969d341d3b5665fdf5a5dd6c112b",
+       "digest": "6ceac99bbd3e532015ffae0fdb0e423eb6aadefc879bcf3467705b3136fa0f7d",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "568ecff070be653d716665413125f02c36933d7b4fea975eb89478f5e5c65423",
+      "dossier_sha": "46cbe5cf599e856839d0c74657b39b5f22ac74075ffe5dba13dd3f3debeb5e80",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "733216bfc9f4c19c52e8a2faa95206313ec890080d711fd7bba4a6a2e4812d7f"
@@ -1041,10 +1041,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "31aa2eab8734f52d047e952466b31ddd912cfd6bdb05e11fc572e40315fd5b82",
+       "digest": "dc81d526097c36dcaaab61039854d186443215605343f73595397f0af30ef157",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "7149e9d047f680edbb4d6bfdabb69bfa38445a3989f3df34ee726da0f4944f91",
+      "dossier_sha": "541a6d1fe880d71bbff9f6548f58ae5dd7be5cd5f4e5a0ff41324b08ee6f71a8",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "1e1449f6e646022886ac2fb745cb19e2f042f1ea9629e6bea4bea9c93c7df331"
@@ -1064,10 +1064,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "86f0addd04332e63c0784581f7b792ee1d3fa7e4461159d002ed395361b1ff60",
+       "digest": "7ad4156f67ff1f53abf4ada9b2c4920f7b0d55ed71c3d3473449223b2e9f908b",
        "overall": "UNKNOWN"
       },
-      "dossier_sha": "5ce42b99b7b179dbc6cf0529009c4926d574a588aa9e16daa4a26e6112e9a71b",
+      "dossier_sha": "f455c2ead2657663894028cd489c2dd7bddb71a9cc69c6439f1a07e6217ebd79",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "064e8ac8727925e26f8ffe8b16dc2e86043f2b2615cbd3c0d32f9f8ad42116fc"
@@ -1087,10 +1087,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "00030fc04355337caf07b0b84cd501c8104499813aa496e51faf752fdd432faa",
+       "digest": "4ac0819a8992c3aa28333373d78259113f202cfbf1db13d34e560400ab970c1b",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "b74906be1e3f785e05886616c7ac0a8dbf4833557189167b45e65bc07b475765",
+      "dossier_sha": "bdf494d4506bc55a9378a0ea2b5c1c1d4fb69a6dd817f3220c8b72f6d718267c",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "27af2c28b9e213930ccfe8a8e9a0f97aa8127df90f10df19e5c4ad753ac7fc74"
@@ -1110,10 +1110,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "aafd1be1c8b60fbedc06146f94a11d539f1e09ac456673454ddfc29b8f6a6bae",
+       "digest": "ea8a1b90e9e582d06ab5fdee25b4d566f595d09806a63005ea0c667c6a244a6b",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "3b55b0490b339ba8eae449df6beb9832c5460041ecc1cf01377bc65165638395",
+      "dossier_sha": "61739aaeaaca114b6aedb2a1eacff6bb4e7a298dd34b0d82d8b11d44096e81ff",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "8b3eeba819ee307e1b50f627bc161d4f6cbf4ccbf8a12165aa24bf93f5b6b753"
@@ -1133,10 +1133,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "48229f57b947a9d383e372d9ee1d1f3ee07de7b361e7f8edc38446a796f1a63c",
+       "digest": "7bb38bc3cdafdcf6663180b498be586661d707df732ae6dbef57ba2678a892ba",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "9ba0a138636ab9a091b6de2144e5d3aece7c01a9e7538aa0ddfc2edaaddbc555",
+      "dossier_sha": "f5979665e46111c7596e483f11e02415821904542e38d3714ebe41e655ba76a5",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "970d144bf054904be75b72060e31072db1e460dfd5241103d74c7f70871adc58"
@@ -1156,10 +1156,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "a3b2007edbd91f2103c76b13590b9a1cc69f1b61be908333a2bb55cbaf9fe441",
+       "digest": "26e8e461d569927aae3c2dcdd8af0e17dc15f0198bfc05903a12f214197ff472",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "41d5098bc6e71e3b1ff10fb42e4ce1b84cd2fa526842c7aff5879de5818bf06c",
+      "dossier_sha": "77cb79730afeb8ae338ba93eb8386cbc2b344cfb0a547f7a368f51a3a96fa9ac",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "9f5bd13f8bcbd3c1c5dbb88be1faac61bf18da5c133e6c54a2377f910553c20b"
@@ -1179,10 +1179,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "16eb66b307094456d397ae26e663700f3f5ab16e5aa7c91d0f823c0545dcec35",
+       "digest": "2314c46da8173aab6509a6b56edf969ebb9e47499c6f7ee022342bd2401e8162",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "d18eab612f41169626b8c7391d3fd2df31a7adcd0d94d0b9c9f28f930a32ee74",
+      "dossier_sha": "e11f8cb9d9b631da042bbcdda8d9da226a091800e91e71196ef7d9641e4e73ff",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "86f6379e727ee59bb7edc94c726b82ae8eef97c02cf56f4b6e695aa2e3bcd818"
@@ -1202,10 +1202,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "47eb505b4f93ad28c9acf3255f5305980ecb08e0cc429638a4c6568042506954",
+       "digest": "5ef5a5848ab27213a70cccc394834b37ff29fb1bc89e66f389d37300121d8c50",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "974bba8b864bead7662e027aa493dbb6110a76b82c7cfe5d318f2e8324b18b26",
+      "dossier_sha": "da64b7a06aa59cf13b27bcb7b5937b2a18bf8cb07698a9611b4fe68789e76642",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "0b601d01906363c598e3396de61f595597ae6f67f5d3c6c740cae0616a9d9f29"
@@ -1225,10 +1225,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "c6f5001210f4cc9f378bd0783aa4e045236bec61f39354da18ba9f0fc3331991",
+       "digest": "86f557e209b4a937e1daf43b4b8c072fd59bda7658c849f894a2ce4c9e7ee736",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "11eff39acdda8d40e3592726545f1de9239b08511f5b9067cdcc445255865a3c",
+      "dossier_sha": "0a6d009f3a31ef05c9e81ceeccdc308c593d93e5bad36847dd67a56d19eac2e7",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "3ab870a52c282868c66dbdf4e0c038213e25102cabb910b4e4a3f4ebb6a6241e"
@@ -1248,10 +1248,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "904702c3c7cda675fe3dcfae3c2213f259fb63336133373ad6aba618f2230c91",
+       "digest": "85ed69fae656b6fd59d5ac4cda2736042fe9473d6f147d12a06d5cae92554de0",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "48b1c31f8b8626c1497edcd2f3ce4bb7f7921c327a360215308dc8426713a7c1",
+      "dossier_sha": "086b16ffaa13a560960b16e4090cef62a7e66425602973a62c3d0e65c1fc1518",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "29280c8cbeba0a6b955cf9902036a6fdb775607f7a2447d87fbd3aa39ffc4111"
@@ -1271,10 +1271,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "ff46e962101e0e413ff6d6e45d3c71b5c628e1c69c1633220d834aa8c75276a4",
+       "digest": "f66409b18b17213e1d54e50fb9f0f582b7bf205abc3135f7f8b0cdb150d0fde8",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "833ce77f6ceaf3bded6a6838a9f124479e42cef1a1a13925ad3f551ee338b3ed",
+      "dossier_sha": "f3e8b10179dd3ec602a1d3b3079c9db17c10c0d2d8676e435c130c34e8a59c4d",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "2b0bedc0a21ddc3dc345dea20cfa79a720e09ba7d71fd25a560d6d48b2ec185e"
@@ -1294,10 +1294,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "1af446e26009021b90cf8ce6c5be9f93447d0df3d8cdf709e0396299c3db094b",
+       "digest": "7fa947cab4d40f9be539ca220908a281b2dd34eaf25de4944affca27a9607a15",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "320981fdb603b57ef1fe8f8ced05695f87e86af29e830dcb0fd0fefb4728ae42",
+      "dossier_sha": "276098f9e576ff9db438fca56f37467206d57e4552a5aa2c0e8e31c3c16aa095",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "6775d6ca79128f0588fcf0599d3106606b6e220bde35ca01468bdc6d8fe8bb38"
@@ -1317,10 +1317,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "95a4a21c41265cc307207c4da4a4e717c18c7c48566f0bfe939c5d86579f9fb0",
+       "digest": "3f2537db19dbdd959ade05d849df8e232a9ae7669c163392fad08649b2c0c86f",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "72365f4b6ef6e2ecfb8a716fd66e0d72abcd78855853934b6732af7fa6cd1c5d",
+      "dossier_sha": "8c3d134462b37ff3a9cbb1f11dc7d1435035c94d34edb925d0b32f183fb0ddad",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "c5dfaa75952af3726dddb44618f76ca6577099203c3ce578915382ee0a481ef4"
@@ -1340,10 +1340,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "2d301e10e83aff40492376ca7c774b076202168badeb310433136c23c3697fcd",
+       "digest": "29b1e0c02aaa9e77a77326f842a388f353c1b9fe4ae011b9d4a511495b8e243e",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "9a88bfdb77d1660dfe7d4c5298225cf1b5d832603b381b2c90b0b2c9f180a4f8",
+      "dossier_sha": "afb6add2d2b0986a0031735db6b666df4b8f97731f7d7a56ea65b2ff27c1914e",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "6358da49d4458d236e3abdca79159447f451c97aeb99d369eaec310f30413ae2"
@@ -1363,10 +1363,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "57a52a193b600935f144fcac9dedb46d80b6eb737e405c060b7efbe8b1535d29",
+       "digest": "02e4f8be53be81fdce44e1bdaa98dc5cb81fad382733e7ccafa3d579ff1f72b3",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "b664d07b484f745ee5860a4fdeb7498373d6081c00bce485f263357641e324f8",
+      "dossier_sha": "0f32df36d69afcf8948cac26330ad687118588647e225ef98cb81a37bf3b639a",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "64e67c90cc884ff112539e3603e56351b853601a000d46b95031d51a49ed13e8"
@@ -1386,10 +1386,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "10d6d470d0f2e08cde56c3437646b8a305bea26d23610c34df2933610a33b198",
+       "digest": "10d0183c8ec55a58a952973758b32cfd58aeba03eb6978eff877b619b23d3c81",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "75c477dc6f2fddd80e7d08890fa5862856350f3cb1ebd93e96c9e6e92d4eca7a",
+      "dossier_sha": "4d0d1073e2a5e06955c3ac604c1b9158df741d423ad870f7f7c8a8f661682930",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "3ab037b721c422109c4cc610183f4a85aaed8e1a08181c85e5d8f5991d61386a"
@@ -1409,10 +1409,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "95585b4baeccf8ae6d0bb890bd373a21cf5fdecbb8b5b2a89b2474e565098e2b",
+       "digest": "373928266e2654ae18c560fc61e022df5bd3a4361a7e0d063889daea4a4fe517",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "2a5922ed34bbc3622b91abe1bd5fa73183977d83c4ee974dc4cd9ea76e2ada85",
+      "dossier_sha": "3ec0e134bda8cdee23fea7bea03856c6982986c65c2717a41dab1ea40c187fa6",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "8cf684a3abcb586f9e170d9fd22213e11e511d78cecb7086727734ac86872834"
@@ -1432,10 +1432,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "63a76045fce2a1835a35510122c2d9afee2b454df0e31d36830a27181ce71c97",
+       "digest": "35e089165f6171a80577a6aca05a1f4fcd66222e87564a572e3a11a704ab8a80",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "1625644e4d7544b3d3577bf87b16145efae9bd6a737bed6a7dc4bec1678ebae8",
+      "dossier_sha": "85c73efbc6aa75eadce735ca959e66bf7812dacfa155648c9c28ae3d54d6d317",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "d540864f45220dddf111cd36952b106ceb7ab00622c642a2368ea345821f5f26"
@@ -1455,10 +1455,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "00291468ff63dd3e1c37e7b0c0c785e4fe95cf6369bc01e9488ed08e427b64b6",
+       "digest": "7cbccc0afa8d75f05aeb935ee498f88591f8b268439c12cd5e17c9629c59880c",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "52e5d9e611fc4e0d4fb10b538ca33fde5e088b00d9687f091beaf2da0fbf3684",
+      "dossier_sha": "c744bec7257e27fd8a2bdd2dfeb79a594b8cd5f24c5cf8f0fe5cbae35a2d8493",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "7eb952217256bd53d780cfa8fc3be68977ddbde03393e049b8265f74dd6b62af"
@@ -1478,10 +1478,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "02ce2f84315796b33b93df53743cdefc8a255079bae88cb6ebd2bd484d0964fc",
+       "digest": "148b7011442e3acbc730e6ad8f5c5783a74482054175c8022574d9a2ea72d726",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "6a636a25a0b4005ceebad60fc1726d5ebbd65bacbfe580def5dff54ccbc75102",
+      "dossier_sha": "82843e0e5074e0835f86d3e91c809ea935a0d125e1fcd547b9c92f509ead2414",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "ccbf72b8271a1029f1b528d0f1ca3f6429729294c9ffa72ed009d30bad7bcc9e"
@@ -1501,10 +1501,10 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "d1c51bcbd0226ce3f996e7a54170bf9a4dbd3341e99cf7bf7f338cbf9ca68212",
+       "digest": "590eb601f43a041b930eb24e73c54a29089ef97de9894e99f811bd07b9b257f4",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "54a8c50613e6c14c1658a33edf38682bd5d9c879642d8847c4069fba28bb68b0",
+      "dossier_sha": "199ee0c54accf13210ed05b9f4fdec106831d78af7bcd2e31fe70818323a6cf1",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "8f19fd365b63ca30a7278424909127378903a5f67e1f60a50b5d70a5220b9919"
@@ -1524,21 +1524,21 @@
         "ventilation": "NOT_APPLICABLE",
         "waste": "UNKNOWN"
        },
-       "digest": "a952bf815d4262804fd5fa95d9537c3d8caf96efeec66b4bf21cf98d36101ad9",
+       "digest": "45484eee6d3cdb3574cba11782939b9a554541fdc397232d21094b4e2bbcbb81",
        "overall": "BLOCKED"
       },
-      "dossier_sha": "848e22da6f10ece1304af6db032f626252318779df70f9fd982cec6e02f598a1",
+      "dossier_sha": "64639e6e1f2ba2ed229e1a00c3e42c33701e01af01497e24febc6dc585d29775",
       "fit_status": "UNKNOWN",
       "readiness_tier": "FORMAL_CANDIDATE",
       "route_digest": "c1d83ddfcdb064aee4a208be532ca6c1842bc22631398fe35569cff925358e0f"
      }
     ],
     "search_space_status": "PARTIAL_CANDIDATE_SET",
-    "semantic_fields_sha": "48c9f2b9f87637679537589bb9fd3882ad042889d3a74eace2d80d694e544214",
-    "thick_payload_sha": "f26cc7e3805efd41886ba80c8c7d54a5ac3a9bca57ecbf818439e43eb8b6e075",
-    "thin_payload_sha": "0316b242fcd25b8cf6a88115be29cc450ca8fb44852daab8c141f5e5edabaaa7",
-    "thin_wire_result_digest": "5f5ce33fe9042bc49f0a2ea98c8495f1742d996649318d5a4ca62c88cde78f19",
-    "wire_result_digest": "de833989ec0d33c9436ea5f9d705149868480787fb7ea3428f5468a142c011fa"
+    "semantic_fields_sha": "d3cbaa32af83015551b7d507804466ae4520385788320174cd6dfc191c711058",
+    "thick_payload_sha": "d43641ae50f654b9eac8e411fcd0fae3b677c3e1c707eded314ab586fe3f1983",
+    "thin_payload_sha": "cdaf5f579d3db1a93418a6ee5ace21740140f8ba8117e71634fc45b6df9ce634",
+    "thin_wire_result_digest": "c666e49f8b932b4a83e98a95c18d21eda528678634980fb0e496c454377de065",
+    "wire_result_digest": "e7c13d2f90841bdea6e549729916ba4149f954907ce5ffb324de53a28a668db9"
    },
    "target": "isopentyl acetate"
   },
@@ -3546,12 +3546,12 @@
  },
  "timings": {
   "aspirin": {
-   "compile_s": 1.95,
-   "load_s": 0.69
+   "compile_s": 2.01,
+   "load_s": 0.7
   },
   "aspirin@poor-man": {
-   "compile_s": 0.5,
-   "load_s": 1.08
+   "compile_s": 0.55,
+   "load_s": 0.9
   },
   "bromine": {
    "compile_s": 0.01,
@@ -3563,75 +3563,75 @@
   },
   "decompile_paracetamol": {
    "compile_s": 0.0,
-   "load_s": 0.0
+   "load_s": 0.01
   },
   "diels_alder_control": {
    "compile_s": 0.16,
-   "load_s": 0.15
+   "load_s": 0.16
   },
   "invalid_name": {
    "compile_s": 0.01,
    "load_s": 0.01
   },
   "isopentyl": {
-   "compile_s": 69.22,
-   "load_s": 16.21
+   "compile_s": 74.46,
+   "load_s": 16.1
   },
   "isopentyl@custom-fit-bench": {
-   "compile_s": 61.89,
-   "load_s": 23.0
+   "compile_s": 55.09,
+   "load_s": 24.91
   },
   "isopentyl@poor-man": {
-   "compile_s": 58.68,
-   "load_s": 25.82
+   "compile_s": 58.26,
+   "load_s": 18.86
   },
   "isopentyl@research-lab": {
-   "compile_s": 68.92,
-   "load_s": 24.93
+   "compile_s": 65.22,
+   "load_s": 20.99
   },
   "isopentyl_dag": {
-   "compile_s": 52.02,
-   "load_s": 0.06
+   "compile_s": 49.92,
+   "load_s": 0.05
   },
   "isopentyl_dag@poor-man": {
-   "compile_s": 0.03,
+   "compile_s": 0.02,
    "load_s": 0.04
   },
   "isopentyl_dag_quick": {
-   "compile_s": 15.74,
-   "load_s": 7.7
+   "compile_s": 15.53,
+   "load_s": 7.72
   },
   "methyl_acetate": {
-   "compile_s": 0.2,
-   "load_s": 0.34
+   "compile_s": 0.19,
+   "load_s": 0.31
   },
   "methyl_acetate@poor-man": {
-   "compile_s": 0.24,
-   "load_s": 0.52
+   "compile_s": 0.26,
+   "load_s": 0.49
   },
   "methyl_acetate@research-lab": {
    "compile_s": 0.24,
-   "load_s": 0.55
+   "load_s": 0.53
   },
   "methyl_acetate_dag": {
-   "compile_s": 0.71,
-   "load_s": 1.16
+   "compile_s": 0.86,
+   "load_s": 0.95
   },
   "methyl_salicylate": {
-   "compile_s": 0.14,
+   "compile_s": 0.2,
    "load_s": 0.24
   },
   "paracetamol": {
-   "compile_s": 1.27,
-   "load_s": 0.68
+   "compile_s": 1.31,
+   "load_s": 0.57
   },
   "paracetamol@research-lab": {
-   "compile_s": 0.51,
-   "load_s": 1.04
+   "compile_s": 0.47,
+   "load_s": 0.82
   },
   "paracetamol_incomplete": {
    "compile_s": 0.02,
-   "load_s": 0.04
+   "load_s": 0.05
   }
  }
 }

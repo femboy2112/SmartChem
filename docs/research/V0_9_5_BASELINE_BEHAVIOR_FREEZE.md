@@ -34,7 +34,7 @@ tree whose every drift has been adjudicated.
 | `cli.human` | human renders (stdout/stderr sha, exit code, line count): recompile, capability recompile, no-route, invalid, decompile, `plan` hydrate (`CuSO4·5H2O`), charged ion (`SO4^2-`), ambiguous formula (`C2H6O`), name, malformed, unknown-flag refusal, Diels–Alder `--json` | 12 |
 | `legacy_v08` | every real `tests/fixtures/v08/**` fixture: file sha + load outcome (accepted + outcome/result digest, or exception class + message head) | 15 (+ descriptor doc hashed only) |
 | `refusals` | a fixed 15-case tamper matrix on the methyl acetate poor-man canonical payload: unknown schema id, key delete/insert, digest flip, transport relabel, fit relabel (thick + thin), request / capability pin mismatch, signature policy (no key; unsigned-under-required), thin under verified admission, thin plain (advisory — ACCEPTED), dossier deletion, non-dict | 15 (14 refused, 1 accepted by contract) |
-| `service` | 23 corpus requests (below): request payload sha + semantic digest + question digest; response outcome, exit code, search-space status, result / wire / thin-wire digests, `response_semantic_fields` sha, admissible set, ranked route digests IN ORDER with fit status, readiness tier and all 11 capability axes + overall, DAG dossiers, frontier sha, IR sha, thick + thin payload sha; load behaviour (plain thick, request pin + question pin + verified admission, plain thin → accepted? round-trip byte-identical?) | 23 |
+| `service` | 22 corpus requests (below): request payload sha + semantic digest + question digest; response outcome, exit code, search-space status, result / wire / thin-wire digests, `response_semantic_fields` sha, admissible set, ranked route digests IN ORDER with fit status, readiness tier and all 11 capability axes + overall, DAG dossiers, frontier sha, IR sha, thick + thin payload sha; load behaviour (plain thick, request pin + question pin + verified admission, plain thin → accepted? round-trip byte-identical?) | 23 |
 
 ### The service corpus (the exact requests the 0.9 gates already drive)
 
@@ -93,3 +93,12 @@ The first `--write` of this freeze recorded every pinned load as REFUSED — an 
 `request.digest`, not the `semantic_digest` the loader binds; the tests' own `_pins` helper is the authority). It was
 caught by reading the frozen values (a pinned honest load cannot be refused), fixed, and re-frozen; the first isopentyl
 DAG case also carried 0 DAGs, so two real DAG cases were added (4 and 16 DAGs). The committed JSON is the corrected one.
+
+## Adjudicated re-freezes (the yardstick moves only here, one line per sanctioned semantic step)
+
+| # | on commit | drifted keys (vs the previous freeze) | adjudication |
+|---|---|---|---|
+| 0 | `d26f0eb` (merged 0.9) | — | the original freeze (sha256 of the JSON: see git history of this file) |
+| 1 | `a890e8a` | EXACTLY 11: `/ledgers/transport_ledger_sha` + 10 `isopentyl@custom-fit-bench` digest keys (`request_capability_question_digest`, `request_payload_sha`, `response/{capability_question_digest, result_digest, routes, semantic_fields_sha, thick_payload_sha, thin_payload_sha, thin_wire_result_digest, wire_result_digest}`) | **S11** (ledger text: `advisory_when` on outcome / standard_status / exit_code / search_space_status; the transport_mode note) and **S7/S9** (that case's profile carries structure-keyed stock under the bumped material-component / stock schema ids). Parent-verified: the verdict projection of all 27 routes (fit status, readiness tier, overall + 11 axes) and outcome / exit / search space / admissible set / DAGs / frontier / IR are IDENTICAL; `routes` moved only in `capability.digest` and `dossier_sha`. Loader wiring (`7c1f62e`) and S3/S4/S5 (`390ba03`) moved NOTHING (full `--check` NO DRIFT on `7c1f62e`; quick on `390ba03` drifted only the S11 ledger sha). |
+
+Erratum: this document first said "23 corpus requests"; the corpus has 22 service cases.

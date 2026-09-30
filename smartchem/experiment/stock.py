@@ -19,12 +19,12 @@ import math
 from dataclasses import dataclass, field
 from enum import Enum
 from fractions import Fraction
-from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from ..category import Molecule
 from ..contracts import Digestible
 from ..material_spec import ConcentrationBasis, EvidenceKind
+from ..verification import work_transparent_cache
 
 if TYPE_CHECKING:
     from ..data.derived_evidence import IntervalEvidence
@@ -129,7 +129,7 @@ _STRUCT_ASGIVEN = "struct-asgiven:"
 _ASGIVEN = "asgiven:"  # resonance_identity's own sentinel for a graph the canonicaliser refuses
 
 
-@lru_cache(maxsize=8192)
+@work_transparent_cache(maxsize=8192)  # 0.9.5 S16: a hit replays the canonical work beneath it
 def _structure_key(molecule: Molecule) -> str:
     """The implementation behind :func:`structure_key` (memoised on the hashable Molecule). Kept as a module global
     on purpose: :func:`structure_key` resolves it by NAME at call time, so a test/mutation patch of

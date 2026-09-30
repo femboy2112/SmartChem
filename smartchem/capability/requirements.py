@@ -35,7 +35,6 @@ Nothing here decides FIT/BLOCKED/UNKNOWN -- that fold lives in :mod:`smartchem.c
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
 
 from ..category import Molecule
 from ..constraints import PhysicalBounds
@@ -52,6 +51,7 @@ from ..experiment.stock import structure_key
 from ..material_spec import MaterialSpecification, PhaseClaim
 from ..procedure_evidence import OperationKind, ProcedureMaterialRole
 from ..process_constraints import Agitation, ProcessRequirements
+from ..verification import work_transparent_cache
 from .coverage import SUMMARY_FIELDS, render_op_quantity, render_scale, render_summary, render_verification
 from .enums import ContainmentCapability, EquipmentCapability, MeasurementMethod, WasteCapability
 from .equipment_resolver import classify_apparatus_strings
@@ -237,7 +237,7 @@ class RouteCapabilityRequirements(Digestible):
 # literal-digest twin is gone -- a requirement and a bottle can no longer disagree about what one molecule is.
 
 
-@lru_cache(maxsize=1024)
+@work_transparent_cache(maxsize=1024)  # 0.9.5 S16: a hit replays the canonical work beneath it
 def _resolved_name_key(name: str) -> "str | None":
     """The :func:`~smartchem.experiment.stock.structure_key` of the structure the OFFLINE NAME resolver assigns to
     ``name``, or ``None`` when the name does not resolve (unknown to the offline table, or not a name at all). Pure

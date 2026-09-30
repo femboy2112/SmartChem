@@ -7,8 +7,9 @@ AND a verifier hole (every canonicalisation of a load ran uncharged).  The opera
 1. automorphism pruning, identity-PRESERVING  -- neo2 finishes in ~600 nodes; NEW == the verbatim OLD search;
 2. node / atom-node ceilings, explicit stack  -- past them: ``CanonicalBoundExceeded`` (a ``NotImplementedError``);
                                                  deep graphs no longer die of RecursionError (Wave C6);
-3. canonicalisation is budgeted work          -- ``canonical_work``, charged hit or miss, replayed by every
-                                                 work-transparent cache, refused STICKILY (never from inside);
+3. canonicalisation is budgeted work          -- ``canonical_work``: each distinct cached computation charged its
+                                                 cold work ONCE per load (replayed through every work-transparent
+                                                 cache, never recomputed in a load), refused STICKILY (never inside);
 4. the enumeration-work floor                 -- no reagents no longer means W = 0 (Wave C3 C3-F1);
 5. the typed front-door refusal               -- ``IdentityOutOfBounds`` (exit 2), never exit 70;
 6. the Kekule placement DFS bound             -- dead ends count, bounded and charged (Wave C6 C6-F4);
@@ -224,6 +225,23 @@ def test_canonical_charges_the_same_work_on_a_hit_and_on_a_miss():
     assert (info.maxsize, info.currsize) == (8192, 1) and info.hits == 0 and info.misses == 1
 
 
+def test_a_node_is_charged_once_per_load_and_never_recomputed_in_it():
+    """Broken (every-call charging): each of the thousands of hits an honest load makes costs the full cold price --
+    the honest re-execution maximum reached 1.77e9 units.  Broken (no per-load memo): a process-LRU eviction mid-load
+    buys a recomputation.  Law: a distinct node costs its cold work once per load, and is computed at most once."""
+    m = relabel(parse_smiles("C1C2CC3CC1CC(C2)C3"), random.Random(12))
+    Molecule.canonical.cache_clear()
+    context = VerificationContext(VerificationPolicy(budget=VerificationBudget.unlimited()))
+    with context.activate():
+        first = m.canonical()
+        once = context.meter.consumed("canonical_work")
+        assert m.canonical() == first
+        Molecule.canonical.cache_clear()                     # the process LRU forgets it mid-load ...
+        assert m.canonical() == first
+        assert context.meter.consumed("canonical_work") == once == _cold_canonical(m)[1]
+        assert Molecule.canonical.cache_info().misses == 0   # ... and the load still never recomputes it
+
+
 def test_resonance_canonical_replays_the_work_of_its_placement_search():
     """Broken: resonance_canonical as a bare lru_cache -> a hit skips every canonical() beneath it uncharged."""
     m = relabel(parse_smiles("c1ccc2ccccc2c1"), random.Random(2))
@@ -310,6 +328,34 @@ def test_tiny_canonical_budget_refuses_the_methyl_acetate_load(methyl_acetate):
     with pytest.raises(VerificationBudgetExceeded) as info:
         load_response(copy.deepcopy(thick), VerificationPolicy(budget=VerificationBudget(canonical_work=64)))
     assert info.value.counter == "canonical_work" and info.value.limit == 64
+
+
+def _clear_every_cache_above_canonical() -> None:
+    import smartchem.capability.requirements as req_mod
+    import smartchem.experiment.kinetics as kin_mod
+    import smartchem.experiment.stock as stock_mod
+    from smartchem.verification import ENUMERATION_CACHE
+
+    for fn in (Molecule.canonical, resonance_canonical, stock_mod._structure_key, req_mod._resolved_name_key,
+               kin_mod._side_key_from_smiles):
+        fn.cache_clear()
+    ENUMERATION_CACHE.clear()
+
+
+def test_profile_load_receipt_is_the_same_cold_warm_and_after_a_clear(methyl_acetate):
+    """Broken: any cache above canonical() left a bare lru_cache (stock._structure_key, requirements._resolved_name_key,
+    kinetics._side_key_from_smiles -- measured: +26,652 / +44,376 units cold vs warm on profile loads), or a charge
+    that depends on process state -> the receipt, and a near-limit verdict, depend on what an earlier load left."""
+    from smartchem.service import load_response
+    from smartchem.verification import ENUMERATION_CACHE
+
+    _resp, thick = methyl_acetate
+    _clear_every_cache_above_canonical()
+    cold = load_response(copy.deepcopy(thick)).receipt.work
+    warm = load_response(copy.deepcopy(thick)).receipt.work
+    ENUMERATION_CACHE.clear()
+    after_clear = load_response(copy.deepcopy(thick)).receipt.work
+    assert cold == warm == after_clear and cold.canonical_work > 0
 
 
 def test_load_canonical_work_is_charged_and_far_under_the_default(methyl_acetate):

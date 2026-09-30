@@ -38,7 +38,6 @@ L1 read the same temperature off a step.
 """
 from __future__ import annotations
 
-import functools
 import math
 from dataclasses import dataclass
 from enum import Enum
@@ -51,6 +50,7 @@ from .bucket import Bucket, Quantity, unknown
 from .ceiling import _coefficient_vector
 from .feasibility import _temperature_of
 from .step import ExperimentRoute, ExperimentStep
+from ..verification import work_transparent_cache
 
 __all__ = [
     "GAS_CONSTANT_J_PER_MOL_K",
@@ -186,7 +186,7 @@ def reaction_key_of(step: ExperimentStep) -> tuple[tuple, tuple]:
     return reaction_evidence_key(step).sides
 
 
-@functools.lru_cache(maxsize=None)
+@work_transparent_cache(maxsize=1 << 12)  # 0.9.5 S16: replays its canonical work; the record table is finite
 def _side_key_from_smiles(smiles_pairs: tuple) -> tuple:
     """The canonical structure key of a record side named by SMILES (memoised: SMILES parse is not free)."""
     return _canonical_side((parse_smiles(s), c) for s, c in smiles_pairs)

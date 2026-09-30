@@ -302,7 +302,8 @@ def test_predicted_work_counts_distinct_reagents_only():
     # broken: summing duplicates -> the charge moves while the enumeration (Lane B: duplicates inert) does not.
     water, acetic, ma = _mol("water"), _mol("acetic acid"), _mol("CC(=O)OC")
     assert predicted_enumeration_work(ma, (water, water, acetic)) == predicted_enumeration_work(ma, (acetic, water))
-    assert predicted_enumeration_work(ma, ()) == (0, 0)
+    # 0.9.5 S16 floor: no reagents is not no work (a reagentless provider enumerates over the target alone)
+    assert predicted_enumeration_work(ma, ()) == (10, 100)
 
 
 def _replay_targets(payload):

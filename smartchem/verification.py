@@ -174,17 +174,16 @@ _DEFAULT_PAYLOAD_NODES = 1 << 21
 
 #: 0.9.5 S16 -- canonicalisation is verification work.  One unit = one candidate permutation evaluated (block path),
 #: one atom re-refined at an individualisation search node (a node costs the molecule's atom count), or one node of
-#: the Kekule placement search (``smiles._min_constitution_placement``) -- see ``Molecule.canonical``.  Charged on
-#: EVERY call of the load, cache hit or miss, and replayed through every work-transparent process cache
-#: (:func:`work_transparent_cache`), so the total is a pure function of what the load asks for.
-#: MEASURED 2026-09-30 by ``experiments/v0_9_5_canonical_differential.py --service full --foreign-transparency`` on the
-#: 22 frozen service cases, every load cold (all process caches cleared) and warm -- equal in every case: plain / pinned
-#: + verified-admission thick max 484,000,160 (isopentyl@custom-fit-bench), thin max 308,735, and the pinned
-#: re-execution load (which runs a whole compile inside the load) max 1,774,137,801 (isopentyl@custom-fit-bench;
-#: isopentyl 1,545,773,961, isopentyl_dag 870,480,970).  8 x 1,774,137,801 -> 2**34 (9.7x that maximum).  The honest
-#: totals are dominated by cache HITS of molecules canonicalised again and again (charged at their cold cost, the price
-#: of determinism), so this bounds the ORDER of work loosely; see the S16 report for the tighter per-load alternative.
-_DEFAULT_CANONICAL_WORK = 1 << 34
+#: the Kekule placement search (``smiles._min_constitution_placement``) -- see ``Molecule.canonical``.  Each distinct
+#: cached computation is charged its cold work ONCE per load (see the distinct-once section below), so the total is a
+#: pure function of the payload.  MEASURED 2026-09-30 by ``experiments/v0_9_5_canonical_differential.py --service full
+#: --perf`` on 105 honest loads -- the 22 frozen service cases and the verification-performance payloads (plain thick,
+#: pinned + verified-admission thick, thin, pinned re-execution), each cold (every process cache cleared), warm and
+#: after ENUMERATION_CACHE.clear(): the three agree on every load.  Maximum 3,054,611 (isopentyl_dag, pinned
+#: re-execution); isopentyl re-execution 2,791,909, isopentyl plain thick 2,199,665.  8 x 3,054,611 -> 2**25 (11.0x).
+#: (Charging every call instead measured 1,774,137,801 and forced 2**34: the thousands of cache hits an honest load
+#: makes, each priced at its cold cost, admitted hours of cold hostile canonicalisation under the default.)
+_DEFAULT_CANONICAL_WORK = 1 << 25
 
 
 @dataclass(frozen=True)
@@ -371,9 +370,12 @@ class WorkMeter:
         return self._exhausted is not None
 
     def raise_if_exhausted(self) -> None:
-        """Raise the (first) deferred overflow, if any -- a fresh :class:`VerificationBudgetExceeded` each time."""
+        """Raise the deferred overflow, if any -- a fresh :class:`VerificationBudgetExceeded` each time, reporting what is
+        consumed NOW.  Not the first overflowing charge: a cold miss charges node by node where a warm hit charges its
+        closure at once, so only the totals at the checked points between calls are the same cold and warm."""
         if self._exhausted is not None:
-            raise VerificationBudgetExceeded(*self._exhausted)
+            counter, limit, _first = self._exhausted
+            raise VerificationBudgetExceeded(counter, limit, self._consumed[counter])
 
     def charge_canonical(self, amount: int) -> None:
         """Record ``amount`` canonicalisation work units, BEFORE the work they bound -- and never raise here (S16).
@@ -836,7 +838,7 @@ class VerificationContext:
     Outside a load there is no context (:func:`current_context` is ``None``) and every function computes directly.
     """
 
-    __slots__ = ("policy", "meter", "_memo")
+    __slots__ = ("policy", "meter", "_memo", "_canonical_memo", "_charged")
 
     def __init__(self, policy: VerificationPolicy) -> None:
         if not isinstance(policy, VerificationPolicy):
@@ -844,6 +846,19 @@ class VerificationContext:
         self.policy = policy
         self.meter = WorkMeter(policy.budget)
         self._memo: "dict[tuple[str, int], tuple[object, object]]" = {}
+        # S16 distinct-once-per-load: node -> (value, closure) for every cached computation this load holds, and the
+        # nodes whose own work this load has paid (a superset: a replayed closure pays nodes whose value is not held)
+        self._canonical_memo: "dict[object, tuple[object, dict]]" = {}
+        self._charged: "set[object]" = set()
+
+    def _replay(self, closure: "dict[object, int]") -> None:
+        """Charge a cache hit: every node of its closure this load has not yet paid for, its own work, once."""
+        charged = self._charged
+        for node, work in closure.items():
+            if node not in charged:
+                charged.add(node)
+                if work:
+                    self.meter.charge_canonical(work)
 
     def memo(self, kind: str, payload_obj: object, build: "Callable[[object], object]") -> object:
         """``build(payload_obj)`` once per ``(kind, payload_obj)`` for this load, keyed by the payload OBJECT's id.
@@ -898,43 +913,74 @@ def current_context() -> "VerificationContext | None":
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Canonicalisation work (0.9.5 S16): charged on every call, replayed through every process cache
+# Canonicalisation work (0.9.5 S16): each distinct computation charged ONCE per load, replayed through every cache
 # ---------------------------------------------------------------------------------------------------------------------
 # ``Molecule.canonical()`` runs everywhere -- decode, the request re-derivation, every replayed molecule, every fragment
 # an enumeration cuts -- and it used to run uncharged: a front-door hang (tetra-tert-butylmethane) was also a verifier
-# hole.  Charging it at the call is the easy half; charging it DETERMINISTICALLY is the actual operation, because any
-# process cache sitting above ``canonical()`` (its own LRU, ``resonance_canonical``, the enumeration cache) elides the
-# calls beneath it on a hit, and a charge that depends on what an earlier load left warm is a verdict that depends on
-# history.  So each such cache is WORK-TRANSPARENT: a miss records the canonical work charged while it computed and
-# stores it beside the value; a hit replays exactly that charge.  What a load pays is then what its own calls cost in a
-# cold process, whatever happens to be warm.
+# hole.  Two laws make the charge honest:
+#
+# * DISTINCT ONCE PER LOAD.  A cached computation -- ``canonical()``, ``resonance_canonical``, the structure-key and
+#   name-key caches, the enumeration cache -- is a NODE, keyed exactly as its process cache keys it.  Within one load a
+#   node is charged its OWN cold work (what it charges directly, nested cached calls excluded) the first time the load
+#   touches it, and 0 after.  Charging every call instead priced the thousands of cache HITS an honest load makes at
+#   their cold cost: the honest re-execution maximum came to 1.77e9 units, and a default of 8x that admitted hours of
+#   cold, hostile canonicalisation.  A per-load memo backs the law: within a load a node's result is never recomputed,
+#   so a process-LRU eviction mid-load cannot buy an uncharged recomputation.
+# * WORK-TRANSPARENT CACHES.  A process-cache hit elides the calls beneath it, so each entry keeps its CLOSURE -- every
+#   distinct node its cold computation touched, with that node's own work -- and a hit charges the closure's nodes this
+#   load has not paid for yet.  The charge is therefore a function of the set of nodes the load touches, which is a
+#   function of the payload: identical cold, warm, or after any cache was cleared.
+#
+# Direct charges made outside any cached computation (the placement search of an uncached parse, the isotope key's
+# search) are charged every time they run -- they re-run every time.
 
-#: The open work-transparent cache MISSES on this thread/task (innermost last); each is a one-slot accumulator of the
-#: canonical work charged while that miss computes.
-_CANONICAL_WORK_FRAMES: "ContextVar[tuple[list[int], ...]]" = ContextVar("smartchem_canonical_work_frames",
-                                                                         default=())
+class _WorkFrame:
+    """One open cache miss: its OWN work (charged directly while it computes), the closure ``{node: own work}`` of the
+    distinct cached computations it touched, and whether its work reaches the meter (not when this load already paid
+    for it -- a node recomputed after its value was only ever replayed, never held)."""
+
+    __slots__ = ("own", "closure", "metered")
+
+    def __init__(self, metered: bool) -> None:
+        self.own = 0
+        self.closure: "dict[object, int]" = {}
+        self.metered = metered
+
+    @property
+    def total(self) -> int:
+        """Own work plus the work of every distinct node beneath it: what a cold, first-in-load computation costs."""
+        return self.own + sum(self.closure.values())
+
+
+#: The open cache misses on this thread/task, innermost last.  Direct charges land on the innermost one only; a nested
+#: node, once complete, hands its closure to its parent, and so upward.
+_CANONICAL_WORK_FRAMES: "ContextVar[tuple[_WorkFrame, ...]]" = ContextVar("smartchem_canonical_work_frames",
+                                                                          default=())
 
 
 def charge_canonical_work(amount: int) -> None:
-    """Charge ``amount`` canonicalisation work units to the load in progress, if any (:meth:`WorkMeter.charge_canonical`:
-    recorded now, an overflow refused at the next checked charge / the end of the load, never from in here), and to
-    every open work-transparent cache miss, so a later hit on that entry can replay it.
-
-    Outside a load there is nothing to charge, but open misses still record: an entry computed on a producer path must
-    carry its true work into the first load that hits it.
-    """
+    """Charge ``amount`` canonicalisation work units of DIRECT work (never a nested cached call's): to the innermost
+    open cache miss, which records it as its own, and to the load in progress (:meth:`WorkMeter.charge_canonical` --
+    recorded now, an overflow refused at the next checked charge or the end of the load, never from in here) unless
+    that miss's work is already paid for in this load.  Outside any miss, a load is charged every time: uncached work
+    re-runs every time.  Outside a load, open misses still record, so an entry computed on a producer path carries its
+    true work into the first load that hits it."""
     amount = _require_amount(amount)
+    frames = _CANONICAL_WORK_FRAMES.get()
     context = _ACTIVE_CONTEXT.get()
-    if context is not None:
+    if frames:
+        top = frames[-1]
+        top.own += amount
+        if context is not None and top.metered:
+            context.meter.charge_canonical(amount)
+    elif context is not None:
         context.meter.charge_canonical(amount)
-    for frame in _CANONICAL_WORK_FRAMES.get():
-        frame[0] += amount
 
 
 @contextmanager
-def _recording_canonical_work() -> "Iterator[list[int]]":
-    """Open one work-transparent miss: yields its accumulator; nested misses and replayed hits inside add to it too."""
-    frame = [0]
+def _recording_canonical_work(metered: bool = True) -> "Iterator[_WorkFrame]":
+    """Open a bare frame (no node, no cache): yields it; ``frame.total`` is the work the enclosed calls cost cold."""
+    frame = _WorkFrame(metered)
     token = _CANONICAL_WORK_FRAMES.set(_CANONICAL_WORK_FRAMES.get() + (frame,))
     try:
         yield frame
@@ -942,30 +988,82 @@ def _recording_canonical_work() -> "Iterator[list[int]]":
         _CANONICAL_WORK_FRAMES.reset(token)
 
 
+def _hand_up(closure: "dict[object, int]") -> None:
+    frames = _CANONICAL_WORK_FRAMES.get()
+    if frames:
+        frames[-1].closure.update(closure)
+
+
+def _through_cache(node: object, lookup: "Callable[[], tuple | None]", compute: "Callable[[], object]",
+                   store: "Callable[[object, dict], None]") -> object:
+    """The one protocol every work-transparent cache follows (see the section comment).
+
+    ``lookup()`` -> ``(value, closure)`` or ``None``; ``compute()`` -> the value; ``store(value, closure)`` retains it.
+    Order: the load's own memo (charge 0), then the process cache (charge the closure's unpaid nodes), then compute
+    (direct charges metered as they happen, before the work they bound).
+    """
+    context = _ACTIVE_CONTEXT.get()
+    if context is not None:
+        held = context._canonical_memo.get(node)
+        if held is not None:
+            _hand_up(held[1])
+            return held[0]
+    hit = lookup()
+    if hit is not None:
+        if context is not None:
+            context._replay(hit[1])
+            context._canonical_memo[node] = hit
+        _hand_up(hit[1])
+        return hit[0]
+    frames = _CANONICAL_WORK_FRAMES.get()
+    # already paid (replayed through an ancestor's closure, value never held) -> recompute WITHOUT metering; everything
+    # beneath an unmetered frame was in that same closure, so nothing inside is metered either
+    metered = (not frames or frames[-1].metered) and (context is None or node not in context._charged)
+    frame = _WorkFrame(metered)
+    token = _CANONICAL_WORK_FRAMES.set(frames + (frame,))
+    try:
+        value = compute()
+    except BaseException:
+        _CANONICAL_WORK_FRAMES.reset(token)
+        if frames:                              # a failed computation is no node: its work is its caller's own
+            frames[-1].own += frame.own
+            frames[-1].closure.update(frame.closure)
+        raise
+    _CANONICAL_WORK_FRAMES.reset(token)
+    closure = dict(frame.closure)
+    closure[node] = frame.own
+    if context is not None:
+        context._charged.add(node)
+        context._canonical_memo[node] = (value, closure)
+    store(value, closure)
+    _hand_up(closure)
+    return value
+
+
 #: ``functools.lru_cache``'s ``cache_info()`` shape, so callers that read it (the stress harness) keep reading it.
 CacheInfo = namedtuple("CacheInfo", ("hits", "misses", "maxsize", "currsize"))
 
 
 def work_transparent_cache(maxsize: int) -> "Callable[[Callable], Callable]":
-    """``functools.lru_cache(maxsize)`` for a ONE-argument function with canonicalisation on its call path -- but
-    work-transparent: each entry holds ``(value, canonical work its computation charged)`` and a hit re-charges that
-    work (:func:`charge_canonical_work`) before handing the value back.  Keyed by the argument's value (hash/eq, as
-    ``lru_cache``), thread-safe, computed outside the lock; ``cache_info()`` / ``cache_clear()`` as ``lru_cache``.
-    Works as a method decorator (the argument is then ``self``).  A computation that raises stores nothing: the work it
-    charged before raising stays charged, and a retry charges it again -- exactly what a cold call would do.
+    """``functools.lru_cache(maxsize)`` for a ONE-argument function with canonicalisation on its call path -- keyed by
+    the argument's value (hash/eq, as ``lru_cache``), thread-safe, computed outside the lock, ``cache_info()`` /
+    ``cache_clear()`` as ``lru_cache``, usable as a method decorator (the argument is then ``self``) -- but each call is
+    a NODE of the distinct-once-per-load charge (:func:`_through_cache`): an entry keeps ``(value, closure)`` and a hit
+    charges the closure's nodes the load has not paid for.  A computation that raises stores nothing; the work it
+    charged before raising stays charged (to its caller), exactly as a cold call would.  ``cache_clear()`` bumps a
+    generation: a value computed before the clear is never stored after it (Wave C3 C3-F4).
     """
     if type(maxsize) is not int or maxsize <= 0:
         raise ValueError(f"work_transparent_cache maxsize must be a positive int, got {maxsize!r}; refused")
 
     def decorate(fn: "Callable") -> "Callable":
         lock = threading.Lock()
-        entries: "OrderedDict[object, tuple[object, int]]" = OrderedDict()
+        entries: "OrderedDict[object, tuple[object, dict]]" = OrderedDict()
         counts = {"hits": 0, "misses": 0, "generation": 0}
 
-        @functools.wraps(fn)
-        def wrapper(arg):
-            # The hit path is canonical()'s hot path (every Config construction), so it takes no lock: dict.get and
-            # OrderedDict.move_to_end are single atomic C calls, and an entry evicted in between just stays evicted.
+        def lookup(arg):
+            # lock-free on purpose (the canonical() hot path): dict.get and OrderedDict.move_to_end are single atomic C
+            # calls, and an entry evicted in between just stays evicted
             hit = entries.get(arg)
             if hit is not None:
                 try:
@@ -973,22 +1071,30 @@ def work_transparent_cache(maxsize: int) -> "Callable[[Callable], Callable]":
                 except KeyError:
                     pass
                 counts["hits"] += 1
-                value, work = hit
-                if _ACTIVE_CONTEXT.get() is not None or _CANONICAL_WORK_FRAMES.get():
-                    charge_canonical_work(work)      # the replay: this call costs what the cold call cost
-                return value
+            return hit
+
+        @functools.wraps(fn)
+        def wrapper(arg):
+            if _ACTIVE_CONTEXT.get() is None and not _CANONICAL_WORK_FRAMES.get():
+                hit = lookup(arg)                    # nothing to charge or record: the plain LRU fast path
+                if hit is not None:
+                    return hit[0]
             with lock:
                 generation = counts["generation"]
-                counts["misses"] += 1
-            with _recording_canonical_work() as frame:
-                value = fn(arg)
-            with lock:
-                # a racing thread may have stored the equal value; a cache_clear() since the miss makes this one stale
-                if counts["generation"] == generation and arg not in entries:
-                    entries[arg] = (value, frame[0])
-                    if len(entries) > maxsize:
-                        entries.popitem(last=False)
-            return value
+
+            def compute():
+                with lock:
+                    counts["misses"] += 1
+                return fn(arg)
+
+            def store(value, closure):
+                with lock:
+                    if counts["generation"] == generation and arg not in entries:
+                        entries[arg] = (value, closure)
+                        if len(entries) > maxsize:
+                            entries.popitem(last=False)
+
+            return _through_cache((fn, arg), lambda: lookup(arg), compute, store)
 
         def cache_info() -> CacheInfo:
             with lock:
@@ -1094,7 +1200,7 @@ class EnumerationCache:
         self.max_entry_size = max_entry_size
         self._lock = threading.Lock()
         self._entries: "OrderedDict[object, tuple[tuple, bool]]" = OrderedDict()
-        # S16: key -> (canonical work the enumeration charged, retained size), beside the value, never inside it
+        # S16: key -> (the enumeration's closure of charged nodes, retained size), beside the value, never inside it
         self._meta: "dict[object, tuple[int, int]]" = {}
         self._weight = 0
         self._size = 0
@@ -1109,45 +1215,52 @@ class EnumerationCache:
             self._enabled = flag
 
     def get_or_compute(self, key: object, compute: "Callable[[], tuple[tuple, bool]]") -> "tuple[tuple, bool]":
+        """The value for ``key`` -- a NODE of the S16 distinct-once-per-load charge (:func:`_through_cache`): the load's
+        memo first, then this cache (a hit charges the canonicalisations of the enumeration's closure the load has not
+        paid for), then ``compute()`` -- run OUTSIDE the lock, since an enumeration can take seconds."""
         with self._lock:
             enabled = self._enabled
             generation = self._generation
-            hit = self._entries.get(key) if enabled else None
-            if hit is not None:
-                self._entries.move_to_end(key)
-                self._hits += 1
-                work = self._meta[key][0]
-            else:
+
+        def lookup():
+            with self._lock:
+                hit = self._entries.get(key) if enabled else None
+                if hit is not None:
+                    self._entries.move_to_end(key)
+                    self._hits += 1
+                    return hit, self._meta[key][0]
                 self._misses += 1
-        if hit is not None:
-            value = hit
-            charge_canonical_work(work)    # S16: a hit costs the canonicalisations its enumeration performed cold
-            return value
-        # computed OUTSIDE the lock: an enumeration can take seconds and must not serialise every other thread.
-        with _recording_canonical_work() as frame:
+                return None
+
+        def checked_compute():
             value = compute()
-        if not (type(value) is tuple and len(value) == 2 and type(value[0]) is tuple and type(value[1]) is bool):
-            raise TypeError("an enumeration cache value must be (transforms_tuple, complete_bool) -- immutable, so it "
-                            "can be shared; refused")
-        weight = len(value[0])
-        if enabled and weight <= self.max_entry_transforms:
+            if not (type(value) is tuple and len(value) == 2 and type(value[0]) is tuple and type(value[1]) is bool):
+                raise TypeError("an enumeration cache value must be (transforms_tuple, complete_bool) -- immutable, so "
+                                "it can be shared; refused")
+            return value
+
+        def store(value, closure):
+            weight = len(value[0])
+            if not enabled or weight > self.max_entry_transforms:
+                return
             size = retained_size(value[0])
             if size > self.max_entry_size:
-                return value                                      # too big to keep: returned, never retained
+                return                                            # too big to keep: returned, never retained
             with self._lock:
                 # a racing thread may have stored the equal value; a clear() since the miss makes this value stale
                 if self._enabled and self._generation == generation and key not in self._entries:
                     self._entries[key] = value
-                    self._meta[key] = (frame[0], size)
+                    self._meta[key] = (closure, size)
                     self._weight += weight
                     self._size += size
                     while (self._weight > self.max_transforms or self._size > self.max_retained_size
                            or len(self._entries) > self.max_entries):
                         old_key, (old_transforms, _old_flag) = self._entries.popitem(last=False)
-                        _old_work, old_size = self._meta.pop(old_key)
+                        _old_closure, old_size = self._meta.pop(old_key)
                         self._weight -= len(old_transforms)
                         self._size -= old_size
-        return value
+
+        return _through_cache((self, key), lookup, checked_compute, store)
 
     def clear(self) -> None:
         """Drop every entry, zero the counters and bump the generation.  REQUIRED around any in-process code patch (the
@@ -1201,3 +1314,10 @@ def cached_enumerate(registry: "TransformProviderRegistry", target: "Molecule", 
     reagents = tuple(reagents)
     key = enumeration_cache_key(registry, target, reagents, budget)
     return ENUMERATION_CACHE.get_or_compute(key, lambda: registry.enumerate(target, reagents, budget=budget))
+
+
+# S16: fill the categorical core's work-accounting hook.  The dependency points this way on purpose -- the core
+# imports nothing of this package -- and nothing can load a payload before this module has been imported.
+from .category import install_work_accounting as _install_work_accounting  # noqa: E402
+
+_install_work_accounting(charge_canonical_work, work_transparent_cache(maxsize=8192))

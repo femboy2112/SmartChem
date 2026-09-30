@@ -51,13 +51,32 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
+from functools import lru_cache
 from itertools import permutations, product
 from math import factorial
 from typing import Callable, Iterable, Iterator, Mapping
 
-# 0.9.5 S16: canonicalisation is budgeted verification work. `verification` imports nothing of this
-# package's chemistry at module level, so the dependency points one way and stays that way.
-from .verification import charge_canonical_work, work_transparent_cache
+
+# 0.9.5 S16 -- the work-accounting HOOK.  Canonicalisation is budgeted verification work, but the
+# categorical core imports nothing of this package (tests/test_domain_neutral.py holds it to that),
+# so it cannot reach the verification budget itself.  It owns the slots instead: `_charge_work`,
+# called with each unit of work before the work it bounds, and the cache around `canonical()`.
+# `smartchem.verification` fills both on import (`install_work_accounting`); until then this is a
+# plain LRU that charges nothing -- and nothing can load a payload before that module is imported.
+def _uncharged(amount: int) -> None:
+    """The default charge: canonicalisation with no accounting layer installed."""
+
+
+_charge_work: Callable[[int], None] = _uncharged
+
+
+def install_work_accounting(charge: Callable[[int], None], cache: Callable[[Callable], Callable]) -> None:
+    """Install the accounting layer (called by ``smartchem.verification`` when it is imported): ``charge`` receives
+    every unit of canonicalisation work, and ``cache(fn)`` replaces the plain LRU around ``Molecule.canonical``.
+    Idempotent -- the body is always re-wrapped from the raw function."""
+    global _charge_work
+    _charge_work = charge
+    Molecule.canonical = cache(Molecule.canonical.__wrapped__)
 
 # Budget for canonical relabelling, counted in *candidate permutations actually examined*
 # -- not in atoms. See `_sorting_permutations` for why those differ by orders of magnitude.
@@ -782,7 +801,7 @@ class Molecule:
                 stack.append(nxt)
         return len(seen) == n
 
-    @work_transparent_cache(maxsize=8192)
+    @lru_cache(maxsize=8192)   # replaced by the work-transparent cache when verification is installed
     def canonical(self) -> "Molecule":
         """
         Canonical relabelling, so structurally identical molecules compare equal.
@@ -795,12 +814,13 @@ class Molecule:
         candidate permutations evaluated on the block path (``_cost_of(blocks)``, which is 1 for
         a molecule of at most one atom), or on the individualisation path the atoms refined:
         every search node re-refines the whole graph, so each costs the molecule's atom count
-        (a node count alone let a large, repetitive input grind cheaply). It is charged to the
-        active verification context through
-        :func:`~smartchem.verification.charge_canonical_work` BEFORE the work it bounds (the
-        block path in one charge ahead of the loop, the search one node at a time), and the
-        cache is work-transparent: an entry keeps the work its computation charged and every
-        hit re-charges it -- so a load pays the same whatever this process has already seen.
+        (a node count alone let a large, repetitive input grind cheaply). It is charged through
+        the installed hook (``_charge_work`` = ``smartchem.verification.charge_canonical_work``
+        once that layer is imported) BEFORE the work it bounds (the
+        block path in one charge ahead of the loop, the search one node at a time), ONCE per
+        distinct molecule per load (``smartchem.verification._through_cache``: a hit charges
+        the entry's recorded work if this load has not paid it) -- so a load pays the same
+        whatever this process has already seen.
 
         Minimises the key ``(symbols, edges)`` over the candidate permutations, then
         rebuilds the molecule from the winner.
@@ -826,7 +846,7 @@ class Molecule:
         """
         n = len(self.atoms)
         if n <= 1:
-            charge_canonical_work(1)               # the one (identity) candidate; nothing to search
+            _charge_work(1)                        # the one (identity) candidate; nothing to search
             return self
         blocks = _canonical_blocks(self.atoms, self.bonds)
         budget = _cost_of(blocks)
@@ -836,11 +856,11 @@ class Molecule:
             # additive -- only molecules that USED to raise here reach this branch. Charged per
             # search node, before each node's refinement; the cache records the total.
             symbols, best = _canonical_by_individualisation(
-                self.atoms, self.bonds, on_node=lambda: charge_canonical_work(n)
+                self.atoms, self.bonds, on_node=lambda: _charge_work(n)
             )
             return Molecule(symbols, frozenset(Bond(i, j, o) for i, j, o in best),
                             self.charge, self.state)
-        charge_canonical_work(budget)              # every candidate below, paid for up front
+        _charge_work(budget)                       # every candidate below, paid for up front
         symbols = tuple(self.atoms[i] for block in blocks for i in block)
         best: tuple | None = None
         for perm in _permute_within(blocks, n):

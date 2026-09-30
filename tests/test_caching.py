@@ -150,26 +150,36 @@ class TestTheSavingRestsOnTheCanonicalKey:
         assert len(inner.asked) == 1, "the relabelled copy was priced again"
         assert cached.hits == 1
 
-    def test_a_species_too_large_to_canonicalise_still_gets_a_correct_answer(self):
+    def test_a_species_too_large_to_canonicalise_still_gets_a_correct_answer(self, monkeypatch):
         """
         Above the canonicalisation budget the key cannot be canonical. Correctness must
         not depend on the saving, so it falls back to the molecule as given -- and says
         so, rather than degrading quietly.
         """
+        import smartchem.category as category
+
         inner = CountingOracle()
         cached = CachingOracle(inner)
-        # since #25 a symmetric ring canonicalises; the still-refusing case is a fully
-        # symmetric non-molecule (the complete graph K_9) whose true-twin vertices blow past
-        # the individualisation ceiling
+        # The witness used to be the complete graph K_9, whose true-twin vertices blew past the
+        # leaf ceiling. 0.9.5 S16 automorphism pruning canonicalises K_9 in a handful of nodes,
+        # so this leg failed ("DID NOT RAISE NotImplementedError") on fbf1287. The law is about
+        # what happens PAST the bound, not about which graph sits there: lower the S16 node
+        # ceiling to 2 and K_9 is over it again, refused with CanonicalBoundExceeded (a
+        # NotImplementedError). The cache is emptied around it -- an earlier test may hold K_9.
+        monkeypatch.setattr(category, "_MAX_INDIVIDUALISATION_NODES", 2)
+        Molecule.canonical.cache_clear()
         huge = Molecule(
             tuple("C" * 9),
             frozenset(Bond(i, j) for i in range(9) for j in range(i + 1, 9)),
         )                                                   # refuses to canonicalise
-        with pytest.raises(NotImplementedError):
-            huge.canonical()
+        try:
+            with pytest.raises(category.CanonicalBoundExceeded):
+                huge.canonical()
 
-        assert cached.energy(huge) is cached.energy(huge)  # cached, and consistent
-        assert cached.uncanonicalised >= 1                 # and it is counted, not hidden
+            assert cached.energy(huge) is cached.energy(huge)  # cached, and consistent
+            assert cached.uncanonicalised >= 1                 # and it is counted, not hidden
+        finally:
+            Molecule.canonical.cache_clear()
 
     def test_the_certificate_reports_what_was_actually_saved(self):
         cached = CachingOracle(HeuristicOracle())

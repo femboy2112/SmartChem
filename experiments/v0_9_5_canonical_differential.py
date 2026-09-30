@@ -302,7 +302,7 @@ def new_canonical_with_work(m: Molecule) -> tuple[Molecule, int, bool]:
     with _recording_canonical_work() as frame:
         out = _NEW_CANONICAL.__wrapped__(m)
     individualised = len(m.atoms) > 1 and _cost_of(_canonical_blocks(m.atoms, m.bonds)) > _MAX_CANONICAL_CANDIDATES
-    return out, frame[0], individualised
+    return out, frame.total, individualised
 
 
 class _Timeout(Exception):
@@ -800,13 +800,83 @@ def install_foreign_transparency() -> list:
     return done
 
 
+_PASSES = ("cold", "warm", "after_enumeration_clear")
+
+
+def _canonical_work_of(payload, policy) -> "int | str":
+    from smartchem.service import load_response
+    try:
+        return load_response(copy.deepcopy(payload), policy).receipt.work.canonical_work
+    except Exception as exc:  # noqa: BLE001 -- recorded (a refusal is a fact, not a crash)
+        return f"refused:{type(exc).__name__}:{str(exc)[:80]}"
+
+
+def _measure_loads(req, resp) -> dict:
+    """canonical_work of the four loads of one answer (plain thick, pinned + verified-admission thick, plain thin,
+    pinned re-execution), each cold (every process cache cleared), warm, and after ENUMERATION_CACHE.clear() --
+    which the distinct-once law says must be one number."""
+    from smartchem.service import response_to_payload
+    from smartchem.verification import ENUMERATION_CACHE, VerificationPolicy
+
+    thick = response_to_payload(resp)
+    thin = response_to_payload(resp, include_replay=False)
+    pinned = dict(expected_request_digest=req.semantic_digest,
+                  expected_capability_question_digest=req.capability_question_digest)
+    record = {}
+    for name, payload, policy in (
+        ("plain_thick", thick, VerificationPolicy()),
+        ("pinned_va_thick", thick, VerificationPolicy(require_verified_admission=True, **pinned)),
+        ("plain_thin", thin, VerificationPolicy()),
+        ("pinned_reexec_thick", thick, VerificationPolicy(require_reexecution=True, **pinned)),
+    ):
+        works = {}
+        for pass_ in _PASSES:
+            if pass_ == "cold":
+                _clear_process_caches()
+            elif pass_ == "after_enumeration_clear":
+                ENUMERATION_CACHE.clear()
+            works[pass_] = _canonical_work_of(payload, policy)
+        record[name] = works
+    stats_now = ENUMERATION_CACHE.stats()
+    record["enumeration_cache"] = {             # C3-F3: what an honest load leaves retained (size units)
+        "entries": stats_now.entries, "retained_transforms": stats_now.retained_transforms,
+        "retained_size": stats_now.retained_size,
+        "max_entry_size": max((size for _c, size in ENUMERATION_CACHE._meta.values()), default=0)}
+    return record
+
+
+def perf_loads(results: dict) -> None:
+    """The verification-performance payloads (experiments/v0_9_5_verification_performance.py), built from their own
+    request builders: the honest ones join the canonical_work maximum; f_hostile2_45 is recorded apart."""
+    import v0_9_5_verification_performance as perf
+    from smartchem.service import run_compilation
+    from smartchem.verification import VerificationPolicy
+
+    out = results.setdefault("perf_loads", {})
+    for name in ("a_tiny_linear", "b1_isopentyl_noprofile", "b2_isopentyl_fitbench", "c1_methyl_acetate_dag",
+                 "c2_isopentyl_dag", "d_diels_alder", "f_hostile2_45"):
+        t0 = time.time()
+        req = perf._build_request(name)
+        out[name] = _measure_loads(req, run_compilation(req))
+        print(f"  [perf] {name} ({time.time() - t0:.0f}s) {out[name]}", flush=True)
+    legacy = json.loads(perf.LEGACY_FIXTURE.read_text())
+    record = {}
+    for pass_ in _PASSES:
+        if pass_ == "cold":
+            _clear_process_caches()
+        elif pass_ == "after_enumeration_clear":
+            from smartchem.verification import ENUMERATION_CACHE
+            ENUMERATION_CACHE.clear()
+        record[pass_] = _canonical_work_of(legacy, VerificationPolicy())
+    out["e_legacy_v08_isopentyl"] = {"plain": record}
+    print(f"  [perf] e_legacy_v08_isopentyl {out['e_legacy_v08_isopentyl']}", flush=True)
+
+
 def service_corpus(which: str, results: dict) -> list:
     """Compile + load every frozen case, harvesting canonical() inputs; record each load's canonical_work."""
     import v0_9_5_baseline_freeze as freeze  # the frozen corpus itself, not a copy
 
-    from smartchem.service import (build_decompile_request, build_recompile_request, load_response,
-                                   response_to_payload, run_compilation)
-    from smartchem.verification import VerificationPolicy
+    from smartchem.service import build_decompile_request, build_recompile_request, run_compilation
 
     harvested: dict = {}
     real = Molecule.canonical
@@ -829,32 +899,7 @@ def service_corpus(which: str, results: dict) -> list:
             except Exception as exc:  # noqa: BLE001 -- a refused case still contributed its canonical() inputs
                 loads[cid] = {"refused": type(exc).__name__}
                 continue
-            thick = response_to_payload(resp)
-            thin = response_to_payload(resp, include_replay=False)
-            pinned = dict(expected_request_digest=req.semantic_digest,
-                          expected_capability_question_digest=req.capability_question_digest)
-            record = {}
-            for name, payload, policy in (
-                ("plain_thick", thick, VerificationPolicy()),
-                ("pinned_va_thick", thick, VerificationPolicy(require_verified_admission=True, **pinned)),
-                ("plain_thin", thin, VerificationPolicy()),
-                ("pinned_reexec_thick", thick, VerificationPolicy(require_reexecution=True, **pinned)),
-            ):
-                works = []
-                for _pass in ("cold", "warm"):
-                    if _pass == "cold":
-                        _clear_process_caches()
-                    try:
-                        works.append(load_response(copy.deepcopy(payload), policy).receipt.work.canonical_work)
-                    except Exception as exc:  # noqa: BLE001 -- recorded (a refusal is a fact, not a crash)
-                        works.append(f"refused:{type(exc).__name__}:{str(exc)[:80]}")
-                record[name] = {"cold": works[0], "warm": works[1]}
-            from smartchem.verification import ENUMERATION_CACHE
-            stats_now = ENUMERATION_CACHE.stats()
-            record["enumeration_cache"] = {             # C3-F3: what an honest load leaves retained (size units)
-                "entries": stats_now.entries, "retained_transforms": stats_now.retained_transforms,
-                "retained_size": stats_now.retained_size,
-                "max_entry_size": max((size for _w, size in ENUMERATION_CACHE._meta.values()), default=0)}
+            record = _measure_loads(req, resp)
             loads[cid] = record
         finally:
             Molecule.canonical = real
@@ -1073,7 +1118,10 @@ def main(argv: list) -> int:
     ap.add_argument("--seed", type=int, default=16)
     ap.add_argument("--old-timeout", type=float, default=10.0)
     ap.add_argument("--foreign-transparency", action="store_true",
-                    help="swap the three non-S16 lru caches above canonical() for work-transparent ones (in-process)")
+                    help="swap any remaining plain lru cache above canonical() for a work-transparent one (in-process; "
+                         "a no-op since the S16 follow-up made all three natively work-transparent)")
+    ap.add_argument("--perf", action="store_true",
+                    help="also measure canonical_work on the verification-performance payloads")
     ap.add_argument("--families", default=None,
                     help="comma list of canonical-level families to run (default: all); end_to_end/placement always run")
     ap.add_argument("--max-acene", type=int, default=30, help="largest explicit-Kekule acene in the placement family")
@@ -1099,6 +1147,8 @@ def main(argv: list) -> int:
         ("literals", lambda: literals_corpus(strings, 10.0)),
         ("service", lambda: service_corpus(args.service, results)),
     ]
+    if args.perf:
+        perf_loads(results)
     wanted = set(args.families.split(",")) if args.families else None
     for name, build in families:
         if wanted is not None and name not in wanted:
@@ -1135,12 +1185,18 @@ def main(argv: list) -> int:
         "report": report,
         "elapsed_s": round(time.time() - t0, 1),
     })
-    bad_work = {cid: rec for cid, rec in results.get("service_loads", {}).items()
-                if isinstance(rec, dict) and any(isinstance(v, dict) and "cold" in v and v["cold"] != v["warm"] for v in rec.values())}
-    honest = [v[p] for rec in results.get("service_loads", {}).values() if isinstance(rec, dict)
-              for v in rec.values() if isinstance(v, dict) and "cold" in v for p in ("cold", "warm") if isinstance(v[p], int)]
+    # every load: cold == warm == after an enumeration-cache clear; the honest maximum excludes the hostile payload
+    loads = {f"service/{cid}": rec for cid, rec in results.get("service_loads", {}).items()}
+    loads.update({f"perf/{name}": rec for name, rec in results.get("perf_loads", {}).items()})
+    passes = {cid: {load: v for load, v in rec.items() if isinstance(v, dict) and "cold" in v}
+              for cid, rec in loads.items() if isinstance(rec, dict)}
+    bad_work = {cid: rec for cid, rec in passes.items() if any(len(set(map(str, v.values()))) != 1 for v in rec.values())}
+    honest = {(cid, load): v["cold"] for cid, rec in passes.items() if cid != "perf/f_hostile2_45"
+              for load, v in rec.items() if isinstance(v["cold"], int)}
+    worst = max(honest, key=honest.get, default=None)
     results["canonical_work_cold_warm_disagreements"] = bad_work
-    results["canonical_work_honest_max"] = max(honest, default=0)
+    results["canonical_work_honest_max"] = {"value": honest.get(worst, 0), "load": worst}
+    results["canonical_work_hostile_f_hostile2_45"] = passes.get("perf/f_hostile2_45")
     failed = (total["MISMATCH"] + total["MISMATCH_relabel_invariance"] + total["REGRESSION_new_refused_old_ok"]
               + stats.get("end_to_end", Counter())["MISMATCH"] + stats.get("placement", Counter())["MISMATCH"]
               + len(bad_work))

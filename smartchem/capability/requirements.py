@@ -646,7 +646,9 @@ def _hazard_scan(
     hazard_unresolved)``. Three sources, one law (a real GHS record forces containment; NO record is UNRESOLVED;
     an empty-GHS record forces nothing):
 
-    * every typed ``ProcedureMaterialUse`` (structure lookup first, then the sourced name);
+    * every typed ``ProcedureMaterialUse`` (structure lookup first; the sourced NAME only for an identity-less use,
+      or -- for a typed structure with no record -- only when the name's record carries GHS codes: a name may
+      force containment on a structure, never clear it);
     * every untyped raw source material string (D13, by name only);
     * every BALANCED species of every step (D13 P0-2b: parity with the typed path -- a reactant/product with no
       hazard record is unresolved, never silently skipped).
@@ -681,7 +683,12 @@ def _hazard_scan(
                 seen.add(key)
                 hazard = molecule_hazards(use.identity) if use.identity is not None else None
                 if hazard is None:
-                    hazard = hazards_for_named(use.name)
+                    # 0.9.5 S18 (barrier A10): a display name is not bound to a typed structure -- its record may
+                    # FORCE containment (the safe direction) but never CLEAR a structure that has no record of its own
+                    # (a structure with no record, labelled with a benign name, read benign; C5-F6 on the containment leg).
+                    named = hazards_for_named(use.name)
+                    if use.identity is None or (named is not None and named.ghs_codes):
+                        hazard = named
                 kind = "an unresolvable ionic/mixture species" if use.identity is None else "no GHS record"
                 _fold(f"procedure-only {use.name!r} ({use.role.value})", hazard, kind)
     for raw, locator in untyped:
@@ -963,8 +970,9 @@ def _procurement_catalysts_requirement(
     route: ExperimentRoute,
 ) -> "tuple[tuple[str, Availability | None], ...]":
     """One ``(name, tier)`` pair per catalyst the route DECLARES -- every ``envelope.catalysts`` entry AND (D13) every
-    typed CATALYST use not already listed -- deduplicated case-insensitively, ``tier`` resolved through the UNMODIFIED
-    ``catalyst_availability`` classifier (``None`` = honest UNRECOGNIZED)."""
+    typed CATALYST use not already listed -- deduplicated under the case-KEEPING fold (0.9.5 S18, barrier A10: a
+    case-only merge could drop ``"Na2Co3"`` behind ``"Na2CO3"``, and the classifier answers them differently), ``tier``
+    resolved through the UNMODIFIED ``catalyst_availability`` classifier (``None`` = honest UNRECOGNIZED)."""
     seen: "dict[str, tuple[str, Availability | None]]" = {}
     for step in route.steps:
         names = list(step.envelope.catalysts)
@@ -973,7 +981,7 @@ def _procurement_catalysts_requirement(
             names.extend(u.name for op in procedure.operations for u in op.material_uses
                          if u.role is ProcedureMaterialRole.CATALYST)
         for cat in names:
-            key = _norm_text(cat)
+            key = _exact_text(cat)
             if key and key not in seen:
                 seen[key] = (cat, catalyst_availability(cat))
     return tuple(seen.values())

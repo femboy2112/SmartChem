@@ -624,3 +624,89 @@ def test_c5_f6_an_identity_never_borrows_the_record_of_its_display_name():
     _c, _r, unresolved = derive_waste(_with(route, _d(residual)))
     assert any("no hazard record" in u and "(L3)" in u for u in unresolved), unresolved
     assert any("catalyst residual 'water'" in u and "not consumed (no hazard record)" in u for u in unresolved)
+
+
+# =====================================================================================================================
+# S18 residual (parent, integration) -- the containment scan never CLEARS a typed structure by its display name, and no
+# name-keyed lookup table carries a key whose case variants denote two different formulas
+# =====================================================================================================================
+
+def test_s18r_containment_never_clears_a_typed_structure_by_its_display_name():
+    """tert-butylbenzene labelled "water" (C5-F6's disease, containment leg). Pre-fix FAILS: the structure has no hazard
+    record, so ``_hazard_scan`` fell back to the NAME and the empty water record cleared it -- no containment reason, no
+    unresolved line, a silent pass on an unknown species."""
+    route = _micro(_op(uses=(_use("water", ProcedureMaterialRole.CATALYST, _UNRECORDED_CAT),)))
+    reqs = compile_capability_requirements(route)
+    assert any("procedure-only 'water'" in line and "no GHS record" in line for line in reqs.hazard_unresolved), (
+        reqs.hazard_unresolved)
+    assert not _assess(route, _maximal_profile((_pure("methanol-pure", _METHANOL),))).is_capability_fit
+
+
+def test_s18r_a_display_name_with_ghs_codes_may_still_force_containment():
+    """The one-sided rule: a name record is not bound to the typed structure, so it may FORCE containment (the safe
+    direction -- a demand the bench can only over-satisfy) but never clear it."""
+    route = _micro(_op(uses=(_use("carbon monoxide", ProcedureMaterialRole.CATALYST, _UNRECORDED_CAT),)))
+    reqs = compile_capability_requirements(route)
+    assert any("'carbon monoxide'" in r and "H331" in r for r in reqs.containment_reasons), reqs.containment_reasons
+
+
+def _case_variant_formulas(key: str) -> "set[tuple]":
+    """Every distinct formula a case variant of ``key`` parses to (``key`` letters/digits only)."""
+    from smartchem.formula_expr import FormulaSyntaxError, parse_formula_expr
+
+    letters = [i for i, ch in enumerate(key) if ch.isalpha()]
+    out = set()
+    for mask in range(1 << len(letters)):
+        chars = list(key)
+        for bit, i in enumerate(letters):
+            chars[i] = chars[i].upper() if mask >> bit & 1 else chars[i].lower()
+        try:
+            out.add(tuple(sorted(parse_formula_expr("".join(chars)).to_formula().counts)))
+        except (FormulaSyntaxError, ValueError):
+            continue
+    return out
+
+
+def test_s18r_no_case_folded_lookup_key_names_two_formulas():
+    """``hazards_for_named`` and ``catalyst_availability`` fold case before the lookup. A fold is sound only on a key
+    that is not a case-sensitive token (``co`` would answer for both CO and Co). Pin it: no hazard-record name has two
+    case-variant formulas, and every catalyst-table key that does sits in the exact-spelling ledger, whose spelling is
+    the key's own and parses to exactly one formula."""
+    import re
+
+    import smartchem.experiment.catalyst_availability as ca
+    from smartchem.formula_expr import parse_formula_expr
+
+    def ambiguous(keys):
+        return {k for k in keys if re.fullmatch(r"[a-z0-9]{1,10}", k) and len(_case_variant_formulas(k)) > 1}
+
+    assert not ambiguous({ref.name for ref in HAZARD_REFS})
+    catalyst_keys = set(ca._COMMODITY_BY_NAME) | set(ca._CATALYST_TABLE)
+    assert ambiguous(catalyst_keys) == set(ca._CASE_EXACT_SPELLING)
+    for key, spelling in ca._CASE_EXACT_SPELLING.items():
+        assert spelling.casefold() == key
+        parse_formula_expr(spelling)  # the exact spelling is itself a formula
+    # the instrument discriminates: a collision key IS caught, a plain one is not
+    assert len(_case_variant_formulas("co")) == 2 and len(_case_variant_formulas("hcl")) == 1
+
+
+@pytest.mark.parametrize("spelling, tier", [("Na2CO3", "GROCERY"), (" Na2CO3 ", "GROCERY"), ("Na2Co3", None),
+                                            ("na2co3", None), ("K2CO3", "HARDWARE"), ("K2Co3", None),
+                                            ("NaHCo3", None), ("PtO2", "INDUSTRIAL"), ("PTO2", None),
+                                            ("HCl", "HARDWARE"), ("hcl", "HARDWARE")])
+def test_s18r_a_case_ambiguous_catalyst_key_matches_only_its_exact_spelling(spelling, tier):
+    """Pre-fix FAILS on the cobalt spellings: ``Na2Co3`` read as GROCERY-tier sodium carbonate (a kitchen VOUCH for a
+    cobalt formula)."""
+    from smartchem.experiment.catalyst_availability import catalyst_availability
+
+    got = catalyst_availability(spelling)
+    assert (None if got is None else got.name) == tier
+
+
+def test_s18r_two_catalysts_differing_by_case_are_two_procurement_rows():
+    """Pre-fix FAILS: the case-folded procurement dedup kept ``Na2CO3`` (GROCERY) and dropped ``Na2Co3`` (unrecognized),
+    so the cobalt spelling vanished from the procurement axis."""
+    route = _micro(catalysts=("Na2CO3", "Na2Co3"))
+    rows = compile_capability_requirements(route).procurement_catalysts
+    assert [name for name, _tier in rows] == ["Na2CO3", "Na2Co3"], rows
+    assert rows[1][1] is None

@@ -771,9 +771,9 @@ def m4():
     req = _mreq(identity=_ETHANOL, name="ethanol")
     honest = _mat(profile, req) is CapabilityStatus.BLOCKED
     bad_edge = _src_mutant(assess_mod._edge, (  # the absent-species exit (after D24.8's name-only UNKNOWN branch)
-        "        return None\n    view = stock.spec_view(key)",
+        "        return None\n    view = stock.spec_view(key, case_exact=True)",
         "        return _Edge(CapabilityStatus.FIT, True, f\"{stock.material_id}: BUG absent=100%\")\n"
-        "    view = stock.spec_view(key)"))
+        "    view = stock.spec_view(key, case_exact=True)"))
     with _patch(assess_mod, "_edge", bad_edge):
         bad = _mat(profile, req) is CapabilityStatus.FIT
     return honest, bad
@@ -1900,8 +1900,8 @@ def _state_from(trigger, claim):
     table's move, one layer over): if ``trigger(stock, view)`` holds and the family is undeclared, add ``claim``."""
     real = StockMaterial.spec_view
 
-    def spec_view(self, key):
-        view = real(self, key)
+    def spec_view(self, key, **kw):
+        view = real(self, key, **kw)
         if view is not None and trigger(self, view) and not any(type(c.state) is type(claim.state) for c in view.states):
             return dc.replace(view, states=view.states + (claim,))
         return view
@@ -5457,8 +5457,9 @@ def m_sd16d():
 def m_sd24():
     """Two differently-named CATALYST uses of ONE unrecorded species: two catalyst-residual obligations, ONE subject."""
     route = _sd_route(_op(OperationKind.ADD, material_uses=(
-        _use("catalyst x", ProcedureMaterialRole.CATALYST, identity=_UNRECORDED_CAT),
-        _use("catalyst y", ProcedureMaterialRole.CATALYST, identity=_UNRECORDED_CAT))), _op(OperationKind.FILTER))
+        _use("catalyst x", ProcedureMaterialRole.CATALYST, identity=_UNRECORDED_CAT, phase=Phase.SOLID),
+        _use("catalyst y", ProcedureMaterialRole.CATALYST, identity=_UNRECORDED_CAT, phase=Phase.SOLID))),
+        _op(OperationKind.FILTER))
     residual = _sd_subject(route, sd_mod.SubjectKind.RESIDUAL, core=stock_mod.structure_key(_UNRECORDED_CAT))
     route = _sd_with(route, _sd(residual, _SD_RECOVERED, via_op=3))
 
@@ -5474,15 +5475,236 @@ def m_sd24():
         "(D-C4)", "waste.derive_waste (envelope-catalyst attribution)")
 def m_sd25():
     route = _sd_route(_op(OperationKind.ADD, material_uses=(
-        _use("catalyst x", ProcedureMaterialRole.CATALYST, identity=_UNRECORDED_CAT),)), _op(OperationKind.FILTER),
-        catalysts=("Catalyst X",))
+        _use("catalyst x", ProcedureMaterialRole.CATALYST, identity=_UNRECORDED_CAT, phase=Phase.SOLID),)),
+        _op(OperationKind.FILTER), catalysts=(" catalyst  x ",))
     residual = _sd_subject(route, sd_mod.SubjectKind.RESIDUAL, core=stock_mod.structure_key(_UNRECORDED_CAT))
     route = _sd_with(route, _sd(residual, _SD_RECOVERED, via_op=3))
-    marker = "catalyst residual 'Catalyst X' (step 1 envelope catalyst) is not consumed"
+    marker = "catalyst residual ' catalyst  x ' (step 1 envelope catalyst) is not consumed"
     honest = not any(marker in u for u in waste_mod.derive_waste(route)[2])
     bad = any(marker in u for u in _src_mutant(waste_mod.derive_waste, (
         "None if cover is None else _residual(s_index, cover)", "None"))(route)[2])
     return honest, bad
+
+
+# =================================================================================================================
+# 0.9.5 S18 -- evidence soundness (Wave C1 + C5): PROPOSED mutants, one per law
+# =================================================================================================================
+
+def _s18_micro(*ops, **kw):
+    return _sd_route(*ops, **kw)
+
+
+@mutant("M-S18-1", "catalyst residuals de-duplicated by FOLDED NAME again: a second species vanishes (C1-1/C5-F1)",
+        "waste.derive_waste (_catalyst dedup key)")
+def m_s18_1():
+    route = _s18_micro(_op(OperationKind.ADD, material_uses=(
+        _use("catalyst", ProcedureMaterialRole.CATALYST, identity=_H2SO4),
+        _use("Catalyst", ProcedureMaterialRole.CATALYST, identity=_UNRECORDED_CAT))))
+    return _sd_flip(route, "catalyst residual 'Catalyst'",
+                    ("seen = (species_key(identity, name), _exact_text(name))", "seen = _norm_text(name)"))
+
+
+@mutant("M-S18-2", "an envelope catalyst covered by a typed use is resolved from its own STRING (C1-1)",
+        "waste.derive_waste (envelope cover identity)")
+def m_s18_2():
+    """The string names nothing the table knows; the use it covers IS H2SO4. Honest: HAZARDOUS, the envelope line is
+    resolved. Mutant (identity dropped AND the fold-key dedup restored -- the pre-S18 pair): the H2SO4 record is lost."""
+    route = _s18_micro(_op(OperationKind.ADD, material_uses=(
+        _use("catalyst q", ProcedureMaterialRole.CATALYST, identity=_H2SO4),)), catalysts=("catalyst q",))
+    honest = _HAZ in waste_mod.derive_waste(route)[0]
+    bad = _HAZ not in _src_mutant(waste_mod.derive_waste,
+                                  ("_catalyst(s_index, None if cover is None else cover.identity, cat,",
+                                   "_catalyst(s_index, None, cat,"),
+                                  ("seen = (species_key(identity, name), _exact_text(name))",
+                                   "seen = _norm_text(name)"))(route)[0]
+    return honest, bad
+
+
+@mutant("M-S18-3", "a ROUTED species-level discharge no longer carries its species' hazard categories (C1-2)",
+        "waste.derive_waste (_credit: species categories)")
+def m_s18_3():
+    route = _sd_route()
+    residual = _sd_subject(route, sd_mod.SubjectKind.RESIDUAL, core=stock_mod.structure_key(_METHANOL))
+    route = _sd_with(route, _sd(residual, category=_AN))
+    honest = _HAZ in waste_mod.derive_waste(route)[0]
+    bad = _HAZ not in _src_mutant(waste_mod.derive_waste, ("categories.update(implied)", "pass"))(route)[0]
+    return honest, bad
+
+
+@mutant("M-S18-4", "a case-only NAME match certifies a supply ('CO' drawn from a 'Co' bottle) (C1-3)",
+        "assess._species_key_in (case_exact)")
+def m_s18_4():
+    profile = _profile(material_inventory=(_bottle("cobalt", "Co"),))
+    req = _mreq(identity=None, name="CO")
+    honest = _mat(profile, req) is CapabilityStatus.UNKNOWN
+    bad_key = _src_mutant(assess_mod._species_key_in, ("stock.active_fraction_interval(key, case_exact=True)",
+                                                       "stock.active_fraction_interval(key)"))
+    with _patch(assess_mod, "_species_key_in", bad_key):
+        # built INSIDE the patch: _src_mutant snapshots the module globals, so _edge must see the mutated key law
+        bad_edge = _src_mutant(assess_mod._edge, ("stock.spec_view(key, case_exact=True)", "stock.spec_view(key)"))
+        with _patch(assess_mod, "_edge", bad_edge):
+            bad = _mat(profile, req) is not CapabilityStatus.UNKNOWN
+    return honest, bad
+
+
+@mutant("M-S18-5", "a typed 'CO' covers a raw 'Co' again (case-fold coverage, C1-3)", "waste._name_covers")
+def m_s18_5():
+    route = _micro_route(materials=("methanol", "acetic acid", "Methanol"))
+    marker = "introduces untyped material 'Methanol'"
+    honest = any(marker in u for u in waste_mod.derive_waste(route)[2])
+    folded = _src_mutant(waste_mod._name_covers, ("name, text = _exact_text(use_name), _exact_text(raw)",
+                                                  "name, text = _norm_text(use_name), _norm_text(raw)"))
+    with _patch(waste_mod, "_name_covers", folded):
+        bad = not any(marker in u for u in waste_mod.derive_waste(route)[2])
+    return honest, bad
+
+
+@mutant("M-S18-6", "RECOVERED via an op BEFORE the stream exists discharges it (C1-4/C5-F5 order law)",
+        "waste._recovery_refusal (order)")
+def m_s18_6():
+    route = _sd_route(_op(OperationKind.SEPARATE), _op(OperationKind.ADD, material_uses=(
+        _use("brine", ProcedureMaterialRole.WASH, phase=Phase.LIQUID),)))
+    stream = _sd_subject(route, sd_mod.SubjectKind.USE_STREAM)
+    route = _sd_with(route, _sd(stream, _SD_RECOVERED, via_op=2))
+    bad_helper = _src_mutant(waste_mod._recovery_refusal, ("if via_op <= last:", "if False:"))
+    honest = any("spent workup stream 'brine'" in u and "F49" in u for u in waste_mod.derive_waste(route)[2])
+    with _patch(waste_mod, "_recovery_refusal", bad_helper):
+        bad = not any("spent workup stream 'brine'" in u and "F49" in u for u in waste_mod.derive_waste(route)[2])
+    return honest, bad
+
+
+@mutant("M-S18-7", "a gravity FILTER recovers a certified LIQUID (C1-4 phase law dropped)",
+        "waste._recovery_refusal (phase compatibility)")
+def m_s18_7():
+    route = _sd_route(_op(OperationKind.FILTER))
+    residual = _sd_subject(route, sd_mod.SubjectKind.RESIDUAL, core=stock_mod.structure_key(_METHANOL))
+    route = _sd_with(route, _sd(residual, _SD_RECOVERED, via_op=2))
+    marker = "unreacted/excess 'methanol'"
+    bad_helper = _src_mutant(waste_mod._recovery_refusal,
+                             ("if phase not in _RECOVERABLE_PHASES[via_kind]:", "if False:"))
+    honest = any(marker in u for u in waste_mod.derive_waste(route)[2])
+    with _patch(waste_mod, "_recovery_refusal", bad_helper):
+        bad = not any(marker in u for u in waste_mod.derive_waste(route)[2])
+    return honest, bad
+
+
+@mutant("M-S18-8", "an UNCERTIFIED phase is recovered (C1-4 certification law dropped)",
+        "waste._recovery_refusal (certified phase)")
+def m_s18_8():
+    route = _sd_route(_op(OperationKind.ADD, material_uses=(
+        _use("catalyst x", ProcedureMaterialRole.CATALYST, identity=_UNRECORDED_CAT, phase=Phase.SOLID,
+             phase_ev=EvidenceKind.AUTHOR_INFERRED),)), _op(OperationKind.FILTER))
+    residual = _sd_subject(route, sd_mod.SubjectKind.RESIDUAL, core=stock_mod.structure_key(_UNRECORDED_CAT))
+    route = _sd_with(route, _sd(residual, _SD_RECOVERED, via_op=3))
+    marker = "catalyst residual 'catalyst x'"
+    bad_helper = _src_mutant(waste_mod._recovery_refusal, (
+        "if u.phase is not None and u.phase.evidence in CERTIFYING_REQUIREMENT_EVIDENCE}", "if u.phase is not None}"),
+        ("if len(phases) != 1 or any(u.phase is None or u.phase.evidence not in CERTIFYING_REQUIREMENT_EVIDENCE",
+         "if len(phases) != 1 or any(u.phase is None"))
+    honest = any(marker in u and "not consumed" in u for u in waste_mod.derive_waste(route)[2])
+    with _patch(waste_mod, "_recovery_refusal", bad_helper):
+        bad = not any(marker in u and "not consumed" in u for u in waste_mod.derive_waste(route)[2])
+    return honest, bad
+
+
+@mutant("M-S18-9", "an identity with no record borrows the record of its display NAME and passes L3 (C5-F6)",
+        "waste._resolve_hazard (name fallback)")
+def m_s18_9():
+    route = _sd_route(_op(OperationKind.ADD, material_uses=(
+        _use("water", ProcedureMaterialRole.CATALYST, identity=_UNRECORDED_CAT),)))
+    residual = _sd_subject(route, sd_mod.SubjectKind.RESIDUAL, core=stock_mod.structure_key(_UNRECORDED_CAT))
+    route = _sd_with(route, _sd(residual, category=_AN))
+    marker = "catalyst residual 'water'"
+    borrowed = _src_mutant(waste_mod._resolve_hazard, (
+        "    if identity is not None:\n        return molecule_hazards(identity)\n",
+        "    if identity is not None and molecule_hazards(identity) is not None:\n"
+        "        return molecule_hazards(identity)\n"))
+    honest = any(marker in u and "not consumed" in u for u in waste_mod.derive_waste(route)[2])
+    with _patch(waste_mod, "_resolve_hazard", borrowed):
+        bad = not any(marker in u and "not consumed" in u for u in waste_mod.derive_waste(route)[2])
+    return honest, bad
+
+
+@mutant("M-S18-10", "a rinse use of a step reactant covers the reactant's residual again (C5-F4)",
+        "waste.derive_waste (consumed-role cover)")
+def m_s18_10():
+    route = _micro_route(base_uses=(
+        _use("methanol", ProcedureMaterialRole.SUBSTRATE, identity=_METHANOL, qty="10", phase=Phase.LIQUID),
+        _use("acetic acid", ProcedureMaterialRole.RINSE, identity=_ACETIC, qty="10", phase=Phase.LIQUID)))
+    return _sd_flip(route, "typed only in a non-stoichiometric role",
+                    ("                        if use.role in _CONSUMED_ROLES:\n"
+                     "                            covered.add(structure_key(use.identity))",
+                     "                        if True:\n"
+                     "                            covered.add(structure_key(use.identity))"))
+
+
+@mutant("M-S18-11", "twin FILTER ops (gravity vs vacuum) share a subject core: a swap rebinds silently (C5-F3)",
+        "stream_disposition.op_core (typed fields)")
+def m_s18_11():
+    gravity = dc.replace(_op(OperationKind.FILTER), apparatus=("fluted filter paper",))
+    vacuum = dc.replace(_op(OperationKind.FILTER), apparatus=("Buchner funnel", "vacuum"))
+    a, b = _sd_route(gravity, vacuum), _sd_route(vacuum, gravity)
+    honest = sd_mod.stream_subjects(a.steps[0]) != sd_mod.stream_subjects(b.steps[0])
+    thin = _src_mutant(sd_mod.op_core, ("        tuple(op.apparatus),\n", ""))
+    with _patch(sd_mod, "op_core", thin):
+        bad = sd_mod.stream_subjects(a.steps[0]) == sd_mod.stream_subjects(b.steps[0])
+    return honest, bad
+
+
+@mutant("M-S18-12", "the hazard NAME lookup is exact-case again: 'Sulfuric acid' is unassessed (C1-1)",
+        "data.hazards.hazards_for_named (fold)")
+def m_s18_12():
+    import smartchem.data.hazards as hazards_mod
+
+    route = _sd_route(catalysts=("Sulfuric acid",))
+    honest = _HAZ in waste_mod.derive_waste(route)[0]
+    exact = _src_mutant(hazards_mod.hazards_for_named, ("return _BY_NAME.get(normalize_material_name(name))",
+                                                        "return _BY_NAME.get(name)"))
+    with _patch(hazards_mod, "hazards_for_named", exact):
+        bad = _HAZ not in waste_mod.derive_waste(route)[0]
+    return honest, bad
+
+
+# S18 residuals fixed at integration (barrier A10 (3)/(4)): the containment scan's name fallback, the exact-spelling
+# ledger for case-ambiguous catalyst keys, and the case-keeping procurement dedup.
+
+@mutant("M-S18-13", "containment borrows a DISPLAY NAME's empty record for a typed structure with none: 'water' clears it",
+        "requirements._hazard_scan (a name may force containment on a structure, never clear it)")
+def m_s18_13():
+    route = _sd_route(_op(OperationKind.ADD, material_uses=(
+        _use("water", ProcedureMaterialRole.CATALYST, identity=_UNRECORDED_CAT),)))
+    marker = "procedure-only 'water'"
+    honest = any(marker in u for u in requirements_mod.compile_capability_requirements(route).hazard_unresolved)
+    scan = _src_mutant(requirements_mod._hazard_scan, (
+        "if use.identity is None or (named is not None and named.ghs_codes):", "if True:"))
+    with _patch(requirements_mod, "_hazard_scan", scan):
+        bad = not any(marker in u for u in requirements_mod.compile_capability_requirements(route).hazard_unresolved)
+    return honest, bad
+
+
+@mutant("M-S18-14", "the exact-spelling ledger bypassed: 'Na2Co3' (a cobalt formula) reads as GROCERY sodium carbonate",
+        "catalyst_availability.catalyst_availability (_CASE_EXACT_SPELLING)")
+def m_s18_14():
+    import smartchem.experiment.catalyst_availability as ca_mod
+
+    honest = ca_mod.catalyst_availability("Na2Co3") is None and ca_mod.catalyst_availability("Na2CO3") is not None
+    folded = _src_mutant(ca_mod.catalyst_availability, (
+        'if exact is not None and " ".join(name.split()) != exact:', "if False:"))
+    return honest, folded("Na2Co3") is not None
+
+
+@mutant("M-S18-15", "procurement catalysts de-duplicated case-insensitively again: 'Na2Co3' vanishes behind 'Na2CO3'",
+        "requirements._procurement_catalysts_requirement (case-keeping fold)")
+def m_s18_15():
+    route = _sd_route(catalysts=("Na2CO3", "Na2Co3"))
+
+    def names(fn):
+        return [name for name, _tier in fn(route)]
+
+    honest = names(requirements_mod._procurement_catalysts_requirement) == ["Na2CO3", "Na2Co3"]
+    folded = _src_mutant(requirements_mod._procurement_catalysts_requirement, ("key = _exact_text(cat)",
+                                                                              "key = _norm_text(cat)"))
+    return honest, names(folded) == ["Na2CO3"]
 
 
 # =================================================================================================================

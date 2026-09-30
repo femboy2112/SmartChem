@@ -157,6 +157,16 @@ _CATALYST_TABLE: dict[str, Availability] = {
 }
 
 
+#: 0.9.5 S18 (barrier A10): the folded keys whose case variants spell DIFFERENT formulas -- ``"na2co3"`` is Na2CO3 or
+#: Na2Co3 (a cobalt salt), ``"pto2"`` is PtO2 or P+T+O2 (T = tritium).  A case-folded hit on one of them is not the same
+#: substance, so it matches only its exact spelling (whitespace-collapsed, case kept); any other spelling is
+#: unrecognized (and a declared unrecognized catalyst BLOCKS).  ``tests/test_v0_9_5_evidence_soundness.py`` pins that
+#: this ledger is complete over every name-keyed table this module folds.
+_CASE_EXACT_SPELLING: dict[str, str] = {
+    "k2co3": "K2CO3", "na2co3": "Na2CO3", "nahco3": "NaHCO3", "pdcl2": "PdCl2", "pto2": "PtO2", "ticl4": "TiCl4",
+}
+
+
 def _has_non_kitchen_metal(elements: "frozenset[str]") -> bool:
     """True iff a grounded element set contains a catalytic transition/heavy/precious metal (see
     :data:`NON_KITCHEN_METALS`).  s-block alkali/alkaline-earth metals are deliberately absent from that set, so a
@@ -174,6 +184,9 @@ def catalyst_availability(name: str) -> Availability | None:
         return None
     norm = _norm(name)
     if not norm:
+        return None
+    exact = _CASE_EXACT_SPELLING.get(norm)
+    if exact is not None and " ".join(name.split()) != exact:
         return None
     # 1. grounded commodity catalog (identity + curated tier), with the metal guard applied BEFORE the tier is
     #    returned: a recognized substance built on a catalytic metal is an industrial catalyst system regardless of

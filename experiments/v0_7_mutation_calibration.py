@@ -330,16 +330,31 @@ def m16() -> bool:
     promotable build default.  The accepted generations (current, v0.8) all carry the key, so its absence is now
     REFUSED rather than decoded to the frozen legacy value.  Honest: refused.  Mutant: the decoder defaults the missing
     field to the (promoted) build default -- a wider algebra silently selected."""
+    import inspect
+    import textwrap
+
     payload = request_to_payload(_req("legacy-capped-v1"))
     del payload["algebra_profile"]
+    # MUTANT (the REAL decoder, recompiled from its own source with two anchored edits -- a stale anchor raises): the
+    # key is optional again and a missing one follows the build default.  Globals are the LIVE module dict, so the
+    # simulated default promotion below reaches the mutant exactly as it would reach a real default change.
+    src = textwrap.dedent(inspect.getsource(svc.request_from_payload))
+    for old, new in (('else _V08_REQUEST_PAYLOAD_KEYS, "request")',
+                      'else _V08_REQUEST_PAYLOAD_KEYS, "request", optional=frozenset({"algebra_profile"}))'),
+                     ('algebra_profile=payload["algebra_profile"],',
+                      'algebra_profile=payload.get("algebra_profile", DEFAULT_ROUTE_ALGEBRA_PROFILE),')):
+        assert src.count(old) == 1, f"M16 anchor found {src.count(old)}x: {old!r}"
+        src = src.replace(old, new)
+    ns: dict = {}
+    exec(compile(src, "<M16 mutant>", "exec"), svc.__dict__, ns)  # noqa: S102 -- the mutation harness's own source
+    mutant_decode = ns["request_from_payload"]
     with _patch(svc, "DEFAULT_ROUTE_ALGEBRA_PROFILE", "certified-route-v07"):  # simulate the default promotion
         try:
             request_from_payload(payload)
             real_refuses = False
         except ValueError:
             real_refuses = True
-        # MUTANT: missing-field deserialization follows the promoted build default.
-        mutant_profile = payload.get("algebra_profile", svc.DEFAULT_ROUTE_ALGEBRA_PROFILE)
+        mutant_profile = mutant_decode(payload).algebra_profile
     return real_refuses and mutant_profile == "certified-route-v07"
 
 

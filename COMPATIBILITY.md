@@ -147,12 +147,15 @@ reads a payload-supplied path — recompile locally from the file).
   and a superscript charge written against ASCII digits (`SO⁴2-`) is ambiguous. An InChI is read only with version
   `1S` or `1`, one ASCII Hill formula, and each of `/q` `/p` at most once. Every front-door parse failure is typed
   invalid input (exit 2), never an internal error.
-* **AUTO precedence on expert paths (declared):** only the `plan` target refuses an input-kind ambiguity
-  (`detect_auto_ambiguity`). The expert verbs' positional target and every stock / helper-reagent string (request
-  fields `stock_materials` / `helper_reagents`; CLI `--have` / `--reagents`) keep the legacy AUTO precedence —
-  offline name, then SMILES, then formula. There, `CO` is methanol (not carbon monoxide), `O` is water, `NO` is
-  hydroxylamine, `CCO` is ethanol. The reading is deterministic but not echoed per bench string; write `smiles:` /
-  `formula:` (or a registered name) to make the choice explicit.
+* **AUTO precedence on expert paths (declared):** the `plan` front door never guesses between input-kind readings in
+  any string it reads — its target *and* each helper-reagent string (`plan --reagents`, `plan(helper_reagents=...)`)
+  refuse an input-kind ambiguity (`detect_auto_ambiguity`): the target reports `INPUT_KIND_AMBIGUOUS`, a reagent
+  `INVALID_INPUT` naming the string, both exit 2. The expert verbs (`recompile`, `compile`, `synthesize`, ...) keep
+  the legacy AUTO precedence for their positional target and every stock / helper-reagent string they read (CLI
+  `--have` / `--reagents`; request fields `stock_materials` / `helper_reagents`) — offline name, then SMILES, then
+  formula. There, `CO` is methanol (not carbon monoxide), `O` is water, `NO` is hydroxylamine, `CCO` is ethanol. The
+  reading is deterministic but not echoed per bench string; write `smiles:` / `formula:` (or a registered name) to
+  make the choice explicit.
 
 ## 6. Evidence contract
 

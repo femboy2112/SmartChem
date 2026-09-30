@@ -30,9 +30,10 @@ it stamps), **failure** (what happens on bad input) and **completeness** (what "
   declared) → section-5.3 identity *losses* when the compiler cannot carry them.
 * **Failure:** a typed `IdentityParseError` (exit 2, `INVALID_INPUT`) with the explicit form to use — every parse
   failure, including a digit run past the int limit, a non-decimal digit, a recursion-depth overflow and a canonicaliser
-  bound (`IdentityOutOfBounds`); on the `plan` target AUTO never guesses between readings (`detect_auto_ambiguity`).
-  **Declared boundary:** the expert verbs' positional target and every stock / helper-reagent string keep the legacy
-  AUTO precedence (name → SMILES → formula: `CO` there is methanol, `O` water) — see COMPATIBILITY §5. Ambiguous formula
+  bound (`IdentityOutOfBounds`); on the `plan` front door AUTO never guesses between readings — its target or any
+  `--reagents` string (`detect_auto_ambiguity`). **Declared boundary:** the expert verbs' positional target and every
+  stock / helper-reagent string they read keep the legacy AUTO precedence
+  (name → SMILES → formula: `CO` there is methanol, `O` water) — see COMPATIBILITY §5. Ambiguous formula
   spellings (whitespace that would join counts, a bare trailing sign after a single-element count, a Unicode-digit twin
   of a refused spelling, a superscript charge against ASCII digits) and malformed SMILES (a lowercase atom outside an
   aromatic ring, a non-terminal or multiply bonded `[H]`, contradictory or dangling bond symbols, two charge runs, a

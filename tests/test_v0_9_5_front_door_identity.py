@@ -38,10 +38,13 @@ Unchanged by design (each pinned below as a control): benzene / pyridine / furan
 biphenyl keys, ``[H][H]`` / ``[HH]`` / ``[H+]`` / ``[2H]C``, ``C=1CCCC=1``, ``[Fe++]``, ``H٤O`` (= H4O), ``Fe³+``,
 ``InChI=1/CH4`` (non-standard), ``Water`` / ``ACETIC ACID``.
 
-Law 8 (AUTO parity, C6-F7) is a DECLARED BOUNDARY, not a refusal: stock / helper-reagent strings keep the expert AUTO
-precedence (``CO`` = methanol there).  Refusing would move the pinned route fixtures of
+Law 8 (AUTO parity, C6-F7) splits along the 0.6 line (integration adjudication A12).  The ``plan`` front door -- the
+surface that promises AUTO never guesses -- refuses an input-kind ambiguity in EVERY string it reads: its target and
+each helper-reagent string (``plan --reagents CO`` used to read methanol silently while ``plan CO`` refused).  The
+expert verbs keep the legacy AUTO precedence for their target and every stock / helper-reagent string (``CO`` =
+methanol there) -- a DECLARED boundary: refusing there would move the pinned route fixtures of
 ``tests/test_synthesize_provider.py`` (``--reagents O ...``, exit 0) and ``tests/test_v0_7_transport_algebra.py``
-(``stock_materials=("CO", ...)``) and refuse ``O`` -- water's everyday SMILES -- as a reagent.  The boundary is
+(``stock_materials=("CO", ...)``) and every expert request carrying a bare SMILES bench string.  Both halves are
 written into COMPATIBILITY §5 and ARCHITECTURE stage 1, pinned below.
 """
 from __future__ import annotations
@@ -411,17 +414,72 @@ def test_cli_plan_exits_2_not_70(argv, capsys):
 
 
 # =====================================================================================================================
-# Law 8 (C6-F7): AUTO parity for stock / helper strings -- DECLARED boundary (see the module docstring for why)
+# Law 8 (C6-F7): AUTO parity -- the plan front door refuses for every string; expert paths are a DECLARED boundary
 # =====================================================================================================================
 
 def test_expert_auto_precedence_is_a_declared_boundary_in_both_documents():
     """Pre-fix: the documents claimed 'AUTO never guesses' without saying that only the ``plan`` target asks.  Both now
-    declare the expert-path precedence with the ``CO`` = methanol example."""
+    declare the split: the ``plan`` front door refuses for its target and its reagents; the expert paths keep the
+    precedence, with the ``CO`` = methanol example."""
     compat = (_ROOT / "COMPATIBILITY.md").read_text(encoding="utf-8")
     arch = (_ROOT / "docs" / "ARCHITECTURE.md").read_text(encoding="utf-8")
     assert "AUTO precedence on expert paths (declared)" in compat and "`CO` is methanol" in compat
     assert "stock_materials" in compat and "helper_reagents" in compat
+    assert "its target *and* each helper-reagent string" in compat
     assert "Declared boundary:" in arch and "`CO` there is methanol" in arch
+    assert "its target or any\n  `--reagents` string" in arch
+
+
+class _NoSearch:
+    """A ``run_compilation`` stand-in that records every call -- the refusal must come BEFORE any search runs."""
+
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, request):
+        self.calls.append(request)
+        return None
+
+
+@pytest.mark.parametrize("reagent", ["CO", "O", "NO", "CCO"])
+def test_plan_refuses_an_input_kind_ambiguous_helper_reagent(reagent, monkeypatch):
+    """Pre-fix (A12): ``plan(..., helper_reagents=("CO",))`` built and ran the structural recompile with ``CO`` read as
+    SMILES methanol -- the same string the ``plan`` target refuses as ambiguous.  Now it is ``INVALID_INPUT`` (exit 2)
+    naming the reagent and its explicit forms, and no search runs."""
+    import smartchem.service as svc
+    from smartchem.plan import PlanStatus, plan
+
+    spy = _NoSearch()
+    monkeypatch.setattr(svc, "run_compilation", spy)
+    result = plan("smiles:CCOC(C)=O", helper_reagents=("water", reagent))
+    assert result.status is PlanStatus.INVALID_INPUT and result.exit_code == 2
+    assert repr(reagent) in result.invalid_reason and f"smiles:{reagent}" in result.invalid_reason
+    assert spy.calls == []
+
+
+def test_plan_runs_with_explicit_helper_reagent_spellings(monkeypatch):
+    """Control: an explicit kind (``smiles:CO``) or a registered name is a decision, not an ambiguity -- the plan
+    proceeds to its structural recompile with that pool."""
+    import smartchem.service as svc
+    from smartchem.plan import plan
+
+    spy = _NoSearch()
+    monkeypatch.setattr(svc, "run_compilation", spy)
+    plan("smiles:CCOC(C)=O", helper_reagents=("smiles:CO", "water"))
+    assert len(spy.calls) == 1
+    assert tuple(spy.calls[0].helper_reagents) == ("smiles:CO", "water")
+
+
+def test_cli_plan_reagents_ambiguity_exits_2_before_any_search(monkeypatch, capsys):
+    """Pre-fix (A12): ``plan smiles:CCOC(C)=O --reagents CO`` ran the search with methanol in the pool (exit 0)."""
+    import smartchem.service as svc
+    from smartchem.cli import main
+
+    spy = _NoSearch()
+    monkeypatch.setattr(svc, "run_compilation", spy)
+    assert main(["plan", "smiles:CCOC(C)=O", "--reagents", "CO"]) == 2
+    out = capsys.readouterr()
+    assert "'CO'" in out.out + out.err and spy.calls == []
 
 
 def test_the_declared_precedence_is_what_the_code_does():

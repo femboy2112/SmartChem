@@ -67,7 +67,10 @@ knob (M256), owned replay evidence on both summary decoders (M257) and the neste
 filesystem-only implementation digest (M259), the import-time home-less key path (M260) and the ASCII-terminal CLI
 (M261); C8 the thin-wire replay refusal (M262), the INVALID answer's re-execution (M263) and deep payload text
 as a refusal in every text loader (M264); S16 integration: a ceiling crossed after the front door is INVALID (M265).  C8 F7 (a required
-``algebra_profile``) is not duplicated: the v0.7 harness's re-read M16 already kills it.
+``algebra_profile``) is not duplicated: the v0.7 harness's re-read M16 already kills it.  S17 (barrier A8) front-door
+identity hardening: M-S17-1..20, one or more per law (aromatic ring members, terminal H, Unicode digits, bond / charge
+markers, InChI layers, ASCII letters, typed failures, the one name fold); A12 the plan front door's helper-reagent
+ambiguity refusal (M-A12-1).
 
 Run:  .venv/bin/python experiments/v0_9_mutation_calibration.py
       (dev only: SMARTCHEM_MUT_ONLY=M38,M104 runs a subset -- retirements then read VOID; the gate is the full run)
@@ -7045,6 +7048,409 @@ def m265():
             except CanonicalBoundExceeded:
                 escaped = True
     return honest, escaped
+
+
+@mutant("M-A12-1", "plan reads a bare AUTO helper reagent by precedence again (--reagents CO = methanol, no refusal)",
+        "smartchem.plan.plan")
+def _m_a12_1():
+    # A12 (Wave C6 F7): the plan front door refuses an input-kind ambiguous helper reagent before any search.  Broken:
+    # the reagent loop is skipped, so 'CO' reaches the structural recompile read as SMILES methanol.
+    import smartchem.plan as plan_mod
+
+    calls = []
+
+    def no_search(request):
+        calls.append(request)
+        return None
+
+    def run(fn):
+        calls.clear()
+        with _patch(svc, "run_compilation", no_search):
+            result = fn("smiles:CCOC(C)=O", helper_reagents=("CO",))
+        return result.status is plan_mod.PlanStatus.INVALID_INPUT and not calls
+
+    honest = run(plan_mod.plan)
+    bad_plan = _src_mutant(plan_mod.plan, ("        for reagent in helper_reagents or ():",
+                                           "        for reagent in ():"))
+    return honest, not run(bad_plan)
+
+# -- S17 (barrier A8): front-door identity hardening -- one or more mutants per law -----------------------------------
+# Each re-opens exactly one S17 incision and shows the pre-fix hallucination / untyped crash coming back.
+
+def _s17_read(text: str, kind: "InputKind | str" = InputKind.AUTO):
+    """``(formula counts, charge)`` of ``text`` through the ONE parser, or ``None`` when it refuses TYPED."""
+    from smartchem.identity_parse import IdentityParseError, resolve_identity
+
+    try:
+        ident = resolve_identity(text, kind)
+    except IdentityParseError:
+        return None
+    return dict(ident.formula.counts), ident.formula.charge
+
+
+def _s17_plan_rc(text: str) -> "tuple[int, str]":
+    import io
+
+    from smartchem.cli import main as cli_main
+
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        rc = cli_main(["plan", text])
+    return rc, err.getvalue()
+
+
+def _s17_compatibility_text() -> str:
+    """COMPATIBILITY.md of the checkout whose ``smartchem`` is under test (the harness may run from a copy)."""
+    import smartchem
+
+    return (Path(smartchem.__file__).resolve().parent.parent / "COMPATIBILITY.md").read_text(encoding="utf-8")
+
+
+@mutant("M-S17-1", "S17 law 1: the aromatic-ring-membership check dropped -- 'smiles:Co' silently reads as methanol "
+        "and a cobalt stock string puts methanol on the shelf (C8-F3)",
+        "smiles._parse_skeleton_stereo (_check_aromatic_ring_members)")
+def m_s17_1():
+    import smartchem.smiles as smiles_mod
+    from smartchem.identity_parse import IdentityParseError, resolve_target
+
+    def stock_co():
+        try:
+            return resolve_target("Co", InputKind.AUTO).formula
+        except IdentityParseError:
+            return None
+
+    honest = _s17_read("smiles:Co") is None and stock_co() is None
+    bad_walk = _src_mutant(smiles_mod._parse_skeleton_stereo, ("    _check_aromatic_ring_members(atoms, bonds)\n", ""))
+    with _patch(smiles_mod, "_parse_skeleton_stereo", bad_walk):
+        bad = _s17_read("smiles:Co") == ({"C": 1, "H": 4, "O": 1}, 0) and stock_co() == {"C": 1, "H": 4, "O": 1}
+    return honest, bad
+
+
+@mutant("M-S17-2", "S17 law 2 (parser): the terminal-hydrogen check dropped -- 'C1C[H]1' (C2H5) parses again",
+        "smiles._parse_skeleton_stereo (_check_hydrogen_atoms)")
+def m_s17_2():
+    import smartchem.smiles as smiles_mod
+
+    honest = _s17_read("C1C[H]1", InputKind.SMILES) is None
+    bad_walk = _src_mutant(smiles_mod._parse_skeleton_stereo, ("    _check_hydrogen_atoms(atoms, bonds)\n", ""))
+    with _patch(smiles_mod, "_parse_skeleton_stereo", bad_walk):
+        bad = _s17_read("C1C[H]1", InputKind.SMILES) == ({"C": 2, "H": 5}, 0)
+    return honest, bad
+
+
+@mutant("M-S17-3", "S17 law 2 (key): resonance_canonical re-derives hydrogens again -- a bridged-H C2H5 graph shares "
+        "ethane's key", "smiles.resonance_canonical (terminal-H guard -> literal key)")
+def m_s17_3():
+    import smartchem.smiles as smiles_mod
+    from smartchem.category import Bond, Molecule
+
+    atoms = ("C", "C", "H", "H", "H", "H", "H")
+    edges = ((0, 1), (0, 2), (1, 2), (0, 3), (0, 4), (1, 5), (1, 6))       # C1C[H]1 as a raw (wire/surgery) graph
+    bridged = Molecule(atoms, frozenset(Bond(i, j, 1) for i, j in edges))
+    ethane = parse_smiles("CC")
+
+    def merged() -> bool:
+        return smiles_mod.resonance_identity(bridged) == smiles_mod.resonance_identity(ethane)
+
+    honest = not merged()
+    # __wrapped__: the work-transparent cache's functools.wraps wrapper carries verification.py's globals, not smiles'
+    bad_rc = _src_mutant(smiles_mod.resonance_canonical.__wrapped__,
+                         ("if b.order != 1 or other in h_degree:\n                    return molecule.canonical()",
+                          "if False:\n                    return molecule.canonical()"),
+                         ("if any(d != 1 for d in h_degree.values()):", "if False:"))
+    with _patch(smiles_mod, "resonance_canonical", bad_rc):
+        bad = merged()
+    return honest, bad
+
+
+@mutant("M-S17-4", "S17 law 3: the Unicode-digit fold skipped before the decimal guard -- 'C٦.5H12' reads as C6H60",
+        "formula_expr.parse_formula_expr (_fold_decimal_digits before the decimal-point guard)")
+def m_s17_4():
+    import smartchem.formula_expr as fe_mod
+
+    def read():
+        try:
+            return dict(fe_mod.parse_formula_expr("C٦.5H12").to_formula().counts)
+        except fe_mod.FormulaSyntaxError:
+            return None
+
+    honest = read() is None
+    bad_parse = _src_mutant(fe_mod.parse_formula_expr, ("raw = _fold_decimal_digits(text.strip()).translate(_SUBSCRIPTS)",
+                                                        "raw = text.strip().translate(_SUBSCRIPTS)"))
+    with _patch(fe_mod, "parse_formula_expr", bad_parse):
+        bad = read() == {"C": 6, "H": 60}
+    return honest, bad
+
+
+@mutant("M-S17-5", "S17 law 3: a superscript charge run glued to ASCII digits merges again -- 'SO⁴2-' reads as SO, -42",
+        "formula_expr.normalize_formula_text (superscript-then-ASCII-digit ambiguity)")
+def m_s17_5():
+    import smartchem.formula_expr as fe_mod
+
+    honest = _s17_read("SO⁴2-", InputKind.FORMULA) is None
+    bad_norm = _src_mutant(fe_mod.normalize_formula_text, ("if j < n and work[j] in _COUNT_DIGITS:", "if False:"))
+    with _patch(fe_mod, "normalize_formula_text", bad_norm):
+        bad = _s17_read("SO⁴2-", InputKind.FORMULA) == ({"O": 1, "S": 1}, -42)
+    return honest, bad
+
+
+@mutant("M-S17-6", "S17 law 4: two bond symbols in a row accepted again -- 'C=#C' reads as ethyne (last symbol wins)",
+        "smiles._parse_skeleton_stereo (consecutive bond symbols)")
+def m_s17_6():
+    import smartchem.smiles as smiles_mod
+
+    honest = _s17_read("C=#C", InputKind.SMILES) is None
+    bad_walk = _src_mutant(smiles_mod._parse_skeleton_stereo,
+                           ("            if pending is not None:\n                raise SmilesError(f\"two bond symbols",
+                            "            if False:\n                raise SmilesError(f\"two bond symbols"))
+    with _patch(smiles_mod, "_parse_skeleton_stereo", bad_walk):
+        bad = _s17_read("C=#C", InputKind.SMILES) == ({"C": 2, "H": 2}, 0)
+    return honest, bad
+
+
+@mutant("M-S17-7", "S17 law 4: a dangling bond symbol dropped again -- 'CC=' (a truncated CC=O) reads as ethane",
+        "smiles._parse_skeleton_stereo (dangling bond at the end)")
+def m_s17_7():
+    import smartchem.smiles as smiles_mod
+
+    honest = _s17_read("CC=", InputKind.SMILES) is None
+    bad_walk = _src_mutant(smiles_mod._parse_skeleton_stereo,
+                           ("    if pending is not None:\n        raise dangling(\"at the end of the string\")",
+                            "    if False:\n        raise dangling(\"at the end of the string\")"))
+    with _patch(smiles_mod, "_parse_skeleton_stereo", bad_walk):
+        bad = _s17_read("CC=", InputKind.SMILES) == ({"C": 2, "H": 6}, 0)
+    return honest, bad
+
+
+@mutant("M-S17-8", "S17 law 4: ring-bond ends that disagree accepted again -- 'C=1CCCC-1' reads as cyclopentane",
+        "smiles._parse_skeleton_stereo (ring-closure order conflict)")
+def m_s17_8():
+    import smartchem.smiles as smiles_mod
+
+    honest = _s17_read("C=1CCCC-1", InputKind.SMILES) is None
+    bad_walk = _src_mutant(smiles_mod._parse_skeleton_stereo,
+                           ("if pending is not None and oorder is not None and pending != oorder:", "if False:"))
+    with _patch(smiles_mod, "_parse_skeleton_stereo", bad_walk):
+        bad = _s17_read("C=1CCCC-1", InputKind.SMILES) == ({"C": 5, "H": 10}, 0)
+    return honest, bad
+
+
+@mutant("M-S17-9", "S17 law 5: bracket charge runs summed again -- '[Fe+2+]' reads as Fe charge +3",
+        "smiles._parse_bracket (one charge run)")
+def m_s17_9():
+    import smartchem.smiles as smiles_mod
+
+    honest = _s17_read("[Fe+2+]", InputKind.SMILES) is None
+    bad_bracket = _src_mutant(smiles_mod._parse_bracket,
+                              ('    if i < len(body) and body[i] in "+-":\n        sign', '    while i < len(body) and body[i] in "+-":\n        sign'),
+                              ("charge = sign * _bracket_int(", "charge += sign * _bracket_int("),
+                              ("            charge = sign\n", "            charge += sign\n"),
+                              ('        if i < len(body) and body[i] in "+-":\n            raise', '        if False:\n            raise'))
+    with _patch(smiles_mod, "_parse_bracket", bad_bracket):
+        bad = _s17_read("[Fe+2+]", InputKind.SMILES) == ({"Fe": 1}, 3)
+    return honest, bad
+
+
+@mutant("M-S17-10", "S17 law 5: repeated InChI /q layers summed again -- 'InChI=1S/CH4/q+1/q+1' reads as charge +2",
+        "identity_parse._inchi_formula_layer (each charge layer at most once)")
+def m_s17_10():
+    import smartchem.identity_parse as ip_mod
+
+    text = "InChI=1S/CH4/q+1/q+1"
+    honest = _s17_read(text, InputKind.INCHI) is None
+    bad_layer = _src_mutant(ip_mod._inchi_formula_layer, ("if sum(1 for p in layers if p[0] == tag) > 1:", "if False:"))
+    with _patch(ip_mod, "_inchi_formula_layer", bad_layer):
+        bad = _s17_read(text, InputKind.INCHI) == ({"C": 1, "H": 4}, 2)
+    return honest, bad
+
+
+@mutant("M-S17-11", "S17 law 5: the InChI Hill-formula check dropped -- a middle-dot two-component InChI passes as ONE "
+        "species", "identity_parse._inchi_formula_layer (one ASCII Hill formula)")
+def m_s17_11():
+    import smartchem.identity_parse as ip_mod
+
+    text = "InChI=1S/CuO4S·H2O"
+    honest = _s17_read(text, InputKind.INCHI) is None
+    bad_layer = _src_mutant(ip_mod._inchi_formula_layer,
+                            ("if _INCHI_HILL_FORMULA.fullmatch(formula_token) is None:", "if False:"))
+    with _patch(ip_mod, "_inchi_formula_layer", bad_layer):
+        bad = _s17_read(text, InputKind.INCHI) == ({"Cu": 1, "H": 2, "O": 5, "S": 1}, 0)
+    return honest, bad
+
+
+@mutant("M-S17-12", "S17 law 6: non-ASCII element letters accepted again -- 'c1cc[ſ]c1' (a long-s sulfur) "
+        "reads as thiophene",
+        "smiles._parse_bracket (ASCII element letters)")
+def m_s17_12():
+    import smartchem.smiles as smiles_mod
+
+    # the long-s thiophene, not a lone '[ı]': a lowercase confusable reads as an AROMATIC atom, so outside a ring law 1
+    # refuses it first -- inside a real aromatic ring only the ASCII check stands between it and a silent thiophene.
+    honest = _s17_read("c1cc[ſ]c1", InputKind.SMILES) is None
+    bad_bracket = _src_mutant(smiles_mod._parse_bracket, (
+        "if not _ascii_letter(body[i]) or (i + 1 < len(body) and body[i + 1].isalpha() and not body[i + 1].isascii()):",
+        "if False:"))
+    with _patch(smiles_mod, "_parse_bracket", bad_bracket):
+        bad = _s17_read("c1cc[ſ]c1", InputKind.SMILES) == ({"C": 4, "H": 4, "S": 1}, 0)
+    return honest, bad
+
+
+@mutant("M-S17-13", "S17 law 7: RecursionError escapes resolve_identity again (exit 70, not a typed refusal)",
+        "identity_parse.resolve_identity (RecursionError -> IdentityParseError)")
+def m_s17_13():
+    import smartchem.identity_parse as ip_mod
+    import smartchem.smiles as smiles_mod
+
+    def _deep(_text):
+        raise RecursionError("maximum recursion depth exceeded")
+
+    def outcome(resolve) -> str:
+        try:
+            resolve("CCO", InputKind.SMILES)
+        except ip_mod.IdentityParseError:
+            return "typed"
+        except RecursionError:
+            return "crash"
+        return "resolved"
+
+    with _patch(smiles_mod, "parse_smiles_features", _deep):
+        honest = outcome(ip_mod.resolve_identity) == "typed"
+        bad_resolve = _src_mutant(ip_mod.resolve_identity, ("except RecursionError:", "except ZeroDivisionError:"))
+        bad = outcome(bad_resolve) == "crash"
+    return honest, bad
+
+
+@mutant("M-S17-14", "S17 law 7: bracket digit runs past the int-string limit escape as a bare ValueError again",
+        "smiles._bracket_int (int() limit -> SmilesError)")
+def m_s17_14():
+    import smartchem.smiles as smiles_mod
+    from smartchem.identity_parse import IdentityParseError, resolve_identity
+
+    text = "[" + "1" * 4400 + "C]"
+
+    def outcome() -> str:
+        try:
+            resolve_identity(text, InputKind.SMILES)
+        except IdentityParseError:
+            return "typed"
+        except ValueError:
+            return "untyped"
+        return "resolved"
+
+    honest = outcome() == "typed"
+    bad_int = _src_mutant(smiles_mod._bracket_int, ("except ValueError:", "except ZeroDivisionError:"))
+    with _patch(smiles_mod, "_bracket_int", bad_int):
+        bad = outcome() == "untyped"
+    return honest, bad
+
+
+@mutant("M-S17-15", "S17 law 7: isdigit() restored in the formula body -- 'plan H④O' exits 70 ERROR_INTERNAL again",
+        "formula_expr._parse_body (ASCII count digits)")
+def m_s17_15():
+    import smartchem.formula_expr as fe_mod
+
+    rc, err = _s17_plan_rc("H④O")
+    honest = rc == 2 and "ERROR_INTERNAL" not in err
+    bad_body = _src_mutant(fe_mod._parse_body, ("while k < n and text[k] in _COUNT_DIGITS:",
+                                                "while k < n and text[k].isdigit():"))
+    with _patch(fe_mod, "_parse_body", bad_body):
+        rc2, err2 = _s17_plan_rc("H④O")
+    return honest, rc2 == 70 and "ERROR_INTERNAL" in err2
+
+
+@mutant("M-S17-16", "S17 law 8: expert-AUTO precedence silently changed for a bench string -- COMPATIBILITY §5's "
+        "declared boundary ('CO' is methanol there) no longer describes the code",
+        "identity_parse.resolve_target (the AUTO read every stock / helper string takes)")
+def m_s17_16():
+    import smartchem.identity_parse as ip_mod
+
+    def stock(text):
+        try:
+            return ip_mod.resolve_target(text, InputKind.AUTO).formula
+        except ip_mod.IdentityParseError:
+            return None
+
+    compat = _s17_compatibility_text()
+    honest = "`CO` is methanol" in compat and stock("CO") == {"C": 1, "H": 4, "O": 1}
+    bad_target = _src_mutant(ip_mod.resolve_target, (
+        "return _require_molecule(resolve_identity(target_input, input_kind))[0]",
+        "return _require_molecule(resolve_identity('formula:' + target_input if detect_auto_ambiguity(target_input) "
+        "else target_input, input_kind))[0]"))
+    with _patch(ip_mod, "resolve_target", bad_target):
+        bad = stock("CO") is None                     # the declared boundary's own example is now false
+    return honest, bad
+
+
+@mutant("M-S17-17", "S17 law 9: the case-only name match certifies a formula spelling again -- AUTO 'WAtEr' (W At Er) "
+        "resolves to registry water (H2O)", "structure.structure_by_name (case-only agreement needs a non-formula string)")
+def m_s17_17():
+    import smartchem.structure as structure_mod
+
+    honest = _s17_read("WAtEr") == ({"W": 1, "At": 1, "Er": 1}, 0)
+    bad_lookup = _src_mutant(structure_mod.structure_by_name, ("if _reads_as_formula(exact):", "if False:"))
+    with _patch(structure_mod, "structure_by_name", bad_lookup):
+        bad = _s17_read("WAtEr") == ({"H": 2, "O": 1}, 0)
+    return honest, bad
+
+
+@mutant("M-S17-18", "S17 law 9: structure_by_name keeps a private fold again (strip + casefold, no interior collapse) -- "
+        "'acetic  acid' resolves nowhere", "structure.structure_by_name (stock's collapse / normalize folds)")
+def m_s17_18():
+    import smartchem.structure as structure_mod
+
+    def found() -> bool:
+        return structure_mod.structure_by_name("acetic  acid") is not None
+
+    honest = found()
+    bad_lookup = _src_mutant(structure_mod.structure_by_name,
+                             ("exact = collapse_material_name(name)", "exact = name.strip()"),
+                             ("if any(collapse_material_name(label) == exact", "if any(label == exact"),
+                             ("needle = normalize_material_name(name)", "needle = name.strip().casefold()"),
+                             ("if any(normalize_material_name(label) == needle", "if any(label.casefold() == needle"))
+    with _patch(structure_mod, "structure_by_name", bad_lookup):
+        bad = not found()
+    return honest, bad
+
+
+@mutant("M-S17-19", "S17 law 9: stream_disposition keeps private literal copies of stock's structure-key prefixes again",
+        "stream_disposition._species_key_prefixes (read from the owner, stock)")
+def m_s17_19():
+    import smartchem.experiment.stock as stock_mod
+    import smartchem.stream_disposition as sd_mod
+
+    def follows_owner() -> bool:
+        with _patch(stock_mod, "_STRUCT_PREFIX", "owner-moved:"):
+            try:
+                sd_mod.StreamSubject(sd_mod.SubjectKind.BYPRODUCT, "0" * 64, None, None, "owner-moved:abc")
+            except ValueError:
+                return False
+            return True
+
+    honest = follows_owner()
+    with _patch(sd_mod, "_species_key_prefixes",
+                lambda with_name: ("struct:", "struct-asgiven:") + (("name:",) if with_name else ())):
+        bad = not follows_owner()
+    return honest, bad
+
+
+@mutant("M-S17-20", "S17 law 10: the declared nitro / sulfoxide split silently becomes a MERGE (a composition-only key) "
+        "-- COMPATIBILITY §5 would describe the wrong direction", "smiles.resonance_identity (the declared split)")
+def m_s17_20():
+    import smartchem.smiles as smiles_mod
+    from smartchem.contracts import canonical_digest
+
+    pairs = (("CN(=O)=O", "C[N+](=O)[O-]"), ("CS(C)=O", "C[S+](C)[O-]"))
+
+    def split() -> bool:
+        return all(smiles_mod.resonance_identity(parse_smiles(a)) != smiles_mod.resonance_identity(parse_smiles(b))
+                   for a, b in pairs)
+
+    compat = _s17_compatibility_text()
+    honest = split() and "`CN(=O)=O` vs `C[N+](=O)[O-]`" in compat
+    with _patch(smiles_mod, "resonance_identity",
+                lambda m: canonical_digest((tuple(sorted(m.formula.items())), m.charge))):
+        bad = not split()
+    return honest, bad
 
 
 # =================================================================================================================

@@ -72,6 +72,7 @@ import smartchem.capability.waste as waste_mod
 import smartchem.contracts as contracts_mod
 import smartchem.data.derived_evidence as derived_mod
 import smartchem.experiment.stock as stock_mod
+import smartchem.legacy_v08 as legacy_mod  # 0.9.5 I2: the frozen v0.8 kernel's home (M108/M116 patch it HERE)
 import smartchem.material_spec as spec_mod
 import smartchem.service as svc
 from smartchem.algebra_profiles import DEFAULT_ROUTE_ALGEBRA_PROFILE, resolve_algebra_profile
@@ -2766,15 +2767,15 @@ def m107():
 
 
 @mutant("M108", "the frozen v0.8 omission set is WIDENED past the 0.9-added fields",
-        "service._V08_OMITTED_FIELDS (frozen v0.8 digest rule)")
+        "legacy_v08._V08_OMITTED_FIELDS (frozen v0.8 digest rule)")
 def m108():
     """The frozen rule omits EXACTLY the fields 0.9 added (measured, not guessed). Honest: a real v0.8 (main@df1b38d)
     response loads as LEGACY and verifies. Mutant: one genuine v0.8 field (RankedRouteSummary.fit_status) joins the
     omission set -> the genuine artifact is no longer re-encoded byte-for-byte and is refused."""
     honest = response_from_payload(_v08("response_isopentyl_acetate.json")).is_legacy_v08
-    widened = {k: dict(v) for k, v in svc._V08_OMITTED_FIELDS.items()}
+    widened = {k: dict(v) for k, v in legacy_mod._V08_OMITTED_FIELDS.items()}
     widened["smartchem.service.RankedRouteSummary"]["fit_status"] = None
-    with _patch(svc, "_V08_OMITTED_FIELDS", widened):
+    with _patch(legacy_mod, "_V08_OMITTED_FIELDS", widened):
         _l, err = _try_load(_v08("response_isopentyl_acetate.json"))
     return honest, err is not None
 
@@ -2885,11 +2886,11 @@ def m115():
 
 
 @mutant("M116", "the new temperature floor breaks real v0.8 identities (no frozen-rule omission, D14/D22)",
-        "service._V08_OMITTED_FIELDS['smartchem.constraints.PhysicalBounds']")
+        "legacy_v08._V08_OMITTED_FIELDS['smartchem.constraints.PhysicalBounds']")
 def m116():
     honest = response_from_payload(_v08("response_isopentyl_acetate.json")).is_legacy_v08
-    table = {k: v for k, v in svc._V08_OMITTED_FIELDS.items() if k != "smartchem.constraints.PhysicalBounds"}
-    with _patch(svc, "_V08_OMITTED_FIELDS", table):
+    table = {k: v for k, v in legacy_mod._V08_OMITTED_FIELDS.items() if k != "smartchem.constraints.PhysicalBounds"}
+    with _patch(legacy_mod, "_V08_OMITTED_FIELDS", table):
         _l, err = _try_load(_v08("response_isopentyl_acetate.json"))
     return honest, err is not None
 

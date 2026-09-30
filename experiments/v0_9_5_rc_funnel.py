@@ -725,7 +725,8 @@ def _policy_load(payload, name):
     try:
         v = importlib.import_module("smartchem.verification")
         policy = getattr(v.VerificationPolicy, name)()
-        v.load_response(copy.deepcopy(payload), policy)
+        # the policy lives in smartchem.verification; the verifying LOADER is the service's (barrier section 3)
+        importlib.import_module("smartchem.service").load_response(copy.deepcopy(payload), policy)
         return {"accepted": True}
     except (AttributeError, ImportError) as exc:
         return f"policy API absent ({type(exc).__name__}: {exc})"

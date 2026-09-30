@@ -1742,8 +1742,8 @@ class CompilationResponse:
             raise TypeError("parse_receipt_summary must be a string or None")
         # CLI-CAN-02 brick 2: ``ranked_route_dossiers`` is populated (routes mode) with typed RankedRouteSummary
         # values -- the section-11 fit disposition per route.  The type is guarded so a hand-built/deserialized
-        # response cannot smuggle an untyped blob past the coherence checks.  ``affordability_frontier`` stays empty
-        # (COST-VEC-01 unbuilt): present-and-empty, never absent, so the shape is stable and the empty is HONEST.
+        # response cannot smuggle an untyped blob past the coherence checks.  (``affordability_frontier`` is populated
+        # since COST-VEC-01 and validated below; the "stays empty, COST-VEC-01 unbuilt" note that stood here was stale.)
         if type(self.ranked_route_dossiers) is not tuple or any(
             type(r) is not RankedRouteSummary for r in self.ranked_route_dossiers
         ):
@@ -1757,9 +1757,10 @@ class CompilationResponse:
                 raise ValueError("ranked route digest must identify a returned IR candidate")
         # COST-VEC-01: ``affordability_frontier`` is now POPULATED (routes mode) with typed AffordabilityFrontierEntry
         # values -- the section-10.4 Pareto frontier.  The type is guarded (like ranked_route_dossiers) so a
-        # hand-built/deserialized response cannot smuggle an untyped blob past the coherence checks.  The import is
-        # lazy AND only on a non-empty frontier, so the common empty-frontier path never drags the experiment layer
-        # (the service's layering discipline).  An empty frontier is HONEST: no route carried affordability signal.
+        # hand-built/deserialized response cannot smuggle an untyped blob past the coherence checks.  The import sits in
+        # the non-empty branch by convention only: it is neither a load-time saving nor a cycle dodge, because
+        # ``import smartchem.service`` already loads the experiment package (0.9.5 Part 16 correction -- an earlier
+        # comment claimed otherwise).  An empty frontier is HONEST: no route carried affordability signal.
         if type(self.affordability_frontier) is not tuple:
             raise TypeError("affordability_frontier must be a tuple")
         if self.affordability_frontier:
@@ -2819,7 +2820,8 @@ class CompilationResponse:
         """
         if not self.affordability_frontier:
             return
-        # lazy imports stay off the common (empty-frontier) path -- the service's layering discipline.
+        # function-local by convention, not necessity: both modules are already loaded by ``import smartchem.service``
+        # (via the experiment package), so this is neither a load-time saving nor a cycle dodge (0.9.5 Part 16).
         from .experiment.catalyst_availability import route_catalyst_blockers
         from .experiment.reaction_type_oracle import route_reaction_type_blockers
         process = self.request.constraints.process
@@ -3341,8 +3343,10 @@ def _ranked_summaries(
 ) -> "tuple[RankedRouteSummary, ...]":
     """Rank ``routes`` against the section-11 bench ``bounds`` and project to thin response summaries (CLI-CAN-02).
 
-    The drafter (the heavy analysis layer: composability/thermo/selectivity/kinetics) is imported LAZILY here so
-    ``smartchem.service`` never drags that object graph at module load (the layering discipline).  ``losses``
+    The drafter (the heavy analysis layer: composability/thermo/selectivity/kinetics) is imported function-locally
+    here by convention; that does NOT keep it out of module load -- ``import smartchem.service`` already loads
+    ``smartchem.experiment.drafter`` through the experiment package, so it is no cycle dodge either (0.9.5 Part 16
+    correction of an earlier claim).  ``losses``
     threads the target's section-5.3 blockers into the sourced verdicts (EVD-KEY-01), so a loss-bearing target
     never floats on a sourced verdict its dropped feature forbids.  An empty route set yields ``()`` -- there is
     nothing to rank, which the caller discloses via ``constraint_note(..., fit_counts=None)``.
@@ -5654,10 +5658,12 @@ def response_to_payload(response: CompilationResponse, *, signing_key: bytes | N
     a crash" for pre-0.9 payloads.  That was FALSE: the fields were added to digest-covered records (RankedRouteSummary,
     ProcedureOperation) without a schema bump, so every genuine v0.8 routes-mode response was refused with a misleading
     ``result_digest`` mismatch, while a v0.8-id request with an injected capability profile was ACCEPTED as native.  The
-    truth now: the 0.9 fields are REQUIRED on the current ids (request v1alpha6 / response v1alpha16 / summary
-    v1alpha4); the v0.8 ids are an explicit LEGACY whitelist decoded as capability NOT_REQUESTED and verified under the
-    frozen v0.8 digest rule (``_v08_canonical_payload``); a v0.8-id payload carrying ANY 0.9-only key is REFUSED; any
-    other id is refused as ``unsupported schema version``.  Pinned by tests/test_v0_9_round_v_schema_migration.py
+    truth now: the 0.9 fields are REQUIRED on the current ids -- whatever generation :data:`COMPILATION_REQUEST_SCHEMA`,
+    :data:`COMPILATION_RESPONSE_SCHEMA`, :data:`RANKED_ROUTE_SUMMARY_SCHEMA` and :data:`RANKED_DAG_SUMMARY_SCHEMA` name
+    today (the per-generation record is ``docs/research/SCHEMA_HISTORY.md``); the v0.8 ids are an explicit LEGACY
+    whitelist decoded as capability NOT_REQUESTED and verified under the frozen v0.8 digest rule
+    (``smartchem.legacy_v08._v08_canonical_payload``); a v0.8-id payload carrying ANY 0.9-only key is REFUSED; any other
+    id is refused as ``unsupported schema version``.  Pinned by tests/test_v0_9_round_v_schema_migration.py
     against real main@df1b38d fixtures (tests/fixtures/v08/).
 
     A LEGACY-loaded v0.8 response is REFUSED here (X-high, W-WIRE P3): this encoder writes the CURRENT shape, so it

@@ -11,9 +11,16 @@ spelling whose front-door outcome MOVES is listed below, with the pre-fix behavi
   ``AmbiguousChargeError``).
 * **F-1** -- a superscript digit inside a SMILES bracket atom (``[³]``, ``C[²H]``, ``[¹²C]``) escaped as a bare
   ``ValueError`` and the CLI answered exit 70 INTERNAL; it is now a ``SmilesError``, i.e. typed invalid input.
-* **F-3** is NOT fixed here: every uniform bare-sign rule conflicts with a frozen expectation (``NH4+`` is
-  accepted by oracle member FD-04 and ``tests/test_formula_expr.py``); the conflict is reported upward rather
-  than decided by the writer.  No F-3 assertion lives in this file, so nothing here entrenches ``HZn3+``.
+* **F-3** was adjudicated NOT a defect: a multi-element body with one digit before a bare sign is the declared
+  polyatomic-ion convention (count reading, charge +-1: ``NH4+``, ``NO3-``, ``H3O+``, ``VO2+``), so ``HZn3+`` is
+  H1 Zn3 charge +1 BY CONVENTION; a single-element body (``Fe3+``) stays refused.  No rule change -- the row
+  below pins the convention so that changing it is a visible decision (the fuzzer's R2 signature is this
+  declared boundary).
+* **F-4** (same defect class as F-1) -- the SMILES ring-closure lexer took ``str.isdigit()`` labels, so a
+  superscript became a ring bond and AUTO silently read ``S²N²`` as an S=N ring molecule (seed-952
+  ``P-auto-silent-misread``).  Ring labels and ``%nn`` are ASCII decimal only; anything else is a SmilesError.
+  ``S²N²`` then reaches the formula grammar, whose contract reads a superscript run as a CHARGE (``S^2N^2``,
+  a caret charge with no sign), so it is typed invalid input on every surface and the CLI exits 2.
 
 Accepted-set movement (narrowing only; every other spelling keeps its pre-fix outcome):
 
@@ -30,7 +37,15 @@ spelling              pre-fix                                post-fix
 ``N a`` / ``C l``     accepted  Na / Cl                      FormulaSyntaxError (symbol fusion)
 ``[Fe(CN)6] 4-``      accepted  charge -4                    AmbiguousChargeError
 ``[³]`` ``C[²H]`` …   ValueError -> CLI exit 70              IdentityParseError -> CLI exit 2
+``S²N²`` (AUTO)       accepted  SMILES ring H S N            IdentityParseError -> CLI exit 2
+``C¹CC¹``             accepted  cyclopropane                 SmilesError
+``C%¹⁰CC%¹⁰``         accepted  cyclopropane                 SmilesError
+``C%1aCC%1a``         accepted  cyclopropane (unchecked)     SmilesError
 ====================  =====================================  =====================================
+
+Fullwidth decimal ring labels (``C１CC１``) deliberately do NOT move: ring labels are ``isdecimal()``, not
+ASCII-only, because an ASCII-only lexer would drop that SMILES reading and plan would silently decompile the
+formula C3 instead of flagging the input-kind ambiguity it flags today.
 
 ``SO4 2-`` / ``Fe 3+`` / ``NH4 2+`` were already refused (via the merged ``SO42-`` etc.) and stay
 ``AmbiguousChargeError`` -- oracle member FD-09 keeps its ``AMBIGUOUS_ASCII_ION`` reason.
@@ -246,6 +261,71 @@ def test_cli_plan_bad_bracket_exits_2_not_70(text, capsys):
 # exactly as before (pre-fix: passed; still passes).
 def test_decimal_unicode_isotope_still_parses():
     assert dict(parse_smiles("[１３CH4]").formula) == {"C": 1, "H": 4}
+
+
+# == F-3 (adjudicated): the declared polyatomic-ion convention, pinned so a change is a visible decision =======
+# Pre-fix: passes (no rule change -- this is a pin, not a fix).  Single-element bodies stay refused
+# (test_formula_expr.py::test_P0B_single_element_bare_sign_ion_is_ambiguous).
+@pytest.mark.parametrize("text,comp,charge", [
+    ("HZn3+", {"H": 1, "Zn": 3}, 1),     # the fuzzer's R2 spelling: count reading BY CONVENTION, not a +3 ion
+    ("NH4+", {"N": 1, "H": 4}, 1),
+    ("NO3-", {"N": 1, "O": 3}, -1),
+    ("VO2+", {"V": 1, "O": 2}, 1),
+])
+def test_multi_element_one_digit_bare_sign_is_the_declared_count_convention(text, comp, charge):
+    expr = parse_formula_expr(text)
+    assert dict(expr.to_formula().counts) == comp
+    assert expr.charge == charge
+    assert any("bare charge sign read as" in note for note in expr.notes)   # the reading is disclosed, not silent
+
+
+def test_single_element_bare_sign_stays_ambiguous_under_the_convention():
+    with pytest.raises(AmbiguousChargeError):
+        parse_formula_expr("Zn3+")
+
+
+# == F-4: a non-decimal digit is never a SMILES ring label ====================================================
+# Pre-fix (ebee000): every row parsed as a ring molecule -> FAILS on the old code.
+@pytest.mark.parametrize("text", ["S²N²", "C¹CC¹", "C%¹⁰CC%¹⁰", "C%1aCC%1a"])
+def test_non_decimal_ring_label_is_a_smiles_error(text):
+    with pytest.raises(SmilesError):
+        parse_smiles(text)
+
+
+# 'S²N²' is refused on every surface: SMILES now declines it, and the formula contract reads a superscript run as
+# a CHARGE ('S^2N^2' -- a caret charge with no sign), so there is no reading left.  Pre-fix: AUTO silently
+# returned the SMILES ring {H1 N1 S1} -> FAILS on the old code.
+@pytest.mark.parametrize("kind", [InputKind.AUTO, InputKind.SMILES, InputKind.FORMULA])
+def test_superscript_pair_s2n2_is_typed_invalid_input(kind):
+    with pytest.raises(IdentityParseError):
+        resolve_identity("S²N²", kind)
+
+
+def test_superscript_pair_s2n2_is_not_an_auto_ambiguity_either():
+    from smartchem.identity_parse import detect_auto_ambiguity
+
+    assert detect_auto_ambiguity("S²N²") is None   # no reading survives, so there is nothing to choose between
+
+
+# Pre-fix: plan resolved the silent ring and exited 0 -> FAILS on the old code.
+def test_cli_plan_s2n2_exits_2(capsys):
+    from smartchem.cli import main
+
+    assert main(["plan", "S²N²"]) == 2
+    assert "ERROR_INTERNAL" not in capsys.readouterr().err
+
+
+# The decimal ring labels are untouched (pre-fix: passed; still passes) -- including fullwidth, whose SMILES
+# reading keeps plan's input-kind ambiguity flag alive rather than handing the formula reading C3 a silent win.
+@pytest.mark.parametrize("text", ["C1CC1", "C%10CC%10", "C１CC１"])
+def test_decimal_ring_labels_still_parse(text):
+    assert dict(parse_smiles(text).formula) == {"C": 3, "H": 6}
+
+
+def test_fullwidth_ring_smiles_stays_input_kind_ambiguous():
+    from smartchem.identity_parse import detect_auto_ambiguity
+
+    assert detect_auto_ambiguity("C１CC１") is not None
 
 
 # ...and a genuine internal error is still not laundered into "invalid input" (no broad except was added).

@@ -507,6 +507,11 @@ def _extract_charge(text: str) -> "tuple[str, int, str]":
         # A MULTI-element body with a SINGLE trailing digit (NH4+, NO3-) is unambiguous -- the digit is the last
         # element's count and the bare sign is +-1 -- and falls through to the reading below.  Element count =
         # uppercase letters; brackets are handled above.  n_elements == 0 (e.g. '3+') is left to the body parser.
+        # DECLARED CONVENTION (0.9.5 A1 adjudication, F-3 refuted as a defect): for a MULTI-element body a single
+        # digit before a bare sign is ALWAYS the last element's count and the sign is +-1 -- the polyatomic-ion
+        # reading (NH4+, NO3-, H3O+, VO2+) -- and that includes spellings like HZn3+ (H1 Zn3, +1).  A SINGLE-element
+        # body stays refused as ambiguous.  This is a chosen convention, not a discovered truth: changing it is a
+        # front-door semantic decision, pinned by tests/test_v0_9_5_front_door.py, not a tidy-up.
         if digits:
             body_with_digits = text[:-1]
             n_elements = sum(1 for ch in body_with_digits if ch.isupper())

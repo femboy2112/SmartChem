@@ -310,11 +310,18 @@ def _parse_skeleton_stereo(
             i += 1
         elif ch == ".":
             raise SmilesError("disconnected SMILES ('.'): a Molecule is one connected species")
-        elif ch.isdigit() or ch == "%":
+        elif ch.isdecimal() or ch == "%":
+            # ring-closure labels are DECIMAL digits only (0.9.5 A1/F-4).  isdigit() let a superscript become a
+            # ring label, so AUTO read 'S²N²' as a silent S=N ring; a superscript now falls to the atom branch
+            # below and is refused as an unexpected character.  isdecimal(), not ASCII-only, on purpose: a
+            # fullwidth 'C１CC１' keeps its SMILES reading, so plan still flags it input-kind ambiguous instead of
+            # silently decompiling the formula C3.  A '²' is not a ring bond, whatever Unicode thinks of it.
             if prev is None:
                 raise SmilesError("ring-closure digit before any atom")
             if ch == "%":
                 label = text[i + 1:i + 3]
+                if len(label) != 2 or not label.isdecimal():
+                    raise SmilesError(f"'%' ring closure at position {i} needs two decimal digits, got {label!r}")
                 i += 3
             else:
                 label = ch

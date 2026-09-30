@@ -610,11 +610,21 @@ HAZARD_REFS: tuple[HazardRef, ...] = (
 
 
 def _by_name() -> dict[str, HazardRef]:
-    """Records indexed by compound name -- the ISOMER-resolved key. Names must be unique."""
+    """Records indexed by compound name -- the ISOMER-resolved key. Names must be unique.
+
+    0.9.5 S18 (C1-1): every record name must already be a fixed point of the ONE material-name fold
+    (``stock.normalize_material_name``), so :func:`hazards_for_named` can fold its QUERY and still hit exactly the
+    record the name spells. A record whose name the fold would move (a mixed-case formula-like token such as ``"Co"``)
+    is refused here: folding the query onto it would be the lossy case-fold C1-3 forbids."""
+    from ..experiment.stock import normalize_material_name  # lazy: experiment.stock pulls in this data package
+
     index: dict[str, HazardRef] = {}
     for ref in HAZARD_REFS:
         if ref.name in index:
             raise ValueError(f"two hazard records share the name {ref.name!r}; names must be unique")
+        if normalize_material_name(ref.name) != ref.name:
+            raise ValueError(f"hazard record name {ref.name!r} is not in the material-name fold's image; a folded "
+                             "lookup could not reach it without a lossy case-fold (S18)")
         index[ref.name] = ref
     return index
 
@@ -653,8 +663,15 @@ def hazards_for(formula: str) -> HazardRef | None:
 
 def hazards_for_named(name: str) -> HazardRef | None:
     """The hazard record for a specific NAMED compound -- the isomer-resolved lookup. ``None`` if
-    unassessed (still not a clearance)."""
-    return _BY_NAME.get(name)
+    unassessed (still not a clearance).
+
+    0.9.5 S18 (C1-1): the query goes through the ONE material-name fold (``stock.normalize_material_name``), so
+    ``"Sulfuric acid"`` and ``" sulfuric  acid "`` reach the sulfuric-acid record instead of missing it -- a miss
+    here used to read as "no record" and let a capitalised catalyst string shed its GHS codes. A name that folds to
+    no record stays ``None``: unassessed, never benign."""
+    from ..experiment.stock import normalize_material_name  # lazy: experiment.stock pulls in this data package
+
+    return _BY_NAME.get(normalize_material_name(name))
 
 
 def hazards_for_formula_all(formula: str) -> tuple[HazardRef, ...]:

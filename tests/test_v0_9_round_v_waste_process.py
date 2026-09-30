@@ -316,9 +316,10 @@ def test_f6_an_introduction_masked_by_a_same_named_stream_elsewhere_still_surfac
 def test_f6_coverage_is_exact_fold_equality_never_a_substring(iso_route):
     use = ProcedureMaterialUse(name="brine", role=R.WASH, evidence_source="probe")
     route, _ = _append_op(iso_route, OperationKind.ADD, OperationRole.OTHER,
-                          materials=("  Brine ", "brine and toluene"), uses=(use,))
+                          materials=("  brine ", "Brine", "brine and toluene"), uses=(use,))
     unresolved = derive_waste(route)[2]
-    assert not _f6(unresolved, "Brine")                    # case/whitespace fold -> covered
+    assert not _f6(unresolved, "brine")                    # whitespace fold -> covered
+    assert len(_f6(unresolved, "Brine")) == 1              # 0.9.5 S18 (C1-3): a case-only match never covers
     assert len(_f6(unresolved, "brine and toluene")) == 1  # a second species hidden in a phrase stays uncovered
 
 

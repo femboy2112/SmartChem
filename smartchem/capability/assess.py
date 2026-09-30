@@ -29,7 +29,7 @@ from ..contracts import Digestible
 from ..data.reagents import Availability
 from ..experiment.catalyst_availability import is_obtainable_under
 from ..experiment.readiness import PROCESS_SPECIFIED, READINESS_TIERS, RouteReadiness, tier_rank
-from ..experiment.stock import StockMaterial, is_structure_key
+from ..experiment.stock import StockMaterial, is_structure_key, normalize_material_name
 from ..material_spec import (
     CERTIFYING_STOCK_EVIDENCE,
     ConcentrationBasis,
@@ -284,14 +284,35 @@ def _species_key_in(requirement: MaterialRequirement, stock: StockMaterial):
     key, or ``None`` if the species is absent under the allowed key.
 
     D24.5 (Wave-C' B1-E): a matched component whose declared UPPER bound is 0 is ABSENT -- "present at [0, 0]" is a
-    listing, not a supply (a phantom component can never discharge a demand)."""
+    listing, not a supply (a phantom component can never discharge a demand).
+
+    0.9.5 S18 (C1-3): a NAME key matches here only under the case-PRESERVING fold -- this is the certifying path, and
+    ``"CO"`` is not ``"Co"``. A name that agrees only after case-folding is :func:`_listed_by_case_fold_only`'s
+    business: a POSSIBLE source at most."""
     key = requirement.identity if requirement.identity is not None else requirement.name
     if key is None:
         return None
-    interval = stock.active_fraction_interval(key)
+    interval = stock.active_fraction_interval(key, case_exact=True)
     if interval is None or interval[1] == 0:
         return None
     return key
+
+
+def _listed_by_case_fold_only(requirement: MaterialRequirement, stock: StockMaterial) -> "str | None":
+    """0.9.5 S18 (C1-3): is a NAME-keyed requirement absent from ``stock`` under the exact spelling but listed under a
+    name that agrees with it only after case-folding? Returns that stock-side name, or ``None``. Case-folding is LOSSY
+    (``"CO"`` carbon monoxide / ``"Co"`` cobalt, ``"NO"`` / ``"No"``), so such a bottle is a POSSIBLE (G+) source and
+    never a proven one -- but not proof of absence either (UNKNOWN, never BLOCKED)."""
+    if requirement.identity is not None or requirement.name is None:
+        return None
+    interval = stock.active_fraction_interval(requirement.name)
+    if interval is None or interval[1] == 0:
+        return None
+    for component in stock.components:
+        if not is_structure_key(component.identity_key) and (
+                normalize_material_name(component.identity_key) == normalize_material_name(requirement.name)):
+            return component.identity_key
+    return None
 
 
 def _listed_by_name_only(requirement: MaterialRequirement, stock: StockMaterial) -> "str | None":
@@ -386,8 +407,14 @@ def _edge(requirement: MaterialRequirement, stock: StockMaterial) -> "_Edge | No
             return _Edge(CapabilityStatus.UNKNOWN, False, (
                 f"{stock.material_id}: UNKNOWN: listed only under the weaker NAME key {name_key!r} -- a name "
                 "can neither certify the structure nor prove its absence (D24.8/D25.4) -- a possible source only"))
+        folded_key = _listed_by_case_fold_only(requirement, stock)
+        if folded_key is not None:
+            return _Edge(CapabilityStatus.UNKNOWN, False, (
+                f"{stock.material_id}: UNKNOWN: listed only as {folded_key!r}, which matches {requirement.name!r} "
+                "only after case-folding -- a lossy fold ('CO' is not 'Co') can neither certify the supply nor prove "
+                "its absence (S18) -- a possible source only"))
         return None
-    view = stock.spec_view(key)
+    view = stock.spec_view(key, case_exact=True)
     spec_verdict, spec_notes = compare_specification(requirement.specification, view)
     statuses = [_SPEC_TO_STATUS[spec_verdict]]
     notes = [f"specification {spec_verdict.value}" + (f" ({'; '.join(spec_notes)})" if spec_notes else "")]

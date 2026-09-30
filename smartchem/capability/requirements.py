@@ -46,6 +46,7 @@ from ..experiment.catalyst_availability import catalyst_availability
 from ..experiment.equipment import EquipmentKind, equipment_for_step
 from ..experiment.handling import CareLevel, verify_handling
 from ..experiment.step import ExperimentRoute
+from ..experiment.stock import collapse_material_name as _exact_text
 from ..experiment.stock import normalize_material_name as _norm_text
 from ..experiment.stock import structure_key
 from ..material_spec import MaterialSpecification, PhaseClaim
@@ -264,11 +265,13 @@ _STOICHIOMETRIC_ROLES = frozenset({ProcedureMaterialRole.SUBSTRATE, ProcedureMat
 
 
 def _name_covers(use_name: str, raw: str) -> bool:
-    """Does a typed use named ``use_name`` cover the raw source string ``raw``? Case/whitespace-folded EQUALITY only
-    (Wave-C K4): a whole-word containment test let a raw string naming a SECOND species beside a typed name
+    """Does a typed use named ``use_name`` cover the raw source string ``raw``? Whitespace-folded, CASE-PRESERVING
+    EQUALITY only (Wave-C K4): a whole-word containment test let a raw string naming a SECOND species beside a typed name
     ("<other species> in <typed name>") vanish behind the typed use. The source author aligns ``op.materials`` with the typed names; any raw string that
-    is not exactly a typed name is UNCOVERED and becomes an unresolved requirement (fail closed)."""
-    name, text = _norm_text(use_name), _norm_text(raw)
+    is not exactly a typed name is UNCOVERED and becomes an unresolved requirement (fail closed). 0.9.5 S18 (C1-3):
+    the case-fold is gone from this rule -- a typed ``"CO"`` (carbon monoxide) used to cover a raw ``"Co"`` (cobalt),
+    and the metal vanished from the material, waste and containment projections at once."""
+    name, text = _exact_text(use_name), _exact_text(raw)
     return bool(name) and name == text
 
 
@@ -385,8 +388,10 @@ def _material_requirements(route: ExperimentRoute) -> "tuple[MaterialRequirement
                 if contradiction is not None:
                     spec = MaterialSpecification(composition=spec.composition, states=spec.states,
                                                  unresolved_terms=spec.unresolved_terms + (contradiction,))
+                # S18 (C1-3): a name-only species groups by its EXACT spelling -- a case-fold would merge "CO" and
+                # "Co" into one demand that one bottle then certifies for both.
                 species_key = (("struct", structure_key(use.identity)) if use.identity is not None
-                               else ("name", _norm_text(use.name)))
+                               else ("name", _exact_text(use.name)))
                 phase_key = None if use.phase is None else canonical_digest(use.phase)
                 key = (species_key, canonical_digest(spec), phase_key)
                 group = groups.get(key)
@@ -413,10 +418,11 @@ def _material_requirements(route: ExperimentRoute) -> "tuple[MaterialRequirement
             role=f"procedure material ({roles})",
             evidence_source="; ".join(group["evidence"]), name=name, specification=group["spec"],
         ))
-    # D13: untyped raw source strings -- one requirement per distinct (folded) string, every occurrence counted.
+    # D13: untyped raw source strings -- one requirement per distinct (exactly-folded, S18) string, every occurrence
+    # counted.
     untyped: "dict[str, dict]" = {}
     for raw, locator in _untyped_source_materials(route):
-        entry = untyped.setdefault(_norm_text(raw), {"raw": raw.strip(), "locators": []})
+        entry = untyped.setdefault(_exact_text(raw), {"raw": raw.strip(), "locators": []})
         entry["locators"].append(locator)
     for entry in untyped.values():
         requirements.append(MaterialRequirement(

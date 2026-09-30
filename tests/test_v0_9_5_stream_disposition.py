@@ -478,7 +478,8 @@ def test_the_species_key_is_the_s7_structure_key_and_the_name_fold():
     assert species_key(_METHANOL, "ignored") == "struct:" + resonance_identity(_METHANOL)
     # a Kekulé-split pair is ONE species (a literal canonical() key would split it -- the C7-2 false-BLOCKED)
     assert species_key(_kekule_alternate(_O_XYLENE), "a") == species_key(_O_XYLENE, "b")
-    assert species_key(None, "  Sodium   BICARBONATE ") == "name:sodium bicarbonate"
+    # 0.9.5 S18 (C1-3): whitespace folds, case does not -- a subject key is an identity claim
+    assert species_key(None, "  Sodium   BICARBONATE ") == "name:Sodium BICARBONATE"
 
 
 def test_an_asgiven_identity_maps_to_the_struct_asgiven_prefix(monkeypatch):
@@ -496,7 +497,9 @@ def test_the_species_key_is_stock_structure_key():
 
     for m in (_METHANOL, _O_XYLENE, _kekule_alternate(_O_XYLENE), _CHLORO_O_XYLENE):
         assert species_key(m, "x") == stock.structure_key(m)
-    assert species_key(None, "  Sodium   BICARBONATE ") == "name:" + stock.normalize_material_name("sodium bicarbonate")
+    # 0.9.5 S18 (C1-3): the name half folds whitespace only -- case is identity ("CO" is not "Co")
+    assert species_key(None, "  Sodium   BICARBONATE ") == "name:" + stock.collapse_material_name("Sodium BICARBONATE")
+    assert species_key(None, "CO") != species_key(None, "Co")
 
 
 # -- leaf property, role-table drift guard, coverage ledger ------------------------------------------------------------------

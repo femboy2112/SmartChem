@@ -9,13 +9,19 @@ statement about ONE structurally-named stream of ONE reaction, and nothing broad
   the species key of a typed SUBSTRATE/REACTANT/CATALYST use; one per (step, species)), ``OP_STREAM`` (op ordinal +
   :func:`op_core`), ``USE_STREAM`` ((op ordinal, use index) + :func:`use_core`). Every subject carries
   ``step_signature`` = :func:`reaction_signature` of its step. Keys are injective and deliberately NOT reorder-invariant:
-  a prose edit never unbinds, a reorder makes the subject VANISH and binding refuses -- never a silent rebind.
+  a prose edit never unbinds, a reorder makes the subject VANISH and binding refuses -- never a silent rebind. (0.9.5
+  S18 / C5-F3: that promise holds because the op/use cores cover every TYPED field; with only kind/role/uses/materials
+  in them, two twin FILTER ops could swap under a disposition unnoticed.)
   Untyped op material and untyped step input are EXCLUDED: no subject kind can name them (their material terms stay
   unresolved on their own, so a disposition there could only ever decorate the waste axis).
 * **Values.** ``CONSUMED_COMPLETELY`` (RESIDUAL only; the step must net-consume the species -- checked at binding),
   ``RECOVERED`` (RESIDUAL or USE_STREAM; names ``via_op``, a DISTILL/FILTER/SEPARATE op of the same procedure -- checked
-  by :class:`~smartchem.procedure_evidence.ProcedureEvidence`), ``ROUTED`` (any kind; carries a
-  :class:`~smartchem.capability.enums.WasteCapability`). Absence is UNKNOWN; there is no NONE/UNKNOWN member.
+  by :class:`~smartchem.procedure_evidence.ProcedureEvidence`; 0.9.5 S18 adds the derive-time corroboration in
+  ``derive_waste``: the op comes after every op introducing the subject, and it can recover the subject's CERTIFIED
+  phase), ``ROUTED`` (any kind; carries a :class:`~smartchem.capability.enums.WasteCapability`). All three DISCHARGE
+  one obligation. ROUTED also ADDS its category plus the categories its species' hazard record implies (S18: a routing
+  never launders a hazardous species; an OP_STREAM names no species, so its category is the only evidence). Absence is
+  UNKNOWN; there is no NONE/UNKNOWN member.
 * **Evidence.** ``SOURCE_QUOTED`` only, plus a non-empty locator. The accepted-source gate is derive-time
   (``procedure.is_sourced`` in ``derive_waste``), like every other sourcing gate in the model.
 
@@ -86,9 +92,11 @@ class DispositionValue(str, Enum):
     ROUTED = "ROUTED"
 
 
-#: LAW L2 -- the whole kind x value table. The two values that REDUCE an obligation are narrow; ROUTED only ever adds a
-#: requirement, so it may name any subject. RECOVERED on a BYPRODUCT is refused on purpose: recovering a byproduct is a
-#: second-PRODUCT claim (identity/purity/yield of an unmodelled product), parked at requirements.py's stream note.
+#: LAW L2 -- the whole kind x value table. Every value DISCHARGES one obligation. The two that discharge WITHOUT adding a
+#: requirement are narrow; ROUTED discharges one obligation AND adds its category plus its species' derived hazard
+#: categories (0.9.5 S18 -- the old "ROUTED only adds a requirement" was false: it discharges), so a bench lacking any of
+#: them is BLOCKED, and it may name any subject. RECOVERED on a BYPRODUCT is refused on purpose: recovering a byproduct
+#: is a second-PRODUCT claim (identity/purity/yield of an unmodelled product), parked at requirements.py's stream note.
 LEGAL_SUBJECT_KINDS: "dict[DispositionValue, frozenset[SubjectKind]]" = {
     DispositionValue.CONSUMED_COMPLETELY: frozenset({SubjectKind.RESIDUAL}),
     DispositionValue.RECOVERED: frozenset({SubjectKind.RESIDUAL, SubjectKind.USE_STREAM}),
@@ -130,11 +138,13 @@ _HEX64 = re.compile(r"[0-9a-f]{64}")
 # -- structural keys (pure functions of ONE step) ----------------------------------------------------------------------
 
 def _fold_name(text: str) -> str:
-    """strip + casefold + collapse internal whitespace -- delegated to S8's ONE name fold
-    (``stock.normalize_material_name``); a private copy here would be a second opinion on spelling."""
-    from .experiment.stock import normalize_material_name  # lazy: keeps this module a cheap leaf
+    """strip + collapse internal whitespace, case PRESERVED -- delegated to the certifying name fold
+    (``stock.collapse_material_name``); a private copy here would be a second opinion on spelling. 0.9.5 S18 (C1-3):
+    a subject key is an identity claim, and case-folding is lossy ("CO" carbon monoxide / "Co" cobalt), so the name
+    half of a subject key never folds case -- two name-only species that differ by case are two subjects."""
+    from .experiment.stock import collapse_material_name  # lazy: keeps this module a cheap leaf
 
-    return normalize_material_name(text)
+    return collapse_material_name(text)
 
 
 def _structure_key(molecule: "Molecule") -> str:
@@ -160,26 +170,49 @@ def reaction_signature(step_like: object) -> str:
 
 def species_key(identity: "Molecule | None", name: str) -> str:
     """The species a residual is about: its structure key when the use carries an identity, else ``"name:"`` + the
-    folded name (an ionic salt has no single connected Molecule; its name is the only honest key)."""
+    whitespace-folded, case-preserving name (an ionic salt has no single connected Molecule; its name is the only
+    honest key; S18: never case-folded)."""
     if identity is not None:
         return _structure_key(identity)
     return _NAME_PREFIX + _fold_name(name)
 
 
+def _field_core(field: object) -> object:
+    """The typed content of one ``EvidenceField`` slot: its status and value. Its locator and justification are the
+    PRESENTATION half (the capability coverage ledger's PRESENTATION_ONLY / READINESS_ONLY rows) and stay out."""
+    if field is None:
+        return None
+    return (field.status.value, field.value)
+
+
 def use_core(use: "ProcedureMaterialUse") -> str:
-    """The semantic core of one typed use: (role, species). Name/formulation/quantity text/locator are not in it, so
-    rewording a structure-bearing use never unbinds; retyping its role or species does."""
-    return canonical_digest((use.role.value, species_key(use.identity, use.name)))
+    """The semantic core of one typed use: every TYPED field -- role, species, formulation, the phase claim (phase +
+    evidence; its free-text note is presentation), quantity and specification. Only the display name of a structure-
+    bearing use (its species already answers for it) and the ``evidence_source`` locator stay out, so rewording that
+    name never unbinds; a typed rewrite does (0.9.5 S18 / C5-F3: a "cold water" rinse retyped as hot 12 M HCl used to
+    keep its binding, because only (role, species) were in the core). ``formulation`` is in although the coverage
+    ledger files it PRESENTATION_ONLY: F69 reads it (a formulation with no specification is an unresolved term), so it
+    is material, not decoration."""
+    phase = None if use.phase is None else (use.phase.phase.value, use.phase.evidence.value)
+    return canonical_digest((use.role.value, species_key(use.identity, use.name), use.formulation, phase,
+                             use.quantity, use.specification))
 
 
 def op_core(op: "ProcedureOperation") -> str:
-    """The semantic core of one operation: kind, role, its uses' cores in order, and its folded ``materials`` set.
-    Locator, apparatus and every EvidenceField are presentation here and stay out."""
+    """The semantic core of one operation: every TYPED field -- kind, role, its uses' cores in order, its ``materials``
+    set (whitespace-folded, case-PRESERVING: ``"CO"`` is not ``"Co"``, S18), apparatus, and the typed content of every
+    EvidenceField slot (quantity, rate, agitation, temperature, pressure, duration, endpoint). Only the ordinal (the
+    subject carries it separately) and the locator stay out. 0.9.5 S18 / C5-F3: two FILTER ops differing only in
+    apparatus (gravity vs vacuum) used to share a core, so swapping them rebound a disposition silently; now a swap
+    makes the subject VANISH and binding refuses."""
     return canonical_digest((
         op.kind.value,
         op.role.value,
         tuple(use_core(u) for u in op.material_uses),
         tuple(sorted(_fold_name(m) for m in op.materials)),
+        tuple(op.apparatus),
+        tuple(_field_core(getattr(op, name))
+              for name in ("quantity", "rate", "agitation", "temperature", "pressure", "duration", "endpoint")),
     ))
 
 

@@ -45,6 +45,7 @@ __all__ = [
     "structure_key",
     "is_structure_key",
     "normalize_material_name",
+    "collapse_material_name",
 ]
 
 #: Round V (barrier D8/D11): component v1alpha2 adds ``MaterialComponent.basis``/``.evidence``/``.states`` (Wave-C
@@ -101,14 +102,26 @@ class FitnessVerdict(str, Enum):
     IDENTITY_ABSENT = "IDENTITY_ABSENT"         # the material does not contain the required identity at all
 
 
+def collapse_material_name(name: str) -> str:
+    """THE CERTIFYING name fold (0.9.5 S18, C1-3): strip and collapse every internal whitespace run to one space --
+    and PRESERVE case. Whitespace is spelling; case is not always: ``"CO"`` is carbon monoxide and ``"Co"`` is cobalt,
+    ``"NO"`` is nitric oxide and ``"No"`` is nobelium. Two names are the SAME name -- one that may certify a supply,
+    cover a raw string, or merge two obligations -- only when they agree under THIS fold."""
+    return " ".join(name.strip().split())
+
+
 def normalize_material_name(name: str) -> str:
-    """THE material-name normaliser (barrier S8): strip, casefold, and collapse every internal whitespace run to one
-    space. Stock NAME keys, the requirement projection and waste derivation all fold names through THIS function --
-    whitespace folding is spelling, not synonymy ("sodium  bicarbonate" is "sodium bicarbonate"; "baking soda" is
-    still not). There is no synonym knowledge here and there must not be: the declared world's keys stay closed."""
+    """THE POSSIBILITY name fold (barrier S8): :func:`collapse_material_name`, then casefold. Whitespace folding is
+    spelling, not synonymy ("sodium  bicarbonate" is "sodium bicarbonate"; "baking soda" is still not). There is no
+    synonym knowledge here and there must not be: the declared world's keys stay closed.
+
+    0.9.5 S18 (C1-3): the casefold is LOSSY (``"CO"`` and ``"Co"`` fold together), so agreement under THIS fold alone
+    may raise at most a POSSIBLE match (UNKNOWN) -- it never certifies a supply, never covers another name, never
+    merges two obligations. Those need :func:`collapse_material_name` equality. Both folds live here, one owner."""
     # Three modules used to carry three private folds, and stock's (strip + casefold only) disagreed with the other
-    # two on a double space -- enough to BLOCK a bottle that was sitting right there. One fold now; the copies are out.
-    return " ".join(name.strip().casefold().split())
+    # two on a double space -- enough to BLOCK a bottle that was sitting right there. One owner now; the copies are
+    # out. (collapse-then-casefold == the historical strip/casefold/split: casefold never mints whitespace.)
+    return collapse_material_name(name).casefold()
 
 
 _STRUCT_PREFIX = "struct:"
@@ -493,7 +506,16 @@ class StockMaterial(Digestible):
             return None
         return PhaseClaim(self.phase, self.phase_evidence)
 
-    def active_fraction_interval(self, required_identity: "Molecule | str") -> tuple[float, float] | None:
+    def _name_matches(self, name: str, *, case_exact: bool) -> "list[MaterialComponent]":
+        """The NAME-keyed components answering to ``name``: under :func:`collapse_material_name` when ``case_exact``
+        (the certifying fold), else under :func:`normalize_material_name` (the possibility fold, S18)."""
+        fold = collapse_material_name if case_exact else normalize_material_name
+        want = fold(name)
+        return [c for c in self.components if not is_structure_key(c.identity_key) and fold(c.identity_key) == want]
+
+    def active_fraction_interval(
+        self, required_identity: "Molecule | str", *, case_exact: bool = False,
+    ) -> tuple[float, float] | None:
         """The summed fraction interval ``(lo, hi)`` of components matching ``required_identity``, or ``None``.
 
         ``required_identity`` may be a :class:`~smartchem.category.Molecule` -- matched by canonical STRUCTURE, the
@@ -503,16 +525,16 @@ class StockMaterial(Digestible):
         components and a name query ONLY name-keyed components: a bare name can never stand in for a proven
         structure, nor a structure for a name.  Several components may share an identity (two additives of the same
         species); their intervals sum, capped at 1.0 on the high side.  ``None`` means the identity is not present.
+
+        ``case_exact`` (0.9.5 S18) matches a name query under the case-PRESERVING fold only -- the certifying reading
+        the material axis uses, so a ``"Co"`` (cobalt) component is never summed into a ``"CO"`` demand. The default
+        keeps the case-folded POSSIBILITY reading.
         """
         if isinstance(required_identity, Molecule):
             want = structure_key(required_identity)
             matches = [c for c in self.components if c.identity_key == want]
         elif isinstance(required_identity, str):
-            want = normalize_material_name(required_identity)
-            matches = [
-                c for c in self.components
-                if not is_structure_key(c.identity_key) and normalize_material_name(c.identity_key) == want
-            ]
+            matches = self._name_matches(required_identity, case_exact=case_exact)
         else:
             raise TypeError("required_identity must be a Molecule (canonical structure) or a str (declared name)")
         if not matches:
@@ -523,13 +545,13 @@ class StockMaterial(Digestible):
             hi = min(1.0, hi)
         return (lo, hi)
 
-    def spec_view(self, required_identity: "Molecule | str") -> "StockSpecView | None":
+    def spec_view(self, required_identity: "Molecule | str", *, case_exact: bool = False) -> "StockSpecView | None":
         """Round V (barrier D3-D8): the stock-side facts :func:`smartchem.material_spec.compare_specification` needs
         for ONE species in THIS bottle -- the matched components' summed EXACT interval, their common basis (UNKNOWN
         if they disagree or any is UNKNOWN), the WEAKEST interval-evidence kind among them (a component with no
         evidence record is UNKNOWN strength), and the matched components' own declared states (Wave-C K1). ``None`` if the
         species is absent
-        under the F44 key rules of :meth:`active_fraction_interval`."""
+        under the F44 key rules of :meth:`active_fraction_interval` (``case_exact`` as there, S18)."""
         from ..material_spec import (
             CERTIFYING_STOCK_EVIDENCE,
             ConcentrationBasis,
@@ -541,11 +563,7 @@ class StockMaterial(Digestible):
             want = structure_key(required_identity)
             matches = [c for c in self.components if c.identity_key == want]
         elif isinstance(required_identity, str):
-            want_n = normalize_material_name(required_identity)
-            matches = [
-                c for c in self.components
-                if not is_structure_key(c.identity_key) and normalize_material_name(c.identity_key) == want_n
-            ]
+            matches = self._name_matches(required_identity, case_exact=case_exact)
         else:
             raise TypeError("required_identity must be a Molecule (canonical structure) or a str (declared name)")
         if not matches:

@@ -532,9 +532,11 @@ def test_witness_an_unaccepted_procedure_source_discharges_nothing():
 def test_l1_one_disposition_discharges_exactly_one_obligation():
     """Two differently-named CATALYST uses of ONE unrecorded species are two catalyst-residual obligations on ONE
     RESIDUAL subject. One RECOVERED statement settles one of them; the other stays open and says why."""
+    # S18 C1-4: the fixture's catalyst uses are a certified LIQUID, so the recovery op is a still (a filter recovers
+    # only a SOLID) -- the one-for-one law under test is unchanged.
     route = _micro(_op(uses=(_use("catalyst x", ProcedureMaterialRole.CATALYST, _UNRECORDED_CAT),
                                 _use("catalyst y", ProcedureMaterialRole.CATALYST, _UNRECORDED_CAT))),
-                   _op(OperationKind.FILTER))
+                   _op(OperationKind.DISTILL))
     before = [u for u in derive_waste(route)[2] if "catalyst residual" in u]
     assert len(before) == 2
     residual = _subject_of(route, SubjectKind.RESIDUAL, core=structure_key(_UNRECORDED_CAT))
@@ -546,7 +548,7 @@ def test_l1_one_disposition_discharges_exactly_one_obligation():
 
 def test_l1_a_disposition_never_deletes_a_derived_category():
     route = _micro(_op(uses=(_use("sulfuric acid", ProcedureMaterialRole.CATALYST, _H2SO4),)),
-                   _op(OperationKind.FILTER))
+                   _op(OperationKind.DISTILL))  # S18 C1-4: a certified-LIQUID residual is recovered by a still
     cats0 = derive_waste(route)[0]
     assert _HAZ in cats0  # a real-GHS catalyst residual is a RESOLVED category, not an obligation
     residual = _subject_of(route, SubjectKind.RESIDUAL, core=structure_key(_H2SO4))
@@ -572,11 +574,12 @@ def test_l1_recovered_without_a_real_recovery_op_discharges_nothing_even_when_fo
 
 
 def test_l1_recovered_discharges_the_use_stream_but_never_the_recovering_op_stream():
-    route = _micro(_op(uses=(_use("brine", ProcedureMaterialRole.WASH),)), _op(OperationKind.FILTER))
+    # S18 C1-4: the brine is a certified LIQUID, so a separatory funnel (not a filter) is what can recover it.
+    route = _micro(_op(uses=(_use("brine", ProcedureMaterialRole.WASH),)), _op(OperationKind.SEPARATE))
     stream = _subject_of(route, SubjectKind.USE_STREAM)
     _c, reasons, unresolved = derive_waste(_with(route, _d(stream, _RECOVERED, via_op=3)))
     assert not any("spent workup stream 'brine'" in u for u in unresolved)
-    assert any("op #3 FILTER/OTHER leaves a spent stream" in u for u in unresolved)
+    assert any("op #3 SEPARATE/OTHER leaves a spent stream" in u for u in unresolved)
     assert any("RECOVERED via op #3" in r for r in reasons)
 
 
@@ -636,15 +639,17 @@ def test_dc2_a_step_one_residual_never_answers_for_step_two():
 
 
 def test_dc4_an_envelope_catalyst_is_attributed_to_its_covering_typed_use():
+    # S18: the cover is whitespace-folded but CASE-PRESERVING (C1-3 -- a case-only match covers nothing; see
+    # tests/test_v0_9_5_evidence_soundness.py), and the certified-LIQUID residual is recovered by a still (C1-4).
     route = _micro(_op(uses=(_use("catalyst x", ProcedureMaterialRole.CATALYST, _UNRECORDED_CAT),)),
-                   _op(OperationKind.FILTER), catalysts=("Catalyst X",))
+                   _op(OperationKind.DISTILL), catalysts=(" catalyst  x ",))
     before = derive_waste(route)[2]
-    assert any("'Catalyst X' (step 1 envelope catalyst)" in u for u in before)
-    assert not any("CATALYST use" in u for u in before)  # the typed use is the SAME residual (name-deduplicated)
+    assert any("' catalyst  x ' (step 1 envelope catalyst)" in u for u in before)
+    assert not any("CATALYST use" in u for u in before)  # the typed use is the SAME residual (same species + spelling)
     residual = _subject_of(route, SubjectKind.RESIDUAL, core=structure_key(_UNRECORDED_CAT))
     _c, reasons, unresolved = derive_waste(_with(route, _d(residual, _RECOVERED, via_op=3)))
-    assert not any("catalyst residual 'Catalyst X'" in u and "not consumed" in u for u in unresolved)
-    assert any("catalyst residual 'Catalyst X' (step 1 envelope catalyst)" in r and "(S10)" in r for r in reasons)
+    assert not any("catalyst residual ' catalyst  x '" in u and "not consumed" in u for u in unresolved)
+    assert any("catalyst residual ' catalyst  x ' (step 1 envelope catalyst)" in r and "(S10)" in r for r in reasons)
 
 
 def test_dc4_an_uncovered_envelope_catalyst_has_no_subject_at_all():

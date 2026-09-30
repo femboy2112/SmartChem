@@ -6433,14 +6433,16 @@ def m243():
     return honest, bad
 
 
-@mutant("M244", "S8: a second name fold in waste (strip+casefold, no whitespace collapse): a covered raw material "
-        "reads untyped", "capability.waste._norm_text (the ONE stock-owned fold)")
+@mutant("M244", "S8: a second name fold in waste (strip only, no whitespace collapse): a covered raw material "
+        "reads untyped", "capability.waste._exact_text (the stock-owned certifying fold)")
 def m244():
+    """S18 re-read: raw-material coverage certifies, so it runs on the case-KEEPING fold ``_exact_text``
+    (``stock.collapse_material_name``) -- the S8 law (one stock-owned fold, whitespace collapsed) now lives there."""
     route = _sd_route(_op(OperationKind.ADD, materials=("sulfuric  acid",), material_uses=(
         _use("sulfuric acid", ProcedureMaterialRole.CATALYST, identity=_H2SO4),)))
     marker = "introduces untyped material"
     honest = not any(marker in u for u in waste_mod.derive_waste(route)[2])
-    with _patch(waste_mod, "_norm_text", lambda name: name.strip().casefold()):
+    with _patch(waste_mod, "_exact_text", lambda name: name.strip()):
         bad = any(marker in u for u in waste_mod.derive_waste(route)[2])
     return honest, bad
 

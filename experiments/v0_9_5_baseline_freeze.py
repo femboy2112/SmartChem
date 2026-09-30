@@ -24,6 +24,7 @@ Wall-clock timings are recorded under ``timings`` and are NEVER compared (non-de
 Run:  .venv/bin/python experiments/v0_9_5_baseline_freeze.py --write   # (re)freeze -- only on a sanctioned tree
       .venv/bin/python experiments/v0_9_5_baseline_freeze.py --check   # recompute everything, diff, exit 1 on drift
       .venv/bin/python experiments/v0_9_5_baseline_freeze.py --check --quick   # skip the slow isopentyl family
+      .venv/bin/python experiments/v0_9_5_baseline_freeze.py --check --dump live.json   # + the live document
 """
 from __future__ import annotations
 
@@ -433,6 +434,10 @@ def main(argv: list[str]) -> int:
     if "--check" in argv:
         frozen = json.loads(FREEZE_JSON.read_text())
         live = build(quick=quick)
+        if "--dump" in argv:  # the live document, for a verdict-projection adjudication of a semantic step
+            dump = Path(argv[argv.index("--dump") + 1])
+            dump.write_text(json.dumps(live, indent=1, sort_keys=True, ensure_ascii=False) + "\n")
+            print(f"dumped live freeze to {dump}")
         if quick:  # compare only the cases the quick run computed
             frozen["service"] = {k: v for k, v in frozen["service"].items() if k in live["service"]}
         drift = list(_diff(frozen, live))

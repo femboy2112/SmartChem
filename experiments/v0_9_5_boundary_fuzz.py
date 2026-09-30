@@ -333,7 +333,11 @@ def fuzz_frontdoor(rng, n, out: Findings):
                  "surface": "AUTO" if auto else "FORMULA",
                  "intended": b["intended"] if text == b["text"] else "(belongs to shrunk_from, not to this minimal text)",
                  "intended_charge": b["ich"] if text == b["text"] else None,
-                 "shrunk_from": b["text"] if text != b["text"] else None}, b["detail"], count=tally[viol])
+                 "shrunk_from": b["text"] if text != b["text"] else None}, b["detail"], count=tally[viol],
+                # barrier A1 (F-3 adjudication): a multi-element body's single trailing digit before a bare sign is a
+                # COUNT by DECLARED convention (NH4+, NO3-, H3O+, VO2+; test P0-B + tests/test_v0_9_5_front_door.py),
+                # so R2 is a known, documented boundary -- not a new silent mis-parse.
+                known="A1-F3-convention" if viol.startswith("P-silent-misparse[R2") else None)
 
 
 def _shape(s: str) -> str:

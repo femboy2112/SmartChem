@@ -24,11 +24,12 @@ The laws this module exists to hold:
 from __future__ import annotations
 
 import dataclasses
+import functools
 import hmac
 import re
 import sys
 import threading
-from collections import OrderedDict
+from collections import OrderedDict, namedtuple
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import InitVar, dataclass, field
@@ -66,11 +67,13 @@ __all__ = [
     "WorkLedger",
     "WorkMeter",
     "cached_enumerate",
+    "charge_canonical_work",
     "count_payload_nodes",
     "current_context",
     "enumeration_cache_key",
     "predicted_enumeration_work",
     "set_enumeration_cache_enabled",
+    "work_transparent_cache",
 ]
 
 
@@ -144,11 +147,17 @@ def _require_bool(owner: str, value: object) -> None:
 
 #: Every budget counter, in the barrier's order.
 _BUDGET_COUNTERS = ("payload_nodes", "dossiers", "replay_steps", "steps_per_dossier", "enumeration_targets",
-                    "work_per_target", "work_total", "reexecutions")
+                    "work_per_target", "work_total", "reexecutions", "canonical_work")
 #: Counters bounding ONE item (a dossier, a target) rather than a running total: checked via
 #: :meth:`WorkMeter.check_item`, and the ledger records the MAXIMUM item seen, not a sum.
 _PER_ITEM_COUNTERS = frozenset({"steps_per_dossier", "work_per_target"})
-_CUMULATIVE_COUNTERS = frozenset(_BUDGET_COUNTERS) - _PER_ITEM_COUNTERS
+#: Counters RECORDED where the work happens but REFUSED later (0.9.5 S16): canonicalisation runs under code that
+#: swallows ``ValueError``s (``requirements._resolved_name_key`` would even cache the swallow as "unresolved") and inside
+#: the reaction-type oracle, which the barrier (§5) forbids a budget to interrupt.  So its overflow is STICKY: it is
+#: raised by the next checked charge of any counter, and by :meth:`VerificationContext.activate` when the load ends --
+#: never from inside a canonicalisation.  See :meth:`WorkMeter.charge_canonical`.
+_DEFERRED_COUNTERS = frozenset({"canonical_work"})
+_CUMULATIVE_COUNTERS = frozenset(_BUDGET_COUNTERS) - _PER_ITEM_COUNTERS - _DEFERRED_COUNTERS
 
 #: Only :meth:`VerificationBudget.unlimited` holds this; it is the one licence for a ``None`` (= no limit) counter.
 _UNLIMITED_LICENCE = object()
@@ -162,6 +171,20 @@ _UNLIMITED_LICENCE = object()
 #: alone (2**18) would have left that honest DAG payload 1.5x headroom -- a false refusal waiting for a profile.
 #: A node budget bounds decode work only; it never inspects what the nodes say.
 _DEFAULT_PAYLOAD_NODES = 1 << 21
+
+#: 0.9.5 S16 -- canonicalisation is verification work.  One unit = one candidate permutation evaluated (block path),
+#: one atom re-refined at an individualisation search node (a node costs the molecule's atom count), or one node of
+#: the Kekule placement search (``smiles._min_constitution_placement``) -- see ``Molecule.canonical``.  Charged on
+#: EVERY call of the load, cache hit or miss, and replayed through every work-transparent process cache
+#: (:func:`work_transparent_cache`), so the total is a pure function of what the load asks for.
+#: MEASURED 2026-09-30 by ``experiments/v0_9_5_canonical_differential.py --service full --foreign-transparency`` on the
+#: 22 frozen service cases, every load cold (all process caches cleared) and warm -- equal in every case: plain / pinned
+#: + verified-admission thick max 484,000,160 (isopentyl@custom-fit-bench), thin max 308,735, and the pinned
+#: re-execution load (which runs a whole compile inside the load) max 1,774,137,801 (isopentyl@custom-fit-bench;
+#: isopentyl 1,545,773,961, isopentyl_dag 870,480,970).  8 x 1,774,137,801 -> 2**34 (9.7x that maximum).  The honest
+#: totals are dominated by cache HITS of molecules canonicalised again and again (charged at their cold cost, the price
+#: of determinism), so this bounds the ORDER of work loosely; see the S16 report for the tighter per-load alternative.
+_DEFAULT_CANONICAL_WORK = 1 << 34
 
 
 @dataclass(frozen=True)
@@ -183,6 +206,7 @@ class VerificationBudget:
     work_per_target: "int | None" = 32_768
     work_total: "int | None" = 131_072
     reexecutions: "int | None" = 1
+    canonical_work: "int | None" = _DEFAULT_CANONICAL_WORK
     _licence: InitVar[object] = None
 
     def __post_init__(self, _licence: object) -> None:
@@ -250,6 +274,7 @@ class WorkLedger:
     work_per_target: int = 0
     work_total: int = 0
     reexecutions: int = 0
+    canonical_work: int = 0
 
     def __post_init__(self) -> None:
         if not isinstance(self.budget, VerificationBudget):
@@ -318,24 +343,54 @@ class WorkMeter:
     recording any of them, so a refused charge never leaves a half-booked meter.
     """
 
-    __slots__ = ("budget", "_consumed")
+    __slots__ = ("budget", "_consumed", "_exhausted")
 
     def __init__(self, budget: VerificationBudget) -> None:
         if not isinstance(budget, VerificationBudget):
             raise TypeError(f"a WorkMeter needs a VerificationBudget, got {type(budget).__name__}; refused")
         self.budget = budget
         self._consumed = dict.fromkeys(_BUDGET_COUNTERS, 0)
+        self._exhausted: "tuple[str, int, int] | None" = None   # (counter, limit, consumed) at the first overflow
 
     def _gate(self, counter: str, would_be: int) -> None:
+        self.raise_if_exhausted()                    # a deferred overflow refuses at the first checked charge after it
         limit = getattr(self.budget, counter)
         if limit is not None and would_be > limit:
             raise VerificationBudgetExceeded(counter, limit, would_be)
 
     def _cumulative(self, counter: str) -> str:
         if counter not in _CUMULATIVE_COUNTERS:
-            hint = " (a per-item counter: use check_item)" if counter in _PER_ITEM_COUNTERS else ""
+            hint = (" (a per-item counter: use check_item)" if counter in _PER_ITEM_COUNTERS
+                    else " (a deferred counter: use charge_canonical)" if counter in _DEFERRED_COUNTERS else "")
             raise ValueError(f"unknown cumulative budget counter {counter!r}{hint}; refused")
         return counter
+
+    @property
+    def exhausted(self) -> bool:
+        """Has a deferred counter overflowed?  Once true it stays true: the load cannot complete."""
+        return self._exhausted is not None
+
+    def raise_if_exhausted(self) -> None:
+        """Raise the (first) deferred overflow, if any -- a fresh :class:`VerificationBudgetExceeded` each time."""
+        if self._exhausted is not None:
+            raise VerificationBudgetExceeded(*self._exhausted)
+
+    def charge_canonical(self, amount: int) -> None:
+        """Record ``amount`` canonicalisation work units, BEFORE the work they bound -- and never raise here (S16).
+
+        Canonicalisation runs beneath ``except ValueError`` handlers this module does not own (one of them memoises
+        the swallow process-wide) and inside the reaction-type oracle; a refusal thrown from in there would be
+        swallowed, demoted or cached, i.e. a skipped check.  So an overflow is recorded as STICKY exhaustion instead:
+        every later checked charge raises it, and so does :meth:`VerificationContext.activate` at the end of the load
+        whatever happened in between.  Refusal is therefore certain and deterministic; the work between the overflow
+        and the next checked charge is bounded by the canonicaliser's own node ceiling per call, not by this meter.
+        """
+        amount = _require_amount(amount)
+        would_be = self._consumed["canonical_work"] + amount
+        self._consumed["canonical_work"] = would_be
+        limit = self.budget.canonical_work
+        if self._exhausted is None and limit is not None and would_be > limit:
+            self._exhausted = ("canonical_work", limit, would_be)
 
     def _item(self, counter: str) -> str:
         if counter not in _PER_ITEM_COUNTERS:
@@ -398,14 +453,21 @@ class WorkMeter:
 def predicted_enumeration_work(target: "Molecule", reagents) -> "tuple[int, int]":
     """``(E, W)`` for one D29.1 enumeration, computable BEFORE enumerating (Lane B, exact for capped scission).
 
-    ``E = |bonds(target)| x sum(|bonds(r)| for each DISTINCT reagent r)`` and ``W = E x |bonds(target)|``, where
+    ``E = |bonds(target)| x max(1, sum(|bonds(r)| for each DISTINCT reagent r))`` and ``W = E x |bonds(target)|``, where
     ``bonds`` is ``Molecule.bonds`` INCLUDING bonds to hydrogen (methyl acetate: 10, water: 2 -> E = 20, W = 200).
     Distinct = by Molecule value: a duplicated reagent changes nothing the enumeration does (Lane B, measured), so it
     must not change the charge either.  Measured work = 3E on 40/40 target classes (the 3 perfect matchings of four
     open ends at ``max_reactant_cuts=1``).
+
+    **The floor (0.9.5 S16, Wave C4 conjecture 3):** the reagent factor is ``max(1, sum(...))``, never zero.  With no
+    helper reagents the plain product was 0 -- yet the certified-route algebra also carries reagentless providers
+    (Diels-Alder) that enumerate matches over the target alone, so "no reagents" never meant "no work".  An empty (or
+    bondless) reagent pool now charges the target's own ``E = |bonds(target)|``, ``W = |bonds(target)|**2``; every
+    honest value with a bonded reagent is unchanged (the sum is already >= 1).  A bondless target still charges 0 --
+    it has nothing to cut or match.
     """
     target_bonds = len(target.bonds)
-    e = target_bonds * sum(len(r.bonds) for r in set(reagents))
+    e = target_bonds * max(1, sum(len(r.bonds) for r in set(reagents)))
     return e, e * target_bonds
 
 
@@ -809,12 +871,25 @@ class VerificationContext:
 
     @contextmanager
     def activate(self) -> "Iterator[VerificationContext]":
-        """Install this context for the enclosed block; the previously active one (or none) is restored on exit."""
+        """Install this context for the enclosed block; the previously active one (or none) is restored on exit.
+
+        S16: a deferred budget overflow (canonical work) recorded anywhere in the block is raised HERE as the block
+        ends -- replacing whatever the block raised, if anything, since a load that ran out of budget did not complete
+        whatever else went wrong after -- so no handler inside the load can turn exhaustion into an answer.
+        """
         token = _ACTIVE_CONTEXT.set(self)
         try:
             yield self
+        except Exception as exc:
+            if self.meter.exhausted and not isinstance(exc, VerificationBudgetExceeded):
+                try:
+                    self.meter.raise_if_exhausted()
+                except VerificationBudgetExceeded as refusal:
+                    raise refusal from exc
+            raise
         finally:
             _ACTIVE_CONTEXT.reset(token)
+        self.meter.raise_if_exhausted()
 
 
 def current_context() -> "VerificationContext | None":
@@ -823,8 +898,130 @@ def current_context() -> "VerificationContext | None":
 
 
 # ---------------------------------------------------------------------------------------------------------------------
+# Canonicalisation work (0.9.5 S16): charged on every call, replayed through every process cache
+# ---------------------------------------------------------------------------------------------------------------------
+# ``Molecule.canonical()`` runs everywhere -- decode, the request re-derivation, every replayed molecule, every fragment
+# an enumeration cuts -- and it used to run uncharged: a front-door hang (tetra-tert-butylmethane) was also a verifier
+# hole.  Charging it at the call is the easy half; charging it DETERMINISTICALLY is the actual operation, because any
+# process cache sitting above ``canonical()`` (its own LRU, ``resonance_canonical``, the enumeration cache) elides the
+# calls beneath it on a hit, and a charge that depends on what an earlier load left warm is a verdict that depends on
+# history.  So each such cache is WORK-TRANSPARENT: a miss records the canonical work charged while it computed and
+# stores it beside the value; a hit replays exactly that charge.  What a load pays is then what its own calls cost in a
+# cold process, whatever happens to be warm.
+
+#: The open work-transparent cache MISSES on this thread/task (innermost last); each is a one-slot accumulator of the
+#: canonical work charged while that miss computes.
+_CANONICAL_WORK_FRAMES: "ContextVar[tuple[list[int], ...]]" = ContextVar("smartchem_canonical_work_frames",
+                                                                         default=())
+
+
+def charge_canonical_work(amount: int) -> None:
+    """Charge ``amount`` canonicalisation work units to the load in progress, if any (:meth:`WorkMeter.charge_canonical`:
+    recorded now, an overflow refused at the next checked charge / the end of the load, never from in here), and to
+    every open work-transparent cache miss, so a later hit on that entry can replay it.
+
+    Outside a load there is nothing to charge, but open misses still record: an entry computed on a producer path must
+    carry its true work into the first load that hits it.
+    """
+    amount = _require_amount(amount)
+    context = _ACTIVE_CONTEXT.get()
+    if context is not None:
+        context.meter.charge_canonical(amount)
+    for frame in _CANONICAL_WORK_FRAMES.get():
+        frame[0] += amount
+
+
+@contextmanager
+def _recording_canonical_work() -> "Iterator[list[int]]":
+    """Open one work-transparent miss: yields its accumulator; nested misses and replayed hits inside add to it too."""
+    frame = [0]
+    token = _CANONICAL_WORK_FRAMES.set(_CANONICAL_WORK_FRAMES.get() + (frame,))
+    try:
+        yield frame
+    finally:
+        _CANONICAL_WORK_FRAMES.reset(token)
+
+
+#: ``functools.lru_cache``'s ``cache_info()`` shape, so callers that read it (the stress harness) keep reading it.
+CacheInfo = namedtuple("CacheInfo", ("hits", "misses", "maxsize", "currsize"))
+
+
+def work_transparent_cache(maxsize: int) -> "Callable[[Callable], Callable]":
+    """``functools.lru_cache(maxsize)`` for a ONE-argument function with canonicalisation on its call path -- but
+    work-transparent: each entry holds ``(value, canonical work its computation charged)`` and a hit re-charges that
+    work (:func:`charge_canonical_work`) before handing the value back.  Keyed by the argument's value (hash/eq, as
+    ``lru_cache``), thread-safe, computed outside the lock; ``cache_info()`` / ``cache_clear()`` as ``lru_cache``.
+    Works as a method decorator (the argument is then ``self``).  A computation that raises stores nothing: the work it
+    charged before raising stays charged, and a retry charges it again -- exactly what a cold call would do.
+    """
+    if type(maxsize) is not int or maxsize <= 0:
+        raise ValueError(f"work_transparent_cache maxsize must be a positive int, got {maxsize!r}; refused")
+
+    def decorate(fn: "Callable") -> "Callable":
+        lock = threading.Lock()
+        entries: "OrderedDict[object, tuple[object, int]]" = OrderedDict()
+        counts = {"hits": 0, "misses": 0, "generation": 0}
+
+        @functools.wraps(fn)
+        def wrapper(arg):
+            # The hit path is canonical()'s hot path (every Config construction), so it takes no lock: dict.get and
+            # OrderedDict.move_to_end are single atomic C calls, and an entry evicted in between just stays evicted.
+            hit = entries.get(arg)
+            if hit is not None:
+                try:
+                    entries.move_to_end(arg)
+                except KeyError:
+                    pass
+                counts["hits"] += 1
+                value, work = hit
+                if _ACTIVE_CONTEXT.get() is not None or _CANONICAL_WORK_FRAMES.get():
+                    charge_canonical_work(work)      # the replay: this call costs what the cold call cost
+                return value
+            with lock:
+                generation = counts["generation"]
+                counts["misses"] += 1
+            with _recording_canonical_work() as frame:
+                value = fn(arg)
+            with lock:
+                # a racing thread may have stored the equal value; a cache_clear() since the miss makes this one stale
+                if counts["generation"] == generation and arg not in entries:
+                    entries[arg] = (value, frame[0])
+                    if len(entries) > maxsize:
+                        entries.popitem(last=False)
+            return value
+
+        def cache_info() -> CacheInfo:
+            with lock:
+                return CacheInfo(counts["hits"], counts["misses"], maxsize, len(entries))
+
+        def cache_clear() -> None:
+            with lock:
+                entries.clear()
+                counts["hits"] = counts["misses"] = 0
+                counts["generation"] += 1
+
+        wrapper.cache_info = cache_info
+        wrapper.cache_clear = cache_clear
+        return wrapper
+
+    return decorate
+
+
+# ---------------------------------------------------------------------------------------------------------------------
 # The bounded process-level enumeration cache (§4)
 # ---------------------------------------------------------------------------------------------------------------------
+
+#: 0.9.5 S16 (Wave C3 C3-F3) -- the enumeration cache's MEMORY bound, in :func:`retained_size` units (atoms + bonds held
+#: by an entry's transforms).  MEASURED 2026-09-30 (deep ``sys.getsizeof`` of the raw transforms): Diels-Alder entries
+#: 49-81 bytes/unit (cyclohexene-chain targets, 4-24 rings: 370-9,010 units, 21-727 KB); honest scission entries are
+#: dominated by per-transform overhead instead (methyl acetate 16 transforms / 41 units / 9.2 KB; isopentyl acetate 82 /
+#: 65 / 34 KB; aspirin 47 / 62 / 23 KB) -- that part stays bounded by ``max_transforms`` (65,536 x <= ~0.6 KB).  So
+#: 2**19 units ~ 42 MB of molecules-by-value on top of <= ~39 MB of transform overhead: ~81 MB worst case, where the
+#: count-only bound admitted ~0.37 GB of 24-ring entries.  An entry over 2**15 units (~2.6 MB; a 24-ring entry is 9,010)
+#: is returned but never retained.
+_ENUM_CACHE_MAX_SIZE = 1 << 19
+_ENUM_CACHE_MAX_ENTRY_SIZE = 1 << 15
+
 
 @dataclass(frozen=True)
 class EnumerationCacheStats:
@@ -832,35 +1029,79 @@ class EnumerationCacheStats:
     misses: int
     entries: int
     retained_transforms: int
+    retained_size: int = 0          # 0.9.5 S16 (Wave C3 C3-F3): atoms + bonds of every Molecule the entries hold
+
+
+def retained_size(transforms: tuple) -> int:
+    """What an enumeration entry actually keeps alive: the atoms + bonds of every distinct ``Molecule`` object reachable
+    from its transforms (dataclass fields, tuples, lists, sets, dict values; each object counted once).
+
+    Wave C3 (C3-F3): a transform COUNT is not a size -- Diels-Alder transforms carry their products by value, 20 KB per
+    transform at 8 rings and 59 KB at 24, so 512 entries far under the transform bound held ~0.37 GB.  One unit is
+    ~50-80 bytes retained where molecules dominate (measured on Diels-Alder entries; see ``_ENUM_CACHE_MAX_SIZE``), so
+    a bound in these units is a bound in memory.  Anything that is not a Molecule or a container of one weighs 0.
+    """
+    from .category import Molecule   # call-time: category imports this module
+    seen: set[int] = set()
+    total = 0
+    stack: list = list(transforms)
+    while stack:
+        obj = stack.pop()
+        if id(obj) in seen:
+            continue
+        seen.add(id(obj))
+        if isinstance(obj, Molecule):
+            total += len(obj.atoms) + len(obj.bonds)
+        elif dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+            stack.extend(getattr(obj, f.name) for f in dataclasses.fields(obj))
+        elif isinstance(obj, (tuple, list, set, frozenset)):
+            stack.extend(obj)
+        elif isinstance(obj, dict):
+            stack.extend(obj.values())
+    return total
 
 
 class EnumerationCache:
     """A thread-safe weighted LRU over RAW ``registry.enumerate`` outputs ``(transforms_tuple, complete_flag)``.
 
-    Weight = ``len(transforms_tuple)``.  Bounds (§4): at most ``max_transforms`` retained transforms in total and
-    ``max_entries`` entries; an output heavier than ``max_entry_transforms`` is returned but never retained.  The
-    shape/centre reduction is NOT cached (it stays textually inside the D29.1 check, so source-level mutants of it
-    still act on live code).  Disabled, the cache computes every call and stores nothing.
+    Bounds (§4): at most ``max_transforms`` retained transforms in total and ``max_entries`` entries; an output
+    heavier than ``max_entry_transforms`` is returned but never retained.  0.9.5 S16 (Wave C3 C3-F3) adds the bound
+    that means memory: at most ``max_retained_size`` units of :func:`retained_size` in total, and an output over
+    ``max_entry_size`` is never retained.  The shape/centre reduction is NOT cached (it stays textually inside the
+    D29.1 check, so source-level mutants of it still act on live code).  Disabled, the cache computes every call and
+    stores nothing.  :meth:`clear` bumps a generation: a value computed before a clear is never stored after it
+    (C3-F4 -- a patch-then-clear must not be undone by an enumeration that was already in flight).
     """
 
     def __init__(self, *, max_transforms: int = 65_536, max_entries: int = 512,
-                 max_entry_transforms: int = 8_192) -> None:
+                 max_entry_transforms: int = 8_192, max_retained_size: int = _ENUM_CACHE_MAX_SIZE,
+                 max_entry_size: int = _ENUM_CACHE_MAX_ENTRY_SIZE) -> None:
         for name, value in (("max_transforms", max_transforms), ("max_entries", max_entries),
-                            ("max_entry_transforms", max_entry_transforms)):
+                            ("max_entry_transforms", max_entry_transforms), ("max_retained_size", max_retained_size),
+                            ("max_entry_size", max_entry_size)):
             if type(value) is not int or value <= 0:
                 raise ValueError(f"EnumerationCache.{name} must be a positive int, got {value!r}; refused")
         if max_entry_transforms > max_transforms:
             raise ValueError("EnumerationCache.max_entry_transforms cannot exceed max_transforms (such an entry could "
                              "never be retained within the total bound); refused")
+        if max_entry_size > max_retained_size:
+            raise ValueError("EnumerationCache.max_entry_size cannot exceed max_retained_size (such an entry could "
+                             "never be retained within the total bound); refused")
         self.max_transforms = max_transforms
         self.max_entries = max_entries
         self.max_entry_transforms = max_entry_transforms
+        self.max_retained_size = max_retained_size
+        self.max_entry_size = max_entry_size
         self._lock = threading.Lock()
         self._entries: "OrderedDict[object, tuple[tuple, bool]]" = OrderedDict()
+        # S16: key -> (canonical work the enumeration charged, retained size), beside the value, never inside it
+        self._meta: "dict[object, tuple[int, int]]" = {}
         self._weight = 0
+        self._size = 0
         self._hits = 0
         self._misses = 0
         self._enabled = True
+        self._generation = 0
 
     def set_enabled(self, flag: bool) -> None:
         _require_bool("EnumerationCache.set_enabled(flag)", flag)
@@ -870,42 +1111,61 @@ class EnumerationCache:
     def get_or_compute(self, key: object, compute: "Callable[[], tuple[tuple, bool]]") -> "tuple[tuple, bool]":
         with self._lock:
             enabled = self._enabled
-            if enabled:
-                hit = self._entries.get(key)
-                if hit is not None:
-                    self._entries.move_to_end(key)
-                    self._hits += 1
-                    return hit
-            self._misses += 1
+            generation = self._generation
+            hit = self._entries.get(key) if enabled else None
+            if hit is not None:
+                self._entries.move_to_end(key)
+                self._hits += 1
+                work = self._meta[key][0]
+            else:
+                self._misses += 1
+        if hit is not None:
+            value = hit
+            charge_canonical_work(work)    # S16: a hit costs the canonicalisations its enumeration performed cold
+            return value
         # computed OUTSIDE the lock: an enumeration can take seconds and must not serialise every other thread.
-        value = compute()
+        with _recording_canonical_work() as frame:
+            value = compute()
         if not (type(value) is tuple and len(value) == 2 and type(value[0]) is tuple and type(value[1]) is bool):
             raise TypeError("an enumeration cache value must be (transforms_tuple, complete_bool) -- immutable, so it "
                             "can be shared; refused")
         weight = len(value[0])
         if enabled and weight <= self.max_entry_transforms:
+            size = retained_size(value[0])
+            if size > self.max_entry_size:
+                return value                                      # too big to keep: returned, never retained
             with self._lock:
-                if self._enabled and key not in self._entries:   # a racing thread may have stored the equal value
+                # a racing thread may have stored the equal value; a clear() since the miss makes this value stale
+                if self._enabled and self._generation == generation and key not in self._entries:
                     self._entries[key] = value
+                    self._meta[key] = (frame[0], size)
                     self._weight += weight
-                    while self._weight > self.max_transforms or len(self._entries) > self.max_entries:
-                        _old_key, (old_transforms, _old_flag) = self._entries.popitem(last=False)
+                    self._size += size
+                    while (self._weight > self.max_transforms or self._size > self.max_retained_size
+                           or len(self._entries) > self.max_entries):
+                        old_key, (old_transforms, _old_flag) = self._entries.popitem(last=False)
+                        _old_work, old_size = self._meta.pop(old_key)
                         self._weight -= len(old_transforms)
+                        self._size -= old_size
         return value
 
     def clear(self) -> None:
-        """Drop every entry and zero the counters.  REQUIRED around any in-process code patch (the mutation harness
-        ``_patch``, provider monkeypatching): such a patch changes behaviour without changing any key."""
+        """Drop every entry, zero the counters and bump the generation.  REQUIRED around any in-process code patch (the
+        mutation harness ``_patch``, provider monkeypatching): such a patch changes behaviour without changing any key,
+        and the generation keeps an enumeration that was already running from re-populating the cache afterwards."""
         with self._lock:
             self._entries.clear()
+            self._meta.clear()
             self._weight = 0
+            self._size = 0
             self._hits = 0
             self._misses = 0
+            self._generation += 1
 
     def stats(self) -> EnumerationCacheStats:
         with self._lock:
             return EnumerationCacheStats(hits=self._hits, misses=self._misses, entries=len(self._entries),
-                                         retained_transforms=self._weight)
+                                         retained_transforms=self._weight, retained_size=self._size)
 
 
 #: The process-level cache the D29.1 check reads through (via :func:`cached_enumerate`).
@@ -934,8 +1194,9 @@ def cached_enumerate(registry: "TransformProviderRegistry", target: "Molecule", 
                      budget: int) -> "tuple[tuple[EnumeratedTransform, ...], bool]":
     """``registry.enumerate(target, reagents, budget=budget)`` through :data:`ENUMERATION_CACHE`.
 
-    Charges nothing: the caller charges the budget at its per-load distinct-target miss, BEFORE calling this, so
-    whether a load is refused never depends on what an earlier load left in the process cache.
+    Charges no ENUMERATION work: the caller charges that at its per-load distinct-target miss, BEFORE calling this, so
+    whether a load is refused never depends on what an earlier load left in the process cache.  The canonicalisations
+    the enumeration performs are charged (S16) -- as they run on a miss, replayed on a hit -- for the same reason.
     """
     reagents = tuple(reagents)
     key = enumeration_cache_key(registry, target, reagents, budget)

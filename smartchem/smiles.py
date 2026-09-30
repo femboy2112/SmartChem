@@ -55,12 +55,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from fractions import Fraction
-from functools import cmp_to_key, lru_cache
+from functools import cmp_to_key
 
 from .atoms import PT
 from .category import Bond, Molecule, _wl_colours
 from .contracts import canonical_digest
 from .data.periodic_table import ATOMIC_NUMBER, has_standard_atomic_weight, standard_atomic_weight
+from .verification import charge_canonical_work, work_transparent_cache
 
 __all__ = [
     "SmilesError",
@@ -403,6 +404,22 @@ _MAX_KEKULE_MATCHINGS = 5000
 _RESONANCE_MAX_HEAVY = 64
 _RESONANCE_MAX_MATCHINGS = 128
 
+# 0.9.5 S16 (Wave C6 C6-F4): the placement caps above count only COMPLETE placements; the DFS in
+# `_min_constitution_placement` never counted its dead ends.  An explicit-Kekule polyacene has only
+# L+1 valid placements yet a dead-branch tree that explodes with L -- L=24 walks ~32k nodes, L=50
+# ran 23.8 minutes, under every cap.  So every DFS node now counts, bounded here; exceeding it takes
+# the placement cap's own road (the same SmilesError: the parser refuses the string, the identity
+# path falls back to the literal bond-order key), never a hang.  MEASURED 2026-09-30 by the S16
+# differential (`experiments/v0_9_5_canonical_differential.py`): every non-benzenoid string of the
+# corpus (test literals, named, frozen targets) <= 901 nodes; explicit-Kekule acenes on the parse
+# path L=24 31,928 / L=30 545,048 (all L <= 30, two atom orders each, byte-identical to the old
+# search); L=50 and L=60 now refuse in ~4 s.  The resonance path (heavy atoms re-materialised in
+# canonical order, a far worse DFS order) walks L=10 259,673 / L=11 948,391 nodes, and L=12 3.3M
+# (14 s per call uncapped) / L=13 11.7M (56 s): explicit-Kekule acene FRAGMENTS of >= 50 heavy
+# atoms now take the literal-key fallback after ~4 s -- a false split, the safe direction; a
+# parsed spelling is unaffected, its literal key already being its resonance key.
+_MAX_PLACEMENT_DFS_NODES = 1 << 20
+
 
 def _aromatic_matchings(
     atoms: list[_Atom], bonds: list[list[int]]
@@ -591,7 +608,8 @@ def _fill_hydrogens(atoms: list[_Atom], bonds: list[list[int]]) -> tuple[list[st
 
 
 def _min_constitution_placement(
-    atoms: list[_Atom], bonds: list[list[int]], charge: int, max_matchings: int = _MAX_KEKULE_MATCHINGS
+    atoms: list[_Atom], bonds: list[list[int]], charge: int, max_matchings: int = _MAX_KEKULE_MATCHINGS,
+    max_nodes: "int | None" = None,
 ) -> tuple[int, ...]:
     """The bond-order assignment that minimises the constitution digest over EVERY multiple-bond placement
     consistent with the fixed sigma-skeleton and per-atom pi-demand -- resonance-canonical for an EXPLICIT
@@ -608,6 +626,11 @@ def _min_constitution_placement(
     pi-system.  A molecule with a UNIQUE placement (every localised/pinned double, i.e. most molecules) returns its
     drawn orders unchanged, so this is byte-identical for everything except a genuinely resonance-degenerate
     unflagged system.  Refuses (never truncates to a non-deterministic minimum) if the placements exceed the bound.
+
+    0.9.5 S16: so does a search that walks more than ``max_nodes`` DFS nodes (one node = one per-atom distribution
+    tried; dead ends count), with the same ``SmilesError`` -- and every node is charged to the active verification
+    context's ``canonical_work`` before it is walked (a :func:`resonance_canonical` hit replays that charge).  The walk
+    order is unchanged, so under both bounds the placement returned is the one it always was.
     """
     n = len(atoms)
     need = [0] * n
@@ -622,6 +645,18 @@ def _min_constitution_placement(
     extra = [0] * len(bonds)
     best: list = [None, None]  # [orders_tuple, digest_key]
     count = [0]
+    walked = [0]  # S16: DFS nodes, dead ends included
+    node_limit = _MAX_PLACEMENT_DFS_NODES if max_nodes is None else max_nodes   # read at call time, not def time
+
+    def _walk_node() -> None:
+        # one more node of the placement DFS: bounded, then charged ahead of the work it stands for
+        if walked[0] >= node_limit:
+            raise SmilesError(
+                f"structure's resonance placement search exceeded {node_limit:,} search nodes; a resonance-canonical "
+                "identity for it is out of scope (give an aromatic-lowercase SMILES for the aromatic ring)"
+            )
+        walked[0] += 1
+        charge_canonical_work(1)
 
     def _other(bi: int, a: int) -> int:
         x, y, _o = bonds[bi]
@@ -683,6 +718,7 @@ def _min_constitution_placement(
     # walk crashed with an uncaught RecursionError on a ~330-atom cumulene, the red-team fold).
     start = _next_pi(0)
     if start == n:
+        _walk_node()
         _consider()  # no multiple bond at all: the single all-single placement (a saturated molecule)
     else:
         stack: list[dict] = [{"atom": start, "dists": _atom_distributions(start), "idx": -1, "applied": None}]
@@ -696,6 +732,7 @@ def _min_constitution_placement(
                 stack.pop()
                 continue
             dist = top["dists"][top["idx"]]
+            _walk_node()                                   # S16: every node, dead end or not
             _apply(top["atom"], dist, +1)
             top["applied"] = dist
             nxt = _next_pi(top["atom"] + 1)
@@ -735,7 +772,9 @@ def _canonical_kekule_orders(
     return _min_constitution_placement(atoms, work, charge, max_matchings=max_matchings)
 
 
-@lru_cache(maxsize=8192)
+# 0.9.5 S16: work-transparent, not a bare lru_cache -- a hit here skips every canonical() of the
+# placement search, so it must replay their charge or a load's budget would depend on what is warm.
+@work_transparent_cache(maxsize=8192)
 def resonance_canonical(molecule: Molecule) -> Molecule:
     """The resonance-canonical representative of ``molecule`` (CANON-KEKULE-01, generalised off the SMILES parser).
 
@@ -859,7 +898,10 @@ def _isotopic_identity(atoms: list[_Atom], bonds: list[list[int]], charge: int) 
             f"{atoms[k].isotope}:{out_atoms[k]}" if k < len(atoms) and atoms[k].isotope else out_atoms[k]
             for k in range(len(out_atoms))
         )
-        symbols, edges = _canonical_by_individualisation(colored, frozenset(out_bonds))
+        # S16: the same search canonical() runs, so the same charge -- each node costs the atoms it re-refines
+        symbols, edges = _canonical_by_individualisation(
+            colored, frozenset(out_bonds), on_node=lambda: charge_canonical_work(len(colored))
+        )
         return canonical_digest((symbols, edges, charge))
 
     # Commit to the EXACT Kekulé structure :func:`_build_molecule` commits to, via the shared

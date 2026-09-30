@@ -49,6 +49,7 @@ __all__ = [
     "ParseReceipt",
     "ResolvedIdentity",
     "IdentityParseError",
+    "IdentityOutOfBounds",
     "InputKindAmbiguity",
     "detect_auto_ambiguity",
     "resolve_identity",
@@ -112,6 +113,18 @@ class IdentityParseError(ValueError):
     A :class:`ValueError` subclass so existing ``except ValueError`` call sites (the CLI's ``exit 2`` mapping) keep
     catching it, while a service that wants the *concise domain error, not a traceback* (section 14.2) can catch
     this exact type.
+    """
+
+
+class IdentityOutOfBounds(IdentityParseError):
+    """The string parses, but its graph is too symmetric to canonicalise within the canonicaliser's leaf / node
+    ceilings (``smartchem.category.CanonicalBoundExceeded``, 0.9.5 S16) -- so no identity was established.
+
+    Typed as an :class:`IdentityParseError` on purpose: every front door already classifies "the identity could not
+    be resolved" one way -- ``plan`` -> ``INVALID_INPUT``, ``recompile`` / ``run_compilation`` -> ``INVALID_INPUT``
+    (exit 2), the load-time re-derivation -> a refusal -- and that is exactly the state this leaves the input in.
+    Before S16 the same input either hung the parser or escaped as a bare ``NotImplementedError`` (exit 70, an
+    "internal error" for what is a bound, not a bug).  The message names the bound, so nobody mistakes it for a typo.
     """
 
 
@@ -370,6 +383,7 @@ def resolve_identity(target_input: str, input_kind: "InputKind | str" = InputKin
     Raises :class:`IdentityParseError` on an unresolvable/ambiguous string or a form this offline parser cannot
     honour -- never a raw traceback and never a silent mis-parse.
     """
+    from .category import CanonicalBoundExceeded
     from .decompiler import Formula
     from .smiles import SmilesError, parse_smiles_features
     from .structure import structure_by_name
@@ -437,6 +451,13 @@ def resolve_identity(target_input: str, input_kind: "InputKind | str" = InputKin
 
     try:
         molecule, features = parse_smiles_features(payload)
+    except CanonicalBoundExceeded as exc:
+        # S16: parsed, but no canonical identity within the canonicaliser's bounds -> typed, never exit 70.  Not the
+        # AUTO formula fallthrough below: the string IS SMILES, and reading it as a formula would change the question.
+        raise IdentityOutOfBounds(
+            f"{target_input!r} parses as SMILES, but its structure is too symmetric to canonicalise within the "
+            f"canonicaliser's bounds ({exc}); the compiler refuses to assign it an identity rather than guess one"
+        ) from exc
     except SmilesError as exc:
         # AUTO fallthrough: name declined, SMILES declined -> LAST, try the tolerant formula grammar.  This
         # is additive and strictly last, so it can never STEAL a string a registered name or SMILES already

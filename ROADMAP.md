@@ -2,8 +2,8 @@
 
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
 > `verified @ poor-man-tamper-hardening-2026-09-17` (commit `afbf39f`; suite **5050/47/1**). **Re-stamp note:** this
-> header narrative below is the ROUND 47 essay — the tag/suite figures are current, the prose is historical and kept
-> for its reasoning; ROUND 48 onward live as their own dated blocks under `## 🎯 QUEUE` (ROUND 61/62 latest) and in
+> header narrative below is the ROUND 47 essay — the tag/suite figures are that round's (historical, like the prose,
+> kept for its reasoning; the CURRENT release state is the 1.0-program block under `## 🎯 QUEUE`); ROUND 48 onward live as their own dated blocks under `## 🎯 QUEUE` (ROUND 61/62 latest) and in
 > `POOR_MAN_DEFER_LEDGER_2026-09-17.md`. Prior tag `verified @ ranker-disconnection-selectivity-2026-09-11`
 > (**ROUND 47 — ranker chemical selectivity: the sound
 > disconnection now outranks the dubious one, DERIVED from bond energies (not hard-coded)** — frontier 2 of the user's
@@ -83,11 +83,16 @@ As of 2026-09-26, the chemistry compiler has a finite 1.0 program:
 The version ladder is **0.6 Human Chemical Front Door -> 0.7 Production Chemical Algebra -> 0.8 Real Route Dossiers
 -> 0.9 Capability Compiler -> 0.9.5 Coverage/Adversarial RC -> 1.0 Stable Chemical Compiler**.
 
+**Ladder status (2026-09-30):** 0.6, 0.7, 0.8 and 0.9 are MERGED (0.9 = PR #93 → main `d26f0eb`); the **0.9.5
+adversarial release candidate** is live on `feat/v0.9.5-adversarial-rc`
+([plan](docs/research/V0_9_5_ADVERSARIAL_RC_PLAN_v0.1.md), [architecture freeze](docs/research/V0_9_5_ARCHITECTURE_FREEZE.md),
+[COMPATIBILITY.md](COMPATIBILITY.md)). Each dated paragraph below is its own round's record, not the current state.
+
 This projection does **not** erase the historical round ledger below. It changes the stopping rule: future release work
-must name the 1.0 gate and funnel denominator it advances. The immediate implementation plan is
+must name the 1.0 gate and funnel denominator it advances. The 0.6 round's implementation plan was
 [`docs/research/V0_6_HUMAN_CHEMICAL_FRONT_DOOR_PLAN_v0.1.md`](docs/research/V0_6_HUMAN_CHEMICAL_FRONT_DOOR_PLAN_v0.1.md).
-New reaction-family expansion is frozen as a default release priority until the 0.6 front-door gate is complete,
-unless needed to fix a regression or discharge a direct 0.6 blocker.
+New reaction-family expansion stays frozen as a default release priority through 1.0, unless needed to fix a
+regression or discharge a direct release blocker.
 
 **0.6 status (2026-09-26):** the front door is IMPLEMENTED and passed a hostile merge-readiness round — a
 lossless `FormulaExpr` syntax layer, AUTO formula detection integrated through the one identity service,

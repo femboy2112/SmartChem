@@ -163,7 +163,8 @@ TRANSPORT_LEDGER: dict[str, dict[str, LedgerEntry]] = {
         "capability_question_digest": LedgerEntry(REQ, (_LOAD,), "== the reconstructed request's question pin"),
         "result_digest": LedgerEntry(RE, (_LOAD,), "the whole-body wire digest (D27.2)"),
         "transport_mode": LedgerEntry(ADV, note="self-declared; a downgrade relabel only WEAKENS what is re-derived "
-                                      "(thin = advisory) -- a consumer that needs the canonical guarantees loads with "
+                                      "(thin = advisory; a thin payload still carrying a replay is refused, 0.9.5 "
+                                      "C8) -- a consumer that needs the canonical guarantees loads with "
                                       "VerificationPolicy(require_canonical_transport=True), which refuses THIN (and "
                                       "legacy) at dispatch (0.9.5 S1)"),
         "producer_signature": LedgerEntry(ADV, note="the authenticator itself (outside the digest); meaningless "

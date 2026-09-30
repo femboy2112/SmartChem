@@ -326,13 +326,21 @@ def m15() -> bool:
 #     be caught (SS5: the wire-migration law is decoupled from the promotable build default).
 @mutant("M16 pre-0_7-missing-profile-must-stay-legacy")
 def m16() -> bool:
+    """0.9.5 re-read (Wave C8 F7, same law, stronger enforcement): a missing ``algebra_profile`` must NEVER follow the
+    promotable build default.  The accepted generations (current, v0.8) all carry the key, so its absence is now
+    REFUSED rather than decoded to the frozen legacy value.  Honest: refused.  Mutant: the decoder defaults the missing
+    field to the (promoted) build default -- a wider algebra silently selected."""
     payload = request_to_payload(_req("legacy-capped-v1"))
-    del payload["algebra_profile"]  # a pre-0.7 serialized request
+    del payload["algebra_profile"]
     with _patch(svc, "DEFAULT_ROUTE_ALGEBRA_PROFILE", "certified-route-v07"):  # simulate the default promotion
-        real_legacy = request_from_payload(payload).algebra_profile == "legacy-capped-v1"  # REAL: frozen law
-        # MUTANT: missing-field deserialization follows the promoted build default instead of the frozen law.
+        try:
+            request_from_payload(payload)
+            real_refuses = False
+        except ValueError:
+            real_refuses = True
+        # MUTANT: missing-field deserialization follows the promoted build default.
         mutant_profile = payload.get("algebra_profile", svc.DEFAULT_ROUTE_ALGEBRA_PROFILE)
-    return real_legacy and mutant_profile == "certified-route-v07"
+    return real_refuses and mutant_profile == "certified-route-v07"
 
 
 # 17. a fresh hetero-DA holdout is silently absent (its family dropped) -> MUST be caught (SS6: the holdout must fire

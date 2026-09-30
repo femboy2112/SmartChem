@@ -142,7 +142,6 @@ from .experiment.readiness import (
 from .algebra_profiles import (
     DEFAULT_ALGEBRA_PROFILE,
     DEFAULT_ROUTE_ALGEBRA_PROFILE,
-    LEGACY_MISSING_ALGEBRA_PROFILE,
     PROFILE_USES,
     resolve_algebra_profile,
 )
@@ -5252,11 +5251,12 @@ def request_from_payload(payload: dict) -> CompilationRequest:
     else:
         raise _unsupported_schema("request", version, COMPILATION_REQUEST_SCHEMA, LEGACY_V08_REQUEST_SCHEMA)
     # X-high D28.5: exactly the versioned keys of the dispatched generation, nested policy objects included.
-    # ``algebra_profile`` alone stays optional: its absence is the FROZEN 0.7 wire-migration law (a pre-0.7 request
-    # reconstructs as LEGACY_MISSING_ALGEBRA_PROFILE, never the promotable build default), a released decode rule, not
-    # a silent default -- and the algebra is inside the semantic digest a consumer pins.
+    # 0.9.5 (Wave C8 F7): ``algebra_profile`` is REQUIRED too.  Its absence used to decode as the frozen pre-0.7
+    # migration default -- but every generation this loader still accepts (current, and v0.8, whose real fixtures all
+    # carry it) postdates 0.7, so the only payload the rule ever reached was a current one with the key DELETED: a
+    # silent default, not a migration.  A missing algebra is refused; it can never follow the promotable build default.
     _require_payload_keys(payload, _REQUEST_PAYLOAD_KEYS if version == COMPILATION_REQUEST_SCHEMA
-                          else _V08_REQUEST_PAYLOAD_KEYS, "request", optional=frozenset({"algebra_profile"}))
+                          else _V08_REQUEST_PAYLOAD_KEYS, "request")
     for name, keys in _REQUEST_NESTED_PAYLOAD_KEYS.items():
         _require_payload_keys(payload[name], keys, f"request {name}")
     tp = payload["terminal_policy"]
@@ -5303,12 +5303,9 @@ def request_from_payload(payload: dict) -> CompilationRequest:
         RankingPolicy(payload["ranking_policy"]["policy_id"]),
         OutputPolicy(payload["output_policy"]["render_mode"], payload["output_policy"]["quiet"]),
         tuple((name, FieldOrigin(origin)) for name, origin in payload["origins"]),
-        # FROZEN wire-migration law (0.7 Round III): a pre-0.7 payload has no algebra_profile field and historically
-        # meant the capped algebra, so a MISSING field reconstructs as LEGACY_MISSING_ALGEBRA_PROFILE -- NOT the
-        # (promotable) build default.  This is what keeps promoting the route default from silently reinterpreting an
-        # old serialized request as the wider algebra.  An unknown/incompatible id is refused by
-        # CompilationRequest.__post_init__ (fail-closed, so a tampered profile string cannot select a hidden algebra).
-        algebra_profile=payload.get("algebra_profile", LEGACY_MISSING_ALGEBRA_PROFILE),
+        # required above (0.9.5 C8 F7); an unknown/incompatible id is refused by CompilationRequest.__post_init__
+        # (fail-closed, so a tampered profile string cannot select a hidden algebra).
+        algebra_profile=payload["algebra_profile"],
         # 0.9 Round III (D10) / Round V (D11): the keys are present on a current payload (checked above) and ABSENT on a
         # legacy one (also checked above), so ``.get`` here only ever maps the legacy absence to NOT_REQUESTED.  A
         # present profile is reconstructed EXACTLY (the stored snapshot is authoritative -- it is NEVER re-resolved
@@ -5986,6 +5983,14 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     # is silently defaulted.
     _require_payload_keys(payload, _RESPONSE_PAYLOAD_KEYS if version == COMPILATION_RESPONSE_SCHEMA
                           else _V08_RESPONSE_PAYLOAD_KEYS, "response")
+    # 0.9.5 (Wave C8 F6): a THIN_ADVISORY payload carries NO replay evidence.  A canonical payload relabelled thin
+    # while keeping its replays loaded through response_from_payload yet was refused by load_response (its receipt
+    # would count re-derived dossiers on a thin wire) -- two public loaders, two verdicts.  One law, at dispatch.
+    if payload.get("transport_mode") == TRANSPORT_THIN_ADVISORY and any(
+            type(dossier) is dict and dossier.get("replay_payload") is not None
+            for key in ("ranked_route_dossiers", "ranked_dag_dossiers") for dossier in (payload.get(key) or ())):
+        raise ValueError("a THIN_ADVISORY payload carries a replay_payload -- the thin wire has no replay evidence (a "
+                         "canonical payload relabelled thin); refused (0.9.5)")
     # 0.9.5 S6: a TARGET_FILE answer names a PATH to mutable external state; re-deriving or re-executing it would make
     # the verifier open a file the payload chose.  The loader never touches the filesystem on payload content.
     request_payload = payload["request"]
@@ -6288,13 +6293,16 @@ def _reexecution_root_work(request: CompilationRequest) -> int:
     """0.9.5 S2: the predicted work of the rerun's FIRST enumeration (the target against the helper reagents) -- the
     same W the D29.1 charge uses, so a payload cannot make re-execution enumerate an oversized target unbudgeted."""
     from .identity_parse import resolve_identity
+    # 0.9.5 (Wave C8 F2): a request that does not parse (an honest INVALID_INPUT answer) or names no structure re-runs
+    # to the same refusal without enumerating anything -- its predicted work is 0; the rerun itself still has to
+    # reproduce the carried payload byte for byte, so nothing is admitted on this path.
     try:
         target = resolve_identity(request.target_input, request.input_kind).molecule
         reagents = tuple(resolve_target(s, InputKind.AUTO).canonical() for s in request.helper_reagents)
-    except IdentityParseError as exc:
-        raise ValueError(f"require_reexecution: the carried request no longer parses ({exc}); refused (D26.2)") from exc
+    except IdentityParseError:
+        return 0
     if target is None:
-        raise ValueError("require_reexecution: the carried RECOMPILE target resolves to no structure; refused (D26.2)")
+        return 0
     return predicted_enumeration_work(target.canonical(), reagents)[1]
 
 

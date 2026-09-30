@@ -597,3 +597,31 @@ def test_c3_a_load_inside_a_load_is_refused(honest, monkeypatch):
     monkeypatch.setattr(svc.CompilationResponse, "_check_ranking_coherence", nested)
     with pytest.raises(RuntimeError, match="started inside another load"):
         load_response(copy.deepcopy(thick))
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Wave C8 hardening
+# ---------------------------------------------------------------------------------------------------------------------
+
+def test_c8_a_thin_payload_carrying_replays_is_refused_by_both_loaders(honest):
+    """Wave C8 F6: a canonical payload relabelled THIN_ADVISORY (replays kept, digest recomputed) loaded through
+    response_from_payload but was refused by load_response -- two public loaders, two verdicts."""
+    resp, thick, _thin = honest
+    relabel = copy.deepcopy(thick)
+    relabel["transport_mode"] = "THIN_ADVISORY"
+    relabel = _reforge(relabel)
+    for load in (lambda p: response_from_payload(p), lambda p: load_response(p)):
+        with pytest.raises(ValueError, match="THIN_ADVISORY payload carries a replay_payload"):
+            load(copy.deepcopy(relabel))
+
+
+def test_c8_an_honest_invalid_answer_reexecutes():
+    """Wave C8 F2: the re-execution root-work charge raised on an unparseable target, so paranoid() could not load
+    ANY honest INVALID_INPUT answer."""
+    req = build_recompile_request("not-a-real-name-zzz")
+    resp = run_compilation(req)
+    assert resp.outcome.value == "INVALID_INPUT"
+    r = load_response(response_to_payload(resp), VerificationPolicy(
+        expected_request_digest=req.semantic_digest, expected_capability_question_digest=None,
+        require_reexecution=True)).receipt
+    assert r.reexecuted and r.work.reexecutions == 1

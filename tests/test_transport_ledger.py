@@ -163,6 +163,15 @@ def test_the_response_level_statuses_are_the_loaders_behaviour(honest, key):
     wire = svc.response_to_payload(resp)
     forged = copy.deepcopy(wire)
     forged[key] = _FORGED_WIRE_VALUES[key](forged[key])
+    if key == "transport_mode":
+        # 0.9.5 (Wave C8 F6): a relabel that KEEPS the replays is refused at dispatch (a thin wire carries no replay
+        # evidence); the advisory downgrade a keyless forger can still perform is the CONSISTENT one -- relabel thin and
+        # strip every replay, which then loads advisory (thin = advisory by contract).
+        with pytest.raises(ValueError, match="THIN_ADVISORY payload carries a replay_payload"):
+            svc.response_from_payload(_refresh(copy.deepcopy(forged), resp))
+        for dossiers in ("ranked_route_dossiers", "ranked_dag_dossiers"):
+            for dossier in forged[dossiers]:
+                dossier.pop("replay_payload", None)
     _refresh(forged, resp)
     if status is TransportStatus.DIGEST_ONLY_ADVISORY:
         svc.response_from_payload(forged)

@@ -85,8 +85,9 @@ def test_importing_verification_does_not_import_the_service():
 
 def test_mirrored_service_constants_have_not_drifted():
     import smartchem.service as svc
+    import smartchem.transport_integrity as TI
 
-    assert V._KEY_MIN_BYTES == svc._PRODUCER_KEY_MIN_BYTES
+    assert V._KEY_MIN_BYTES == TI._PRODUCER_KEY_MIN_BYTES  # the key floor moved with its resolver (I1)
     assert V._TRANSPORT_MODES == svc._TRANSPORT_MODES
     assert V._TRANSPORT_CANONICAL_VERIFIED == svc.TRANSPORT_CANONICAL_VERIFIED
     assert V._TRANSPORT_THIN_ADVISORY == svc.TRANSPORT_THIN_ADVISORY

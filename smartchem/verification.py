@@ -35,6 +35,12 @@ from dataclasses import InitVar, dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Callable, Iterator
 
+# The declared, digest-bound transport modes, imported from their one home (0.9.5 I1) -- no longer a hand-kept mirror
+# of the service's copy.  The private aliases keep this module's spelling; "the two agree" now holds by identity.
+from .transport_integrity import TRANSPORT_CANONICAL_VERIFIED as _TRANSPORT_CANONICAL_VERIFIED
+from .transport_integrity import TRANSPORT_THIN_ADVISORY as _TRANSPORT_THIN_ADVISORY
+from .transport_integrity import _TRANSPORT_MODES
+
 if TYPE_CHECKING:  # pragma: no cover - type names only; a runtime import would be circular
     from .category import Molecule
     from .service import CompilationResponse
@@ -115,13 +121,8 @@ def _is_unpinned(value: object) -> bool:
 
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 
-#: Mirrors ``smartchem.service._PRODUCER_KEY_MIN_BYTES`` (a test pins the two equal): the HMAC key floor.
+#: Mirrors ``smartchem.transport_integrity._PRODUCER_KEY_MIN_BYTES`` (a test pins the two equal): the HMAC key floor.
 _KEY_MIN_BYTES = 16
-
-#: Mirrors ``smartchem.service._TRANSPORT_MODES`` (a test pins the two equal): the declared, digest-bound modes.
-_TRANSPORT_CANONICAL_VERIFIED = "CANONICAL_VERIFIED"
-_TRANSPORT_THIN_ADVISORY = "THIN_ADVISORY"
-_TRANSPORT_MODES = frozenset({_TRANSPORT_CANONICAL_VERIFIED, _TRANSPORT_THIN_ADVISORY})
 
 
 def _require_digest(owner: str, value: object) -> None:

@@ -5319,8 +5319,17 @@ def serialize_request(request: CompilationRequest) -> str:
     return json.dumps(request_to_payload(request), ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
+def _json_payload(text: str) -> object:
+    """``json.loads`` for the three text loaders.  0.9.5 (Wave C8 F4): a text nested deeper than the JSON decoder can
+    recurse is a REFUSAL (``ValueError``, the stable class), never an escaping ``RecursionError``."""
+    try:
+        return json.loads(text)
+    except RecursionError:
+        raise ValueError("payload text nests deeper than the JSON decoder can read; refused (0.9.5 C8 F4)") from None
+
+
 def deserialize_request(text: str) -> CompilationRequest:
-    return request_from_payload(json.loads(text))
+    return request_from_payload(_json_payload(text))
 
 
 def ranked_summary_to_payload(summary: RankedRouteSummary, *, include_replay: bool = False) -> dict:
@@ -6230,7 +6239,7 @@ def load_response(payload: dict, policy: "VerificationPolicy | None" = None) -> 
 
 def load_response_text(text: str, policy: "VerificationPolicy | None" = None) -> VerifiedLoad:
     """:func:`load_response` on a serialized payload."""
-    return load_response(json.loads(text), policy)
+    return load_response(_json_payload(text), policy)
 
 
 def _check_reexecution(response: CompilationResponse, payload: dict, transport_mode: str, *,
@@ -6392,7 +6401,7 @@ def deserialize_response(text: str, *, verification_key: bytes | None = None,
                          require_reexecution: bool = False,
                          policy: "VerificationPolicy | None" = None,
                          ) -> CompilationResponse:
-    return response_from_payload(json.loads(text), verification_key=verification_key,
+    return response_from_payload(_json_payload(text), verification_key=verification_key,
                                  require_signature=require_signature,
                                  require_verified_admission=require_verified_admission,
                                  expected_request_digest=expected_request_digest,

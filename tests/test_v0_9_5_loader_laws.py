@@ -625,3 +625,12 @@ def test_c8_an_honest_invalid_answer_reexecutes():
         expected_request_digest=req.semantic_digest, expected_capability_question_digest=None,
         require_reexecution=True)).receipt
     assert r.reexecuted and r.work.reexecutions == 1
+
+
+def test_c8_f4_deeply_nested_text_is_a_refusal_in_every_text_loader():
+    """Wave C8 F4: ``json.loads`` raises ``RecursionError`` on deep nesting -- not a refusal class.  Pre-fix FAILS (the
+    RecursionError escaped all three text loaders)."""
+    deep = "[" * 200_000 + "]" * 200_000
+    for loader in (svc.load_response_text, svc.deserialize_response, svc.deserialize_request):
+        with pytest.raises(ValueError, match="nests deeper than the JSON decoder"):
+            loader(deep)

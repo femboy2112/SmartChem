@@ -65,7 +65,8 @@ The Wave C hostile-review hardening laws get theirs here, one each (M253-M263): 
 spy) and producer/consumer key parity at signing and at the keyfile (M254/M255); C3 the exactly-typed ``ring_aware``
 knob (M256), owned replay evidence on both summary decoders (M257) and the nested-load refusal (M258); C7 the
 filesystem-only implementation digest (M259), the import-time home-less key path (M260) and the ASCII-terminal CLI
-(M261); C8 the thin-wire replay refusal (M262) and the INVALID answer's re-execution (M263).  C8 F7 (a required
+(M261); C8 the thin-wire replay refusal (M262), the INVALID answer's re-execution (M263) and deep payload text
+as a refusal in every text loader (M264).  C8 F7 (a required
 ``algebra_profile``) is not duplicated: the v0.7 harness's re-read M16 already kills it.
 
 Run:  .venv/bin/python experiments/v0_9_mutation_calibration.py
@@ -6985,6 +6986,29 @@ def m263():
     with _patch(svc, "_reexecution_root_work", bad_root):
         refused, exc = _attempt(lambda: load_response(copy.deepcopy(payload), policy))
     return honest, refused is None and isinstance(exc, IdentityParseError)
+
+
+@mutant("M264", "C8-F4: a deeply nested payload TEXT escapes the text loaders as RecursionError (not a refusal class)",
+        "service._json_payload (RecursionError -> ValueError)")
+def m264():
+    deep = "[" * 200_000 + "]" * 200_000
+
+    def outcome(fn):
+        try:
+            fn(deep)
+        except ValueError:
+            return "refused"
+        except RecursionError:
+            return "crash"
+        return "loaded"
+
+    honest = all(outcome(f) == "refused" for f in (svc.load_response_text, svc.deserialize_response,
+                                                    svc.deserialize_request))
+    bad = _src_mutant(svc._json_payload, ("except RecursionError:", "except ZeroDivisionError:"))
+    with _patch(svc, "_json_payload", bad):
+        crashed = all(outcome(f) == "crash" for f in (svc.load_response_text, svc.deserialize_response,
+                                                       svc.deserialize_request))
+    return honest, crashed
 
 
 # =================================================================================================================

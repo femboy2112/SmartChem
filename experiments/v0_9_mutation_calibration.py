@@ -8065,8 +8065,9 @@ def m_a15_3():
 
     honest = (ca_mod.catalyst_availability("CONC. H2SO4") is None
               and ca_mod.catalyst_availability("Conc. H2SO4") is Availability.HARDWARE)
-    with _a15_certify_mutant(("if q.casefold() != s.casefold() or reads_as_formula(q):",
-                              "if q.casefold() != s.casefold():")):
+    # re-anchored after A18 prefixed the line with the ASCII-only guard; the mutant still drops ONLY law 9's leg
+    with _a15_certify_mutant(("if not q.isascii() or q.casefold() != s.casefold() or reads_as_formula(q):",
+                              "if not q.isascii() or q.casefold() != s.casefold():")):
         bad = ca_mod.catalyst_availability("CONC. H2SO4") is Availability.HARDWARE
     return honest, bad
 

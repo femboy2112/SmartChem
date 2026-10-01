@@ -174,8 +174,8 @@ def test_build_molecule_types_a_molecule_construction_value_error():
     ("CC:CC", "joins a non-aromatic"),
     ("C:1CCCCC:1", "joins a non-aromatic"),
     ("C1:C:C:C:C:C1", "joins a non-aromatic"),
-    ("c1ccccc1:c1ccccc1", "is not in a ring"),
-    ("c1cc1:c1cc1", "is not in a ring"),
+    ("c1ccccc1:c1ccccc1", "is not in an aromatic ring"),
+    ("c1cc1:c1cc1", "is not in an aromatic ring"),
 ])
 def test_an_explicit_colon_bond_outside_an_aromatic_ring_is_refused(smiles, what):
     """Pre-fix: the Kekule pass chose an order -- ``C:C`` keyed as ethene, ``CC:CC`` as 2-butene, ``C:1CCCCC:1`` as

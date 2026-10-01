@@ -7700,7 +7700,7 @@ def m_s16i():
 
 
 @mutant("M-S16j", "S16: an over-bound graph escapes resolve_identity as a bare NotImplementedError (exit 70)",
-        "identity_parse.resolve_identity (except CanonicalBoundExceeded -> IdentityOutOfBounds)")
+        "identity_parse._resolve_identity (except CanonicalBoundExceeded -> IdentityOutOfBounds)")
 def m_s16j():
     import io
     from contextlib import redirect_stderr, redirect_stdout
@@ -7724,9 +7724,11 @@ def m_s16j():
     with _patch(cat_m, "_MAX_INDIVIDUALISATION_NODES", 5):
         kind, code = front_door()
         honest = kind is ip_m.IdentityOutOfBounds and code == 2
-        bad = _src_mutant(ip_m.resolve_identity, ("    except CanonicalBoundExceeded as exc:",
-                                                  "    except ZeroDivisionError as exc:"))
-        with _patch(ip_m, "resolve_identity", bad):
+        # S17 split the body into _resolve_identity (resolve_identity adds only the RecursionError fold); the
+        # wrapper reaches it by module-global lookup, so the patched body is what every caller runs.
+        bad = _src_mutant(ip_m._resolve_identity, ("    except CanonicalBoundExceeded as exc:",
+                                                   "    except ZeroDivisionError as exc:"))
+        with _patch(ip_m, "_resolve_identity", bad):
             kind2, code2 = front_door()
     return honest, kind2 is not ip_m.IdentityOutOfBounds and code2 == 70
 

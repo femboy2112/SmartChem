@@ -12,8 +12,9 @@ Findings, each pinned below with its witness and the fix's honest control:
 
 * **F2 (P0)** -- S18's casefold handed ``"WAtEr"`` (W+At+Er) water's EMPTY hazard record and GROCERY catalyst tier, and
   the synthetic DME route with a CATALYST use spelled ``WAtEr`` reached overall CAPABILITY_FIT. Fix: a folded hazard hit
-  may force (a GHS-bearing record) but clears only when the match certifies; every catalyst key goes through the same
-  certification against its honest spelling; the hazard scan's name dedups moved to the exact fold.
+  is returned only when the match certifies (any record certifies: an empty one clears, a GHS one replaces UNKNOWN);
+  every catalyst key goes through the same certification against its honest spelling; the hazard scan's name dedups
+  moved to the exact fold.
 * **F10** -- the exact-spelling ledger was a hand list of six single-word keys: ``"CoNC H2SO4"`` (a cobalt formula)
   read as HARDWARE sulfuric acid. Fix: the case rule runs on EVERY key (whole string and token by token).
 * **F7** -- procurement vouched a typed CATALYST use by its display name (H2SO4 labelled ``"water"`` -> GROCERY).
@@ -272,8 +273,8 @@ def test_f10_the_ledger_is_honest_spellings_only():
 
 def test_invariant_hazard_records():
     """For every hazard record and every case variant of its name: the lookup returns that record or nothing (never
-    another record), a formula-shaped variant never CLEARS (it gets nothing, or a record that forces), and the exact
-    spelling resolves."""
+    another record), a formula-shaped variant gets NOTHING (no record -- an empty one would clear, a GHS one would
+    replace UNKNOWN with another spelling's hazards), and the exact spelling resolves."""
     exercised = set()
     for seed, ref in enumerate(HAZARD_REFS):
         assert hazards_for_named(ref.name) is ref and hazards_for_named(f"  {ref.name} ") is ref
@@ -282,7 +283,7 @@ def test_invariant_hazard_records():
             assert got is None or got is ref, (v, got)
             if collapse_material_name(v) != ref.name and _formula_shaped(v, ref.name):
                 exercised.add(v)
-                assert got is None or got.ghs_codes, (v, "a formula-shaped case variant cleared")
+                assert got is None, (v, "a formula-shaped case variant was certified")
     assert "WAtEr" in exercised  # the instrument reached the finding
 
 
@@ -347,9 +348,12 @@ def test_control_water_spellings_still_resolve():
         assert hazards_for_named(spelling) is water, spelling
         assert catalyst_availability(spelling) is Availability.GROCERY, spelling
         assert structure_by_name(spelling).name == "water", spelling
-    # a forcing record is still reached by any spelling of its name (S18 C1-1 unchanged)
-    for spelling in ("sulfuric acid", "Sulfuric acid", "SULFURIC ACID", "sulfuric AcID"):
+    # a GHS record is reached by every spelling that certifies; a token the formula grammar claims ("AcID" = Ac+I+D)
+    # gets nothing -- the same answer catalyst_availability gives that string
+    for spelling in ("sulfuric acid", "Sulfuric acid", "SULFURIC ACID"):
         assert hazards_for_named(spelling).ghs_codes == ("H290", "H314"), spelling
+    assert hazards_for_named("sulfuric AcID") is None
+    assert catalyst_availability("sulfuric AcID") is None
 
 
 def test_control_h2o_behaves_exactly_as_before():

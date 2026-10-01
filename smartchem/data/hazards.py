@@ -670,16 +670,17 @@ def hazards_for_named(name: str) -> HazardRef | None:
     here used to read as "no record" and let a capitalised catalyst string shed its GHS codes. A name that folds to
     no record stays ``None``: unassessed, never benign.
 
-    0.9.5 A15 (Wave D F2): the fold is a POSSIBLE match, and the one-sided rule governs what it may return -- a
-    folded hit may FORCE (a record that carries GHS codes is returned on any possible match) but may CLEAR (an empty,
-    assessed-benign record) only when the match certifies (``stock.case_fold_match_certifies``: a case-only agreement
-    never certifies a string whose case carries meaning). ``"WAtEr"`` spells W+At+Er; S18's fold handed it water's
-    EMPTY record, and a tungsten/astatine/erbium catalyst reached CAPABILITY_FIT. It is ``None`` (UNKNOWN) now;
-    ``"Water"`` / ``"WATER"`` (no formula reading) still reach water."""
+    0.9.5 A15 (Wave D F2): the fold is a POSSIBLE match; a folded hit is returned only when the match certifies
+    (``stock.case_fold_match_certifies``: a case-only agreement never certifies a string whose case carries meaning).
+    Any record is a certification -- an empty one clears, and a GHS-bearing one replaces UNKNOWN with ITS hazard set --
+    so a string the formula grammar claims gets ``None`` (UNKNOWN) whatever the record holds. ``"WAtEr"`` spells
+    W+At+Er; S18's fold handed it water's EMPTY record, and a tungsten/astatine/erbium catalyst reached CAPABILITY_FIT.
+    ``"sulfuric AcID"`` (Ac+I+D) gets nothing either -- the same answer ``catalyst_availability`` gives that string.
+    ``"Water"`` / ``"WATER"`` / ``"SULFURIC ACID"`` (no formula reading) still reach their records."""
     from ..experiment.stock import case_fold_match_certifies, normalize_material_name  # lazy: stock pulls in data
 
     ref = _BY_NAME.get(normalize_material_name(name))
-    if ref is None or ref.ghs_codes or case_fold_match_certifies(name, ref.name):
+    if ref is None or case_fold_match_certifies(name, ref.name):
         return ref
     return None
 

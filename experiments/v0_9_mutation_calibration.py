@@ -76,7 +76,7 @@ synthesize human helper parser routed through resolve_target (F6), M-A14-5 / M-A
 (F9: aromatic ends, ring bond), M-A14-7 the InChI /f and /r sublayer refusal (P3).  A15 (Wave D capability/evidence): M-A15-1..9, one per fix -- the one-sided hazard gate
 (1), the every-key catalyst certification (2) and its whole-string / token / unique-reading legs (3-5), procurement by a
 bound name (6, F7), the covered string's forcing categories (7, F8), L3 on a USE_STREAM (8), the exact-spelling
-hazard-scan dedup (9); M-S18-12 / M-S18-14 / M-SD14 and the M-SD1 / M-SD9 twin-rinse fixture retargeted for the A15
+hazard-scan dedup (9), no GHS-forcing bypass on an uncertified variant (10, parent); M-S18-12 / M-S18-14 / M-SD14 and the M-SD1 / M-SD9 twin-rinse fixture retargeted for the A15
 code shape.  A16 transport-loader hardening: M-A16-1..7, one per item -- the public
 loaders' typed-refusal decorator and the load scope's fold (Wave D F5), the producer_signature shape (F11), the
 capability_work counter never charged / charged after the work / exhaustion turned into a skip (C8 F5), and the
@@ -7975,7 +7975,7 @@ def m_a14_7():
 # categories, L3 on a USE_STREAM, and the exact-spelling hazard-scan dedup. One mutant per fix. -------------------
 
 @mutant("M-A15-1", "a case-only hazard hit CLEARS again: 'WAtEr' (W+At+Er) gets water's empty record (F2)",
-        "data.hazards.hazards_for_named (one-sided gate: force on any possible match, clear only on certify)")
+        "data.hazards.hazards_for_named (a folded hit is returned only when the match certifies)")
 def m_a15_1():
     import smartchem.data.hazards as hazards_mod
 
@@ -7987,7 +7987,7 @@ def m_a15_1():
     honest = (hazards_mod.hazards_for_named("WAtEr") is None and hazards_mod.hazards_for_named("Water") is not None
               and unknown())
     cleared = _src_mutant(hazards_mod.hazards_for_named, (
-        "if ref is None or ref.ghs_codes or case_fold_match_certifies(name, ref.name):", "if True:"))
+        "if ref is None or case_fold_match_certifies(name, ref.name):", "if True:"))
     with _patch(hazards_mod, "hazards_for_named", cleared):
         bad = hazards_mod.hazards_for_named("WAtEr") is not None and not unknown()
     return honest, bad
@@ -8106,6 +8106,23 @@ def m_a15_9():
     with _patch(requirements_mod, "_hazard_scan", scan):
         bad = not unknown()
     return honest, bad
+
+
+@mutant("M-A15-10", "a GHS record certifies an uncertified case variant again: 'sulfuric AcID' (Ac+I+D) reads as "
+        "sulfuric acid's hazards, not UNKNOWN (F2, parent)",
+        "data.hazards.hazards_for_named (any record is a certification; no GHS-forcing bypass)")
+def m_a15_10():
+    # Parent at integration: a GHS-bearing record returned on a mere POSSIBLE match is still a certification -- it
+    # replaces the string's UNKNOWN with another spelling's hazard set. Broken: the forcing bypass is restored.
+    import smartchem.data.hazards as hazards_mod
+
+    honest = (hazards_mod.hazards_for_named("sulfuric AcID") is None
+              and hazards_mod.hazards_for_named("SULFURIC ACID") is not None)
+    forcing = _src_mutant(hazards_mod.hazards_for_named, (
+        "if ref is None or case_fold_match_certifies(name, ref.name):",
+        "if ref is None or ref.ghs_codes or case_fold_match_certifies(name, ref.name):"))
+    got = forcing("sulfuric AcID")
+    return honest, got is not None and got.ghs_codes == ("H290", "H314")
 
 
 # -- 0.9.5 A16 (transport-loader hardening): Wave D F5 / F11, Wave C8 F5 / F4 (dict leg) -- one mutant per item ----------

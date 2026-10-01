@@ -87,7 +87,11 @@ search bound (M-A17-1 the old max_depth law, M-A17-2 the bound's top power dropp
 (M-A13-7); M-S16c is re-pointed at the nodes x atoms ceiling's successor (a search node's refinement on the call meter)
 and M-S16e re-anchored on the meter canonical() charges through.  A13 parent: M-A13-8 the placement search's
 aggregate work ceiling, M-A13-9 the transparent frame it reads (hands its work up on exit), M-A13-10 the wire
-molecule decoder's atom ceiling (refused before construction).
+molecule decoder's atom ceiling (refused before construction).  A18 (Wave E on the A13-A17 delta): M-A18-1 the A17
+bound's early stop, M-A18-2 capability_work per component, M-A18-3 OverflowError in the loader fold, M-A18-4 the legacy
+walk's visited set, M-A18-5 ASCII-only fold certification, M-A18-6..8 the aromatic-ring law (implicit bridge single,
+lowercase ring membership, ':' in an aromatic ring), M-A18-9 the IR species atom ceiling, M-A18-10 one placement per
+parse.
 
 Run:  .venv/bin/python experiments/v0_9_mutation_calibration.py
       (dev only: SMARTCHEM_MUT_ONLY=M38,M104 runs a subset -- retirements then read VOID; the gate is the full run)
@@ -8186,7 +8190,7 @@ def m_a17_1():
         "service._dag_height_bound (sum over range(max_depth))")
 def m_a17_2():
     honest = _a17_tall_refused(CompilationResponse._check_request_answer_coherence) is None
-    short = _src_mutant(svc._dag_height_bound, ("for i in range(max_depth))", "for i in range(max_depth - 1))"))
+    short = _src_mutant(svc._dag_height_bound, ("    for _ in range(max_depth):", "    for _ in range(max_depth - 1):"))
     with _patch(svc, "_dag_height_bound", short):
         err = _a17_tall_refused(CompilationResponse._check_request_answer_coherence)
     return honest, err is not None and "(0.9.5 S5)" in err
@@ -8195,16 +8199,17 @@ def m_a17_2():
 # -- 0.9.5 A16 (transport-loader hardening): Wave D F5 / F11, Wave C8 F5 / F4 (dict leg) -- one mutant per item ----------
 
 _A16_CACHE: dict = {}
-_A16_CHARGE = 'context.meter.charge_deferred("capability_work", max(1, len(profile.material_inventory)))'
+_A16_CHARGE = 'context.meter.charge_deferred("capability_work", _capability_work_units(profile))'
 _A16_GATE = "context.meter.raise_if_exhausted()"
 
 
 def _a16_bench():
-    """methyl acetate (2 routes) under the 7-bottle isopentyl fit bench: each assessment charges 7 capability_work."""
+    """methyl acetate (2 routes) under the 7-bottle isopentyl fit bench: each assessment charges one capability_work
+    unit per bottle and per component (``service._capability_work_units``; A18 re-unit)."""
     if "bench" not in _A16_CACHE:
         req = build_recompile_request(_FAST_TARGET, max_depth=2, capability_profile=isopentyl_capability_fit_bench())
         _A16_CACHE["bench"] = (req, response_to_payload(run_compilation(req)),
-                               len(req.capability_profile.material_inventory))
+                               svc._capability_work_units(req.capability_profile))
     req, thick, bottles = _A16_CACHE["bench"]
     return req, copy.deepcopy(thick), bottles
 
@@ -8323,7 +8328,7 @@ def _a16_charge_or_skip(context, profile) -> bool:
     refused -- instead of refusing the load."""
     if context is None:
         return True
-    units = max(1, len(profile.material_inventory))
+    units = svc._capability_work_units(profile)
     limit = context.meter.budget.capability_work
     if limit is not None and context.meter.consumed("capability_work") + units > limit:
         return False
@@ -8601,6 +8606,199 @@ def m_a13_10():
     honest = not built(svc._molecule_from_payload)
     bad = _src_mutant(svc._molecule_from_payload, ("    if len(atoms) > _MAX_CANONICAL_ATOMS:", "    if False:"))
     return honest, built(bad)
+
+
+# -- 0.9.5 A18: the fresh non-author Wave E review of the A13-A17 delta -- one mutant per fix ------------------------
+
+def _a18_key(smiles: str):
+    import smartchem.smiles as sm_m
+    from smartchem.contracts import canonical_digest
+    try:
+        return canonical_digest(sm_m.parse_smiles(smiles).canonical())
+    except sm_m.SmilesError:
+        return None
+
+
+@mutant("M-A18-1", "the A17 bound sums every power of b again: big-integer work quadratic in the uncapped max_depth",
+        "service._dag_height_bound (stops once the partial sum reaches the step count)")
+def m_a18_1():
+    from types import SimpleNamespace
+    stub = SimpleNamespace(steps=(SimpleNamespace(reactants=(parse_smiles("CCO"), parse_smiles("CC(=O)O"))),
+                                  SimpleNamespace(reactants=(parse_smiles("O"),))))
+    honest = svc._dag_height_bound(stub, 10_000) <= 4
+    full = _src_mutant(svc._dag_height_bound, ("        if total >= cap:", "        if False:"))
+    return honest, full(stub, 10_000) > 10 ** 6
+
+
+@mutant("M-A18-2", "capability_work charged per bottle again: one bottle of 40,000 name-keyed components costs one unit",
+        "service._capability_work_units (bottles + components)")
+def m_a18_2():
+    from types import SimpleNamespace
+    fat = SimpleNamespace(material_inventory=(SimpleNamespace(components=(None,) * 40_000),))
+    honest = svc._capability_work_units(fat) == 40_001
+    per_bottle = _src_mutant(svc._capability_work_units, (
+        "return max(1, sum(1 + len(stock.components) for stock in profile.material_inventory))",
+        "return max(1, len(profile.material_inventory))"))
+    return honest, per_bottle(fat) == 1
+
+
+@mutant("M-A18-3", "OverflowError leaves the loader fold: 10**400 in a float field escapes as a bare OverflowError",
+        "verification._malformed_is_refused (OverflowError -> MalformedPayloadError)")
+def m_a18_3():
+    from smartchem.capability.presets import isopentyl_capability_fit_bench
+    from smartchem.verification import MalformedPayloadError
+    payload = request_to_payload(build_recompile_request(_FAST_TARGET, max_depth=2,
+                                                         capability_profile=isopentyl_capability_fit_bench()))
+    payload["constraints"]["max_temperature_k"] = 10 ** 400
+
+    def outcome(fold) -> str:
+        with _patch(ver_mod, "_malformed_is_refused", fold), _patch(svc, "_malformed_is_refused", fold):
+            try:
+                svc.request_from_payload(copy.deepcopy(payload))
+                return "loaded"
+            except MalformedPayloadError:
+                return "typed"
+            except OverflowError:
+                return "bare"
+    honest = outcome(ver_mod._malformed_is_refused) == "typed"
+    bad = _src_mutant(ver_mod._malformed_is_refused.__wrapped__, (
+        "(TypeError, AttributeError, KeyError, IndexError, OverflowError)", "(TypeError, AttributeError, KeyError, IndexError)"))
+    return honest, outcome(bad) == "bare"
+
+
+@mutant("M-A18-4", "the legacy key walk revisits containers: a cyclic in-process legacy payload walks forever",
+        "legacy_v08._v09_only_keys (each container visited once)")
+def m_a18_4():
+    import smartchem.legacy_v08 as leg_m
+
+    class _Bounded(dict):
+        """A self-referential dict whose values() refuses after 1,000 visits -- the mutant's loop, made finite."""
+        visits = 0
+
+        def values(self):
+            _Bounded.visits += 1
+            if _Bounded.visits > 1_000:
+                raise RuntimeError("walked a cycle 1,000 times")
+            return super().values()
+
+    def walk(fn) -> str:
+        _Bounded.visits = 0
+        node = _Bounded(schema_version="x")
+        node["loop"] = node
+        try:
+            fn(node)
+            return "terminated"
+        except RuntimeError:
+            return "looped"
+    honest = walk(leg_m._v09_only_keys) == "terminated"
+    bad = _src_mutant(leg_m._v09_only_keys, ("            if id(node) in seen:\n                continue",
+                                            "            if False:\n                continue"))
+    return honest, walk(bad) == "looped"
+
+
+@mutant("M-A18-5", "a non-ASCII letter certifies through the fold again: 'H2\u017fO4' vouches HARDWARE sulfuric acid",
+        "stock.case_fold_match_certifies + stock._unique_case_reading (ASCII only)")
+def m_a18_5():
+    import smartchem.experiment.catalyst_availability as ca_m
+    query = "H2\u017fO4"
+    honest = ca_m.catalyst_availability(query) is None and ca_m.catalyst_availability("H2SO4") is Availability.HARDWARE
+    reading = _src_mutant(stock_mod._unique_case_reading, (
+        "if len(letters) > _CASE_READING_MAX_LETTERS or not token.isascii():",
+        "if len(letters) > _CASE_READING_MAX_LETTERS:"))
+    with _patch(stock_mod, "_unique_case_reading", reading):
+        # compiled INSIDE the patch: _src_mutant snapshots the module globals, so the certifier must see the mutant reading
+        certify = _src_mutant(stock_mod.case_fold_match_certifies, (
+            "if not q.isascii() or q.casefold() != s.casefold() or reads_as_formula(q):",
+            "if q.casefold() != s.casefold() or reads_as_formula(q):"))
+        with _patch(stock_mod, "case_fold_match_certifies", certify), _patch(ca_m, "case_fold_match_certifies", certify):
+            bad = ca_m.catalyst_availability(query) is Availability.HARDWARE
+    return honest, bad
+
+
+@mutant("M-A18-6", "an implicit bond between aromatic atoms in no aromatic ring stays aromatic: 'c1cc1c1cc1' = triafulvalene",
+        "smiles._check_aromatic_bond_symbols (an implicit non-ring aromatic bond is single)")
+def m_a18_6():
+    import smartchem.smiles as sm_m
+    honest = _a18_key("c1cc1c1cc1") is None and _a18_key("c1ccccc1c1ccccc1") == _a18_key("c1ccccc1-c1ccccc1")
+    bad_check = _src_mutant(sm_m._check_aromatic_bond_symbols, (
+        "            bond[2] = 1                     # an implicit bond between aromatic atoms outside any aromatic ring",
+        "            pass"))
+    with _patch(sm_m, "_check_aromatic_bond_symbols", bad_check):
+        bad = _a18_key("c1cc1c1cc1") == _a18_key("C1=CC1=C1C=C1")
+    return honest, bad
+
+
+@mutant("M-A18-7", "a lowercase atom on a ring only through uppercase atoms passes again: 'o1CCo1' = 1,2-dioxetane",
+        "smiles._check_aromatic_ring_members (an aromatic ring is a cycle of lowercase atoms)")
+def m_a18_7():
+    # 'o' donates a lone pair and needs no double, so the implicit-bridge rule cannot refuse it (it would just make the
+    # o-o closure single): only ring membership does. ('c1CCc1' is refused by both laws, so it cannot discriminate.)
+    import smartchem.smiles as sm_m
+    honest = _a18_key("o1CCo1") is None and _a18_key("o1cccc1") is not None
+    bad_check = _src_mutant(sm_m._check_aromatic_ring_members, (
+        "    ring_edges = _aromatic_ring_bonds(atoms, bonds)\n    in_aromatic_ring",
+        "    ring_edges = _cip_ring_edges(len(atoms), bonds)\n    in_aromatic_ring"))
+    with _patch(sm_m, "_check_aromatic_ring_members", bad_check):
+        bad = _a18_key("o1CCo1") == _a18_key("O1CCO1")
+    return honest, bad
+
+
+@mutant("M-A18-8", "':' on a ring through an uppercase bridge passes again: 'c12cc1CCc1cc1:2' keys its bridge as a double",
+        "smiles._check_aromatic_bond_symbols (':' must lie in an AROMATIC ring)")
+def m_a18_8():
+    import smartchem.smiles as sm_m
+    honest = _a18_key("c12cc1CCc1cc1:2") is None
+    bad_check = _src_mutant(sm_m._check_aromatic_bond_symbols, (
+        "    ring_edges = _aromatic_ring_bonds(atoms, bonds)\n    for bi in colon_bonds:",
+        "    ring_edges = _cip_ring_edges(len(atoms), bonds)\n    for bi in colon_bonds:"))
+    with _patch(sm_m, "_check_aromatic_bond_symbols", bad_check):
+        bad = _a18_key("c12cc1CCc1cc1:2") == _a18_key("C12C=C1CCC1=CC1=2")
+    return honest, bad
+
+
+@mutant("M-A18-9", "the IR species leg builds a graph of any size before refusing (no atom ceiling)",
+        "compilation_ir._structural_species_from_payload (atom ceiling before construction)")
+def m_a18_9():
+    import smartchem.compilation_ir as cir_m
+    honest_payload = cir_m._structural_species_to_payload(cir_m.StructuralSpecies.of_molecule(parse_smiles("CC")))
+    big = copy.deepcopy(honest_payload)
+    big["atoms"] = ["C"] * (cat_mod_ceiling() + 1)
+
+    def built(fn) -> bool:
+        try:
+            fn(copy.deepcopy(big))
+            return True
+        except ValueError as exc:
+            return "atom" not in str(exc)    # refused by another law AFTER construction counts as built
+    honest = not built(cir_m._structural_species_from_payload)
+    bad = _src_mutant(cir_m._structural_species_from_payload, ("    if len(p[\"atoms\"]) > _MAX_CANONICAL_ATOMS:",
+                                                               "    if False:"))
+    return honest, built(bad)
+
+
+def cat_mod_ceiling() -> int:
+    import smartchem.category as cat_m
+    return cat_m._MAX_CANONICAL_ATOMS
+
+
+@mutant("M-A18-10", "one parse runs the placement search per layer again (isotope key, configuration, CIP, build)",
+        "smiles.parse_smiles_features (one placement memo per parse)")
+def m_a18_10():
+    import smartchem.smiles as sm_m
+    live, calls = sm_m._min_constitution_placement, []
+
+    def counting(*args, **kwargs):
+        calls.append(1)
+        return live(*args, **kwargs)
+
+    def searches(parse) -> int:
+        calls.clear()
+        with _patch(sm_m, "_min_constitution_placement", counting):
+            parse("C1=CC=C2C=C([C@H](F)[13CH3])C=CC2=C1")
+        return len(calls)
+    honest = searches(sm_m.parse_smiles_features) == 1
+    bad = _src_mutant(sm_m.parse_smiles_features, ("    token = _PLACEMENT_MEMO.set({})", "    token = _PLACEMENT_MEMO.set(None)"))
+    return honest, searches(bad) > 1
 
 
 # =================================================================================================================

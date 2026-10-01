@@ -1983,7 +1983,12 @@ def _structural_species_to_payload(species: StructuralSpecies) -> dict:
 
 
 def _structural_species_from_payload(p: dict) -> StructuralSpecies:
+    from .category import _MAX_CANONICAL_ATOMS
+
     _require_exact_keys(p, _SPECIES_PAYLOAD_KEYS, "structural species", "D29.2")
+    if len(p["atoms"]) > _MAX_CANONICAL_ATOMS:  # A18 (Wave E): the species leg too -- refused before its graph is built
+        raise ValueError(f"structural species payload carries {len(p['atoms']):,} atoms, over the canonicaliser's "
+                         f"{_MAX_CANONICAL_ATOMS:,}-atom ceiling; refused before construction (0.9.5 A13/A18)")
     return StructuralSpecies(
         p["schema_version"],
         _identity_from_payload(p["structure"]),

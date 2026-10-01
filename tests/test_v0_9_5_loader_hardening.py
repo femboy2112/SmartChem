@@ -72,12 +72,15 @@ def dag_wire():
 
 @pytest.fixture(scope="module")
 def bench_answer():
-    """methyl acetate under the 7-bottle isopentyl fit bench: every assessment charges 7 capability_work units."""
+    """methyl acetate under the 7-bottle isopentyl fit bench: every assessment charges one capability_work unit per
+    bottle and one per component (``service._capability_work_units``, A18). Returns those units per assessment."""
     req = build_recompile_request("smiles:CC(=O)OC", max_depth=2, capability_profile=isopentyl_capability_fit_bench())
     resp = run_compilation(req)
     bottles = len(req.capability_profile.material_inventory)
     assert bottles == 7 and len(resp.ranked_route_dossiers) == 2, "setup: the fixture's shape moved"
-    return req, response_to_payload(resp), bottles
+    units = svc._capability_work_units(req.capability_profile)
+    assert units > bottles, "setup: the bench's bottles declare components"
+    return req, response_to_payload(resp), units
 
 
 def _entry_points(wire, dag_wire):
@@ -298,9 +301,9 @@ class _AssessSpy:
         monkeypatch.setattr(svc, "assess_capability", spy)
 
 
-def test_capability_work_is_one_unit_per_bottle_per_assessment(bench_answer, monkeypatch):
-    """Fails if an honest load's capability re-derivation goes uncharged, or is charged by anything but bottles x
-    assessments."""
+def test_capability_work_is_bottles_plus_components_per_assessment(bench_answer, monkeypatch):
+    """Fails if an honest load's capability re-derivation goes uncharged, or is charged by anything but (bottles +
+    components) x assessments."""
     req, thick, bottles = bench_answer
     spy = _AssessSpy(monkeypatch)
     pins = dict(expected_request_digest=req.semantic_digest,
@@ -531,3 +534,15 @@ def test_the_decorated_loaders_keep_their_identity():
                    affordability_entry_from_payload, provider_snapshot_from_payload, cir.ir_from_payload,
                    identity_loss_from_payload):
         assert loader.__wrapped__.__name__ == loader.__name__ and loader.__doc__
+
+
+def test_a_bottle_s_components_are_charged_not_only_the_bottle():
+    """Wave E (A18): charged per bottle, ONE bottle carrying 40,000 name-keyed components loaded in 34 s for 32 units
+    -- every component is walked (each name-keyed one resolved through the offline name table), so each is charged."""
+    from types import SimpleNamespace
+    bench = isopentyl_capability_fit_bench()
+    inventory = bench.material_inventory
+    assert svc._capability_work_units(bench) == len(inventory) + sum(len(b.components) for b in inventory)
+    fat = SimpleNamespace(material_inventory=(SimpleNamespace(components=(None,) * 40_000),))
+    assert svc._capability_work_units(fat) == 40_001
+    assert svc._capability_work_units(SimpleNamespace(material_inventory=())) == 1

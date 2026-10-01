@@ -116,11 +116,20 @@ _V09_ONLY_WIRE_KEYS = frozenset({
 
 
 def _v09_only_keys(payload: object) -> "list[str]":
-    """Every 0.9-only wire key present at ANY depth of ``payload`` (sorted, distinct)."""
+    """Every 0.9-only wire key present at ANY depth of ``payload`` (sorted, distinct).
+
+    Each container is visited once (0.9.5 A18, Wave E): this walk runs BEFORE the loader's node count, which is what
+    refuses a reference cycle, and without a visited set an in-process cyclic dict under the legacy schema id kept it
+    walking forever. JSON cannot express a cycle; the walk now terminates and leaves the refusal to the node count."""
     found: "set[str]" = set()
+    seen: "set[int]" = set()
     stack: list = [payload]
     while stack:
         node = stack.pop()
+        if isinstance(node, (dict, list)):
+            if id(node) in seen:
+                continue
+            seen.add(id(node))
         if isinstance(node, dict):
             found |= _V09_ONLY_WIRE_KEYS & set(node)
             stack.extend(node.values())

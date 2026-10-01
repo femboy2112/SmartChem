@@ -153,7 +153,7 @@ def _unique_case_reading(token: str) -> "str | None":
     too long to enumerate). ``hcl`` -> ``HCl``; ``na2co3`` -> ``None`` (Na2CO3 or Na2Co3); ``ni`` -> ``None`` (Ni or
     N+I)."""
     letters = [i for i, c in enumerate(token) if c.isalpha()]
-    if len(letters) > _CASE_READING_MAX_LETTERS:
+    if len(letters) > _CASE_READING_MAX_LETTERS or not token.isascii():   # A18: `ſ`.upper() == 'S' is no case reading
         return None
     found: "str | None" = None
     for mask in range(1 << len(letters)):
@@ -187,7 +187,10 @@ def case_fold_match_certifies(query: str, spelling: str) -> bool:
     q, s = collapse_material_name(query), collapse_material_name(spelling)
     if q == s:
         return True
-    if q.casefold() != s.casefold() or reads_as_formula(q):
+    # A18 (Wave E): a non-ASCII letter that casefolds or uppercases to an ASCII one is not "case" -- `H2ſO4` folds to
+    # `h2so4` and `ſ`.upper() is `S`, while the formula grammar refuses `ſ`. Every table key is ASCII (pinned), so a
+    # non-ASCII spelling certifies only by exact equality, never through a fold.
+    if not q.isascii() or q.casefold() != s.casefold() or reads_as_formula(q):
         return False
     q_tokens, s_tokens = q.split(" "), s.split(" ")
     if len(q_tokens) != len(s_tokens):

@@ -178,17 +178,18 @@ _UNLIMITED_LICENCE = object()
 #: interpreter's default 1,000 (a 3.9x headroom; 64 needed 130).
 _MAX_PAYLOAD_DEPTH = 128
 
-#: 0.9.5 (Wave C8 F5) -- capability re-derivation is verification work.  One unit = one declared bottle of the
-#: request's profile, charged per capability assessment (``service._assess_route``: the requirement compile + ``assess``
-#: over the inventory; ``max(1, bottles)``) BEFORE it runs.  The payload chooses the bench under an unpinned policy, and
-#: an assessment's cost grows with the bottles it matches against (Wave C8: 1,792 bottles x 27 dossiers loaded in 74.7 s
-#: ACCEPTED with no counter moving).  MEASURED 2026-10-01 by ``experiments/v0_9_5_loader_bounds.py`` over the four loads
-#: (plain thick, pinned + verified-admission thick, plain thin, pinned re-execution) of every frozen service case and
-#: perf payload, and every v0.8 fixture: maximum 567 = 7 bottles x 81 assessments (isopentyl, 27 routes, under
-#: ``isopentyl_capability_fit_bench()``, pinned re-execution; its plain load 378); every benchless answer 0.  8 x 567 =
-#: 4,536 -> rounded up to 2**13 (14.4x).  A bench of more than ~100 bottles on a 27-route answer re-executed needs an
-#: explicit ``VerificationBudget(capability_work=...)`` -- the budget is conservative by design.
-_DEFAULT_CAPABILITY_WORK = 1 << 13
+#: 0.9.5 (Wave C8 F5) -- capability re-derivation is verification work.  One unit per declared bottle AND per bottle
+#: component of the request's profile (A18, Wave E: per bottle only, one bottle with 40,000 name-keyed components loaded
+#: in 34 s for 32 units), charged per capability assessment (``service._capability_work_units`` in ``_assess_route``)
+#: BEFORE it runs.  The payload chooses the bench under an unpinned policy, and an assessment walks every component
+#: (Wave C8: 1,792 bottles x 27 dossiers loaded in 74.7 s ACCEPTED with no counter moving).  MEASURED by
+#: ``experiments/v0_9_5_loader_bounds.py`` over the four loads (plain thick, pinned + verified-admission thick, plain thin,
+#: pinned re-execution) of every frozen service case and perf payload, and every v0.8 fixture: maximum 1,296 = 16 units
+#: (7 bottles + 9 components of ``isopentyl_capability_fit_bench()``) x 81 assessments (isopentyl, 27 routes, pinned
+#: re-execution; its plain load 864); every benchless answer 0.  8 x 1,296 = 10,368 -> rounded up to 2**14 (12.6x).  A
+#: much larger bench on a 27-route answer re-executed needs an explicit ``VerificationBudget(capability_work=...)`` --
+#: the budget is conservative by design.
+_DEFAULT_CAPABILITY_WORK = 1 << 14
 
 #: MEASURED 2026-09-29 by ``count_payload_nodes`` on honest canonical (thick) payloads (Wave-B ``rc-verification-core``):
 #: the recipe payload -- ``build_recompile_request("isopentyl acetate", helper_reagents=("water", "acetic acid"),
@@ -394,7 +395,9 @@ def _malformed_is_refused() -> "Iterator[None]":
         yield
     except MalformedPayloadError:
         raise
-    except (TypeError, AttributeError, KeyError, IndexError) as exc:
+    except (TypeError, AttributeError, KeyError, IndexError, OverflowError) as exc:
+        # OverflowError (A18, Wave E): a JSON integer too large for the float a decoder converts it to (10**400 in a
+        # physical bound) is a value the wire cannot carry -- the same refusal, never a bare escape
         raise MalformedPayloadError(f"malformed payload ({type(exc).__name__}: {exc}); refused (0.9.5 Wave D F5)") \
             from exc
 

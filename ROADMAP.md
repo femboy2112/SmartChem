@@ -83,10 +83,12 @@ As of 2026-09-26, the chemistry compiler has a finite 1.0 program:
 The version ladder is **0.6 Human Chemical Front Door -> 0.7 Production Chemical Algebra -> 0.8 Real Route Dossiers
 -> 0.9 Capability Compiler -> 0.9.5 Coverage/Adversarial RC -> 1.0 Stable Chemical Compiler**.
 
-**Ladder status (2026-09-30):** 0.6, 0.7, 0.8 and 0.9 are MERGED (0.9 = PR #93 → main `d26f0eb`); the **0.9.5
-adversarial release candidate** is live on `feat/v0.9.5-adversarial-rc`
-([plan](docs/research/V0_9_5_ADVERSARIAL_RC_PLAN_v0.1.md), [architecture freeze](docs/research/V0_9_5_ARCHITECTURE_FREEZE.md),
-[COMPATIBILITY.md](COMPATIBILITY.md)). Each dated paragraph below is its own round's record, not the current state.
+**Ladder status (2026-10-01):** 0.6, 0.7, 0.8 and 0.9 are MERGED (0.9 = PR #93 → main `d26f0eb`). The **0.9.5
+adversarial release candidate** is `0.9.5a1` on `feat/v0.9.5-adversarial-rc`, its release gate recorded in
+[the release record](docs/research/V0_9_5_ADVERSARIAL_RC_RELEASE_2026-10-01.md), and goes to external review as a PR
+that is NOT merged by automation ([plan](docs/research/V0_9_5_ADVERSARIAL_RC_PLAN_v0.1.md),
+[architecture freeze](docs/research/V0_9_5_ARCHITECTURE_FREEZE.md), [COMPATIBILITY.md](COMPATIBILITY.md)). Next on the
+ladder: 1.0 Stable Chemical Compiler. Each dated paragraph below is its own round's record, not the current state.
 
 This projection does **not** erase the historical round ledger below. It changes the stopping rule: future release work
 must name the 1.0 gate and funnel denominator it advances. The 0.6 round's implementation plan was

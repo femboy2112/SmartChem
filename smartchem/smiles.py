@@ -53,6 +53,8 @@ stated resonance boundary, not a silent one). A giant PAH beyond the enumeration
 
 from __future__ import annotations
 
+from contextvars import ContextVar
+
 from dataclasses import dataclass
 from fractions import Fraction
 from functools import cmp_to_key
@@ -520,7 +522,9 @@ def _check_aromatic_ring_members(atoms: list[_Atom], bonds: list[list[int]]) -> 
     aromatic = [k for k, atom in enumerate(atoms) if atom.aromatic]
     if not aromatic:
         return
-    ring_edges = _cip_ring_edges(len(atoms), bonds)
+    # A18 (Wave E): a ring through an uppercase atom is not an aromatic ring -- 'c1CCc1' used to pass here (its c-c
+    # closure is a ring edge of the whole graph) and kekulise to cyclobutene
+    ring_edges = _aromatic_ring_bonds(atoms, bonds)
     in_aromatic_ring = set()
     for bi in ring_edges:
         a, b, order = bonds[bi]
@@ -545,22 +549,41 @@ def _check_aromatic_bond_symbols(atoms: list[_Atom], bonds: list[list[int]], col
     2-butene and ``C:1CCCCC:1`` as cyclohexene.  On a bridge (a bond in no ring) the claim is impossible, and
     kekulisation could still turn it into a DOUBLE bond: ``c1cc1:c1cc1`` read as triafulvalene.  Every real use (a
     ``:`` anywhere inside a lowercase ring, e.g. ``c1:c:c:c:c:c1``) passes untouched; for a single bond between two
-    aromatic rings, write ``-`` (``c1ccccc1-c1ccccc1``)."""
-    if not colon_bonds:
-        return
-    ring_edges = _cip_ring_edges(len(atoms), bonds)
+    aromatic rings, write ``-`` (``c1ccccc1-c1ccccc1``).
+
+    0.9.5 A18 (Wave E): "in a ring" was the wrong test -- it must be an AROMATIC ring, a cycle of lowercase atoms
+    (:func:`_aromatic_ring_bonds`). A ring closed through an uppercase bridge let ``c12cc1CCc1cc1:2`` kekulise its
+    ``:`` to a double. And an IMPLICIT bond between two lowercase atoms in no aromatic ring is, per OpenSMILES, single
+    (biphenyl's inter-ring bond): it was flagged aromatic, so ``c1cc1c1cc1`` kekulised its bridge to a double and keyed
+    as triafulvalene, ``c1cccc1c1cccc1`` as fulvalene. Such a bond is now single before kekulisation, so a system that
+    cannot be kekulised without it is refused."""
+    ring_edges = _aromatic_ring_bonds(atoms, bonds)
     for bi in colon_bonds:
         a, b, _order = bonds[bi]
         if not (atoms[a].aromatic and atoms[b].aromatic):
             where = "joins a non-aromatic (uppercase) atom"
         elif bi not in ring_edges:
-            where = "is not in a ring"
+            where = "is not in an aromatic ring"
         else:
             continue
         raise SmilesError(
             f"explicit aromatic bond ':' between atoms #{a} and #{b} {where}; ':' marks a bond inside an aromatic ring "
             "between two lowercase atoms -- write '=' or '-' for an explicit Kekule bond"
         )
+    colon = set(colon_bonds)
+    for bi, bond in enumerate(bonds):
+        if bond[2] == _AROMATIC and bi not in colon and bi not in ring_edges:
+            bond[2] = 1                     # an implicit bond between aromatic atoms outside any aromatic ring
+
+
+def _aromatic_ring_bonds(atoms: list[_Atom], bonds: list[list[int]]) -> frozenset[int]:
+    """The bonds inside an aromatic ring (0.9.5 A18): a bond between two lowercase atoms that lies on a cycle of the
+    subgraph induced by the lowercase atoms -- every bond among them, whatever its written order (so a mixed spelling
+    such as ``c1=cc=cc=c1`` keeps its ring). A bond on a cycle only through an uppercase atom, or a bridge between two
+    aromatic rings, is not one."""
+    among = [bi for bi, (a, b, _order) in enumerate(bonds) if atoms[a].aromatic and atoms[b].aromatic]
+    ring = _cip_ring_edges(len(atoms), [bonds[bi] for bi in among])
+    return frozenset(among[k] for k in ring)
 
 
 # R2: bound the resonance enumeration. A benzenoid's Kekulé count is small (benzene 2, naphthalene 3,
@@ -961,7 +984,30 @@ def _min_constitution_placement(
     return best[0]
 
 
+#: 0.9.5 A18 (Wave E): ONE parse computes the resonance-canonical placement once. parse_smiles_features asks for it
+#: four times on identical inputs -- the isotope key, configuration perception, the CIP labels and the build -- and each
+#: ran its own placement search (an explicit-Kekule flake: four searches of 4.8M units each), so the placement-search
+#: ceiling bounded a search, never the call. Set only for the duration of one parse (never process-wide), keyed on the
+#: whole input content, so the result and its accounting are the same cold or warm.
+_PLACEMENT_MEMO: "ContextVar[dict | None]" = ContextVar("smartchem_placement_memo", default=None)
+
+
 def _canonical_kekule_orders(
+    atoms: list[_Atom], bonds: list[list[int]], charge: int, max_matchings: int = _MAX_KEKULE_MATCHINGS
+) -> tuple[int, ...]:
+    """:func:`_canonical_kekule_orders_computed`, computed once per parse for one exact input (``_PLACEMENT_MEMO``)."""
+    memo = _PLACEMENT_MEMO.get()
+    if memo is None:
+        return _canonical_kekule_orders_computed(atoms, bonds, charge, max_matchings)
+    key = (tuple((a.element, a.aromatic, a.charge, a.h_explicit, a.isotope, a.chirality) for a in atoms),
+           tuple(tuple(b) for b in bonds), charge, max_matchings)
+    hit = memo.get(key)
+    if hit is None:
+        hit = memo[key] = _canonical_kekule_orders_computed(atoms, bonds, charge, max_matchings)
+    return hit
+
+
+def _canonical_kekule_orders_computed(
     atoms: list[_Atom], bonds: list[list[int]], charge: int, max_matchings: int = _MAX_KEKULE_MATCHINGS
 ) -> tuple[int, ...]:
     """The resonance-canonical bond-order tuple for a (possibly MIXED aromatic-flagged + explicit) pi system.
@@ -2503,6 +2549,15 @@ def parse_smiles_features(text: str) -> tuple[Molecule, SmilesFeatures]:
         raise SmilesError("empty SMILES")
     atoms, bonds, directions, written_neighbours = _parse_skeleton_stereo(stripped)
     charge = sum(a.charge for a in atoms)
+    token = _PLACEMENT_MEMO.set({})      # A18: the four layers below share ONE placement search per exact input
+    try:
+        return _parse_smiles_features_layers(stripped, atoms, bonds, directions, written_neighbours, charge)
+    finally:
+        _PLACEMENT_MEMO.reset(token)
+
+
+def _parse_smiles_features_layers(stripped, atoms, bonds, directions, written_neighbours, charge):
+    """The body of :func:`parse_smiles_features` after the skeleton walk (A18: run inside one placement memo)."""
     # The isotope-refined key must see the PRISTINE aromatic bonds (_build_molecule mutates them during Kekulisation),
     # so compute it FIRST -- it takes a private copy of `bonds` and leaves the caller's list untouched.
     isotopic_digest = _isotopic_identity(atoms, bonds, charge) if any(a.isotope for a in atoms) else None

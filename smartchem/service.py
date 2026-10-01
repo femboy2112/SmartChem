@@ -1229,6 +1229,14 @@ def build_decompile_request(
 # -- the response ------------------------------------------------------------------------------------------------
 
 
+def _capability_work_units(profile) -> int:
+    """The ``capability_work`` one capability assessment costs (0.9.5 C8 F5, re-unit A18): one unit per declared bottle
+    AND one per bottle component -- the assessment walks every component (each name-keyed one is resolved through the
+    offline name table, ~0.75 ms apiece). Wave E: charged per bottle only, ONE bottle carrying 40,000 name-keyed
+    components loaded in 34 s for 32 units of 8,192 -- the counter bounded nothing. Minimum 1."""
+    return max(1, sum(1 + len(stock.components) for stock in profile.material_inventory))
+
+
 def _assess_route(profile: "CapabilityProfile", route: "object", *, readiness: "RouteReadiness | None" = None,
                   identity_losses: "tuple[IdentityLoss, ...]" = ()) -> "CapabilityAssessment":
     """The ONE capability-assessment expression: ``assess(profile, compile_capability_requirements(route), readiness)``.
@@ -1245,7 +1253,7 @@ def _assess_route(profile: "CapabilityProfile", route: "object", *, readiness: "
     # checked charge and the end of the load raise it again.  Exhaustion is never a skipped assessment.
     context = current_context()
     if context is not None:
-        context.meter.charge_deferred("capability_work", max(1, len(profile.material_inventory)))
+        context.meter.charge_deferred("capability_work", _capability_work_units(profile))
         context.meter.raise_if_exhausted()
     requirements = compile_capability_requirements(route)
     if readiness is None:
@@ -4819,10 +4827,21 @@ def _dag_height_bound(dag, max_depth: int) -> int:
     branches, a path crosses each branch at most once, and H(d) <= 1 + sum of the branches' H(d+1). A join has at most
     ``b`` branches (b = the most distinct reactants any step of the DAG consumes, keyed as the search keys them), and
     H(max_depth) = 1 (no recursion at the bound): H(1) <= 1 + b + ... + b**(max_depth - 1). A chain (b = 1) keeps the
-    strict law, height <= max_depth."""
+    strict law, height <= max_depth.
+
+    0.9.5 A18 (Wave E): the sum is taken only as far as the DAG's step count -- a height never exceeds it, so once the
+    partial sum reaches it the comparison is decided. ``max_depth`` is an uncapped wire integer, and the full sum was
+    big-integer work quadratic in it (an honest max_depth=100000 load spent 81 s here). The value returned is exact
+    while it is below the step count (every refusal), and otherwise some value at or above it."""
     from .smiles import resonance_identity
     b = max(1, max(len({resonance_identity(m) for m in step.reactants}) for step in dag.steps))
-    return sum(b ** i for i in range(max_depth))
+    cap, total, term = len(dag.steps), 0, 1
+    for _ in range(max_depth):
+        total += term
+        if total >= cap:
+            return total
+        term *= b
+    return total
 
 
 def _replay_chemistry(kind: str, replayed) -> tuple:

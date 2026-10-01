@@ -51,12 +51,25 @@ def _stub_dag(*reactant_lists: tuple[str, ...]):
 
 
 def test_bound_formula():
-    # one distinct reactant per step: a chain -- the strict law, height <= max_depth
-    chain = _stub_dag(("CCO",), ("CC=O", "CC=O"))
+    # exact while below the step count (here 12 steps): one distinct reactant per step is a chain -- the strict law
+    chain = _stub_dag(("CCO",), *([("CC=O", "CC=O")] * 11))
     assert [svc._dag_height_bound(chain, d) for d in (1, 2, 3)] == [1, 2, 3]
     # two distinct reactants on some step: 1 + 2 + 4 at max_depth=3
-    branched = _stub_dag(("CCO", "CC(=O)O"), ("O",))
+    branched = _stub_dag(("CCO", "CC(=O)O"), *([("O",)] * 11))
     assert [svc._dag_height_bound(branched, d) for d in (1, 2, 3)] == [1, 3, 7]
     # distinctness is the search's own key (resonance identity): two Kekule spellings of benzene are ONE reactant
-    kekule = _stub_dag(("C1=CC=CC=C1", "C1C=CC=CC=1"))
+    kekule = _stub_dag(("C1=CC=CC=C1", "C1C=CC=CC=1"), *([("O",)] * 11))
     assert svc._dag_height_bound(kekule, 3) == 3
+
+
+def test_bound_stops_at_the_step_count():
+    """Wave E (A18): max_depth is an uncapped wire integer; the full sum was quadratic big-integer work (an honest
+    max_depth=100000 load spent 81 s in it). Past the step count -- which no height exceeds -- the sum stops."""
+    import time
+    branched = _stub_dag(("CCO", "CC(=O)O"), ("O",), ("O",))
+    chain = _stub_dag(("CCO",), ("O",), ("O",))
+    t = time.perf_counter()
+    for dag in (branched, chain):
+        bound = svc._dag_height_bound(dag, 10 ** 12)
+        assert len(dag.steps) <= bound <= 2 * len(dag.steps)
+    assert time.perf_counter() - t < 1.0

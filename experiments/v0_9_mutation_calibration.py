@@ -6592,15 +6592,17 @@ def m249():
     return honest, rc2 == 70 and "ERROR_INTERNAL" in err2
 
 
-@mutant("M250", "S15 F-4: str.isdigit restored in the ring-closure lexer -- AUTO silently reads 'S²N²' as a ring",
+@mutant("M250", "S15 F-4: str.isdigit restored in the ring-closure lexer -- AUTO silently reads 'S²CN²' as a ring",
         "smiles._parse_skeleton_stereo (isdecimal ring labels; the ONE walk every skeleton reader shares)")
 def m250():
+    # A14 re-read: the original witness 'S²N²' closes a ring onto the S-N pair the chain already bonds, which A14 F1
+    # now refuses in the walk -- a stronger law that masked this mutant. 'S²CN²' closes a three-membered ring instead.
     import smartchem.smiles as smiles_mod
     from smartchem.identity_parse import IdentityParseError, resolve_identity
 
     def read():
         try:
-            return dict(resolve_identity("S²N²", InputKind.AUTO).formula.counts)
+            return dict(resolve_identity("S²CN²", InputKind.AUTO).formula.counts)
         except IdentityParseError:
             return None
 

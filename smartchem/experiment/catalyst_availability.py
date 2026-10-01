@@ -25,7 +25,9 @@ How a catalyst is classified (structure/reality, derived -- never a per-reaction
 :func:`catalyst_availability` maps a catalyst NAME to an :class:`~smartchem.data.reagents.Availability` tier or
 ``None`` (unrecognized), by, in order:
 
-1. an EXACT (case-normalized) match against the grounded commodity catalog by name
+1. an EXACT (case-normalized) match against the grounded commodity catalog by name -- where a case-only match
+   counts only if it certifies (0.9.5 A15: ``stock.case_fold_match_certifies`` against the key's honest spelling,
+   :data:`_CASE_EXACT_SPELLING`; a string whose case carries meaning matches only its own spelling)
    (:data:`~smartchem.data.reagents.COMMODITY_REAGENTS`) -- the same per-substance obtainability catalog the
    consumed-reagent layer uses;
 2. a grounded TRANSITION/HEAVY-metal guard: if a recognized substance's real element composition contains a
@@ -53,6 +55,7 @@ one live route that exercises this end-to-end -- isopentyl acetate's sourced ``c
 from __future__ import annotations
 
 from ..data.reagents import Availability, COMMODITY_REAGENTS
+from .stock import case_fold_match_certifies
 
 __all__ = [
     "NON_KITCHEN_METALS",
@@ -157,13 +160,21 @@ _CATALYST_TABLE: dict[str, Availability] = {
 }
 
 
-#: 0.9.5 S18 (barrier A10): the folded keys whose case variants spell DIFFERENT formulas -- ``"na2co3"`` is Na2CO3 or
-#: Na2Co3 (a cobalt salt), ``"pto2"`` is PtO2 or P+T+O2 (T = tritium).  A case-folded hit on one of them is not the same
-#: substance, so it matches only its exact spelling (whitespace-collapsed, case kept); any other spelling is
-#: unrecognized (and a declared unrecognized catalyst BLOCKS).  ``tests/test_v0_9_5_evidence_soundness.py`` pins that
-#: this ledger is complete over every name-keyed table this module folds.
+#: 0.9.5 S18 (barrier A10), generalised by A15 (Wave D F2/F10): the HONEST spelling of every folded key that carries a
+#: formula token. A folded key is lowercase; its real name may not be (``"hcl"`` is ``HCl``, ``"conc. h2so4"`` is
+#: ``conc. H2SO4``, ``"raney ni"`` is ``Raney Ni``). A key absent here is its own honest spelling (every commodity name
+#: is a fold fixed point). EVERY lookup -- not only these keys -- goes through ``stock.case_fold_match_certifies``
+#: against the honest spelling: a string whose case carries meaning (``"WAtEr"``, ``"CoNC H2SO4"``, ``"Na2Co3"``,
+#: ``"raney NI"``) matches only its own spelling, and a lowercase formula token matches only when its case reading is
+#: unique (``"hcl"`` yes, ``"na2co3"`` -- Na2CO3 or the cobalt salt -- no). S18 listed six keys found by a single-word
+#: regex and checked only those, so the multi-word ``conc h2so4`` (CoNC H2SO4 = a cobalt formula) and every plain-word
+#: key (``water`` -> W+At+Er) slipped past. ``tests/test_v0_9_5_wave_d_capability.py`` runs the exhaustive case-variant
+#: invariant over every key of both tables.
 _CASE_EXACT_SPELLING: dict[str, str] = {
     "k2co3": "K2CO3", "na2co3": "Na2CO3", "nahco3": "NaHCO3", "pdcl2": "PdCl2", "pto2": "PtO2", "ticl4": "TiCl4",
+    "h2so4": "H2SO4", "conc. h2so4": "conc. H2SO4", "conc h2so4": "conc H2SO4", "hcl": "HCl", "conc. hcl": "conc. HCl",
+    "naoh": "NaOH", "koh": "KOH", "rucl3": "RuCl3", "rhcl3": "RhCl3", "ircl3": "IrCl3", "raney ni": "Raney Ni",
+    "grubbs i": "Grubbs I", "grubbs ii": "Grubbs II",
 }
 
 
@@ -185,8 +196,9 @@ def catalyst_availability(name: str) -> Availability | None:
     norm = _norm(name)
     if not norm:
         return None
-    exact = _CASE_EXACT_SPELLING.get(norm)
-    if exact is not None and " ".join(name.split()) != exact:
+    # A15: a vouch is the unsafe direction, so a case-only hit counts only if it certifies against the key's honest
+    # spelling -- for EVERY key. "Water" passes; "WAtEr" (tungsten, astatine, erbium) and "CoNC H2SO4" do not.
+    if not case_fold_match_certifies(name, _CASE_EXACT_SPELLING.get(norm, norm)):
         return None
     # 1. grounded commodity catalog (identity + curated tier), with the metal guard applied BEFORE the tier is
     #    returned: a recognized substance built on a catalytic metal is an industrial catalyst system regardless of

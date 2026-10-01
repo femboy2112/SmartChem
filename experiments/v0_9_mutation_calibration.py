@@ -73,7 +73,11 @@ markers, InChI layers, ASCII letters, typed failures, the one name fold); A12 th
 ambiguity refusal (M-A12-1).  A14 (Wave D front door): M-A14-1 a ring closure onto a bonded pair (F1), M-A14-2 the
 typed Molecule ValueError in _build_molecule (F3), M-A14-3 the plan TARGET_FILE ambiguity refusal (F4), M-A14-4 the
 synthesize human helper parser routed through resolve_target (F6), M-A14-5 / M-A14-6 the explicit ':' law's two legs
-(F9: aromatic ends, ring bond), M-A14-7 the InChI /f and /r sublayer refusal (P3).
+(F9: aromatic ends, ring bond), M-A14-7 the InChI /f and /r sublayer refusal (P3).  A15 (Wave D capability/evidence): M-A15-1..9, one per fix -- the one-sided hazard gate
+(1), the every-key catalyst certification (2) and its whole-string / token / unique-reading legs (3-5), procurement by a
+bound name (6, F7), the covered string's forcing categories (7, F8), L3 on a USE_STREAM (8), the exact-spelling
+hazard-scan dedup (9); M-S18-12 / M-S18-14 / M-SD14 and the M-SD1 / M-SD9 twin-rinse fixture retargeted for the A15
+code shape.
 
 Run:  .venv/bin/python experiments/v0_9_mutation_calibration.py
       (dev only: SMARTCHEM_MUT_ONLY=M38,M104 runs a subset -- retirements then read VOID; the gate is the full run)
@@ -5329,8 +5333,11 @@ def _sd_flip(route, marker: str, *edits):
 
 
 def _sd_twin_rinses():
-    return _sd_route(_op(OperationKind.ADD, material_uses=(_use("cold water", ProcedureMaterialRole.RINSE),
-                                                           _use("cold water", ProcedureMaterialRole.RINSE))))
+    # 0.9.5 A15: the rinses carry water's identity -- L3 now binds a USE_STREAM, so an identity-less "cold water" (no
+    # hazard record) would refuse every ROUTED and M-SD1 / M-SD9 would read nothing.
+    return _sd_route(_op(OperationKind.ADD, material_uses=(
+        _use("cold water", ProcedureMaterialRole.RINSE, identity=_WATER),
+        _use("cold water", ProcedureMaterialRole.RINSE, identity=_WATER))))
 
 
 @mutant("M-SD1", "a disposition matched by its CORE, not the exact subject: one statement settles a twin stream",
@@ -5445,9 +5452,9 @@ def m_sd14():
     handling = _handling_with_byproducts(route, hazard_name=None, fate=Fate.CONDENSED,
                                          reason="fixture: condensed co-product, hazard UNASSESSED")
     with _patch(waste_mod, "verify_handling", lambda r, **kw: handling):
+        # A15: L3's kind set is the named _SPECIES_SUBJECT_KINDS now (USE_STREAM joined); same guard, same flip
         return _sd_flip(route, "NO hazard assessment",
-                        ("if subject.kind in (SubjectKind.BYPRODUCT, SubjectKind.RESIDUAL) and not hazard_known():",
-                         "if False:"))
+                        ("if subject.kind in _SPECIES_SUBJECT_KINDS and not hazard_known():", "if False:"))
 
 
 @mutant("M-SD4d", "a forged CONSUMED_COMPLETELY discharges a BYPRODUCT (derive-time kind x value law dropped)",
@@ -5683,8 +5690,9 @@ def m_s18_12():
 
     route = _sd_route(catalysts=("Sulfuric acid",))
     honest = _HAZ in waste_mod.derive_waste(route)[0]
-    exact = _src_mutant(hazards_mod.hazards_for_named, ("return _BY_NAME.get(normalize_material_name(name))",
-                                                        "return _BY_NAME.get(name)"))
+    # A15 retarget: the fold now feeds the one-sided gate (``ref = ...``); the exact-case revert is the same edit there
+    exact = _src_mutant(hazards_mod.hazards_for_named, ("ref = _BY_NAME.get(normalize_material_name(name))",
+                                                        "ref = _BY_NAME.get(name)"))
     with _patch(hazards_mod, "hazards_for_named", exact):
         bad = _HAZ not in waste_mod.derive_waste(route)[0]
     return honest, bad
@@ -5713,8 +5721,9 @@ def m_s18_14():
     import smartchem.experiment.catalyst_availability as ca_mod
 
     honest = ca_mod.catalyst_availability("Na2Co3") is None and ca_mod.catalyst_availability("Na2CO3") is not None
+    # A15 retarget: the S18 ledger check is now the every-key certification against the honest spelling
     folded = _src_mutant(ca_mod.catalyst_availability, (
-        'if exact is not None and " ".join(name.split()) != exact:', "if False:"))
+        "if not case_fold_match_certifies(name, _CASE_EXACT_SPELLING.get(norm, norm)):", "if False:"))
     return honest, folded("Na2Co3") is not None
 
 
@@ -7954,6 +7963,144 @@ def m_a14_7():
     with _patch(ip_m, "_inchi_formula_layer", bad_layer):
         bad = (_s17_read("InChI=1/CH4/f/q+1") == ({"C": 1, "H": 4}, 1)
                and _s17_read("InChI=1S/CH4/r/q+1") == ({"C": 1, "H": 4}, 1))
+    return honest, bad
+
+
+# -- 0.9.5 A15 (Wave D capability/evidence): the one-sided hazard gate, the every-key catalyst certification and its
+# three legs (whole string, token, unique reading), procurement by a bound name, the covered string's forcing
+# categories, L3 on a USE_STREAM, and the exact-spelling hazard-scan dedup. One mutant per fix. -------------------
+
+@mutant("M-A15-1", "a case-only hazard hit CLEARS again: 'WAtEr' (W+At+Er) gets water's empty record (F2)",
+        "data.hazards.hazards_for_named (one-sided gate: force on any possible match, clear only on certify)")
+def m_a15_1():
+    import smartchem.data.hazards as hazards_mod
+
+    route = _sd_route(_op(OperationKind.ADD, material_uses=(_use("WAtEr", ProcedureMaterialRole.CATALYST),)))
+
+    def unknown() -> bool:
+        return any("'WAtEr'" in u for u in requirements_mod.compile_capability_requirements(route).hazard_unresolved)
+
+    honest = (hazards_mod.hazards_for_named("WAtEr") is None and hazards_mod.hazards_for_named("Water") is not None
+              and unknown())
+    cleared = _src_mutant(hazards_mod.hazards_for_named, (
+        "if ref is None or ref.ghs_codes or case_fold_match_certifies(name, ref.name):", "if True:"))
+    with _patch(hazards_mod, "hazards_for_named", cleared):
+        bad = hazards_mod.hazards_for_named("WAtEr") is not None and not unknown()
+    return honest, bad
+
+
+@mutant("M-A15-2", "the catalyst case rule runs on S18's hand list only again: 'WAtEr' vouches GROCERY (F2)",
+        "catalyst_availability.catalyst_availability (every-key certification)")
+def m_a15_2():
+    import smartchem.experiment.catalyst_availability as ca_mod
+
+    honest = (ca_mod.catalyst_availability("WAtEr") is None
+              and ca_mod.catalyst_availability("Water") is Availability.GROCERY)
+    hand_list = _src_mutant(ca_mod.catalyst_availability, (
+        "if not case_fold_match_certifies(name, _CASE_EXACT_SPELLING.get(norm, norm)):",
+        'if norm in _CASE_EXACT_SPELLING and " ".join(name.split()) != _CASE_EXACT_SPELLING[norm]:'))
+    return honest, hand_list("WAtEr") is Availability.GROCERY
+
+
+def _a15_certify_mutant(edit):
+    """Install a mutated ``stock.case_fold_match_certifies`` at BOTH bindings (catalyst_availability imports it by name;
+    hazards resolves it from stock at call time)."""
+    import smartchem.experiment.catalyst_availability as ca_mod
+
+    bad = _src_mutant(stock_mod.case_fold_match_certifies, edit)
+    stack = contextlib.ExitStack()
+    stack.enter_context(_patch(stock_mod, "case_fold_match_certifies", bad))
+    stack.enter_context(_patch(ca_mod, "case_fold_match_certifies", bad))
+    return stack
+
+
+@mutant("M-A15-3", "a formula-shaped WHOLE query certifies by case again: 'CONC. H2SO4' (C2H2NO5S) vouches HARDWARE "
+        "(F10)", "stock.case_fold_match_certifies (S17 law 9 on the whole string)")
+def m_a15_3():
+    import smartchem.experiment.catalyst_availability as ca_mod
+
+    honest = (ca_mod.catalyst_availability("CONC. H2SO4") is None
+              and ca_mod.catalyst_availability("Conc. H2SO4") is Availability.HARDWARE)
+    with _a15_certify_mutant(("if q.casefold() != s.casefold() or reads_as_formula(q):",
+                              "if q.casefold() != s.casefold():")):
+        bad = ca_mod.catalyst_availability("CONC. H2SO4") is Availability.HARDWARE
+    return honest, bad
+
+
+@mutant("M-A15-4", "a formula-shaped TOKEN certifies by case again: 'sulfuric AcID' (Ac+I+D) vouches HARDWARE (F10)",
+        "stock.case_fold_match_certifies (token law: a query token that reads as a formula)")
+def m_a15_4():
+    import smartchem.experiment.catalyst_availability as ca_mod
+
+    honest = (ca_mod.catalyst_availability("sulfuric AcID") is None
+              and ca_mod.catalyst_availability("Sulfuric Acid") is Availability.HARDWARE)
+    with _a15_certify_mutant(("if reads_as_formula(a) or (reads_as_formula(b) and _unique_case_reading(a) != b):",
+                              "if reads_as_formula(b) and _unique_case_reading(a) != b:")):
+        bad = ca_mod.catalyst_availability("sulfuric AcID") is Availability.HARDWARE
+    return honest, bad
+
+
+@mutant("M-A15-5", "a lowercase formula token with TWO case readings certifies again: 'na2co3' (Na2CO3 or the cobalt "
+        "Na2Co3) vouches GROCERY", "stock.case_fold_match_certifies (unique-reading law, S18's ledger condition)")
+def m_a15_5():
+    import smartchem.experiment.catalyst_availability as ca_mod
+
+    honest = (ca_mod.catalyst_availability("na2co3") is None
+              and ca_mod.catalyst_availability("hcl") is Availability.HARDWARE)
+    with _a15_certify_mutant(("(reads_as_formula(b) and _unique_case_reading(a) != b)", "(False)")):
+        bad = ca_mod.catalyst_availability("na2co3") is Availability.GROCERY
+    return honest, bad
+
+
+@mutant("M-A15-6", "procurement vouches a typed CATALYST use by a display name that is not its identity's: H2SO4 "
+        "labelled 'water' reads GROCERY (F7)", "requirements._procurement_catalysts_requirement (name_resolves_to)")
+def m_a15_6():
+    route = _sd_route(_op(OperationKind.ADD, material_uses=(
+        _use("water", ProcedureMaterialRole.CATALYST, identity=_H2SO4),)))
+    honest = requirements_mod._procurement_catalysts_requirement(route) == (("water", None),)
+    vouch = _src_mutant(requirements_mod._procurement_catalysts_requirement, (
+        "None if key in unbound else catalyst_availability(cat)", "catalyst_availability(cat)"))
+    return honest, vouch(route) == (("water", Availability.GROCERY),)
+
+
+@mutant("M-A15-7", "a covering typed use (identity water) deletes the HAZARDOUS its envelope string's own name forces "
+        "(F8: monotonicity)", "waste.derive_waste (a covered string keeps its name's forcing categories)")
+def m_a15_7():
+    base = _sd_route(catalysts=("sulfuric acid",))
+    grown = _sd_route(_op(OperationKind.ADD, material_uses=(
+        _use("sulfuric acid", ProcedureMaterialRole.CATALYST, identity=_WATER),)), catalysts=("sulfuric acid",))
+    honest = _HAZ in waste_mod.derive_waste(base)[0] and _HAZ in waste_mod.derive_waste(grown)[0]
+    shed = _src_mutant(waste_mod.derive_waste, ("covered=cover is not None)", "covered=False)"))
+    return honest, _HAZ not in shed(grown)[0]
+
+
+@mutant("M-A15-8", "L3 forgets the USE_STREAM again: ROUTED(AQUEOUS_NEUTRAL) discharges the spent stream of a species "
+        "with NO hazard record", "waste._SPECIES_SUBJECT_KINDS (L3's reach)")
+def m_a15_8():
+    route = _sd_route(_op(OperationKind.ADD, material_uses=(_use("mystery wash", ProcedureMaterialRole.WASH),)))
+    route = _sd_with(route, _sd(_sd_subject(route, sd_mod.SubjectKind.USE_STREAM)))
+    marker = "spent workup stream 'mystery wash'"
+    honest = any(marker in u for u in waste_mod.derive_waste(route)[2])
+    with _patch(waste_mod, "_SPECIES_SUBJECT_KINDS",
+                frozenset({sd_mod.SubjectKind.BYPRODUCT, sd_mod.SubjectKind.RESIDUAL})):
+        bad = not any(marker in u for u in waste_mod.derive_waste(route)[2])
+    return honest, bad
+
+
+@mutant("M-A15-9", "the hazard scan merges identity-less uses under the CASEFOLD again: 'WAtEr' hides behind 'water' "
+        "and its UNKNOWN is dropped (F2)", "requirements._hazard_scan (exact-spelling dedup)")
+def m_a15_9():
+    route = _sd_route(_op(OperationKind.ADD, material_uses=(_use("water", ProcedureMaterialRole.CATALYST),
+                                                            _use("WAtEr", ProcedureMaterialRole.CATALYST))))
+
+    def unknown() -> bool:
+        return any("'WAtEr'" in u for u in requirements_mod.compile_capability_requirements(route).hazard_unresolved)
+
+    honest = unknown()
+    scan = _src_mutant(requirements_mod._hazard_scan, ('else f"name:{_exact_text(use.name)}"',
+                                                       'else f"name:{_norm_text(use.name)}"'))
+    with _patch(requirements_mod, "_hazard_scan", scan):
+        bad = not unknown()
     return honest, bad
 
 

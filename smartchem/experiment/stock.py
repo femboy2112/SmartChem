@@ -46,6 +46,8 @@ __all__ = [
     "is_structure_key",
     "normalize_material_name",
     "collapse_material_name",
+    "reads_as_formula",
+    "case_fold_match_certifies",
 ]
 
 #: Round V (barrier D8/D11): component v1alpha2 adds ``MaterialComponent.basis``/``.evidence``/``.states`` (Wave-C
@@ -122,6 +124,80 @@ def normalize_material_name(name: str) -> str:
     # two on a double space -- enough to BLOCK a bottle that was sitting right there. One owner now; the copies are
     # out. (collapse-then-casefold == the historical strip/casefold/split: casefold never mints whitespace.)
     return collapse_material_name(name).casefold()
+
+
+def reads_as_formula(text: str) -> bool:
+    """Whether ``text`` parses under the front-door formula grammar -- i.e. its letter CASE carries meaning (``WAtEr``
+    is W+At+Er; ``Co`` is cobalt, ``CO`` carbon monoxide). The grammar ignores whitespace, so a multi-word string can
+    read as ONE formula (``CoNC H2SO4`` is Co+N+C+H2SO4).
+
+    0.9.5 A15 (Wave D F2): the ONE owner of this test, beside the two folds it polices. ``structure.structure_by_name``
+    (S17 law 9) and :func:`case_fold_match_certifies` both call it; a second copy would be a second opinion on what a
+    formula is."""
+    from ..formula_expr import FormulaSyntaxError, parse_formula_expr  # lazy: formula_expr pulls in the decompiler
+
+    try:
+        parse_formula_expr(text)
+    except (FormulaSyntaxError, ValueError):
+        return False
+    return True
+
+
+#: A15: the most letters a token may carry before :func:`_unique_case_reading` stops enumerating its 2^n case variants
+#: and answers "not unique" (fail closed). Every formula token in a lookup table today has at most 6 letters.
+_CASE_READING_MAX_LETTERS = 12
+
+
+def _unique_case_reading(token: str) -> "str | None":
+    """The ONE case variant of ``token`` that reads as a formula, or ``None`` when none or several do (or the token is
+    too long to enumerate). ``hcl`` -> ``HCl``; ``na2co3`` -> ``None`` (Na2CO3 or Na2Co3); ``ni`` -> ``None`` (Ni or
+    N+I)."""
+    letters = [i for i, c in enumerate(token) if c.isalpha()]
+    if len(letters) > _CASE_READING_MAX_LETTERS:
+        return None
+    found: "str | None" = None
+    for mask in range(1 << len(letters)):
+        chars = list(token)
+        for bit, i in enumerate(letters):
+            chars[i] = chars[i].upper() if mask >> bit & 1 else chars[i].lower()
+        variant = "".join(chars)
+        if reads_as_formula(variant):
+            if found is not None and found != variant:
+                return None
+            found = variant
+    return found
+
+
+def case_fold_match_certifies(query: str, spelling: str) -> bool:
+    """May a table entry whose honest spelling is ``spelling`` CERTIFY (clear a hazard, vouch an availability) for the
+    name ``query``? The ONE rule every case-folding lookup that certifies obeys (0.9.5 A15, Wave D F2/F10): **a
+    case-only agreement never certifies a string whose letter case carries meaning.**
+
+    * Agreement under :func:`collapse_material_name` (whitespace only) certifies; disagreement under
+      :func:`normalize_material_name` never does (not even a possible match).
+    * S17 law 9: a case-only agreement is refused when the whole query reads as a formula (:func:`reads_as_formula`)
+      -- ``"WAtEr"`` is not ``"water"``, ``"CoNC H2SO4"`` is not ``"conc H2SO4"``, ``"Na2Co3"`` is not ``"Na2CO3"``.
+    * Token by token (whitespace tokens), for each token spelled differently: refused when the query's token reads as
+      a formula (``"raney NI"`` -- N+I, not nickel); and, when the HONEST token is a formula, refused unless that
+      formula is the ONLY case reading of the query's token (``"hcl"`` -> HCl passes; ``"na2co3"`` could be Na2CO3 or
+      the cobalt salt Na2Co3 and does not -- S18's exact-spelling ledger condition, now computed for every key).
+
+    ``"Water"``, ``"WATER"``, ``"Sulfuric acid"`` and ``"Conc. H2SO4"`` still certify. A refused query is not an
+    error: it reads UNKNOWN / unrecognized, the only honest answer to a string the formula grammar claims."""
+    q, s = collapse_material_name(query), collapse_material_name(spelling)
+    if q == s:
+        return True
+    if q.casefold() != s.casefold() or reads_as_formula(q):
+        return False
+    q_tokens, s_tokens = q.split(" "), s.split(" ")
+    if len(q_tokens) != len(s_tokens):
+        return False  # casefold never mints whitespace; fail closed if a future fold ever does
+    for a, b in zip(q_tokens, s_tokens):
+        if a == b:
+            continue
+        if reads_as_formula(a) or (reads_as_formula(b) and _unique_case_reading(a) != b):
+            return False
+    return True
 
 
 _STRUCT_PREFIX = "struct:"

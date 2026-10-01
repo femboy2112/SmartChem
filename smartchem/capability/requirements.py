@@ -46,7 +46,9 @@ from ..experiment.equipment import EquipmentKind, equipment_for_step
 from ..experiment.handling import CareLevel, verify_handling
 from ..experiment.step import ExperimentRoute
 from ..experiment.stock import collapse_material_name as _exact_text
-from ..experiment.stock import normalize_material_name as _norm_text
+# A15: no call here folds case any more (the hazard-scan dedups moved to the exact fold); the binding stays because the
+# S8 one-owner pin (tests/test_v0_9_5_material_identity.py) and the mutation gate (M98, M-S18-15) read it by name.
+from ..experiment.stock import normalize_material_name as _norm_text  # noqa: F401
 from ..experiment.stock import structure_key
 from ..material_spec import MaterialSpecification, PhaseClaim
 from ..procedure_evidence import OperationKind, ProcedureMaterialRole
@@ -677,7 +679,10 @@ def _hazard_scan(
             continue
         for op in procedure.operations:
             for use in op.material_uses:
-                key = structure_key(use.identity) if use.identity is not None else f"name:{_norm_text(use.name)}"
+                # A15: an identity-less use dedups on the EXACT spelling. ``hazards_for_named`` answers case variants
+                # differently now ("water" -> water's record, "WAtEr" -> None), so a fold-keyed merge would let the
+                # first spelling answer for the second and drop its UNKNOWN.
+                key = structure_key(use.identity) if use.identity is not None else f"name:{_exact_text(use.name)}"
                 if key in seen:
                     continue
                 seen.add(key)
@@ -692,7 +697,7 @@ def _hazard_scan(
                 kind = "an unresolvable ionic/mixture species" if use.identity is None else "no GHS record"
                 _fold(f"procedure-only {use.name!r} ({use.role.value})", hazard, kind)
     for raw, locator in untyped:
-        key = f"untyped:{_norm_text(raw)}"
+        key = f"untyped:{_exact_text(raw)}"  # A15: exact spelling, as above
         if key in seen:
             continue
         seen.add(key)
@@ -972,7 +977,17 @@ def _procurement_catalysts_requirement(
     """One ``(name, tier)`` pair per catalyst the route DECLARES -- every ``envelope.catalysts`` entry AND (D13) every
     typed CATALYST use not already listed -- deduplicated under the case-KEEPING fold (0.9.5 S18, barrier A10: a
     case-only merge could drop ``"Na2Co3"`` behind ``"Na2CO3"``, and the classifier answers them differently), ``tier``
-    resolved through the UNMODIFIED ``catalyst_availability`` classifier (``None`` = honest UNRECOGNIZED)."""
+    resolved through the UNMODIFIED ``catalyst_availability`` classifier (``None`` = honest UNRECOGNIZED).
+
+    0.9.5 A15 (Wave D F7): the classifier reads a NAME, so it may vouch only for a name that IS the use's structure. A
+    typed CATALYST use whose display name does not resolve to its own identity (``name_resolves_to``: H2SO4 labelled
+    ``"water"``) earns no tier -- ``None``, UNRECOGNIZED, a declared catalyst that BLOCKS -- and neither does any
+    envelope string spelled exactly like it (the string would otherwise carry the label's vouch back in)."""
+    unbound: "set[str]" = {
+        _exact_text(u.name) for step in route.steps if step.envelope.procedure is not None
+        for op in step.envelope.procedure.operations for u in op.material_uses
+        if u.role is ProcedureMaterialRole.CATALYST and u.identity is not None
+        and not name_resolves_to(u.name, u.identity)}
     seen: "dict[str, tuple[str, Availability | None]]" = {}
     for step in route.steps:
         names = list(step.envelope.catalysts)
@@ -983,7 +998,7 @@ def _procurement_catalysts_requirement(
         for cat in names:
             key = _exact_text(cat)
             if key and key not in seen:
-                seen[key] = (cat, catalyst_availability(cat))
+                seen[key] = (cat, None if key in unbound else catalyst_availability(cat))
     return tuple(seen.values())
 
 

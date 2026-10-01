@@ -682,10 +682,20 @@ def test_s18r_no_case_folded_lookup_key_names_two_formulas():
 
     assert not ambiguous({ref.name for ref in HAZARD_REFS})
     catalyst_keys = set(ca._COMMODITY_BY_NAME) | set(ca._CATALYST_TABLE)
-    assert ambiguous(catalyst_keys) == set(ca._CASE_EXACT_SPELLING)
+    # 0.9.5 A15 (Wave D F10): the ledger is now the honest spelling of EVERY formula-token key -- a superset of the
+    # two-reading ones, multi-word keys included -- and the case rule runs on every key, ledger or not. The exhaustive
+    # case-variant invariant lives in tests/test_v0_9_5_wave_d_capability.py.
+    assert ambiguous(catalyst_keys) <= set(ca._CASE_EXACT_SPELLING)
     for key, spelling in ca._CASE_EXACT_SPELLING.items():
         assert spelling.casefold() == key
-        parse_formula_expr(spelling)  # the exact spelling is itself a formula
+        parsed = 0
+        for token in spelling.split():
+            try:
+                parse_formula_expr(token)
+                parsed += 1
+            except ValueError:  # FormulaSyntaxError is a ValueError
+                continue
+        assert parsed, spelling  # every entry spells at least one formula token
     # the instrument discriminates: a collision key IS caught, a plain one is not
     assert len(_case_variant_formulas("co")) == 2 and len(_case_variant_formulas("hcl")) == 1
 

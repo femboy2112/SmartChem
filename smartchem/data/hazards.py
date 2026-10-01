@@ -668,10 +668,20 @@ def hazards_for_named(name: str) -> HazardRef | None:
     0.9.5 S18 (C1-1): the query goes through the ONE material-name fold (``stock.normalize_material_name``), so
     ``"Sulfuric acid"`` and ``" sulfuric  acid "`` reach the sulfuric-acid record instead of missing it -- a miss
     here used to read as "no record" and let a capitalised catalyst string shed its GHS codes. A name that folds to
-    no record stays ``None``: unassessed, never benign."""
-    from ..experiment.stock import normalize_material_name  # lazy: experiment.stock pulls in this data package
+    no record stays ``None``: unassessed, never benign.
 
-    return _BY_NAME.get(normalize_material_name(name))
+    0.9.5 A15 (Wave D F2): the fold is a POSSIBLE match, and the one-sided rule governs what it may return -- a
+    folded hit may FORCE (a record that carries GHS codes is returned on any possible match) but may CLEAR (an empty,
+    assessed-benign record) only when the match certifies (``stock.case_fold_match_certifies``: a case-only agreement
+    never certifies a string whose case carries meaning). ``"WAtEr"`` spells W+At+Er; S18's fold handed it water's
+    EMPTY record, and a tungsten/astatine/erbium catalyst reached CAPABILITY_FIT. It is ``None`` (UNKNOWN) now;
+    ``"Water"`` / ``"WATER"`` (no formula reading) still reach water."""
+    from ..experiment.stock import case_fold_match_certifies, normalize_material_name  # lazy: stock pulls in data
+
+    ref = _BY_NAME.get(normalize_material_name(name))
+    if ref is None or ref.ghs_codes or case_fold_match_certifies(name, ref.name):
+        return ref
+    return None
 
 
 def hazards_for_formula_all(formula: str) -> tuple[HazardRef, ...]:

@@ -90,6 +90,14 @@ Round V X-high amendments (barrier D17):
   its own step net-consumes opens an undischargeable role-contradiction line for every mention sharing its folded name,
   in place of their resolved category (UNKNOWN, never FIT).
 
+0.9.5 A15 (Wave D):
+
+* **F8: a covered string keeps its name's FORCING categories.** C1-1 reads a covered envelope string through its
+  cover's identity; its own name record may still add the categories it forces (never clear, never discharge), so a
+  typed use whose identity lacks the name's GHS can no longer delete what the string alone derived (monotone again).
+* **L3 binds a USE_STREAM.** A ROUTED on the spent stream of a use whose species has no hazard record discharges
+  nothing (it used to discharge with ``AQUEOUS_NEUTRAL`` alone); the species-less OP_STREAM stays the boundary.
+
 Every reason quotes the real ``Fate``. Nothing here decides FIT/BLOCKED/UNKNOWN (that fold is assess's).
 """
 from __future__ import annotations
@@ -136,6 +144,11 @@ __all__ = ["derive_waste"]
 _ROUTED_ONLY: "frozenset[DispositionValue]" = frozenset({DispositionValue.ROUTED})
 _ROUTED_OR_RECOVERED: "frozenset[DispositionValue]" = frozenset({DispositionValue.ROUTED, DispositionValue.RECOVERED})
 _ANY_VALUE: "frozenset[DispositionValue]" = frozenset(DispositionValue)
+#: L3's reach: the subject kinds that name a species, so a ROUTED on them is checked against that species' hazard
+#: record. 0.9.5 A15: USE_STREAM joined -- a ROUTED(AQUEOUS_NEUTRAL) on the spent stream of an unassessed species used
+#: to discharge it with no record behind it.
+_SPECIES_SUBJECT_KINDS: "frozenset[SubjectKind]" = frozenset(
+    {SubjectKind.BYPRODUCT, SubjectKind.RESIDUAL, SubjectKind.USE_STREAM})
 
 
 def _check_role_totality() -> None:
@@ -309,7 +322,9 @@ def derive_waste(
         if disposition.value is DispositionValue.ROUTED:
             if type(disposition.category) is not WasteCapability:
                 return "ROUTED carries no WasteCapability category"
-            if subject.kind in (SubjectKind.BYPRODUCT, SubjectKind.RESIDUAL) and not hazard_known():
+            # A15: a USE_STREAM names a species too (its use's), so L3 binds it exactly as it binds a byproduct or a
+            # residual; only the species-less OP_STREAM is exempt (S18 boundary).
+            if subject.kind in _SPECIES_SUBJECT_KINDS and not hazard_known():
                 return "the species has no hazard record, so a species-level routing cannot be checked (L3)"
             if fate is Fate.OFFGAS and disposition.category is not WasteCapability.OFFGAS_CAPTURE:
                 return f"ROUTED({disposition.category.value}) contradicts the derived OFFGAS fate"
@@ -413,7 +428,8 @@ def derive_waste(
 
     # ``catalyst_seen`` / ``residual_seen`` are (re)bound PER STEP in the loop below (D-C2); this closure reads the
     # current step's set at call time.
-    def _catalyst(s_index: int, identity, name: str, where: str, subject: "StreamSubject | None") -> None:
+    def _catalyst(s_index: int, identity, name: str, where: str, subject: "StreamSubject | None",
+                  covered: bool = False) -> None:
         key = _norm_text(name)  # S8: the ONE name fold
         if key in contradicted:
             unresolved.add(
@@ -432,6 +448,17 @@ def derive_waste(
         catalyst_seen.add(seen)
         hazard = _resolve_hazard(identity, name)
         label = f"catalyst residual {name!r} ({where})"
+        if covered and (hazard is None or not hazard.ghs_codes):
+            # A15 (Wave D F8): a covered envelope string is read through its cover's identity (C1-1), but its OWN name
+            # record may still FORCE -- one-sided, never a clearance and never a discharge. Without this, adding a
+            # typed use ("sulfuric acid" whose identity is water) under an envelope "sulfuric acid" deleted the
+            # HAZARDOUS the string alone derived: the monotonicity law broken by the cover-identity rule.
+            named = _resolve_hazard(None, name)
+            if named is not None and named.ghs_codes:
+                categories.update(_hazard_categories(tuple(named.ghs_codes)))
+                reasons.add(f"waste: {label} -- its own name carries sourced GHS {', '.join(named.ghs_codes)} "
+                            f"({named.name}); a name may force a category its cover's identity lacks, never clear one "
+                            "(A15)")
         if hazard is not None and hazard.ghs_codes:
             categories.update(_hazard_categories(tuple(hazard.ghs_codes)))
             reasons.add(f"waste: catalyst residual {name!r} ({where}) is not consumed and carries sourced GHS "
@@ -463,7 +490,7 @@ def derive_waste(
             # a record. (An uncovered string resolves by its own folded name; no record stays UNKNOWN.)
             cover = next((u for u in typed_catalysts if _name_covers(u.name, cat)), None)
             _catalyst(s_index, None if cover is None else cover.identity, cat, f"step {s_index} envelope catalyst",
-                      None if cover is None else _residual(s_index, cover))
+                      None if cover is None else _residual(s_index, cover), covered=cover is not None)
         # Part IV: ``envelope.medium`` is condition PROSE / provenance only -- it is never read as a stream.
         covered: "set[str]" = set()   # species a consumed-role (SUBSTRATE/REACTANT) typed use answers for
         typed: "set[str]" = set()     # species ANY typed use names (for the reason text only)
@@ -514,6 +541,8 @@ def derive_waste(
                         if not _settle(s_index, subject, _ROUTED_OR_RECOVERED,
                                        f"step {s_index} op #{op.ordinal} use[{index}] spent workup stream "
                                        f"{use.name!r}",
+                                       hazard_known=lambda use=use: _resolve_hazard(use.identity, use.name)
+                                       is not None,
                                        species_ghs=lambda use=use: _ghs(_resolve_hazard(use.identity, use.name))):
                             unresolved.add(
                                 f"waste: spent workup stream {use.name!r} ({use.role.value}) -- the sourced "

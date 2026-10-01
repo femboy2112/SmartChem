@@ -620,8 +620,10 @@ def test_a_fate_contradiction_stays_unknown_never_blocked():
 # =====================================================================================================================
 
 def test_dc1_two_same_named_use_streams_are_two_obligations():
-    route = _micro(_op(uses=(_use("cold water", ProcedureMaterialRole.RINSE),
-                                _use("cold water", ProcedureMaterialRole.RINSE))))
+    # 0.9.5 A15: the rinses carry water's identity -- an identity-less "cold water" has no hazard record, and L3 now
+    # refuses a ROUTED on the spent stream of an unassessed species (tests/test_v0_9_5_wave_d_capability.py).
+    route = _micro(_op(uses=(_use("cold water", ProcedureMaterialRole.RINSE, _WATER),
+                                _use("cold water", ProcedureMaterialRole.RINSE, _WATER))))
     first = _subject_of(route, SubjectKind.USE_STREAM, index=0)
     second = _subject_of(route, SubjectKind.USE_STREAM, index=1)
     marker = "spent workup stream 'cold water'"

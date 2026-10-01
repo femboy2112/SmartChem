@@ -617,6 +617,7 @@ def structure_by_name(name: str) -> "NamedStructure | None":
         if name in structure.all_names:
             return structure
     from .experiment.stock import collapse_material_name, normalize_material_name  # lazy: experiment imports us
+    from .experiment.stock import reads_as_formula as _reads_as_formula  # A15: the fold owner owns the formula test
 
     exact = collapse_material_name(name)
     for structure in _REGISTERED:
@@ -629,17 +630,6 @@ def structure_by_name(name: str) -> "NamedStructure | None":
         if any(normalize_material_name(label) == needle for label in structure.all_names):
             return structure
     return None
-
-
-def _reads_as_formula(text: str) -> bool:
-    """Whether ``text`` parses under the front-door formula grammar -- i.e. its letter CASE carries meaning."""
-    from .formula_expr import FormulaSyntaxError, parse_formula_expr
-
-    try:
-        parse_formula_expr(text)
-    except (FormulaSyntaxError, ValueError):
-        return False
-    return True
 
 
 def registered_structures() -> tuple[NamedStructure, ...]:

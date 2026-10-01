@@ -422,14 +422,15 @@ def test_s5_a_dag_higher_than_the_pinned_depth_is_refused():
 
 
 def test_s5_honest_dags_are_within_their_height_bound():
-    """S5's premise, measured (never assumed): honest convergent DAGs carry MORE steps than max_depth but never a greater
-    HEIGHT -- a step-count law would refuse honest answers."""
+    """S5's premise, measured (never assumed): honest convergent DAGs carry MORE steps than max_depth -- a step-count law
+    would refuse honest answers. (Their HEIGHT may exceed max_depth too once branches share an intermediate -- A17,
+    ``tests/test_v0_9_5_dag_height_bound.py``; the law is ``service._dag_height_bound``.)"""
     from smartchem.process_constraints import ProcessBounds
     resp = run_compilation(svc.build_recompile_request(
         "smiles:CC(=O)OC", max_depth=2, grammar=svc.TransformGrammar.CAPPED_SCISSION_CONVERGENT,
         helper_reagents=("water", "acetic acid"), process=ProcessBounds.of(max_total_minutes=30.0)))
     dags = [svc._reconstruct_dag(d.replay_payload) for d in resp.ranked_dag_dossiers]
-    assert dags and all(svc._dag_height(d) <= 2 for d in dags)
+    assert dags and all(svc._dag_height(d) <= svc._dag_height_bound(d, 2) for d in dags)
     assert any(len(d.steps) > 2 for d in dags), "the premise the law rests on: step count > max_depth occurs honestly"
 
 

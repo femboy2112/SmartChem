@@ -80,7 +80,8 @@ hazard-scan dedup (9), no GHS-forcing bypass on an uncertified variant (10, pare
 code shape.  A16 transport-loader hardening: M-A16-1..7, one per item -- the public
 loaders' typed-refusal decorator and the load scope's fold (Wave D F5), the producer_signature shape (F11), the
 capability_work counter never charged / charged after the work / exhaustion turned into a skip (C8 F5), and the
-payload depth ceiling (C8 F4, dict leg).
+payload depth ceiling (C8 F4, dict leg).  A17 (parent): the S5 DAG-height law corrected to the proven
+search bound (M-A17-1 the old max_depth law, M-A17-2 the bound's top power dropped); M236 re-anchored.
 
 Run:  .venv/bin/python experiments/v0_9_mutation_calibration.py
       (dev only: SMARTCHEM_MUT_ONLY=M38,M104 runs a subset -- retirements then read VOID; the gate is the full run)
@@ -5773,6 +5774,8 @@ def _rc(name: str):
             "wide": lambda: build_recompile_request(_FAST_TARGET, max_routes=100, **_RC_PAIR),
             "shallow_dag": lambda: build_recompile_request(_FAST_TARGET, max_depth=1, **_RC_DAG),
             "deep_dag": lambda: build_recompile_request(_FAST_TARGET, max_depth=3, **_RC_DAG),
+            # A17: isopentyl acetate at max_depth=3 -- honest DAGs 4 high (branch merging stacks heights)
+            "tall_dag": lambda: build_recompile_request("smiles:CC(=O)OCCC(C)C", max_depth=3, **_RC_DAG),
             # the one DAG world whose steps carry a SHIPPED corpus envelope (Fischer esterification of salicylic acid)
             "mesal_dag": lambda: build_recompile_request(
                 "smiles:COC(=O)c1ccccc1O", max_depth=2, helper_reagents=("water",),
@@ -6232,13 +6235,14 @@ def _deeper_dags() -> dict:
 
 
 @mutant("M236", "S5 DAG-height law dropped: a max_depth=3 convergent answer loads under a max_depth=1 request",
-        "service.CompilationResponse._check_request_answer_coherence (_dag_height <= max_depth)")
+        "service.CompilationResponse._check_request_answer_coherence (_dag_height <= _dag_height_bound)")
 def m236():
     forged = _deeper_dags()
     _l, err = _try_load(forged)
     honest = err is not None and "(0.9.5 S5)" in err
     bad_chk = _src_mutant(CompilationResponse._check_request_answer_coherence, (
-        'if kind == "DAG" and _dag_height(replayed) > request.search_bounds.value("max_depth"):', "if False:"))
+        'if kind == "DAG" and _dag_height(replayed) > _dag_height_bound(',
+        'if False and _dag_height(replayed) > _dag_height_bound('))
     with _patch(CompilationResponse, "_check_request_answer_coherence", bad_chk):
         loaded, _err = _try_load(forged)
     return honest, loaded is not None and bool(loaded.ranked_dag_dossiers)
@@ -6256,8 +6260,10 @@ def m237():
     payload = response_to_payload(resp)
     loaded, _err = _try_load(payload)
     honest = loaded is not None
-    bad_chk = _src_mutant(CompilationResponse._check_request_answer_coherence, ("_dag_height(replayed)",
-                                                                                "len(replayed.steps)", 2))
+    # A17: under the proven bound a step count is ALSO sound (a search tree has at most 1 + b + ... + b**(D-1) steps
+    # and merging only removes), so the bad behaviour is the step count against max_depth -- S5's first draft.
+    bad_chk = _src_mutant(CompilationResponse._check_request_answer_coherence, (
+        "_dag_height(replayed) > _dag_height_bound(", "len(replayed.steps) > (lambda _dag, _md: _md)("))
     with _patch(CompilationResponse, "_check_request_answer_coherence", bad_chk):
         _l, err = _try_load(payload)
     return honest, err is not None and "(0.9.5 S5)" in err
@@ -8123,6 +8129,37 @@ def m_a15_10():
         "if ref is None or ref.ghs_codes or case_fold_match_certifies(name, ref.name):"))
     got = forcing("sulfuric AcID")
     return honest, got is not None and got.ghs_codes == ("H290", "H314")
+
+
+# -- 0.9.5 A17 (parent): the S5 DAG-height law corrected to the bound the convergent search obeys ---------------------
+
+def _a17_tall_refused(chk) -> "str | None":
+    payload = response_to_payload(_rc("tall_dag"))
+    with _patch(CompilationResponse, "_check_request_answer_coherence", chk):
+        _l, err = _try_load(payload)
+    return err
+
+
+@mutant("M-A17-1", "S5 bounds a DAG's height by max_depth again: an honest isopentyl DAG 4 high at max_depth=3 is refused",
+        "service.CompilationResponse._check_request_answer_coherence (_dag_height_bound, not max_depth)")
+def m_a17_1():
+    assert max(svc._dag_height(svc._reconstruct_dag(d.replay_payload)) for d in _rc("tall_dag").ranked_dag_dossiers) > 3
+    honest = _a17_tall_refused(CompilationResponse._check_request_answer_coherence) is None
+    # the bound replaced by max_depth itself (S5 as first written)
+    bad = _src_mutant(CompilationResponse._check_request_answer_coherence, (
+        "_dag_height(replayed) > _dag_height_bound(", "_dag_height(replayed) > (lambda _dag, _md: _md)("))
+    err = _a17_tall_refused(bad)
+    return honest, err is not None and "(0.9.5 S5)" in err
+
+
+@mutant("M-A17-2", "the S5 bound drops its top branch power (1 + b + ... + b**(D-2)): the honest 4-high DAG is refused",
+        "service._dag_height_bound (sum over range(max_depth))")
+def m_a17_2():
+    honest = _a17_tall_refused(CompilationResponse._check_request_answer_coherence) is None
+    short = _src_mutant(svc._dag_height_bound, ("for i in range(max_depth))", "for i in range(max_depth - 1))"))
+    with _patch(svc, "_dag_height_bound", short):
+        err = _a17_tall_refused(CompilationResponse._check_request_answer_coherence)
+    return honest, err is not None and "(0.9.5 S5)" in err
 
 
 # -- 0.9.5 A16 (transport-loader hardening): Wave D F5 / F11, Wave C8 F5 / F4 (dict leg) -- one mutant per item ----------

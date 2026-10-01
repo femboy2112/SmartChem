@@ -2147,14 +2147,16 @@ class CompilationResponse:
                         f"{where}: the replayed route has {len(replayed.steps)} steps but the carried request bounds the "
                         f"search at max_depth={request.search_bounds.value('max_depth')} -- an answer to a DEEPER search; "
                         f"refused (D27.6){self._legacy_hint()}")
-                # 0.9.5 S5 (Wave-A G F4), the DAG leg: the convergent search recurses from depth 1 while
-                # depth < max_depth, so an honest DAG's HEIGHT (the longest producer->consumer chain ending at its
-                # sink) is at most max_depth -- its STEP COUNT may exceed it (branches), so the step count is not the law.
-                if kind == "DAG" and _dag_height(replayed) > request.search_bounds.value("max_depth"):
+                # 0.9.5 S5 (Wave-A G F4), the DAG leg, as corrected by A17: an honest DAG's HEIGHT (the longest
+                # producer->consumer chain ending at its sink) is bounded by :func:`_dag_height_bound` -- NOT by
+                # max_depth (branch merging stacks heights) and not by the step count (branches).
+                if kind == "DAG" and _dag_height(replayed) > _dag_height_bound(
+                        replayed, request.search_bounds.value("max_depth")):
                     raise ValueError(
-                        f"{where}: the replayed DAG is {_dag_height(replayed)} steps high but the carried request bounds "
-                        f"the search at max_depth={request.search_bounds.value('max_depth')} -- an answer to a DEEPER "
-                        f"search; refused (0.9.5 S5){self._legacy_hint()}")
+                        f"{where}: the replayed DAG is {_dag_height(replayed)} steps high but an honest search at the "
+                        f"carried max_depth={request.search_bounds.value('max_depth')} emits at most "
+                        f"{_dag_height_bound(replayed, request.search_bounds.value('max_depth'))} (A17 bound) -- an "
+                        f"answer to a DEEPER search; refused (0.9.5 S5){self._legacy_hint()}")
                 # 0.9.5 S4 (Wave-A G F3): ONE chemistry, ONE dossier.  The route digest hashes literal atom order, so a
                 # replay with its atoms renumbered is a "distinct" route that every identity check (D26.1, D29.1, D27.1,
                 # conservation) passes and every tally counts again; keyed on STRUCTURES it is the same chemistry.
@@ -4797,6 +4799,25 @@ def _dag_height(dag) -> int:
     def height(index: int) -> int:
         return 1 + max((height(p) for p in producers.get(index, ())), default=0)
     return height(dag.sink_index)
+
+
+def _dag_height_bound(dag, max_depth: int) -> int:
+    """The tallest DAG an honest convergent search bounded at ``max_depth`` can emit (0.9.5 A17: the S5 bound, proven).
+
+    S5 assumed ``height <= max_depth``. False: ``search_dags`` makes each missing precursor of a join in its own branch
+    and merges the branches keeping the FIRST producer of each target (``routes._merge_branches``), so a later branch's
+    consumer can be fed by an earlier branch's deeper producer and heights STACK -- isopentyl acetate at max_depth=3
+    (``tests/test_v0_9_5_dag_height_bound.py``) emits honest DAGs 4 high, and S5 refused that honest payload.
+
+    The bound: a target is never in stock, and a branch makes every non-stock reactant its steps need, so the first
+    producer of anything a branch consumes is in that branch or an EARLIER one -- edges never run backwards across
+    branches, a path crosses each branch at most once, and H(d) <= 1 + sum of the branches' H(d+1). A join has at most
+    ``b`` branches (b = the most distinct reactants any step of the DAG consumes, keyed as the search keys them), and
+    H(max_depth) = 1 (no recursion at the bound): H(1) <= 1 + b + ... + b**(max_depth - 1). A chain (b = 1) keeps the
+    strict law, height <= max_depth."""
+    from .smiles import resonance_identity
+    b = max(1, max(len({resonance_identity(m) for m in step.reactants}) for step in dag.steps))
+    return sum(b ** i for i in range(max_depth))
 
 
 def _replay_chemistry(kind: str, replayed) -> tuple:

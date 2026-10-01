@@ -101,6 +101,7 @@ from __future__ import annotations
 
 import hmac
 import contextvars
+import re
 import functools
 import importlib
 import json
@@ -186,6 +187,7 @@ from .legacy_v08 import (  # 0.9.5 I2: the frozen v0.8 kernel; readers left here
 from .verification import (
     UNPINNED,
     DigestRule,
+    MalformedPayloadError,
     PinState,
     SchemaGeneration,
     SignatureState,
@@ -194,7 +196,9 @@ from .verification import (
     VerifiedLoad,
     _issue_receipt,
     _issue_verified_load,
+    _malformed_is_refused,
     cached_enumerate,
+    count_payload_nodes,
     current_context,
     predicted_enumeration_work,
 )
@@ -230,6 +234,7 @@ __all__ = [
     "response_from_payload",
     "load_response",
     "load_response_text",
+    "MalformedPayloadError",
     "serialize_response",
     "deserialize_response",
     "resolve_producer_key",
@@ -1234,6 +1239,14 @@ def _assess_route(profile: "CapabilityProfile", route: "object", *, readiness: "
     two hand-kept copies (0.9.5 E2, Lane A D3).  Requirements are compiled BEFORE readiness is (re-)evaluated -- the
     loader's historical evaluation order, kept so even an exception surfaces from the same call it always did.
     """
+    # 0.9.5 (Wave C8 F5): a load's capability re-derivation is budgeted, one unit per declared bottle, charged BEFORE the
+    # work and refused BEFORE it too -- an over-budget assessment never runs.  The overflow is recorded STICKY first
+    # (a deferred counter), so a handler above that swallowed this refusal could still not finish the load: the next
+    # checked charge and the end of the load raise it again.  Exhaustion is never a skipped assessment.
+    context = current_context()
+    if context is not None:
+        context.meter.charge_deferred("capability_work", max(1, len(profile.material_inventory)))
+        context.meter.raise_if_exhausted()
     requirements = compile_capability_requirements(route)
     if readiness is None:
         readiness = evaluate_route(route, identity_losses=identity_losses)
@@ -5119,6 +5132,24 @@ def _constraints_from_payload(payload: object) -> ConstraintPolicy:
     )
 
 
+def _refusing_malformed(decode):
+    """A one-payload public decoder (0.9.5 Wave D F5 + C8 F4, dict leg): a nesting deeper than any honest payload (or a
+    cycle) is refused by :func:`~smartchem.verification.count_payload_nodes` before the decoder recurses, and a shape the
+    decoder cannot read refuses as :class:`~smartchem.verification.MalformedPayloadError` -- never a bare ``TypeError``
+    / ``AttributeError`` / ``KeyError`` / ``IndexError``.  Defined HERE, not in ``verification``: the wrapper's globals
+    are this module's, so a source-level re-compilation of a decorated loader still resolves its names."""
+    @functools.wraps(decode)
+    def refusing(payload):
+        with _malformed_is_refused():
+            count_payload_nodes(payload)
+            return decode(payload)
+    return refusing
+
+
+#: The wire's ``producer_signature`` shape: ``transport_integrity._sign_result_digest`` is an HMAC-SHA256 ``hexdigest``.
+_HEX64_SIGNATURE = re.compile(r"[0-9a-f]{64}")
+
+
 def request_to_payload(request: CompilationRequest) -> dict:
     """A canonical JSON-ready dict for a request; ``canonical_digest`` of the round-trip is stable.
 
@@ -5228,6 +5259,7 @@ def _require_payload_keys(payload: object, required: "frozenset[str]", what: str
                          f"{sorted(missing)}; refused (D28.5)")
 
 
+@_refusing_malformed
 def request_from_payload(payload: dict) -> CompilationRequest:
     """Reconstruct a request from :func:`request_to_payload`; re-validates via the frozen records' guards.
 
@@ -5332,7 +5364,8 @@ def _json_payload(text: str) -> object:
     """``json.loads`` for the three text loaders.  0.9.5 (Wave C8 F4): a text nested deeper than the JSON decoder can
     recurse is a REFUSAL (``ValueError``, the stable class), never an escaping ``RecursionError``."""
     try:
-        return json.loads(text)
+        with _malformed_is_refused():                  # 0.9.5 Wave D F5: a non-text argument is a typed refusal too
+            return json.loads(text)
     except RecursionError:
         raise ValueError("payload text nests deeper than the JSON decoder can read; refused (0.9.5 C8 F4)") from None
 
@@ -5376,6 +5409,7 @@ def ranked_summary_to_payload(summary: RankedRouteSummary, *, include_replay: bo
     return payload
 
 
+@_refusing_malformed
 def ranked_summary_from_payload(payload: dict) -> RankedRouteSummary:
     """Reconstruct a ranked-route summary; re-validates via its __post_init__ coherence checks.  ``replay_payload`` is
     optional (absent -> None): a verified-admission consumer treats a FITS route lacking it as UNVERIFIED, never admitted.
@@ -5501,6 +5535,7 @@ def _exact_hold_triple(triple) -> "tuple[int, int, float]":
     return (i, j, float(minutes))
 
 
+@_refusing_malformed
 def ranked_dag_summary_from_payload(payload: dict) -> RankedDAGSummary:
     """Reconstruct a DAG combined bench admission; re-validates via its __post_init__ (edge-shape + coherence) guards.
     ``edges`` wire types are validated BEFORE coercion (:func:`_exact_int_pair`), so a bool/float/string index cannot
@@ -5579,6 +5614,7 @@ def affordability_entry_to_payload(entry) -> dict:
     }
 
 
+@_refusing_malformed
 def affordability_entry_from_payload(payload: dict):
     """Reconstruct an affordability-frontier entry; re-validates via its (and the CostVector's) __post_init__.
     ``hard_blockers`` and ``fiction_blockers`` are coerced back to tuples -- the CostVector guard rejects a list, so
@@ -5628,6 +5664,7 @@ def provider_snapshot_to_payload(snap) -> dict:
     }
 
 
+@_refusing_malformed
 def provider_snapshot_from_payload(payload: dict):
     """Reconstruct a provider snapshot; re-validates via its __post_init__.  ``provider_ids`` is coerced back to a
     tuple (the guard rejects a list), so the round-trip is exact."""
@@ -5871,10 +5908,11 @@ def _verification_scope(load):
         token = _LOAD_IN_PROGRESS.set(True)
         try:
             if current_context() is not None:          # the context load_response installed for THIS load
-                return load(payload, **kwargs)
+                with _malformed_is_refused():
+                    return load(payload, **kwargs)
             legacy = {name: kwargs.get(name, default) for name, default in _LEGACY_TRUST_DEFAULTS.items()}
             context = VerificationContext(_resolve_load_policy(kwargs.get("policy"), legacy))
-            with context.activate():
+            with context.activate(), _malformed_is_refused():
                 return load(payload, **kwargs)
         finally:
             _LOAD_IN_PROGRESS.reset(token)
@@ -6001,6 +6039,14 @@ def response_from_payload(payload: dict, *, verification_key: bytes | None = Non
     # is silently defaulted.
     _require_payload_keys(payload, _RESPONSE_PAYLOAD_KEYS if version == COMPILATION_RESPONSE_SCHEMA
                           else _V08_RESPONSE_PAYLOAD_KEYS, "response")
+    # 0.9.5 (Wave D F11): the signature slot is null or an HMAC-SHA256 hex digest -- on EVERY load.  A keyless load does
+    # not verify it (the ledger keeps it advisory there), but the slot is no free carrier: 0 / {} / [] / NaN / "xxx" all
+    # loaded before.  A SHAPE law only; a keyed load still authenticates the digest below.
+    claimed = payload.get("producer_signature")
+    if claimed is not None and (type(claimed) is not str or _HEX64_SIGNATURE.fullmatch(claimed) is None):
+        shape = f"a {len(claimed)}-character str" if type(claimed) is str else type(claimed).__name__
+        raise ValueError(f"producer_signature must be null or a 64-hex-digit HMAC-SHA256 digest, got {shape}; refused "
+                         f"(0.9.5 Wave D F11)")
     # 0.9.5 (Wave C8 F6): a THIN_ADVISORY payload carries NO replay evidence.  A canonical payload relabelled thin
     # while keeping its replays loaded through response_from_payload yet was refused by load_response (its receipt
     # would count re-derived dossiers on a thin wire) -- two public loaders, two verdicts.  One law, at dispatch.

@@ -77,7 +77,10 @@ synthesize human helper parser routed through resolve_target (F6), M-A14-5 / M-A
 (1), the every-key catalyst certification (2) and its whole-string / token / unique-reading legs (3-5), procurement by a
 bound name (6, F7), the covered string's forcing categories (7, F8), L3 on a USE_STREAM (8), the exact-spelling
 hazard-scan dedup (9); M-S18-12 / M-S18-14 / M-SD14 and the M-SD1 / M-SD9 twin-rinse fixture retargeted for the A15
-code shape.
+code shape.  A16 transport-loader hardening: M-A16-1..7, one per item -- the public
+loaders' typed-refusal decorator and the load scope's fold (Wave D F5), the producer_signature shape (F11), the
+capability_work counter never charged / charged after the work / exhaustion turned into a skip (C8 F5), and the
+payload depth ceiling (C8 F4, dict leg).
 
 Run:  .venv/bin/python experiments/v0_9_mutation_calibration.py
       (dev only: SMARTCHEM_MUT_ONLY=M38,M104 runs a subset -- retirements then read VOID; the gate is the full run)
@@ -210,6 +213,7 @@ from smartchem.smiles import parse_smiles
 from smartchem.structure import structure_by_name
 from smartchem.verification import (
     ENUMERATION_CACHE,
+    MalformedPayloadError,
     PinState,
     SearchOutputTrust,
     VerificationBudget,
@@ -8102,6 +8106,196 @@ def m_a15_9():
     with _patch(requirements_mod, "_hazard_scan", scan):
         bad = not unknown()
     return honest, bad
+
+
+# -- 0.9.5 A16 (transport-loader hardening): Wave D F5 / F11, Wave C8 F5 / F4 (dict leg) -- one mutant per item ----------
+
+_A16_CACHE: dict = {}
+_A16_CHARGE = 'context.meter.charge_deferred("capability_work", max(1, len(profile.material_inventory)))'
+_A16_GATE = "context.meter.raise_if_exhausted()"
+
+
+def _a16_bench():
+    """methyl acetate (2 routes) under the 7-bottle isopentyl fit bench: each assessment charges 7 capability_work."""
+    if "bench" not in _A16_CACHE:
+        req = build_recompile_request(_FAST_TARGET, max_depth=2, capability_profile=isopentyl_capability_fit_bench())
+        _A16_CACHE["bench"] = (req, response_to_payload(run_compilation(req)),
+                               len(req.capability_profile.material_inventory))
+    req, thick, bottles = _A16_CACHE["bench"]
+    return req, copy.deepcopy(thick), bottles
+
+
+def _a16_typed(call) -> str:
+    """'typed' (MalformedPayloadError), 'refused' (another ValueError), 'bare' (an untyped TypeError/AttributeError/
+    KeyError/IndexError), 'crash' (RecursionError) or 'loaded'."""
+    try:
+        call()
+        return "loaded"
+    except MalformedPayloadError:
+        return "typed"
+    except ValueError:
+        return "refused"
+    except (TypeError, AttributeError, KeyError, IndexError):
+        return "bare"
+    except RecursionError:
+        return "crash"
+
+
+def _a16_tight(bottles: int) -> VerificationPolicy:
+    """A capability budget one unit short of a single assessment: an honest bench load must refuse before any runs."""
+    return VerificationPolicy(budget=VerificationBudget(capability_work=bottles - 1))
+
+
+@mutant("M-A16-1", "F5: the typed-refusal decorator removed -- a type-confused request leaks a bare TypeError",
+        "service._refusing_malformed (request_from_payload, deserialize_request)")
+def m_a16_1():
+    bad = copy.deepcopy(_poor_thick()["request"])
+    bad["stock_materials"] = None
+    text = json.dumps(bad)
+    honest = (_a16_typed(lambda: svc.request_from_payload(copy.deepcopy(bad))) == "typed"
+              and _a16_typed(lambda: svc.deserialize_request(text)) == "typed")
+    with _patch(svc, "request_from_payload", svc.request_from_payload.__wrapped__):
+        leaked = (_a16_typed(lambda: svc.request_from_payload(copy.deepcopy(bad))) == "bare"
+                  and _a16_typed(lambda: svc.deserialize_request(text)) == "bare")
+    return honest, leaked
+
+
+@mutant("M-A16-2", "F5: the load-scope fold removed -- a type confusion in the response body leaks a bare TypeError",
+        "service._verification_scope (_malformed_is_refused around the load)")
+def m_a16_2():
+    """``transport_mode = []`` trips ``response_from_payload``'s OWN body (an unhashable set member), outside every
+    decorated sub-decoder -- only the scope's fold types it.  Mutant: both branches of the scope lose the fold."""
+    payload = _poor_thick()
+    payload["transport_mode"] = []
+
+    def outcomes():
+        return {_a16_typed(lambda f=f: f(copy.deepcopy(payload))) for f in (load_response, svc.response_from_payload)}
+
+    honest = outcomes() == {"typed"}
+    bad_scope = _src_mutant(svc._verification_scope, ("_malformed_is_refused()", "_mut_no_fold()", 2))
+    bad_scope.__globals__["_mut_no_fold"] = contextlib.nullcontext
+    with _patch(svc, "response_from_payload", bad_scope(svc.response_from_payload.__wrapped__)):
+        leaked = outcomes() == {"bare"}
+    return honest, leaked
+
+
+@mutant("M-A16-3", "F11: the producer_signature shape check removed -- a keyless load accepts producer_signature=0",
+        "service.response_from_payload (producer_signature is null or 64-hex, on every load)")
+def m_a16_3():
+    payload = _poor_thick()
+    payload["producer_signature"] = 0
+    _l, exc = _attempt(lambda: load_response(copy.deepcopy(payload)))
+    honest = exc is not None and "producer_signature must be null or a 64-hex-digit" in str(exc)
+    with _patch(svc, "response_from_payload", _bad_loader((
+            "if claimed is not None and (type(claimed) is not str or _HEX64_SIGNATURE.fullmatch(claimed) is None):",
+            "if False:"))):
+        loaded, _e = _attempt(lambda: load_response(copy.deepcopy(payload)))
+    return honest, loaded is not None
+
+
+@mutant("M-A16-4", "C8 F5: capability_work never charged -- a load over the capability budget loads",
+        "service._assess_route (charge_deferred('capability_work', ...))")
+def m_a16_4():
+    _req, thick, bottles = _a16_bench()
+    _l, exc = _attempt(lambda: load_response(copy.deepcopy(thick), _a16_tight(bottles)))
+    honest = isinstance(exc, VerificationBudgetExceeded) and exc.counter == "capability_work"
+    with _patch(svc, "_assess_route", _src_mutant(svc._assess_route, (_A16_CHARGE, "pass"))):
+        loaded, _e = _attempt(lambda: load_response(copy.deepcopy(thick), _a16_tight(bottles)))
+    return honest, loaded is not None and loaded.receipt.work.capability_work == 0
+
+
+@mutant("M-A16-5", "C8 F5: capability_work charged AFTER the assessment -- the bounded work runs before it is refused",
+        "service._assess_route (charge + gate before the work)")
+def m_a16_5():
+    """Honest: a budget short of one assessment refuses with ZERO assessments run (an ``assess`` spy).  Mutant: the
+    same refusal, but only after the assessment it was meant to prevent."""
+    _req, thick, bottles = _a16_bench()
+    calls: list = []
+    real = svc.assess_capability
+
+    def spy(*args, **kwargs):
+        calls.append(1)
+        return real(*args, **kwargs)
+
+    def run_tight():
+        calls.clear()
+        _l, exc = _attempt(lambda: load_response(copy.deepcopy(thick), _a16_tight(bottles)))
+        return exc, len(calls)
+
+    with _patch(svc, "assess_capability", spy):
+        exc, n = run_tight()
+        honest = isinstance(exc, VerificationBudgetExceeded) and exc.counter == "capability_work" and n == 0
+        ret = "return assess_capability(profile, requirements, readiness)"
+        bad_assess = _src_mutant(svc._assess_route, (_A16_CHARGE, "pass"), (_A16_GATE, "pass"), (
+            ret, f"result = assess_capability(profile, requirements, readiness)\n    if context is not None:\n"
+                 f"        {_A16_CHARGE}\n        {_A16_GATE}\n    return result"))
+        with _patch(svc, "_assess_route", bad_assess):
+            exc2, n2 = run_tight()
+    return honest, isinstance(exc2, VerificationBudgetExceeded) and n2 >= 1
+
+
+def _a16_charge_or_skip(context, profile) -> bool:
+    """The mutant's "helpful" capability budget: an over-budget re-derivation is SKIPPED -- never recorded, never
+    refused -- instead of refusing the load."""
+    if context is None:
+        return True
+    units = max(1, len(profile.material_inventory))
+    limit = context.meter.budget.capability_work
+    if limit is not None and context.meter.consumed("capability_work") + units > limit:
+        return False
+    context.meter._consumed["capability_work"] += units
+    return True
+
+
+@mutant("M-A16-6", "C8 F5: capability exhaustion SKIPS the re-derivation instead of refusing -- the payload loads",
+        "service._assess_route x CompilationResponse._check_capability_coherence (exhaustion is a refusal)")
+def m_a16_6():
+    """Honest: over the capability budget the load refuses (typed, sticky).  Mutant: the budget moved from the work site
+    to a skip at the verdict site -- the over-budget assessment is skipped, nothing is recorded, the payload loads."""
+    _req, thick, bottles = _a16_bench()
+    _l, exc = _attempt(lambda: load_response(copy.deepcopy(thick), _a16_tight(bottles)))
+    honest = isinstance(exc, VerificationBudgetExceeded) and exc.counter == "capability_work"
+    bad_assess = _src_mutant(svc._assess_route, (_A16_CHARGE, "pass"), (_A16_GATE, "pass"))
+    with _patch(svc, "_assess_route", bad_assess):
+        rederive = "rederived = _assess_route(profile, route, identity_losses=self.identity_losses)"
+        indent = _indent_of(CompilationResponse._check_capability_coherence, rederive)
+        bad_chk = _src_mutant(CompilationResponse._check_capability_coherence, (
+            rederive, f"if not _mut_cap_skip(current_context(), profile):\n{indent}    continue\n{indent}{rederive}"))
+        bad_chk.__globals__["_mut_cap_skip"] = _a16_charge_or_skip
+        with _patch(CompilationResponse, "_check_capability_coherence", bad_chk):
+            loaded, _e = _attempt(lambda: load_response(copy.deepcopy(thick), _a16_tight(bottles)))
+    return honest, loaded is not None
+
+
+@mutant("M-A16-7", "C8 F4 (dict leg): the depth ceiling removed -- a 5,000-deep profile node crashes the load "
+        "(RecursionError, not a refusal)", "verification.count_payload_nodes (depth > _MAX_PAYLOAD_DEPTH)")
+def m_a16_7():
+    def deep_payload() -> dict:   # built fresh: copy.deepcopy itself recurses on a 5,000-deep node
+        payload = _poor_thick()
+        deep = node = {"type": "tuple", "items": []}
+        for _ in range(5_000):
+            child = {"type": "tuple", "items": []}
+            node["items"].append(child)
+            node = child
+        for field in payload["request"]["capability_profile"]["fields"]:
+            if field[0] == "material_inventory":
+                field[1] = deep
+        return payload
+
+    def outcome() -> str:
+        try:
+            load_response(deep_payload())
+            return "loaded"
+        except ValueError as exc:
+            return "depth" if "nests containers more than" in str(exc) else "refused"
+        except RecursionError:
+            return "crash"
+
+    honest = outcome() == "depth"
+    bad = _src_mutant(ver_mod.count_payload_nodes, ("if depth > _MAX_PAYLOAD_DEPTH:", "if False:"))
+    with _patch(ver_mod, "count_payload_nodes", bad), _patch(svc, "count_payload_nodes", bad):
+        crashed = outcome() == "crash"
+    return honest, crashed
 
 
 # =================================================================================================================

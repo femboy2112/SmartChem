@@ -52,6 +52,7 @@ __all__ = [
     "ENUMERATION_CACHE",
     "EnumerationCache",
     "EnumerationCacheStats",
+    "MalformedPayloadError",
     "PinState",
     "SchemaGeneration",
     "SearchOutputTrust",
@@ -147,7 +148,7 @@ def _require_bool(owner: str, value: object) -> None:
 
 #: Every budget counter, in the barrier's order.
 _BUDGET_COUNTERS = ("payload_nodes", "dossiers", "replay_steps", "steps_per_dossier", "enumeration_targets",
-                    "work_per_target", "work_total", "reexecutions", "canonical_work")
+                    "work_per_target", "work_total", "reexecutions", "canonical_work", "capability_work")
 #: Counters bounding ONE item (a dossier, a target) rather than a running total: checked via
 #: :meth:`WorkMeter.check_item`, and the ledger records the MAXIMUM item seen, not a sum.
 _PER_ITEM_COUNTERS = frozenset({"steps_per_dossier", "work_per_target"})
@@ -156,11 +157,38 @@ _PER_ITEM_COUNTERS = frozenset({"steps_per_dossier", "work_per_target"})
 #: the reaction-type oracle, which the barrier (§5) forbids a budget to interrupt.  So its overflow is STICKY: it is
 #: raised by the next checked charge of any counter, and by :meth:`VerificationContext.activate` when the load ends --
 #: never from inside a canonicalisation.  See :meth:`WorkMeter.charge_canonical`.
-_DEFERRED_COUNTERS = frozenset({"canonical_work"})
+#: ``capability_work`` (0.9.5 Wave C8 F5) is deferred too -- recorded STICKY by :meth:`WorkMeter.charge_deferred` -- so
+#: an overflow refuses the load even if code between the charge and the end of the load swallows the refusal; its one
+#: call site then raises at once (``service._assess_route``), so an over-budget assessment is never run.
+_DEFERRED_COUNTERS = frozenset({"canonical_work", "capability_work"})
 _CUMULATIVE_COUNTERS = frozenset(_BUDGET_COUNTERS) - _PER_ITEM_COUNTERS - _DEFERRED_COUNTERS
 
 #: Only :meth:`VerificationBudget.unlimited` holds this; it is the one licence for a ``None`` (= no limit) counter.
 _UNLIMITED_LICENCE = object()
+
+#: 0.9.5 (Wave C8 F4, dict leg) -- the deepest container nesting a payload may have (the root container is depth 1).
+#: The decoders recurse on nesting (a capability-profile node nested 5,000 deep crashed ``response_from_payload`` with
+#: ``RecursionError``, not a refusal), so depth is a STRUCTURAL ceiling like cyclicity, checked by
+#: :func:`count_payload_nodes`' iterative walk before any decode -- not a budget a caller raises.  MEASURED 2026-10-01 by
+#: ``experiments/v0_9_5_loader_bounds.py`` (container depth, this convention): every committed JSON fixture <= 13 (the
+#: v0.8 payloads 12-13); the frozen service cases and perf payloads (request, thick and thin) <= 28 -- the maximum is a
+#: request carrying ``isopentyl_capability_fit_bench()`` (its StockMaterial specifications nest deepest); depth follows
+#: the SCHEMA's shape, not the payload's size.  The ceiling is two-sided: 128 = 4.6x that maximum (the same ratio the
+#: v0.8 fixtures' depth gave the first draft's 64), and a load of a payload nested AT 128 needs 258 frames of the
+#: interpreter's default 1,000 (a 3.9x headroom; 64 needed 130).
+_MAX_PAYLOAD_DEPTH = 128
+
+#: 0.9.5 (Wave C8 F5) -- capability re-derivation is verification work.  One unit = one declared bottle of the
+#: request's profile, charged per capability assessment (``service._assess_route``: the requirement compile + ``assess``
+#: over the inventory; ``max(1, bottles)``) BEFORE it runs.  The payload chooses the bench under an unpinned policy, and
+#: an assessment's cost grows with the bottles it matches against (Wave C8: 1,792 bottles x 27 dossiers loaded in 74.7 s
+#: ACCEPTED with no counter moving).  MEASURED 2026-10-01 by ``experiments/v0_9_5_loader_bounds.py`` over the four loads
+#: (plain thick, pinned + verified-admission thick, plain thin, pinned re-execution) of every frozen service case and
+#: perf payload, and every v0.8 fixture: maximum 567 = 7 bottles x 81 assessments (isopentyl, 27 routes, under
+#: ``isopentyl_capability_fit_bench()``, pinned re-execution; its plain load 378); every benchless answer 0.  8 x 567 =
+#: 4,536 -> rounded up to 2**13 (14.4x).  A bench of more than ~100 bottles on a 27-route answer re-executed needs an
+#: explicit ``VerificationBudget(capability_work=...)`` -- the budget is conservative by design.
+_DEFAULT_CAPABILITY_WORK = 1 << 13
 
 #: MEASURED 2026-09-29 by ``count_payload_nodes`` on honest canonical (thick) payloads (Wave-B ``rc-verification-core``):
 #: the recipe payload -- ``build_recompile_request("isopentyl acetate", helper_reagents=("water", "acetic acid"),
@@ -206,6 +234,7 @@ class VerificationBudget:
     work_total: "int | None" = 131_072
     reexecutions: "int | None" = 1
     canonical_work: "int | None" = _DEFAULT_CANONICAL_WORK
+    capability_work: "int | None" = _DEFAULT_CAPABILITY_WORK
     _licence: InitVar[object] = None
 
     def __post_init__(self, _licence: object) -> None:
@@ -274,6 +303,7 @@ class WorkLedger:
     work_total: int = 0
     reexecutions: int = 0
     canonical_work: int = 0
+    capability_work: int = 0
 
     def __post_init__(self) -> None:
         if not isinstance(self.budget, VerificationBudget):
@@ -303,13 +333,14 @@ def count_payload_nodes(payload: object, *, stop_after: "int | None" = None) -> 
     walk returns as soon as the count exceeds it (the returned count is then a lower bound, > ``stop_after``), so an
     oversized payload is refused without being walked in full.  A shared sub-object is counted once per occurrence
     (the decoder walks it once per occurrence too); a CYCLIC payload -- impossible from JSON, possible from an
-    in-process dict -- is refused rather than walked forever.
+    in-process dict -- is refused rather than walked forever; so is one nested deeper than ``_MAX_PAYLOAD_DEPTH``
+    containers (0.9.5 Wave C8 F4: the RECURSIVE decoders would otherwise die in ``RecursionError``, not a refusal).
     """
     count = 0
     on_path: set[int] = set()
-    stack: list[tuple[object, bool]] = [(payload, False)]
+    stack: list[tuple[object, bool, int]] = [(payload, False, 1)]
     while stack:
-        node, leaving = stack.pop()
+        node, leaving, depth = stack.pop()
         if leaving:
             on_path.discard(id(node))
             continue
@@ -324,14 +355,42 @@ def count_payload_nodes(payload: object, *, stop_after: "int | None" = None) -> 
             continue
         if id(node) in on_path:
             raise ValueError("the payload is cyclic (a container contains itself); refused")
+        if depth > _MAX_PAYLOAD_DEPTH:
+            raise ValueError(f"the payload nests containers more than {_MAX_PAYLOAD_DEPTH} deep; no honest payload does "
+                             f"-- refused before any decode (0.9.5 C8 F4)")
         if stop_after is not None and count + len(children) > stop_after:
             # every child is at least one more node: the limit is already passed, so do not even queue them
             # (a flat million-element list would otherwise be pushed in full just to be refused).
             return count + len(children)
         on_path.add(id(node))
-        stack.append((node, True))
-        stack.extend((child, False) for child in children)
+        stack.append((node, True, depth))
+        stack.extend((child, False, depth + 1) for child in children)
     return count
+
+
+class MalformedPayloadError(ValueError, TypeError):
+    """A payload whose SHAPE a decoder cannot even read: a JSON type where the schema names another (``null`` for an
+    array, an array for a string), a missing nested key.  0.9.5 (Wave D F5): the public loaders leaked the raw
+    ``TypeError`` / ``AttributeError`` / ``KeyError`` / ``IndexError`` of whichever access tripped first -- outside the
+    stable refusal class.  It IS a ``ValueError`` (the refusal class every loader raises) and ALSO a ``TypeError``, so a
+    caller that caught the old leak keeps catching it.  Raised only by :func:`_malformed_is_refused`: a refusal."""
+
+
+@contextmanager
+def _malformed_is_refused() -> "Iterator[None]":
+    """Re-raise a decoder's shape error as :class:`MalformedPayloadError` -- the ONE mapping, at the public loaders.
+
+    It maps at the loader BOUNDARY (a handler inside the load still sees the original class, as before) and only ever
+    to an exception -- a malformed payload becomes a refusal, never a load.  Everything else passes untouched: a
+    ``ValueError`` already is the refusal class, a :class:`VerificationBudgetExceeded` must stay itself, and a
+    ``RecursionError`` is no shape error (:func:`count_payload_nodes` refuses nesting before a decoder recurses)."""
+    try:
+        yield
+    except MalformedPayloadError:
+        raise
+    except (TypeError, AttributeError, KeyError, IndexError) as exc:
+        raise MalformedPayloadError(f"malformed payload ({type(exc).__name__}: {exc}); refused (0.9.5 Wave D F5)") \
+            from exc
 
 
 class WorkMeter:
@@ -360,7 +419,7 @@ class WorkMeter:
     def _cumulative(self, counter: str) -> str:
         if counter not in _CUMULATIVE_COUNTERS:
             hint = (" (a per-item counter: use check_item)" if counter in _PER_ITEM_COUNTERS
-                    else " (a deferred counter: use charge_canonical)" if counter in _DEFERRED_COUNTERS else "")
+                    else " (a deferred counter: use charge_deferred)" if counter in _DEFERRED_COUNTERS else "")
             raise ValueError(f"unknown cumulative budget counter {counter!r}{hint}; refused")
         return counter
 
@@ -447,6 +506,21 @@ class WorkMeter:
         nodes = count_payload_nodes(payload, stop_after=remaining)
         self.charge("payload_nodes", nodes)
         return nodes
+
+    def charge_deferred(self, counter: str, amount: int) -> None:
+        """Record ``amount`` units of the DEFERRED ``counter`` (0.9.5 C8 F5: ``capability_work``) BEFORE the work they
+        bound, never raising here: an overflow is STICKY exhaustion exactly as in :meth:`charge_canonical` -- raised by
+        :meth:`raise_if_exhausted`, by the next checked charge and by :meth:`VerificationContext.activate` at the end of
+        the load, so no handler between the charge and the end of the load can turn it into an answer."""
+        if counter not in _DEFERRED_COUNTERS:
+            raise ValueError(f"unknown deferred budget counter {counter!r} (deferred: {sorted(_DEFERRED_COUNTERS)}); "
+                             f"refused")
+        amount = _require_amount(amount)
+        would_be = self._consumed[counter] + amount
+        self._consumed[counter] = would_be
+        limit = getattr(self.budget, counter)
+        if self._exhausted is None and limit is not None and would_be > limit:
+            self._exhausted = (counter, limit, would_be)
 
     def snapshot(self) -> WorkLedger:
         return WorkLedger(budget=self.budget, **self._consumed)

@@ -25,10 +25,12 @@ COMPONENT identity lives with the material model (StockMaterial, section 10).  N
 """
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass
 from enum import Enum
 
 from .contracts import Digestible, canonical_digest
+from .verification import _malformed_is_refused, count_payload_nodes
 
 __all__ = [
     "IDENTITY_LOSS_SCHEMA",
@@ -176,6 +178,20 @@ _IDENTITY_LOSS_PAYLOAD_KEYS = frozenset({
 })
 
 
+def _refusing_malformed(decode):
+    """0.9.5 (Wave D F5 + C8 F4, dict leg) -- this module's twin of ``service._refusing_malformed`` (each module keeps
+    its own so the wrapper's globals are the decorated loader's, see there): a cyclic or too-deep payload is refused by
+    :func:`~smartchem.verification.count_payload_nodes` before decoding, and a shape the decoder cannot read refuses as
+    :class:`~smartchem.verification.MalformedPayloadError`, never a bare ``TypeError`` / ``KeyError`` / ..."""
+    @functools.wraps(decode)
+    def refusing(payload):
+        with _malformed_is_refused():
+            count_payload_nodes(payload)
+            return decode(payload)
+    return refusing
+
+
+@_refusing_malformed
 def identity_loss_from_payload(payload: dict) -> IdentityLoss:
     """Rebuild an :class:`IdentityLoss` from :func:`identity_loss_to_payload`, re-validating every invariant.
 

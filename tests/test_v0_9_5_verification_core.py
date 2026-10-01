@@ -249,7 +249,10 @@ def test_count_payload_nodes_counts_every_value_and_stops_early():
     for _ in range(200_000):                                  # no recursion: nesting depth cannot exhaust the stack
         node.append([])
         node = node[0]
-    assert count_payload_nodes(deep) == 200_001
+    # 0.9.5 A16 (C8 F4, dict leg): such nesting is now REFUSED by the same iterative walk -- typed, before any decoder
+    # could recurse -- instead of counted (tests/test_v0_9_5_loader_hardening.py pins the ceiling itself).
+    with pytest.raises(ValueError, match="nests containers more than"):
+        count_payload_nodes(deep)
     # early stop: the root's million children are counted by len(), never queued -- a lower bound past the limit.
     assert count_payload_nodes(list(range(10 ** 6)), stop_after=10) == 1 + 10 ** 6
     assert count_payload_nodes([[1, 2, 3], [4, 5, 6]], stop_after=4) == 5    # root + one sublist + its 3 children

@@ -362,6 +362,7 @@ def main() -> int:
            "wall_seconds": time.time() - t0, "generated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
            "payloads": recs}
     stem = a.out_dir / f"RESULTS_v0_9_5_verification_performance_{a.label}"
+    stem.parent.mkdir(parents=True, exist_ok=True)   # never lose a finished measurement to a missing --out-dir
     stem.with_suffix(".json").write_text(json.dumps(res, indent=1, sort_keys=True) + "\n")
     stem.with_suffix(".md").write_text(_md(res))
     print(f"wrote {stem}.md/.json")

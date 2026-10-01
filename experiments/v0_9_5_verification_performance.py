@@ -115,7 +115,7 @@ def _payload_path(name: str, cache: Path) -> Path:
 
 def _ensure_payload(name: str, cache: Path, rebuild: bool) -> Path:
     path = _payload_path(name, cache)
-    if path.exists() and not rebuild:
+    if path.exists() and (not rebuild or path == LEGACY_FIXTURE):   # the real v0.8 fixture is read, never rebuilt
         return path
     cache.mkdir(parents=True, exist_ok=True)
     print(f"[build] {name} ...", flush=True)

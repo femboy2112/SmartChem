@@ -1,0 +1,210 @@
+{
+ "dag_every": 6,
+ "generated_utc": "2026-10-01T17:38:02Z",
+ "invariants": {
+  "cache_on_off_identity": {
+   "doc": "enumeration cache on/off byte-identical accepted results",
+   "fail": 0,
+   "failures": [],
+   "note": "",
+   "pass": 41,
+   "pending": 0,
+   "status": "PASS",
+   "vacuous": 0
+  },
+  "compile_replay_acceptance": {
+   "doc": "honest compile -> load accepted, result_digest preserved",
+   "fail": 0,
+   "failures": [],
+   "note": "",
+   "pass": 41,
+   "pending": 0,
+   "status": "PASS",
+   "vacuous": 0
+  },
+  "cross_process_result_digest": {
+   "doc": "same request -> identical result_digest across 3 fresh processes",
+   "fail": 0,
+   "failures": [],
+   "note": "",
+   "pass": 6,
+   "pending": 0,
+   "status": "PASS",
+   "vacuous": 0
+  },
+  "kekule_identity_law": {
+   "doc": "Kekule alternates -> one structure_key; constitutional isomers distinct",
+   "fail": 0,
+   "failures": [],
+   "note": "",
+   "pass": 10,
+   "pending": 0,
+   "status": "PASS",
+   "vacuous": 0
+  },
+  "policy_only_promised_changes": {
+   "doc": "policy changes only the promised trust/refusal behaviour",
+   "fail": 0,
+   "failures": [],
+   "note": "",
+   "pass": 246,
+   "pending": 0,
+   "status": "PASS",
+   "vacuous": 0
+  },
+  "profile_search_noninterference": {
+   "doc": "none/research-lab/poor-man/custom leave the search untouched",
+   "fail": 0,
+   "failures": [],
+   "note": "",
+   "pass": 112,
+   "pending": 0,
+   "status": "PASS",
+   "vacuous": 0
+  },
+  "receipt_consistency": {
+   "doc": "len(candidates) <= result_limit; results_returned == len(candidates)",
+   "fail": 0,
+   "failures": [],
+   "note": "",
+   "pass": 158,
+   "pending": 0,
+   "status": "PASS",
+   "vacuous": 0
+  },
+  "roundtrip_byte_identity": {
+   "doc": "serialize->deserialize->serialize byte identity",
+   "fail": 0,
+   "failures": [],
+   "note": "",
+   "pass": 41,
+   "pending": 0,
+   "status": "PASS",
+   "vacuous": 0
+  }
+ },
+ "isopentyl_iters": 1,
+ "iterations": 40,
+ "label": "AFTER",
+ "processes": 3,
+ "profile_every": 6,
+ "python": "3.12.3",
+ "resources": {
+  "canonical_lru_currsize_first_last_max": [
+   172,
+   199,
+   199
+  ],
+  "enumeration_cache_series_first_last": [
+   "EnumerationCacheStats(hits=32, misses=8, entries=4, retained_transforms=64, retained_size=128)",
+   "EnumerationCacheStats(hits=640, misses=80, entries=8, retained_transforms=120, retained_size=244)"
+  ],
+  "latency_seconds": {
+   "compile": {
+    "max": 71.6455,
+    "n": 41,
+    "p50": 0.171,
+    "p90": 0.6888,
+    "p99": 71.6455
+   },
+   "load": {
+    "max": 7.2136,
+    "n": 41,
+    "p50": 0.1099,
+    "p90": 0.418,
+    "p99": 7.2136
+   },
+   "roundtrip": {
+    "max": 5.6465,
+    "n": 41,
+    "p50": 0.1314,
+    "p90": 0.388,
+    "p99": 5.6465
+   },
+   "serialize": {
+    "max": 0.0104,
+    "n": 41,
+    "p50": 0.002,
+    "p90": 0.0035,
+    "p99": 0.0104
+   }
+  },
+  "rss_after_isopentyl_kb": [
+   49064
+  ],
+  "rss_kb_first": 34624,
+  "rss_kb_last": 35476,
+  "rss_kb_max": 35476,
+  "rss_slope_kb_per_iteration_all": 17.46,
+  "rss_slope_kb_per_iteration_post_warmup": 15.1
+ },
+ "seed": 20260929,
+ "specs_sample": [
+  {
+   "dag": true,
+   "helpers": [
+    "water"
+   ],
+   "max_depth": 2,
+   "max_routes": 100,
+   "stock": [
+    "CCO",
+    "CCC(=O)O"
+   ],
+   "target": "smiles:CCC(=O)OCC"
+  },
+  {
+   "dag": false,
+   "helpers": [
+    "water"
+   ],
+   "max_depth": 2,
+   "max_routes": 100,
+   "stock": [
+    "CCO",
+    "CC(=O)O"
+   ],
+   "target": "smiles:CC(=O)OCC"
+  },
+  {
+   "dag": false,
+   "helpers": [
+    "water"
+   ],
+   "max_depth": 1,
+   "max_routes": 5,
+   "stock": [
+    "CO",
+    "CC(=O)O"
+   ],
+   "target": "smiles:CC(=O)OC"
+  },
+  {
+   "dag": false,
+   "helpers": [
+    "water"
+   ],
+   "max_depth": 2,
+   "max_routes": 100,
+   "stock": [
+    "CCCO",
+    "CC(=O)O"
+   ],
+   "target": "smiles:CC(=O)OCCC"
+  },
+  {
+   "dag": false,
+   "helpers": [
+    "water"
+   ],
+   "max_depth": 2,
+   "max_routes": 2,
+   "stock": [
+    "CCO",
+    "CCC(=O)O"
+   ],
+   "target": "smiles:CCC(=O)OCC"
+  }
+ ],
+ "wall_seconds": 243.9
+}

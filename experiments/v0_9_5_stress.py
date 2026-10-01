@@ -311,10 +311,15 @@ def check_iteration(spec: dict, inv: dict, lat: dict) -> None:
 
     v = _verification()
     policy_cls = getattr(v, "VerificationPolicy", None) if v is not None else None
-    load_response = getattr(v, "load_response", None) if v is not None else None
+    # load_response is a service entry point (smartchem.service), not a verification one: probing only the
+    # verification module left this half PENDING on every tree that has it (fixed at the 0.9.5 final gate)
+    import smartchem.service as svc_mod
+    load_response = getattr(svc_mod, "load_response", None) or (getattr(v, "load_response", None) if v is not None
+                                                                 else None)
     if policy_cls is None or load_response is None:
-        pol.mark_pending("smartchem.verification.VerificationPolicy/load_response absent: the 'thin under a canonical "
-                         "requirement is refused' and policy-object half is PENDING (legacy-kwarg half ran)")
+        pol.mark_pending("smartchem.verification.VerificationPolicy / smartchem.service.load_response absent: the 'thin "
+                         "under a canonical requirement is refused' and policy-object half is PENDING (legacy-kwarg "
+                         "half ran)")
     else:
         thin = response_to_payload(resp, include_replay=False)
         for pname, mk in (("advisory", lambda: policy_cls.advisory()), ("canonical", lambda: policy_cls.canonical())):

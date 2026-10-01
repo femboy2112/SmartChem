@@ -147,7 +147,8 @@ def _layer_probe():
         import smartchem.verification as v
     except ImportError:
         return None, {"present": False}
-    return v, {"present": True, "load_response": hasattr(v, "load_response"),
+    import smartchem.service as svc   # load_response is a SERVICE entry point (the probe read the wrong module before)
+    return v, {"present": True, "load_response": hasattr(svc, "load_response"),
                "enumeration_cache": hasattr(v, "ENUMERATION_CACHE"),
                "budget": hasattr(v, "VerificationBudgetExceeded")}
 

@@ -135,8 +135,9 @@ def install_work_accounting(charge: Callable[[int], None], cache: Callable[[Call
 #
 # 0.9.5 S16 moved the boundary again, and retired two sentences above: with automorphism pruning
 # the leaf count is no longer |Aut(G)| (a symmetric subtree is walked once, not once per image),
-# and the ceilings are now leaves, search nodes, and search nodes x atoms -- each refusing with
-# `CanonicalBoundExceeded`. The history stays; it is how the floor was found before it was lowered.
+# and the ceilings are now leaves, search nodes, and (0.9.5 A13, replacing search nodes x atoms)
+# atoms before any work plus metered work per call -- each refusing with `CanonicalBoundExceeded`.
+# The history stays; it is how the floor was found before it was lowered.
 _MAX_CANONICAL_CANDIDATES = 50_000
 
 
@@ -152,7 +153,9 @@ def _blocks(keys: tuple) -> list[tuple[int, ...]]:
     return blocks
 
 
-def _wl_colours(atoms: tuple[str, ...], bonds: frozenset["Bond"]) -> tuple[int, ...]:
+def _wl_colours(
+    atoms: tuple[str, ...], bonds: frozenset["Bond"], meter: "_CanonicalMeter | None" = None
+) -> tuple[int, ...]:
     """
     One-dimensional Weisfeiler-Leman refinement: a colour per atom, invariant under
     relabelling, computed only from what the bond graph says about each atom's
@@ -178,11 +181,12 @@ def _wl_colours(atoms: tuple[str, ...], bonds: frozenset["Bond"]) -> tuple[int, 
     on the work and never an underestimate.
     """
     ranks = {symbol: k for k, symbol in enumerate(sorted(set(atoms)))}
-    return _refine_from(atoms, bonds, [ranks[a] for a in atoms])
+    return _refine_from(atoms, bonds, [ranks[a] for a in atoms], meter)
 
 
 def _refine_from(
-    atoms: tuple[str, ...], bonds: frozenset["Bond"], initial: list[int]
+    atoms: tuple[str, ...], bonds: frozenset["Bond"], initial: list[int],
+    meter: "_CanonicalMeter | None" = None,
 ) -> tuple[int, ...]:
     """Equitable colour refinement seeded from an arbitrary initial colouring.
 
@@ -195,8 +199,19 @@ def _refine_from(
     The seed's rank is the first component of every signature, so a round only ever *splits* a
     class, never reorders two -- the ordered partition therefore stays consistent with the
     seed, which is exactly what keeps the individualisation search (below) canonical.
+
+    **0.9.5 A13: metered, never changed.** ``meter`` (if given) is charged ONE PASS -- ``n + 2|bonds|``
+    units, every signature rebuilt plus every neighbour entry read -- for the setup (the neighbour
+    lists and the seed) and again for each round, each time BEFORE that work runs; a meter past its
+    per-call ceiling refuses there (:class:`CanonicalBoundExceeded`). That is what a round of this
+    full-rebuild loop costs, whatever splits: on a hydrogenated chain a split walks inward one step
+    per round for ~n/2 rounds, so one refinement is O(n**2) -- the A13 finding that ran ahead of every
+    ceiling. Nothing the loop computes depends on the meter, so the colouring is byte-identical.
     """
     n = len(atoms)
+    passes = n + 2 * len(bonds)
+    if meter is not None:
+        meter.spend(passes)                 # the setup below: neighbour lists and seed, one pass
     neighbours: list[list[tuple[int, int]]] = [[] for _ in range(n)]
     for b in bonds:
         neighbours[b.i].append((b.j, b.order))
@@ -204,6 +219,8 @@ def _refine_from(
     seed = {c: k for k, c in enumerate(sorted(set(initial)))}
     colour = [seed[c] for c in initial]
     for _ in range(n):                      # each round splits or stops; at most n-1 split
+        if meter is not None:
+            meter.spend(passes)             # this round, BEFORE it runs
         signature = [
             (colour[i], tuple(sorted((order, colour[j]) for j, order in neighbours[i])))
             for i in range(n)
@@ -216,9 +233,11 @@ def _refine_from(
     return tuple(colour)
 
 
-def _refined_blocks(atoms: tuple[str, ...], bonds: frozenset["Bond"]) -> list[tuple[int, ...]]:
+def _refined_blocks(
+    atoms: tuple[str, ...], bonds: frozenset["Bond"], meter: "_CanonicalMeter | None" = None
+) -> list[tuple[int, ...]]:
     """Atom positions grouped by Weisfeiler-Leman colour, groups in colour order."""
-    return _blocks(_wl_colours(atoms, bonds))
+    return _blocks(_wl_colours(atoms, bonds, meter))
 
 
 def _cost_of(blocks: list[tuple[int, ...]]) -> int:
@@ -230,7 +249,7 @@ def _cost_of(blocks: list[tuple[int, ...]]) -> int:
 
 
 def _canonical_blocks(
-    atoms: tuple[str, ...], bonds: frozenset["Bond"]
+    atoms: tuple[str, ...], bonds: frozenset["Bond"], meter: "_CanonicalMeter | None" = None
 ) -> list[tuple[int, ...]]:
     """
     The classes `canonical()` permutes within: symbol classes, refined ONLY if the plain
@@ -264,7 +283,7 @@ def _canonical_blocks(
     blocks = _blocks(atoms)
     if _cost_of(blocks) <= _MAX_CANONICAL_CANDIDATES:
         return blocks
-    return _refined_blocks(atoms, bonds)
+    return _refined_blocks(atoms, bonds, meter)
 
 
 def _canonical_cost(atoms: tuple[str, ...], bonds: frozenset["Bond"]) -> int:
@@ -364,16 +383,37 @@ _MAX_INDIVIDUALISATION_LEAVES = 50_000
 # rings C3-C80 bare and hydrogenated, the Wave C4 shapes, 2,400 seeded random molecules with
 # explicit H (1,288 on this path), registry constants, the test suite's SMILES literals, and
 # every molecule the frozen service corpus canonicalised: chemistry maximum 578 nodes
-# (tetra-tert-butylmethane); the deliberate depth probe [CH1100] 1,100. 2**14 is 28x / 14.9x.
+# (tetra-tert-butylmethane); the deliberate depth probe (a C bonded to 1,100 H) 1,100. 2**14 is
+# 28x / 14.9x.
 _MAX_INDIVIDUALISATION_NODES = 1 << 14
-# ...and a ceiling on search nodes x atoms, because a node is not a constant: each one re-refines
-# the WHOLE graph, O(n) and worse. A node cap alone let a large, merely-repetitive input grind --
-# [CH5000] (8 characters) is 5,000 nodes, under the cap, and 610 s of refinement. Every node costs
-# its atom count in this unit (and in the canonical_work charge), so the product bounds the time a
-# search can take, not just its shape. MEASURED (same differential): chemistry maximum 111,852
-# (a hydrogenated C78-C80 ring); [CH1000] 1.0M and [CH1100] 1.21M stay in bounds; 2**21 is 18.7x
-# the chemistry maximum, and [CH5000] now refuses at node 419 instead of grinding for 610 s.
-_MAX_INDIVIDUALISATION_ATOM_NODES = 1 << 21
+# 0.9.5 A13 -- an ATOM ceiling, checked by canonical() (and the search) before ANY work: no symbol
+# sort, no factorial, no refinement round. Refinement ran ahead of every other ceiling and charge
+# (Weisfeiler-Leman to choose the branch, then the search's start partition), and on a hydrogenated
+# chain it is ~O(n**2): resolve_identity("C" * 1000) (3,002 atoms) spent 22-27 s there, "C" * 4000
+# over 90 s, and a decoded payload molecule of ~100k atoms fits the payload-node budget. Past this
+# many atoms canonical() refuses (CanonicalBoundExceeded) without reading a bond; the SMILES parser
+# refuses the same count before it materialises the graph (smiles._fill_hydrogens). MEASURED
+# 2026-10-01 by `experiments/v0_9_5_canonical_differential.py --service full --perf` (`max_atoms`
+# over 4,476 molecules: every family above plus the frozen corpus's and the fixture payloads'):
+# the largest molecule canonicalised is 240 atoms (the hydrogenated C80 ring; the largest real
+# chemistry, the perf harness's C45 wax ester, 131), so 2**10 is 4.3x the corpus (7.8x that
+# ester). At the ceiling the slowest honest shapes -- a 1,022-atom alkane, a C bonded to 1,023 H
+# -- cost ~6.3M units, 4-5 s (`experiments/v0_9_5_amplifier_bound.py`).
+_MAX_CANONICAL_ATOMS = 1 << 10
+# ...and a ceiling on the WORK of one canonicalisation, in the unit that work actually costs: one
+# PASS over the graph = atoms + 2 x bonds (every signature rebuilt plus every neighbour entry read).
+# Every refinement round is one pass (`_refine_from`, the setup too), and so is every candidate the
+# block path evaluates (each relabels every atom and re-sorts every bond). It replaces the S16
+# search-nodes x atoms ceiling, which priced a node at its atom count however many rounds its
+# refinement took -- one node on a hydrogenated chain is ~n/2 rounds of O(n) -- and never saw the
+# refinement before the search. The same units are what canonical() charges as verification work,
+# so the per-call ceiling and the per-load budget speak one language. MEASURED (same run,
+# `max_call_work`): the chemistry maximum per call is 3,152,328 units (a random dendrimer's 41k
+# block candidates; o-xylene 2,488,590, isopentyl acetate 2,315,855; the search path's maximum
+# 917,514, the hydrogenated C80 ring), so 2**25 is 10.6x. Wall time per unit, on hostile shapes
+# (`experiments/v0_9_5_amplifier_bound.py`): 0.8-4.3M units/s, so one call is bounded at ~8-41 s;
+# its bintree / theta-graph witnesses (1,023 / 994 atoms) are refused here after 25-29 s.
+_MAX_CANONICAL_CALL_WORK = 1 << 25
 # How many discovered automorphisms the search keeps as pruning generators. Every node re-reads the
 # stored list, so an unbounded list would make a node cost grow with the automorphisms found (on a
 # near-ceiling graph, quadratic in the node count). Dropping a generator only prunes LESS -- the
@@ -392,6 +432,41 @@ class CanonicalBoundExceeded(NotImplementedError):
     """
 
 
+def _refuse_over_atom_ceiling(n: int) -> None:
+    """0.9.5 A13: refuse a graph over :data:`_MAX_CANONICAL_ATOMS` before any work is done on it."""
+    if n > _MAX_CANONICAL_ATOMS:
+        raise CanonicalBoundExceeded(
+            f"canonical relabelling refused: {n:,} atoms is over the {_MAX_CANONICAL_ATOMS:,}-atom ceiling; "
+            "graph too large to canonicalise within this budget"
+        )
+
+
+class _CanonicalMeter:
+    """The work of ONE canonicalisation (0.9.5 A13), in passes over the graph (atoms + 2 x bonds each).
+
+    :meth:`spend` is called with each unit of work BEFORE that work runs: past
+    :data:`_MAX_CANONICAL_CALL_WORK` it refuses (:class:`CanonicalBoundExceeded`) with the work
+    undone; otherwise, when ``charge``, it passes the units on to the work-accounting hook
+    (``_charge_work``) -- how :meth:`Molecule.canonical` books its verification work. A direct caller
+    of the search without one gets an uncharged meter: bounded per call all the same."""
+
+    __slots__ = ("used", "charge")
+
+    def __init__(self, charge: bool) -> None:
+        self.used = 0
+        self.charge = charge
+
+    def spend(self, units: int) -> None:
+        if self.used + units > _MAX_CANONICAL_CALL_WORK:
+            raise CanonicalBoundExceeded(
+                f"canonical relabelling exceeded {_MAX_CANONICAL_CALL_WORK:,} units of work in one call "
+                f"({self.used:,} spent, {units:,} more asked); graph too large and symmetric for this budget"
+            )
+        self.used += units
+        if self.charge:
+            _charge_work(units)
+
+
 def _partition_colours(partition: list[tuple[int, ...]], n: int) -> list[int]:
     """The per-atom colour (its cell's ordinal) implied by an ordered partition."""
     colour = [0] * n
@@ -402,7 +477,8 @@ def _partition_colours(partition: list[tuple[int, ...]], n: int) -> list[int]:
 
 
 def _refine_partition(
-    atoms: tuple[str, ...], bonds: frozenset["Bond"], partition: list[tuple[int, ...]]
+    atoms: tuple[str, ...], bonds: frozenset["Bond"], partition: list[tuple[int, ...]],
+    meter: "_CanonicalMeter | None" = None,
 ) -> list[tuple[int, ...]]:
     """Equitably refine an ordered partition to a fixpoint, preserving cell order (splits only).
 
@@ -410,7 +486,7 @@ def _refine_partition(
     cell keeps its distinction; the result is the refined cells grouped in colour order, which --
     because refinement only splits -- is consistent with the input order.
     """
-    colour = _refine_from(atoms, bonds, _partition_colours(partition, len(atoms)))
+    colour = _refine_from(atoms, bonds, _partition_colours(partition, len(atoms)), meter)
     return _blocks(colour)
 
 
@@ -418,6 +494,7 @@ def _canonical_by_individualisation(
     atoms: tuple[str, ...],
     bonds: frozenset["Bond"],
     on_node: Callable[[], None] | None = None,
+    meter: "_CanonicalMeter | None" = None,
 ) -> tuple[tuple[str, ...], tuple[tuple[int, int, int], ...]]:
     """Canonical ``(symbols, edges)`` via refinement + individualisation.
 
@@ -460,22 +537,28 @@ def _canonical_by_individualisation(
     number of nodes visited to find it moves. (Proven, not asserted: the S16 differential
     ``experiments/v0_9_5_canonical_differential.py`` runs a verbatim copy of the old search.)
 
-    Bounded three ways -- :data:`_MAX_INDIVIDUALISATION_LEAVES` leaves,
-    :data:`_MAX_INDIVIDUALISATION_NODES` search nodes, :data:`_MAX_INDIVIDUALISATION_ATOM_NODES`
-    search nodes x atoms; past any of them this refuses loudly with :class:`CanonicalBoundExceeded`
-    (a ``NotImplementedError``), exactly like the plain path, only at a far higher ceiling. The
+    Bounded four ways -- :data:`_MAX_CANONICAL_ATOMS` atoms (before anything runs),
+    :data:`_MAX_INDIVIDUALISATION_LEAVES` leaves, :data:`_MAX_INDIVIDUALISATION_NODES` search
+    nodes, and :data:`_MAX_CANONICAL_CALL_WORK` units of work on ``meter`` (every refinement round
+    of the call, the start partition's included; 0.9.5 A13 -- it replaces S16's search nodes x
+    atoms); past any of them this refuses loudly with :class:`CanonicalBoundExceeded` (a
+    ``NotImplementedError``), exactly like the plain path, only at a far higher ceiling. ``meter``
+    is the CALL's: :meth:`Molecule.canonical` passes the one it already charged its branch choice
+    to, so the ceiling bounds the whole call; a caller without one gets a fresh uncharged meter. The
     walk is an explicit stack, so depth is bounded by those ceilings, never by Python's recursion
-    limit. ``on_node`` (if given) is called once per node BEFORE that node's work -- how
-    :meth:`Molecule.canonical` charges a verification budget ahead of the work it bounds (the return
-    value is unchanged: ``(symbols, edges)``).
+    limit. ``on_node`` (if given) is called once per node BEFORE that node's work, for a caller that
+    counts nodes (the return value is unchanged: ``(symbols, edges)``).
     """
     n = len(atoms)
+    _refuse_over_atom_ceiling(n)
+    if meter is None:
+        meter = _CanonicalMeter(charge=False)
     adjacency: list[list[tuple[int, int]]] = [[] for _ in range(n)]
     for b in bonds:
         adjacency[b.i].append((b.j, b.order))
         adjacency[b.j].append((b.i, b.order))
     bond_set = frozenset((b.i, b.j, b.order) for b in bonds)       # Bond keeps i < j
-    start = _refine_partition(atoms, bonds, _blocks(_wl_colours(atoms, bonds)))
+    start = _refine_partition(atoms, bonds, _blocks(_wl_colours(atoms, bonds, meter)), meter)
     symbols = tuple(atoms[i] for cell in start for i in cell)
     # (edges, order) of the FIRST leaf reached and of the running best; order[new] = old atom
     first: list[tuple | None] = [None]
@@ -536,16 +619,10 @@ def _canonical_by_individualisation(
                 f"canonical relabelling by individualisation exceeded "
                 f"{_MAX_INDIVIDUALISATION_NODES:,} search nodes; graph too symmetric for this budget"
             )
-        if (nodes[0] + 1) * n > _MAX_INDIVIDUALISATION_ATOM_NODES:
-            raise CanonicalBoundExceeded(
-                f"canonical relabelling by individualisation exceeded "
-                f"{_MAX_INDIVIDUALISATION_ATOM_NODES:,} atom-refinements ({nodes[0]:,} search nodes x "
-                f"{n:,} atoms); graph too large and symmetric for this budget"
-            )
         nodes[0] += 1
         if on_node is not None:
-            on_node()                              # charged BEFORE this node's refinement
-        partition = _refine_partition(atoms, bonds, partition)
+            on_node()                              # called BEFORE this node's refinement
+        partition = _refine_partition(atoms, bonds, partition, meter)   # each round metered first
         target = next((k for k, cell in enumerate(partition) if len(cell) > 1), None)
         if target is None:                         # discrete: read the labelling off cell order
             leaves[0] += 1
@@ -810,17 +887,19 @@ class Molecule:
         every ``Config`` construction canonicalises its members; repeated pathway states
         should not repay the permutation search for a species already seen in this process.
 
-        **Canonicalisation is verification work (0.9.5 S16).** Its WORK, defined once: the
-        candidate permutations evaluated on the block path (``_cost_of(blocks)``, which is 1 for
-        a molecule of at most one atom), or on the individualisation path the atoms refined:
-        every search node re-refines the whole graph, so each costs the molecule's atom count
-        (a node count alone let a large, repetitive input grind cheaply). It is charged through
-        the installed hook (``_charge_work`` = ``smartchem.verification.charge_canonical_work``
-        once that layer is imported) BEFORE the work it bounds (the
-        block path in one charge ahead of the loop, the search one node at a time), ONCE per
-        distinct molecule per load (``smartchem.verification._through_cache``: a hit charges
-        the entry's recorded work if this load has not paid it) -- so a load pays the same
-        whatever this process has already seen.
+        **Canonicalisation is verification work (0.9.5 S16; unit A13).** Its WORK, defined once,
+        in PASSES over the graph (``n + 2|bonds|`` units each, the unit a pass actually costs):
+        every refinement round, the branch choice's and the search's alike, is one pass, and so
+        is every candidate permutation the block path evaluates; a molecule of at most one atom
+        costs 1. It is charged through this call's meter (:class:`_CanonicalMeter`) to the
+        installed hook (``_charge_work`` = ``smartchem.verification.charge_canonical_work``
+        once that layer is imported) BEFORE the work it bounds (the block path in one charge
+        ahead of the loop, refinement one round at a time), ONCE per distinct molecule per load
+        (``smartchem.verification._through_cache``: a hit charges the entry's recorded work if
+        this load has not paid it) -- so a load pays the same whatever this process has already
+        seen. Per call it is bounded twice before it can grow: :data:`_MAX_CANONICAL_ATOMS`
+        atoms, checked before any work, and :data:`_MAX_CANONICAL_CALL_WORK` units, checked by
+        the meter before each pass -- past either, :class:`CanonicalBoundExceeded`.
 
         Minimises the key ``(symbols, edges)`` over the candidate permutations, then
         rebuilds the molecule from the winner.
@@ -848,19 +927,22 @@ class Molecule:
         if n <= 1:
             _charge_work(1)                        # the one (identity) candidate; nothing to search
             return self
-        blocks = _canonical_blocks(self.atoms, self.bonds)
+        _refuse_over_atom_ceiling(n)               # A13: before the symbol sort and any refinement
+        meter = _CanonicalMeter(charge=True)       # this call's work, charged as it is spent
+        blocks = _canonical_blocks(self.atoms, self.bonds, meter)
         budget = _cost_of(blocks)
         if budget > _MAX_CANONICAL_CANDIDATES:
             # refinement alone cannot afford this graph (a vertex-transitive cell it cannot
             # split): fall through to individualisation, nauty's second move (#25). Purely
-            # additive -- only molecules that USED to raise here reach this branch. Charged per
-            # search node, before each node's refinement; the cache records the total.
-            symbols, best = _canonical_by_individualisation(
-                self.atoms, self.bonds, on_node=lambda: _charge_work(n)
-            )
+            # additive -- only molecules that USED to raise here reach this branch. Every
+            # refinement round of the search is charged on this call's meter before it runs.
+            symbols, best = _canonical_by_individualisation(self.atoms, self.bonds, meter=meter)
             return Molecule(symbols, frozenset(Bond(i, j, o) for i, j, o in best),
                             self.charge, self.state)
-        _charge_work(budget)                       # every candidate below, paid for up front
+        # every candidate below, paid for up front: each relabels every atom and re-sorts every
+        # bond -- one pass over the graph, the meter's unit (A13: a bare candidate count priced a
+        # 950-atom molecule's candidate like ethanol's, ~130x less wall time per unit)
+        meter.spend(budget * (n + 2 * len(self.bonds)))
         symbols = tuple(self.atoms[i] for block in blocks for i in block)
         best: tuple | None = None
         for perm in _permute_within(blocks, n):

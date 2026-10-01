@@ -31,6 +31,13 @@ charges over the frozen corpus loads -- plain thick, pinned + verified-admission
 cold (every process cache cleared) and warm (the same load again), which must agree (the budget never depends on
 what is warm).
 
+0.9.5 A13 (the amplifier bound) re-sizes three things here, so their measurements live here too: per family the
+largest molecule canonicalised (``max_atoms`` -> ``category._MAX_CANONICAL_ATOMS``) and the largest per-call work in
+the A13 unit, passes over the graph (``max_call_work`` -> ``category._MAX_CANONICAL_CALL_WORK``); and, with ``--perf``,
+the canonical_work of every frozen v0.8 / CLI fixture payload besides the performance payloads (-> the per-load
+default ``verification._DEFAULT_CANONICAL_WORK``).  The metering itself is the identity-preserving claim: the live
+search is the S16 search with a meter threaded through it, so every comparison below must stay byte-identical.
+
 Run:  .venv/bin/python experiments/v0_9_5_canonical_differential.py                 # all families, service=fast
       .venv/bin/python experiments/v0_9_5_canonical_differential.py --service full   # + the slow isopentyl family
       .venv/bin/python experiments/v0_9_5_canonical_differential.py --random 4000 --old-timeout 20 --json out.json
@@ -303,6 +310,26 @@ def new_canonical_with_work(m: Molecule) -> tuple[Molecule, int, bool]:
         out = _NEW_CANONICAL.__wrapped__(m)
     individualised = len(m.atoms) > 1 and _cost_of(_canonical_blocks(m.atoms, m.bonds)) > _MAX_CANONICAL_CANDIDATES
     return out, frame.total, individualised
+
+
+def new_canonical_with_nodes(m: Molecule) -> tuple[Molecule, int, bool, int]:
+    """:func:`new_canonical_with_work` plus the search nodes the live canonical() visited (A13: the charge is no longer
+    nodes x atoms, so the node count -- the node ceiling's measurement -- is counted, not divided out)."""
+    nodes = [0]
+    live = cat._canonical_by_individualisation
+
+    def counted(atoms, bonds, on_node=None, meter=None):
+        def tick():
+            nodes[0] += 1
+            if on_node is not None:
+                on_node()
+        return live(atoms, bonds, on_node=tick, meter=meter)
+    cat._canonical_by_individualisation = counted
+    try:
+        out, work, individualised = new_canonical_with_work(m)
+    finally:
+        cat._canonical_by_individualisation = live
+    return out, work, individualised, nodes[0]
 
 
 class _Timeout(Exception):
@@ -870,6 +897,33 @@ def perf_loads(results: dict) -> None:
         record[pass_] = _canonical_work_of(legacy, VerificationPolicy())
     out["e_legacy_v08_isopentyl"] = {"plain": record}
     print(f"  [perf] e_legacy_v08_isopentyl {out['e_legacy_v08_isopentyl']}", flush=True)
+    fixture_loads(out)
+
+
+def fixture_loads(out: dict) -> None:
+    """A13: every frozen fixture payload in the tree -- the v0.8 producer fixtures (a plan document loads its
+    ``compilation``) and the CLI JSON fixtures -- loaded under the DEFAULT policy, cold / warm / after an enumeration
+    clear.  A fixture the loader refuses for a reason of its own (a v0.8 name the resolver has since learned) is
+    recorded as that refusal; an honest fixture refused on ``canonical_work`` would be a default sized too small."""
+    from smartchem.verification import ENUMERATION_CACHE, VerificationPolicy
+
+    for path in sorted((REPO / "tests" / "fixtures" / "v08").glob("*.json")) + sorted(
+            (REPO / "tests" / "fixtures" / "cli_json").glob("*.json")):
+        doc = json.loads(path.read_text())
+        if isinstance(doc, dict) and isinstance(doc.get("compilation"), dict):
+            doc = doc["compilation"]
+        if not isinstance(doc, dict) or "transport_mode" not in doc:
+            continue                                     # a request / schema document, not a response payload
+        record = {}
+        for pass_ in _PASSES:
+            if pass_ == "cold":
+                _clear_process_caches()
+            elif pass_ == "after_enumeration_clear":
+                ENUMERATION_CACHE.clear()
+            record[pass_] = _canonical_work_of(doc, VerificationPolicy())
+        name = f"fixture_{path.parent.name}_{path.stem}"
+        out[name] = {"plain": record}
+        print(f"  [perf] {name} {record}", flush=True)
 
 
 def service_corpus(which: str, results: dict) -> list:
@@ -921,19 +975,23 @@ def differential(corpus: list, old_timeout: float, seed: int, stats: dict, repor
         a, b = relabel(m, rng), relabel(m, rng)
         t = time.perf_counter()
         try:
-            new_a, work, individualised = new_canonical_with_work(a)
+            new_a, work, individualised, nodes = new_canonical_with_nodes(a)
             new_err = None
         except NotImplementedError as exc:
-            new_a, work, individualised, new_err = None, None, True, exc
+            new_a, work, individualised, nodes, new_err = None, None, True, 0, exc
         t_new = time.perf_counter() - t
         if individualised:
             s["individualisation_branch"] += 1
         if work is not None:
-            if individualised:                      # every node charges the atom count: nodes = work / atoms
-                s["max_atom_nodes"] = max(s["max_atom_nodes"], work)
-                s["max_nodes"] = max(s["max_nodes"], work // len(a.atoms))
-            else:
-                s["max_block_candidates"] = max(s["max_block_candidates"], work)
+            # A13: work is in passes (atoms + 2 x bonds) on BOTH branches; the per-call maximum sizes the call ceiling
+            s["max_atoms"] = max(s["max_atoms"], len(a.atoms))
+            s["max_call_work"] = max(s["max_call_work"], work)
+            if individualised:
+                s["max_nodes"] = max(s["max_nodes"], nodes)
+                s["max_search_call_work"] = max(s["max_search_call_work"], work)
+            elif len(a.atoms) > 1:
+                s["max_block_candidates"] = max(s["max_block_candidates"],
+                                                _cost_of(_canonical_blocks(a.atoms, a.bonds)))
         t = time.perf_counter()
         try:
             with _deadline(old_timeout):
@@ -994,8 +1052,8 @@ _NEW_PLACEMENT = sm._min_constitution_placement
 _NEW_SEARCH = cat._canonical_by_individualisation       # isotope_refined_key calls the search directly
 
 
-def _old_search_adapter(atoms, bonds, on_node=None):
-    """The OLD search behind the live call signature (``on_node`` did not exist; it is ignored)."""
+def _old_search_adapter(atoms, bonds, on_node=None, meter=None):
+    """The OLD search behind the live call signature (``on_node`` / A13's ``meter`` did not exist; both ignored)."""
     return _old_canonical_by_individualisation(atoms, bonds)
 _NEW_PLACEMENT_CHARGE = sm.charge_canonical_work      # smiles' own binding: charged ONLY by the placement DFS
 
@@ -1070,11 +1128,19 @@ def end_to_end(strings: list, timeout: float, stats: dict, report: list, family:
         report.append({f"{family}_placement_bound_hits": sorted(hit_labels)})
 
 
+def star(hydrogens: int) -> Molecule:
+    """One carbon bonded to ``hydrogens`` H, built directly -- the S16 depth / repetition witness.  A13 made the SMILES
+    spelling ``[CH1000]`` a parse refusal (a bracket H count is one digit), so the graph is built, not parsed."""
+    return Molecule(("C",) + ("H",) * hydrogens, frozenset(Bond(0, i, 1) for i in range(1, hydrogens + 1)))
+
+
 def timings(results: dict) -> None:
     """NEW wall time on the shapes Waves C4/C6 measured OLD on: neo2 (> 40 s), the 320-ring (~50 s), the 21-atom
     spider (~6 s), [S](tBu)5 (391 s, then a leaf-cap refusal), explicit-Kekule polyacene L=30 (8 s) / L=50 (1,425 s),
-    [CH1000] and C*1000 (RecursionError after 8 s / 40 s)."""
+    the 1,000-H star and C*1000 (RecursionError after 8 s / 40 s); and the A13 amplifiers, each a refusal now:
+    [CH1234567] (60 s+ before), C*1000 / C*4000 / C*100000 through resolve_identity (22-27 s / > 90 s before)."""
     from smartchem.experiment.stock import structure_key
+    from smartchem.identity_parse import IdentityParseError, resolve_identity
     from smartchem.smiles import parse_smiles
     out = results.setdefault("timings_new_s", {})
 
@@ -1087,7 +1153,7 @@ def timings(results: dict) -> None:
             out[name] = round(time.perf_counter() - t, 4)
         except _Timeout:
             out[name] = "timeout>900s"
-        except (NotImplementedError, SmilesError, RecursionError) as exc:
+        except (NotImplementedError, SmilesError, RecursionError, IdentityParseError) as exc:
             out[name] = f"{type(exc).__name__} ({time.perf_counter() - t:.3f}s): {str(exc)[:110]}"
         print(f"  [timing] {name}: {out[name]}", flush=True)
 
@@ -1106,9 +1172,15 @@ def timings(results: dict) -> None:
         smiles = acene(length)
         clock(f"polyacene_L{length}_parse({len(smiles)} chars)", lambda s=smiles: parse_smiles(s))
     clock("flake_r3_parse", lambda: parse_smiles(flake(3)))
-    clock("[CH1000]_parse", lambda: parse_smiles("[CH1000]"))
+    clock("star_H1000_canonical(1,001 atoms)", lambda: star(1000).canonical())
+    clock("star_H1023_canonical(1,024 atoms: at the A13 atom ceiling)", lambda: star(1023).canonical())
+    clock("star_H1100_canonical(over the atom ceiling)", lambda: star(1100).canonical())
     clock("C*300_parse", lambda: parse_smiles("C" * 300))
     clock("C*300_structure_key", lambda: structure_key(parse_smiles("C" * 300)))
+    clock("C*340_parse(1,022 atoms)", lambda: parse_smiles("C" * 340))
+    clock("[CH1234567]_parse", lambda: parse_smiles("[CH1234567]"))
+    for k in (1000, 4000, 100_000):
+        clock(f"C*{k}_resolve_identity", lambda k=k: resolve_identity("C" * k))
 
 
 def main(argv: list) -> int:
@@ -1130,7 +1202,10 @@ def main(argv: list) -> int:
     args = ap.parse_args(argv)
 
     # which tree is measured (the dev venv's editable install points elsewhere; REPO is put first on sys.path above)
-    results: dict = {"argv": argv, "smartchem_file": cat.__file__, "node_cap": cat._MAX_INDIVIDUALISATION_NODES}
+    from smartchem.verification import VerificationBudget
+    results: dict = {"argv": argv, "smartchem_file": cat.__file__, "node_cap": cat._MAX_INDIVIDUALISATION_NODES,
+                     "atom_ceiling": cat._MAX_CANONICAL_ATOMS, "call_work_ceiling": cat._MAX_CANONICAL_CALL_WORK,
+                     "default_canonical_work": VerificationBudget().canonical_work}
     print(f"[proof] measuring smartchem.category from {cat.__file__}", flush=True)
     if args.foreign_transparency:
         results["foreign_transparency"] = install_foreign_transparency()
@@ -1179,7 +1254,9 @@ def main(argv: list) -> int:
         "total": dict(total),
         "old_over_new_time_ratio": round(old_s / new_s, 3) if new_s else None,
         "max_nodes_new": max((s.get("max_nodes", 0) for s in stats.values()), default=0),
-        "max_atom_nodes_new": max((s.get("max_atom_nodes", 0) for s in stats.values()), default=0),
+        "max_atoms_new": max((s.get("max_atoms", 0) for s in stats.values()), default=0),
+        "max_call_work_new": max((s.get("max_call_work", 0) for s in stats.values()), default=0),
+        "max_search_call_work_new": max((s.get("max_search_call_work", 0) for s in stats.values()), default=0),
         "max_placement_dfs_nodes": {k: stats[k].get("max_placement_dfs_nodes", 0) for k in ("end_to_end", "placement")},
         "max_block_candidates_new": max((s.get("max_block_candidates", 0) for s in stats.values()), default=0),
         "report": report,
@@ -1194,12 +1271,16 @@ def main(argv: list) -> int:
     honest = {(cid, load): v["cold"] for cid, rec in passes.items() if cid != "perf/f_hostile2_45"
               for load, v in rec.items() if isinstance(v["cold"], int)}
     worst = max(honest, key=honest.get, default=None)
+    # A13: an honest load the DEFAULT budget refuses is a default sized too small -- never silently left out of the max
+    budget_refused = {f"{cid}:{load}": v["cold"] for cid, rec in passes.items() if cid != "perf/f_hostile2_45"
+                      for load, v in rec.items() if "VerificationBudgetExceeded" in str(v["cold"])}
     results["canonical_work_cold_warm_disagreements"] = bad_work
     results["canonical_work_honest_max"] = {"value": honest.get(worst, 0), "load": worst}
+    results["honest_loads_refused_by_the_default_budget"] = budget_refused
     results["canonical_work_hostile_f_hostile2_45"] = passes.get("perf/f_hostile2_45")
     failed = (total["MISMATCH"] + total["MISMATCH_relabel_invariance"] + total["REGRESSION_new_refused_old_ok"]
               + stats.get("end_to_end", Counter())["MISMATCH"] + stats.get("placement", Counter())["MISMATCH"]
-              + len(bad_work))
+              + len(bad_work) + len(budget_refused))
     results["verdict"] = "PASS" if failed == 0 else "FAIL"
     print(json.dumps({k: v for k, v in results.items() if k != "report"}, indent=1, sort_keys=True, default=str))
     for row in report[:60]:

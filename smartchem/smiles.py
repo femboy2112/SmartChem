@@ -244,6 +244,16 @@ def _parse_bracket(text: str, start: int) -> tuple[_Atom, int]:
         while i < len(body) and body[i].isdecimal():
             num += body[i]
             i += 1
+        # 0.9.5 (A13): OpenSMILES spells a bracket hydrogen count with ONE digit (``hcount ::= 'H' DIGIT?``).  Every H
+        # becomes an atom (_fill_hydrogens) before any canonicaliser ceiling runs, so a longer run was an amplifier: a
+        # string's WORK grew with the number it spelled, not its length -- [CH1234567] (17 characters) held the parser
+        # past 60 s and [CH123456789] asked for 10**8 atoms (MemoryError under a 1.5 GB cap), on the front door and on
+        # every load that re-derives a carried target.  More than one digit is not a chemical H count; refused, typed.
+        if len(num) > 1:
+            raise SmilesError(
+                f"bracket atom {atom_text!r} has a {len(num)}-digit hydrogen count; a bracket H count is one digit "
+                "(0-9, OpenSMILES) -- write the hydrogens as atoms or fix the count"
+            )
         h_count = _bracket_int(num, "hydrogen count", atom_text) if num else 1
     charge = 0
     # ONE charge run: '+', '-', '+<n>', '-<n>', or a same-sign repeat ('++', '---').  0.9.5 S17 (C6-F8): the old
@@ -745,30 +755,49 @@ def _fill_hydrogens(atoms: list[_Atom], bonds: list[list[int]]) -> tuple[list[st
     Bracket atoms carry an exact H count; organic-subset atoms fill to the smallest normal valence
     at least as large as their used bond order (the OpenSMILES rule). Charge lives on bracket atoms,
     where H is explicit, so it never interacts with implicit-H filling.
+
+    0.9.5 A13: the graph is COUNTED before it is built -- heavy atoms plus every hydrogen, implicit
+    or bracket -- and refused past the canonicaliser's atom ceiling (``category._MAX_CANONICAL_ATOMS``,
+    read at call time: one ceiling, never two that drift), so no SMILES materialises a graph
+    ``canonical()`` would refuse; ``"C" * 100000`` stops here, not after 300,002 atoms. It refuses with
+    the canonicaliser's own :class:`~smartchem.category.CanonicalBoundExceeded`, not ``SmilesError``:
+    the string IS SMILES, only too large to identify -- so every front door files it where it already
+    files that refusal (``IdentityOutOfBounds``, INVALID_INPUT, exit 2), and AUTO never re-reads it as
+    a formula (a ``SmilesError`` there falls through to the formula grammar: ``"C" * 400`` read as C400).
     """
+    from .category import _MAX_CANONICAL_ATOMS, CanonicalBoundExceeded
+
     used = [0] * len(atoms)
     for a, b, o in bonds:
         used[a] += o
         used[b] += o
-    out_atoms = [atom.element for atom in atoms]
-    out_bonds = [Bond(a, b, o) for a, b, o in bonds]
+    h_counts = []
     for k, atom in enumerate(atoms):
         if atom.h_explicit is not None:
-            h_count = atom.h_explicit
-        else:
-            valset = _VALENCES.get(atom.element)
-            if valset is None:
-                raise SmilesError(
-                    f"{atom.element!r} is not an organic-subset atom; write it in brackets "
-                    "with an explicit H count, e.g. [Se H2]"
-                )
-            target = next((v for v in valset if v >= used[k]), None)
-            if target is None:
-                raise SmilesError(
-                    f"atom {atom.element!r} has bond order {used[k]} exceeding its normal valence "
-                    f"{valset}; state hydrogens explicitly in brackets"
-                )
-            h_count = target - used[k]
+            h_counts.append(atom.h_explicit)
+            continue
+        valset = _VALENCES.get(atom.element)
+        if valset is None:
+            raise SmilesError(
+                f"{atom.element!r} is not an organic-subset atom; write it in brackets "
+                "with an explicit H count, e.g. [Se H2]"
+            )
+        target = next((v for v in valset if v >= used[k]), None)
+        if target is None:
+            raise SmilesError(
+                f"atom {atom.element!r} has bond order {used[k]} exceeding its normal valence "
+                f"{valset}; state hydrogens explicitly in brackets"
+            )
+        h_counts.append(target - used[k])
+    total = len(atoms) + sum(h_counts)
+    if total > _MAX_CANONICAL_ATOMS:
+        raise CanonicalBoundExceeded(
+            f"structure spells {total:,} atoms with its hydrogens, over the {_MAX_CANONICAL_ATOMS:,}-atom ceiling the "
+            "canonicaliser identifies within; refused before it is built"
+        )
+    out_atoms = [atom.element for atom in atoms]
+    out_bonds = [Bond(a, b, o) for a, b, o in bonds]
+    for k, h_count in enumerate(h_counts):
         for _ in range(h_count):
             hi = len(out_atoms)
             out_atoms.append("H")
@@ -1082,7 +1111,7 @@ def _isotopic_identity(atoms: list[_Atom], bonds: list[list[int]], charge: int) 
     stereo perception -- a canonical CIP parity, which graph canonicalisation cannot supply because chirality is a
     reflection); that, and CONFIGURATION, stay the named ID-STEREO-01 deferral.
     """
-    from .category import _canonical_by_individualisation
+    from .category import _CanonicalMeter, _canonical_by_individualisation
 
     work = [list(b) for b in bonds]                       # a private copy: never disturb the caller's pending bonds
 
@@ -1094,9 +1123,10 @@ def _isotopic_identity(atoms: list[_Atom], bonds: list[list[int]], charge: int) 
             f"{atoms[k].isotope}:{out_atoms[k]}" if k < len(atoms) and atoms[k].isotope else out_atoms[k]
             for k in range(len(out_atoms))
         )
-        # S16: the same search canonical() runs, so the same charge -- each node costs the atoms it re-refines
+        # S16: the same search canonical() runs, so the same charge -- A13: every refinement round on a charged
+        # meter, bounded per call by the canonicaliser's own ceiling
         symbols, edges = _canonical_by_individualisation(
-            colored, frozenset(out_bonds), on_node=lambda: charge_canonical_work(len(colored))
+            colored, frozenset(out_bonds), meter=_CanonicalMeter(charge=True)
         )
         return canonical_digest((symbols, edges, charge))
 
@@ -1215,10 +1245,13 @@ def _perceive_configuration(
     marked = [a for a in range(len(atoms)) if atoms[a].chirality]
     if not marked:
         return None, True                                        # achiral: trivially complete, reduces to constitution
+    from .category import _CanonicalMeter
+
     work = [list(b) for b in bonds]
     _kekulize_in_place(atoms, work, charge)
     filled_atoms, filled_bonds = _fill_hydrogens(atoms, work)     # heavy indices 0..n-1 preserved; H appended after
-    wl = _wl_colours(tuple(filled_atoms), frozenset(filled_bonds))
+    # A13: refinement is canonicalisation work wherever it runs -- metered (charged, bounded per call) like canonical()
+    wl = _wl_colours(tuple(filled_atoms), frozenset(filled_bonds), _CanonicalMeter(charge=True))
     n = len(atoms)
     neighbours: dict[int, list[int]] = {i: [] for i in range(len(filled_atoms))}
     for b in filled_bonds:

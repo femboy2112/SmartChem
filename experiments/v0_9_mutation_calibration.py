@@ -81,7 +81,11 @@ code shape.  A16 transport-loader hardening: M-A16-1..7, one per item -- the pub
 loaders' typed-refusal decorator and the load scope's fold (Wave D F5), the producer_signature shape (F11), the
 capability_work counter never charged / charged after the work / exhaustion turned into a skip (C8 F5), and the
 payload depth ceiling (C8 F4, dict leg).  A17 (parent): the S5 DAG-height law corrected to the proven
-search bound (M-A17-1 the old max_depth law, M-A17-2 the bound's top power dropped); M236 re-anchored.
+search bound (M-A17-1 the old max_depth law, M-A17-2 the bound's top power dropped); M236 re-anchored.  A13 the canonicalisation amplifier bound, one per defect: the one-digit bracket H count
+(M-A13-1), canonical()'s atom ceiling (M-A13-2), the parser's atom ceiling (M-A13-3), the work meter booking its passes
+(M-A13-4) BEFORE each round (M-A13-5), the per-call work ceiling (M-A13-6) and the block path's per-candidate pass
+(M-A13-7); M-S16c is re-pointed at the nodes x atoms ceiling's successor (a search node's refinement on the call meter)
+and M-S16e re-anchored on the meter canonical() charges through.
 
 Run:  .venv/bin/python experiments/v0_9_mutation_calibration.py
       (dev only: SMARTCHEM_MUT_ONLY=M38,M104 runs a subset -- retirements then read VOID; the gate is the full run)
@@ -7600,12 +7604,33 @@ def m_s16b():
                         parse_smiles("C1C2CC3CC1CC(C2)C3"), 5, "search nodes")
 
 
-@mutant("M-S16c", "S16: the nodes x atoms ceiling removed ([CH5000] grinds 610 s under the node cap)",
-        "category._canonical_by_individualisation ((nodes + 1) * n > _MAX_INDIVIDUALISATION_ATOM_NODES)")
+@mutant("M-S16c", "S16 -> A13: the search's per-node refinement escapes the call's work ceiling (a C bonded to 5,000 H "
+        "grinds 610 s under the node cap)",
+        "category._canonical_by_individualisation (_refine_partition(..., meter) at every node)")
 def m_s16c():
+    """Re-pointed by A13: the S16 nodes x atoms ceiling this mutant removed is gone, replaced by its successor -- every
+    refinement round of a search node is charged on the CALL's meter and bounded by ``_MAX_CANONICAL_CALL_WORK``.
+    Honest: with the ceiling at 20 passes, the 201-atom star's pre-search refinement (~6 passes) is admitted and its
+    ~200 search nodes (>= 2 passes each) are refused, naming the call ceiling.  Mutant: the node's refinement runs off
+    the meter -- the star answers, its search unbounded by work again (only the node cap, which 5,000 nodes passed)."""
+    import smartchem.category as cat_m
     star = Molecule(("C",) + ("H",) * 200, frozenset(Bond(0, i, 1) for i in range(1, 201)))
-    return _s16_ceiling("_MAX_INDIVIDUALISATION_ATOM_NODES",
-                        "if (nodes[0] + 1) * n > _MAX_INDIVIDUALISATION_ATOM_NODES:", star, 5_000, "atom-refinements")
+    anchor = "partition = _refine_partition(atoms, bonds, partition, meter)"
+    with _patch(cat_m, "_MAX_CANONICAL_CALL_WORK", 20 * (201 + 2 * 200)), _s16_cold():
+        honest_exc = None
+        try:
+            Molecule.canonical.__wrapped__(star)
+        except cat_m.CanonicalBoundExceeded as exc:
+            honest_exc = exc
+        bad = _src_mutant(cat_m._canonical_by_individualisation,
+                          (anchor, "partition = _refine_partition(atoms, bonds, partition)"))
+        with _patch(cat_m, "_canonical_by_individualisation", bad):
+            try:
+                Molecule.canonical.__wrapped__(star)
+                answered = True
+            except cat_m.CanonicalBoundExceeded:
+                answered = False
+    return honest_exc is not None and "units of work in one call" in str(honest_exc), answered
 
 
 @mutant("M-S16d", "S16: the LEAF ceiling removed",
@@ -7628,10 +7653,11 @@ def m_s16e():
         _ok, exc = _attempt(lambda: load_response(copy.deepcopy(payload), tight))
         booked = load_response(copy.deepcopy(payload)).receipt.work.canonical_work
     honest = isinstance(exc, VerificationBudgetExceeded) and exc.counter == "canonical_work" and booked > 0
+    # A13 re-anchored: canonical() now books both paths through ONE charged meter (block candidates up front, every
+    # refinement round before it runs) plus the one-atom charge; the broken body makes that meter book nothing
     bad = _src_mutant(cat_m.Molecule.canonical.__wrapped__,
-                      ("_charge_work(budget)", "_charge_work(0)"),
-                      ("_charge_work(1)", "_charge_work(0)"),
-                      ("on_node=lambda: _charge_work(n)", "on_node=lambda: _charge_work(0)"))
+                      ("_CanonicalMeter(charge=True)", "_CanonicalMeter(charge=False)"),
+                      ("_charge_work(1)", "_charge_work(0)"))
     bad = ver_mod.work_transparent_cache(8192)(getattr(bad, "__wrapped__", bad))   # the installed cache, fresh
     with _patch(cat_m.Molecule, "canonical", bad), _s16_cold():
         booked2 = load_response(copy.deepcopy(payload)).receipt.work.canonical_work
@@ -8350,6 +8376,169 @@ def m_a16_7():
     with _patch(ver_mod, "count_payload_nodes", bad), _patch(svc, "count_payload_nodes", bad):
         crashed = outcome() == "crash"
     return honest, crashed
+
+
+# -- 0.9.5 A13: the canonicalisation amplifier bound (the one-digit bracket H count, the atom ceilings, canonicalisation
+# metered in passes before each pass, the per-call work ceiling) -- one mutant per defect -----------------------------
+
+def _a13_chain(k: int) -> Molecule:
+    """C_k H_(2k+2), BUILT (no parse): refinement walks inward one step per round, ~k/2 rounds of one pass each."""
+    atoms, bonds = ["C"] * k, [Bond(i, i + 1, 1) for i in range(k - 1)]
+    for c in range(k):
+        for _ in range(3 if c in (0, k - 1) else 2):
+            atoms.append("H")
+            bonds.append(Bond(c, len(atoms) - 1, 1))
+    return Molecule(tuple(atoms), frozenset(bonds))
+
+
+def _a13_outcome(call) -> "tuple[str, object]":
+    """``("ok", value)`` or ``("refused", the CanonicalBoundExceeded)`` -- the refusal is the compared fact."""
+    import smartchem.category as cat_m
+    try:
+        return "ok", call()
+    except cat_m.CanonicalBoundExceeded as exc:
+        return "refused", exc
+
+
+@mutant("M-A13-1", "A13: a multi-digit bracket H count is materialised again ([CH10] = CH10; [CH123456789] asks for "
+        "10**8 atoms)", "smiles._parse_bracket (len(num) > 1 -> SmilesError)")
+def m_a13_1():
+    """Honest: ``[CH10]`` is a typed SmilesError (a bracket H count is one OpenSMILES digit), refused before
+    ``_fill_hydrogens``.  Mutant: the check skipped -- ``[CH10]`` parses as CH10.  The witness is ten atoms, not ten
+    million: the mutant's arm must not grind the box."""
+    import smartchem.smiles as smiles_mod
+
+    def reads(parse):
+        try:
+            return parse("[CH10]")
+        except smiles_mod.SmilesError:
+            return None
+
+    honest = reads(smiles_mod.parse_smiles) is None
+    bad_bracket = _src_mutant(smiles_mod._parse_bracket, ("        if len(num) > 1:", "        if False:"))
+    with _patch(smiles_mod, "_parse_bracket", bad_bracket):
+        bad = reads(smiles_mod.parse_smiles)
+    return honest, bad is not None and bad.formula == {"C": 1, "H": 10}
+
+
+@mutant("M-A13-2", "A13: canonical()'s atom ceiling removed (the symbol sort, block factorials and refinement run on "
+        "any size of graph)", "category.Molecule.canonical (_refuse_over_atom_ceiling(n) before any work)")
+def m_a13_2():
+    """Honest: with the atom ceiling at 4, a 9-atom ethanol graph is refused by canonical() itself, before any work
+    (its block path never reaches the search's own door).  Mutant: canonical()'s check removed -- it answers."""
+    import smartchem.category as cat_m
+    ethanol = parse_smiles("CCO")                                     # parsed BEFORE the ceiling is lowered
+    with _patch(cat_m, "_MAX_CANONICAL_ATOMS", 4), _s16_cold():
+        honest, exc = _a13_outcome(lambda: Molecule.canonical.__wrapped__(ethanol))
+        bad_fn = _src_mutant(cat_m.Molecule.canonical.__wrapped__,
+                             ("_refuse_over_atom_ceiling(n)               # A13", "pass  # A13"))
+        bad_fn = getattr(bad_fn, "__wrapped__", bad_fn)              # the source carries the lru_cache decorator
+        bad, _value = _a13_outcome(lambda: bad_fn(ethanol))
+    return honest == "refused" and "atom ceiling" in str(exc), bad == "ok"
+
+
+@mutant("M-A13-3", "A13: the parser's atom ceiling removed (\"C\" * 100000 materialises 300,002 atoms before any "
+        "refusal)", "smiles._fill_hydrogens (count, then refuse, then build)")
+def m_a13_3():
+    """Honest: ``_fill_hydrogens`` on the ``"C" * 400`` skeleton (1,202 atoms with H) refuses on the COUNT with the
+    canonicaliser's own CanonicalBoundExceeded.  Mutant: the count's check removed -- the 1,202-atom graph is built."""
+    import smartchem.smiles as smiles_mod
+    skeleton = smiles_mod._parse_skeleton("C" * 400)
+    honest, exc = _a13_outcome(lambda: smiles_mod._fill_hydrogens(*copy.deepcopy(skeleton)))
+    bad_fill = _src_mutant(smiles_mod._fill_hydrogens, ("    if total > _MAX_CANONICAL_ATOMS:", "    if False:"))
+    bad, built = _a13_outcome(lambda: bad_fill(*copy.deepcopy(skeleton)))
+    return (honest == "refused" and "1,202 atoms" in str(exc)), bad == "ok" and len(built[0]) == 1_202
+
+
+@mutant("M-A13-4", "A13: the work meter charges nothing (refinement rounds and block candidates go unbooked)",
+        "category._CanonicalMeter.spend (_charge_work(units))")
+def m_a13_4():
+    """Honest: canonicalising adamantane books its work -- whole passes over the graph -- on the load's meter.
+    Mutant: the meter bounds but never passes its units on -- the load books 0 for the same call."""
+    import smartchem.category as cat_m
+    m = parse_smiles("C1C2CC3CC1CC(C2)C3")
+
+    def booked():
+        ctx = ver_mod.VerificationContext(VerificationPolicy(budget=VerificationBudget.unlimited()))
+        with ctx.activate():
+            Molecule.canonical.__wrapped__(m)
+        return ctx.meter.consumed("canonical_work")
+    passes = len(m.atoms) + 2 * len(m.bonds)
+    honest_units = booked()
+    bad_spend = _src_mutant(cat_m._CanonicalMeter.spend, ("_charge_work(units)", "pass"))
+    with _patch(cat_m._CanonicalMeter, "spend", bad_spend):
+        bad_units = booked()
+    return honest_units > 0 and honest_units % passes == 0, bad_units == 0
+
+
+@mutant("M-A13-5", "A13: a refinement round charged AFTER it runs (a ceiling then refuses only work already done)",
+        "category._refine_from (meter.spend(passes) before each round)")
+def m_a13_5():
+    """Honest: with the call ceiling at exactly one pass, the refinement setup is admitted and the FIRST round refused
+    before a single neighbour list is sorted (category's sorts, counted: the symbol sort, the symbol ranks, the seed).
+    Mutant: the round's charge moved after the round -- the round runs (a sort per atom), then the meter refuses."""
+    import smartchem.category as cat_m
+    m = _a13_chain(100)                                              # 302 atoms: one round sorts 302 lists
+    passes = len(m.atoms) + 2 * len(m.bonds)
+    sorts = [0]
+    real_sorted = sorted
+
+    def counting(*a, **k):
+        sorts[0] += 1
+        return real_sorted(*a, **k)
+
+    def sorts_until_refused(refine):
+        sorts[0] = 0
+        with _patch(cat_m, "_refine_from", refine):
+            outcome, _exc = _a13_outcome(lambda: Molecule.canonical.__wrapped__(m))
+        return outcome, sorts[0]
+    with _patch(cat_m, "sorted", counting), _patch(cat_m, "_MAX_CANONICAL_CALL_WORK", passes), _s16_cold():
+        honest = sorts_until_refused(cat_m._refine_from)
+        bad_refine = _src_mutant(       # built INSIDE the patch: its globals snapshot must see the counting sorted
+            cat_m._refine_from,
+            ("        if meter is not None:\n            meter.spend(passes)             # this round, BEFORE it runs\n",
+             ""),
+            ("        ranks = {s: k for k, s in enumerate(sorted(set(signature)))}\n",
+             "        if meter is not None:\n            meter.spend(passes)\n"
+             "        ranks = {s: k for k, s in enumerate(sorted(set(signature)))}\n"))
+        bad = sorts_until_refused(bad_refine)
+    return honest[0] == "refused" and honest[1] <= 3, bad[0] == "refused" and bad[1] >= len(m.atoms)
+
+
+@mutant("M-A13-6", "A13: the per-call work ceiling removed (one call's refinement bounded by nothing but the node / "
+        "leaf caps -- C*1000's 22 s before any search node)", "category._CanonicalMeter.spend (used + units > ceiling)")
+def m_a13_6():
+    """Honest: with the call ceiling at 10,000 units, a 302-atom chain is refused in its Weisfeiler-Leman refinement --
+    before any search node exists for the node cap to count.  Mutant: the meter never refuses -- the chain answers."""
+    import smartchem.category as cat_m
+    m = _a13_chain(100)
+    with _patch(cat_m, "_MAX_CANONICAL_CALL_WORK", 10_000), _s16_cold():
+        honest, exc = _a13_outcome(lambda: Molecule.canonical.__wrapped__(m))
+        bad_spend = _src_mutant(cat_m._CanonicalMeter.spend,
+                                ("if self.used + units > _MAX_CANONICAL_CALL_WORK:", "if False:"))
+        with _patch(cat_m._CanonicalMeter, "spend", bad_spend):
+            bad, _value = _a13_outcome(lambda: Molecule.canonical.__wrapped__(m))
+    return honest == "refused" and "units of work in one call" in str(exc), bad == "ok"
+
+
+@mutant("M-A13-7", "A13: a block-path candidate charged 1 unit again, whatever the graph (a 950-atom molecule runs "
+        "~130x the wall time per unit of ethanol)", "category.Molecule.canonical (budget * (n + 2|bonds|))")
+def m_a13_7():
+    """Honest: ethanol's 1,440 block candidates are charged one pass each -- 1,440 x (9 + 2 x 8) = 36,000 units.
+    Mutant: the bare candidate count -- 1,440, the unit that let a large molecule's candidate loop run for a minute on
+    a charge a small one pays in milliseconds."""
+    import smartchem.category as cat_m
+    ethanol = parse_smiles("CCO")
+
+    def charged(fn):
+        with ver_mod._recording_canonical_work() as frame:
+            fn(ethanol)
+        return frame.total
+    honest = charged(Molecule.canonical.__wrapped__)
+    bad_fn = _src_mutant(cat_m.Molecule.canonical.__wrapped__,
+                         ("meter.spend(budget * (n + 2 * len(self.bonds)))", "meter.spend(budget)"))
+    bad_fn = getattr(bad_fn, "__wrapped__", bad_fn)
+    return honest == 1_440 * (9 + 2 * 8), charged(bad_fn) == 1_440
 
 
 # =================================================================================================================

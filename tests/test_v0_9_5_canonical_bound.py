@@ -5,8 +5,10 @@ false twins, so symmetric SUBTREES were enumerated factorially while the leaf ca
 AND a verifier hole (every canonicalisation of a load ran uncharged).  The operation, and what each test here pins:
 
 1. automorphism pruning, identity-PRESERVING  -- neo2 finishes in ~600 nodes; NEW == the verbatim OLD search;
-2. node / atom-node ceilings, explicit stack  -- past them: ``CanonicalBoundExceeded`` (a ``NotImplementedError``);
-                                                 deep graphs no longer die of RecursionError (Wave C6);
+2. node / work ceilings, explicit stack       -- past them: ``CanonicalBoundExceeded`` (a ``NotImplementedError``);
+                                                 deep graphs no longer die of RecursionError (Wave C6); A13 replaced
+                                                 the nodes x atoms ceiling with a per-call WORK ceiling in passes
+                                                 (tests/test_v0_9_5_amplifier_bound.py pins the A13 bound itself);
 3. canonicalisation is budgeted work          -- ``canonical_work``: each distinct cached computation charged its
                                                  cold work ONCE per load (replayed through every work-transparent
                                                  cache, never recomputed in a load), refused STICKILY (never inside);
@@ -102,7 +104,10 @@ def test_neo2_parses_within_a_small_node_count():
     assert form == m.canonical()
     assert m.formula == {"C": 17, "H": 36}
     assert 0 < nodes <= 2_048                                 # measured ~600; the ceiling is far above
-    assert work == nodes * len(a.atoms)                        # each node is charged the atoms it re-refines
+    # A13 (was: work == nodes x atoms): every charge is a whole pass over the graph, and every node's refinement
+    # costs at least two (its setup and one round)
+    passes = len(a.atoms) + 2 * len(a.bonds)
+    assert work % passes == 0 and work >= 2 * nodes * passes
 
 
 def test_pruned_search_is_byte_identical_to_the_unpruned_one():
@@ -169,36 +174,44 @@ def test_node_ceiling_refuses_as_the_same_not_implemented_family(monkeypatch):
         Molecule.canonical.cache_clear()
 
 
-def test_atom_node_ceiling_refuses_a_large_repetitive_graph(monkeypatch):
-    """Broken: a node ceiling alone -- [CH5000] is 5,000 nodes (under it) and 610 s, since every node re-refines the
-    whole graph; nodes x atoms is what bounds the time."""
-    monkeypatch.setattr(cat, "_MAX_INDIVIDUALISATION_ATOM_NODES", 10_000)
-    star = Molecule(("C",) + ("H",) * 400, frozenset(Bond(0, i, 1) for i in range(1, 401)))
-    with pytest.raises(CanonicalBoundExceeded, match="atom-refinements"):
-        Molecule.canonical.__wrapped__(star)
+def _star(hydrogens: int) -> Molecule:
+    """One carbon bonded to ``hydrogens`` H, BUILT: A13 made the SMILES spelling (``[CH1100]``) a parse refusal -- a
+    bracket H count is one digit -- so the S16 depth / repetition witnesses are graphs now, not strings."""
+    return Molecule(("C",) + ("H",) * hydrogens, frozenset(Bond(0, i, 1) for i in range(1, hydrogens + 1)))
+
+
+def test_call_work_ceiling_refuses_a_large_repetitive_graph(monkeypatch):
+    """Broken: a node ceiling alone -- a C bonded to 5,000 H is 5,000 nodes (under it) and 610 s, since every node
+    re-refines the whole graph.  S16 bounded nodes x atoms; A13 replaced that with its honest successor, the per-call
+    WORK ceiling in passes (every refinement round charged before it runs)."""
+    monkeypatch.setattr(cat, "_MAX_CANONICAL_CALL_WORK", 10_000)
+    with pytest.raises(CanonicalBoundExceeded, match="units of work in one call"):
+        Molecule.canonical.__wrapped__(_star(400))
 
 
 def test_a_deep_individualisation_no_longer_hits_the_recursion_limit():
     """Broken: the recursive walk -- one Python frame per individualisation -- died with RecursionError near depth
-    1,000 ([CH1000], an 8-character input; C*1000), an exit-70 crash instead of an answer or a typed refusal."""
+    1,000 (a C bonded to 1,000 H; C*1000), an exit-70 crash instead of an answer or a typed refusal.  The witness is
+    now built at the A13 atom ceiling: 1,024 atoms, 1,022 individualisations deep."""
     with _hang_guard(120):
-        m = parse_smiles("[CH1100]")                          # 1,100 nodes deep, 1.2M atom-refinements: in bounds
-    assert m.formula == {"C": 1, "H": 1100}
+        m = Molecule.canonical.__wrapped__(_star(1_023))
+    assert m.formula == {"C": 1, "H": 1_023}
 
 
 def test_ceilings_are_far_above_every_measured_molecule():
     """Broken: a ceiling tighter than chemistry (a false refusal) -- neo2, coronene, C80 rings stay well under."""
-    worst_nodes = worst_atom_nodes = 0
+    worst_nodes = worst_call_work = worst_atoms = 0
     molecules = [parse_smiles(s) for s in (NEO2, "c1cc2ccc3ccc4ccc5ccc6ccc1c7c2c3c4c5c67",
-                                           "CC(C)(C)c1cc(C(C)(C)C)cc(C(C)(C)C)c1")]
+                                           "CC(C)(C)c1cc(C(C)(C)C)cc(C(C)(C)C)c1", "Cc1ccccc1C", "CC(=O)OCCC(C)C")]
     molecules += [m for label, m in rings_corpus() if label.endswith(("C80", "C79"))]
     for m in molecules:
         a = relabel(m, random.Random(5))
-        nodes = _nodes(a)
-        worst_nodes = max(worst_nodes, nodes)
-        worst_atom_nodes = max(worst_atom_nodes, nodes * len(a.atoms))
+        worst_nodes = max(worst_nodes, _nodes(a))
+        worst_call_work = max(worst_call_work, _cold_canonical(a)[1])
+        worst_atoms = max(worst_atoms, len(a.atoms))
     assert worst_nodes * 8 <= cat._MAX_INDIVIDUALISATION_NODES
-    assert worst_atom_nodes * 8 <= cat._MAX_INDIVIDUALISATION_ATOM_NODES
+    assert worst_call_work * 8 <= cat._MAX_CANONICAL_CALL_WORK      # o-xylene's 46k block candidates: ~2.5M passes
+    assert worst_atoms * 4 <= cat._MAX_CANONICAL_ATOMS              # the C80 cycloalkane: 240 atoms
 
 
 # ---------------------------------------------------------------------------------------------------------------------

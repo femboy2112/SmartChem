@@ -200,18 +200,24 @@ _DEFAULT_CAPABILITY_WORK = 1 << 13
 #: A node budget bounds decode work only; it never inspects what the nodes say.
 _DEFAULT_PAYLOAD_NODES = 1 << 21
 
-#: 0.9.5 S16 -- canonicalisation is verification work.  One unit = one candidate permutation evaluated (block path),
-#: one atom re-refined at an individualisation search node (a node costs the molecule's atom count), or one node of
-#: the Kekule placement search (``smiles._min_constitution_placement``) -- see ``Molecule.canonical``.  Each distinct
-#: cached computation is charged its cold work ONCE per load (see the distinct-once section below), so the total is a
-#: pure function of the payload.  MEASURED 2026-09-30 by ``experiments/v0_9_5_canonical_differential.py --service full
-#: --perf`` on 105 honest loads -- the 22 frozen service cases and the verification-performance payloads (plain thick,
-#: pinned + verified-admission thick, thin, pinned re-execution), each cold (every process cache cleared), warm and
-#: after ENUMERATION_CACHE.clear(): the three agree on every load.  Maximum 3,054,611 (isopentyl_dag, pinned
-#: re-execution); isopentyl re-execution 2,791,909, isopentyl plain thick 2,199,665.  8 x 3,054,611 -> 2**25 (11.0x).
-#: (Charging every call instead measured 1,774,137,801 and forced 2**34: the thousands of cache hits an honest load
+#: 0.9.5 S16 -- canonicalisation is verification work.  Each distinct cached computation is charged its cold work ONCE
+#: per load (see the distinct-once section below), so the total is a pure function of the payload.  (S16: charging
+#: every call instead measured 1,774,137,801 in its unit and forced 2**34: the thousands of cache hits an honest load
 #: makes, each priced at its cold cost, admitted hours of cold hostile canonicalisation under the default.)
-_DEFAULT_CANONICAL_WORK = 1 << 25
+#: 0.9.5 A13 -- the UNIT is a pass over the graph's atoms and bond ends: a refinement round over a molecule of n atoms
+#: and b bonds costs n + 2b, every block-path candidate the same (it relabels every atom and re-sorts every bond), one
+#: node of the Kekule placement search (``smiles._min_constitution_placement``) 1 -- see ``Molecule.canonical``.  The
+#: S16 unit (one per candidate / atoms per search node, refinement before the search free) bought ~130x the wall time
+#: per unit on a 950-atom block-path molecule as on ethanol, and left refinement ahead of the search uncharged, so 2**25
+#: of it admitted hours.  MEASURED 2026-10-01 in passes by ``experiments/v0_9_5_canonical_differential.py --service
+#: full --perf`` on 117 honest loads -- the 22 frozen service cases and the verification-performance payloads (plain
+#: thick, pinned + verified-admission thick, thin, pinned re-execution) and every v0.8 / CLI fixture payload -- each cold
+#: (every process cache cleared), warm and after ENUMERATION_CACHE.clear(): the three agree on every load.  Maximum
+#: 117,006,226 (isopentyl_dag, pinned re-execution); isopentyl re-execution 110,553,122, isopentyl plain thick
+#: 90,596,163, the v0.8 stereo fixture 10,010,533.  8 x 117,006,226 -> 2**30 (9.2x).  Wall time: at the slowest rate
+#: measured on hostile shapes (0.8M units/s, ``experiments/v0_9_5_amplifier_bound.py``) that is ~22 min of
+#: canonicalisation for one hostile load at this default, ~4 min at the block path's ~4M units/s.
+_DEFAULT_CANONICAL_WORK = 1 << 30
 
 
 @dataclass(frozen=True)

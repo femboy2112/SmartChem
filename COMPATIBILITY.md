@@ -48,7 +48,8 @@ when additive and ignorable, a MAJOR otherwise) and leaves the old one meaning w
 ### 2.2 What is NOT stable
 
 * **Human prose:** the human render of every CLI verb, diagnostics text, the wording of refusal messages, docstrings.
-  The *refusal class* (a `ValueError` / `VerificationBudgetExceeded` / typed parse error, and the exit code) is stable;
+  The *refusal class* (a `ValueError` — including `MalformedPayloadError`, also a `TypeError`, for a payload whose shape
+  a decoder cannot read — / `VerificationBudgetExceeded` / typed parse error, and the exit code) is stable;
   the message text and the law tag it carries (e.g. `(D29.1)`, `(0.9.5 S1)`) are informative, not contractual.
 * **Timing and resource use** (the verification budget is counted in deterministic work units precisely so that no
   verdict depends on wall-clock time).
@@ -107,6 +108,21 @@ reads a payload-supplied path — recompile locally from the file).
   The default budget admits every honest payload of the frozen corpus with headroom; a MINOR may raise the default, never
   lower it below that corpus; a caller raises it explicitly (`VerificationBudget(...)` or the explicit
   `VerificationBudget.unlimited()`).
+* **The budget's counters (0.9.5 defaults; each charged BEFORE the work it bounds):**
+  * `canonical_work`, in passes over a graph (atoms + 2 × bonds per refinement round and per block-path candidate),
+    each distinct canonicalisation charged once per load whether the process cache is cold or warm. Default 2^30, 9.2×
+    the honest maximum (117,006,226 units, an isopentyl DAG answer under pinned re-execution, over 117 honest loads).
+    At the slowest measured rate (≈0.8M units/s on a dense hostile graph, ±30% on a shared box) the default admits
+    about 22 minutes of canonicalisation per load.
+  * `capability_work`, one unit per declared bottle per capability assessment. Default 2^13, 14.4× the honest maximum
+    (567). A bench above roughly 100 bottles on a 27-route answer needs an explicit raise.
+* **Shape before meaning:** every public loader (`load_response`, `load_response_text`, `response_from_payload`,
+  `deserialize_response`, `request_from_payload`, `deserialize_request`, the summary / frontier / snapshot decoders,
+  `compilation_ir.ir_from_payload` / `deserialize_ir`, `identity.identity_loss_from_payload`) refuses a type-confused
+  payload as `MalformedPayloadError` — never a bare `TypeError` / `AttributeError` / `KeyError` / `IndexError`. A
+  payload nested more than 128 containers deep (the honest maximum is 28) is refused before any decode; a wire molecule
+  of more than 1,024 atoms is refused before its graph is built; `producer_signature` is `null` or 64 lowercase hex
+  digits on every load, keyless and legacy included.
 * A key shorter than 16 bytes, a malformed pin, or `require_signature` without a key is refused when the policy is
   constructed; a producer cannot sign with a key shorter than 16 bytes either.
 * **Signature timing boundary:** a keyed consumer checks `producer_signature` against the payload's CLAIMED wire digest
@@ -130,7 +146,10 @@ reads a payload-supplied path — recompile locally from the file).
   labelled "baking soda" does not satisfy a "sodium bicarbonate" requirement). Name comparison folds whitespace; only a
   whitespace-folded match certifies a supply, covers a raw source string or merges two obligations. A match that holds
   only after also folding case is a *possible* source (`UNKNOWN`), never a certification — `CO` (carbon monoxide) is
-  not `Co` (cobalt).
+  not `Co` (cobalt). The same rule governs every case-folding lookup that certifies (hazard records, catalyst tiers):
+  a case-only agreement never certifies a string whose letter case carries meaning — one that reads as a formula, as a
+  whole or token by token. `WAtEr` (W·At·Er), `CoNC H2SO4` and `sulfuric AcID` get no hazard record and no catalyst
+  tier (`UNKNOWN`; a declared catalyst `BLOCKS`), while `Water`, `WATER` and `SULFURIC ACID` resolve.
 * **One species, two keys (a declared split):** hypervalent and charge-separated spellings of one species are
   *different* material keys — `CN(=O)=O` vs `C[N+](=O)[O-]` (nitro), `CS(C)=O` vs `C[S+](C)[O-]` (sulfoxide), and
   likewise N-oxides, phosphine oxides, sulfones, nitrate; so are resonance forms that move a charge or an unpaired
@@ -144,16 +163,28 @@ reads a payload-supplied path — recompile locally from the file).
   a row or one with no atom to bind (`C=#C`, `CC=`, `C(=)C`), a ring bond whose two ends disagree (`C=1CCCC-1`), more
   than one charge in a bracket atom (`[O-+]`, `[Fe+2+]`), a non-ASCII element letter (`[ı]`, `[ſ]`). In a formula,
   every Unicode decimal digit reads as its ASCII twin, refusals included (`C٦.5H12` is the refused decimal `C6.5H12`),
-  and a superscript charge written against ASCII digits (`SO⁴2-`) is ambiguous. An InChI is read only with version
-  `1S` or `1`, one ASCII Hill formula, and each of `/q` `/p` at most once. Every front-door parse failure is typed
-  invalid input (exit 2), never an internal error.
+  and a superscript charge written against ASCII digits (`SO⁴2-`) is ambiguous. A bracket atom's hydrogen count is ONE
+  digit (`[CH10]` is refused as SMILES); a ring closure onto a pair already bonded is refused (`C1C1`, `[CH3]1[CH3]1`,
+  `C1=C1`); an explicit `:` bond is legal only on a ring bond between two lowercase atoms (`C:C`, `c1cc1:c1cc1` are
+  refused). An InChI is read only with version `1S` or `1`, one ASCII Hill formula, each of `/q` `/p` at most once,
+  and no `/f` or `/r` sublayer. Every front-door parse failure is typed invalid input (exit 2), never an internal
+  error.
+* **Canonicaliser bounds (front door and wire alike):** a structure of more than 1,024 atoms (hydrogens included) is
+  refused before it is built; one canonicalisation is bounded at 2^25 work units, and the resonance placement search
+  of an explicit-Kekulé π-system at 2^27. Past a bound the front door answers `IdentityOutOfBounds` (exit 2) — a
+  refusal to assign an identity, never a guessed one.
+* **AUTO fallthrough (declared):** under AUTO, a string refused as SMILES is still offered to the formula grammar
+  (`[CH10]` reads as the formula CH10, `[CH3]1[CH3]1` as C2H6, `C12CC12` as C25). The result is a FORMULA-layer
+  identity with no structure, and every verb that needs a structure refuses it. Write `smiles:` to forbid the
+  fallthrough.
 * **AUTO precedence on expert paths (declared):** the `plan` front door never guesses between input-kind readings in
   any string it reads — its target *and* each helper-reagent string (`plan --reagents`, `plan(helper_reagents=...)`)
   refuse an input-kind ambiguity (`detect_auto_ambiguity`): the target reports `INPUT_KIND_AMBIGUOUS`, a reagent
-  `INVALID_INPUT` naming the string, both exit 2. The expert verbs (`recompile`, `compile`, `synthesize`, ...) keep
+  `INVALID_INPUT` naming the string, both exit 2; a `--target-file` / `TARGET_FILE` is held to the same rule on the
+  file's contents. The expert verbs (`recompile`, `compile`, `synthesize`, ...) keep
   the legacy AUTO precedence for their positional target and every stock / helper-reagent string they read (CLI
-  `--have` / `--reagents`; request fields `stock_materials` / `helper_reagents`) — offline name, then SMILES, then
-  formula. There, `CO` is methanol (not carbon monoxide), `O` is water, `NO` is hydroxylamine, `CCO` is ethanol. The
+  `--have` / `--reagents`, human and `--json` alike, through the one front-door parser; request fields
+  `stock_materials` / `helper_reagents`) — offline name, then SMILES, then formula. There, `CO` is methanol (not carbon monoxide), `O` is water, `NO` is hydroxylamine, `CCO` is ethanol. The
   reading is deterministic but not echoed per bench string; write `smiles:` / `formula:` (or a registered name) to
   make the choice explicit.
 

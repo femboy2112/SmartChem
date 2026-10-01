@@ -119,17 +119,22 @@ it stamps), **failure** (what happens on bad input) and **completeness** (what "
   exactly, re-derives every verdict-bearing field from carried evidence (the request, the replay, the shipped corpus, the
   algebra) or binds it to the request, and refuses any disagreement. `legacy_v08.py` holds the frozen v0.8 digest kernel
   (the one legacy read leg).
-* **Order (cheap first):** schema dispatch → `require_canonical_transport` (S1) → payload-size budget → exact keys →
+* **Order (cheap first):** schema dispatch → `require_canonical_transport` (S1) → payload-size budget and nesting depth
+  → exact keys →
   thin-carries-no-replay → TARGET_FILE refusal (S6) → keyed: HMAC over the claimed digest → decode + construction laws (incl. result count ≤ limit, S3) → wire digest → algebra rebind →
-  HMAC → request / capability pins → identity losses → request–answer binding (target, terminals, depth / DAG height, one
+  HMAC → request / capability pins → identity losses → request–answer binding (target, terminals, depth / DAG height
+  under the proven search bound `1 + b + … + b^(D−1)` — branches sharing an intermediate stack heights, A17 — one
   chemistry per dossier) → bare-dossier check → every replayed step is a transform the algebra emits (D29.1, budgeted,
   cached) → corpus envelopes → verified admission → readiness → capability → frontier → ranking → optional re-execution.
 * **Per-load context:** each load gets ONE `VerificationContext` (work meter + reconstruction memo — each replay is
   rebuilt once, not per guard). The process-level enumeration cache holds RAW `registry.enumerate` outputs keyed on the
   full argument values + `registry.digest` (bounded by transform weight; cleared around any in-process patch).
 * **Work budget:** deterministic counters (payload nodes, dossiers, replay steps, enumeration targets, predicted
-  enumeration work `W`, re-executions); exhaustion raises `VerificationBudgetExceeded` — verification did not complete;
-  it never skips a check.
+  enumeration work `W`, re-executions, canonicalisation work in passes, capability work in bottle-assessments);
+  exhaustion raises `VerificationBudgetExceeded` — verification did not complete; it never skips a check. A
+  type-confused payload is `MalformedPayloadError` (a `ValueError`) at every public loader.
+* **Canonicalisation is bounded before it runs:** 1,024 atoms (checked before any refinement, in the parser and on the
+  wire), 2^25 work units per call, 2^27 for a resonance placement search; every pass is charged before it runs.
 * **Receipt:** out of band, loader-issued only; states wire mode, pins, signature, dossiers actually re-derived,
   re-execution, legacy migration, work consumed, and whether the search output is ADVISORY / AUTHENTICATED / REEXECUTED.
 

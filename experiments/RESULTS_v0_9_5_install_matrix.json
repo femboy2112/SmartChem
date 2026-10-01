@@ -1,0 +1,677 @@
+{
+  "artifacts": {
+    "smartchem-0.9.5a1-py3-none-any.whl": "1de893339dfd5a134753831e16a07419584fdc22062f7b0ba7e9522fd36bf5f6",
+    "smartchem-0.9.5a1.tar.gz": "11c9b809072cff409f3b7a4b1e859cc6e88948e611ba194df2acb460c2a3db55"
+  },
+  "commands": [
+    "import",
+    "version_script",
+    "version_dash_m_cli",
+    "plan_formula",
+    "plan_smiles",
+    "recompile_human",
+    "recompile_json",
+    "recompile_refusal_json",
+    "decompile_json",
+    "response_schema",
+    "package_data",
+    "implementation_digest",
+    "verify_probes_help"
+  ],
+  "environments": {
+    "py3.10-sdist": {
+      "artifact": "smartchem-0.9.5a1.tar.gz",
+      "commands": {
+        "decompile_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "implementation_digest": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "import": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "package_data": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "plan_formula": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "plan_smiles": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_human": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_refusal_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 2
+        },
+        "response_schema": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "verify_probes_help": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "version_dash_m_cli": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "version_script": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        }
+      },
+      "location_check": "OK: imported from venv site-packages, no repo on sys.path",
+      "python": "/home/leah/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/bin/python3.10"
+    },
+    "py3.10-wheel": {
+      "artifact": "smartchem-0.9.5a1-py3-none-any.whl",
+      "commands": {
+        "decompile_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "implementation_digest": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "import": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "package_data": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "plan_formula": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "plan_smiles": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_human": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_refusal_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 2
+        },
+        "response_schema": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "verify_probes_help": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "version_dash_m_cli": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "version_script": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        }
+      },
+      "location_check": "OK: imported from venv site-packages, no repo on sys.path",
+      "python": "/home/leah/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/bin/python3.10"
+    },
+    "py3.11-sdist": {
+      "artifact": "smartchem-0.9.5a1.tar.gz",
+      "commands": {
+        "decompile_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "implementation_digest": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "import": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "package_data": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "plan_formula": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "plan_smiles": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_human": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_refusal_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 2
+        },
+        "response_schema": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "verify_probes_help": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "version_dash_m_cli": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "version_script": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        }
+      },
+      "location_check": "OK: imported from venv site-packages, no repo on sys.path",
+      "python": "/home/leah/.local/share/uv/python/cpython-3.11-linux-x86_64-gnu/bin/python3.11"
+    },
+    "py3.11-wheel": {
+      "artifact": "smartchem-0.9.5a1-py3-none-any.whl",
+      "commands": {
+        "decompile_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "implementation_digest": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "import": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "package_data": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "plan_formula": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "plan_smiles": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_human": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_refusal_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 2
+        },
+        "response_schema": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "verify_probes_help": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "version_dash_m_cli": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "version_script": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        }
+      },
+      "location_check": "OK: imported from venv site-packages, no repo on sys.path",
+      "python": "/home/leah/.local/share/uv/python/cpython-3.11-linux-x86_64-gnu/bin/python3.11"
+    },
+    "py3.12-sdist": {
+      "artifact": "smartchem-0.9.5a1.tar.gz",
+      "commands": {
+        "decompile_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "implementation_digest": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "import": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "package_data": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "plan_formula": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "plan_smiles": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_human": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_refusal_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 2
+        },
+        "response_schema": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "verify_probes_help": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "version_dash_m_cli": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "version_script": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        }
+      },
+      "location_check": "OK: imported from venv site-packages, no repo on sys.path",
+      "python": "/home/leah/.local/bin/python"
+    },
+    "py3.12-wheel": {
+      "artifact": "smartchem-0.9.5a1-py3-none-any.whl",
+      "commands": {
+        "decompile_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "implementation_digest": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "import": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "package_data": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "plan_formula": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "plan_smiles": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_human": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_refusal_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 2
+        },
+        "response_schema": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "verify_probes_help": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "version_dash_m_cli": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "version_script": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        }
+      },
+      "location_check": "OK: imported from venv site-packages, no repo on sys.path",
+      "python": "/home/leah/.local/bin/python"
+    },
+    "py3.13-sdist": {
+      "artifact": "smartchem-0.9.5a1.tar.gz",
+      "commands": {
+        "decompile_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "implementation_digest": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "import": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "package_data": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "plan_formula": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "plan_smiles": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_human": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_refusal_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 2
+        },
+        "response_schema": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "verify_probes_help": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "version_dash_m_cli": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "version_script": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        }
+      },
+      "location_check": "OK: imported from venv site-packages, no repo on sys.path",
+      "python": "/home/leah/.local/share/uv/python/cpython-3.13-linux-x86_64-gnu/bin/python3.13"
+    },
+    "py3.13-wheel": {
+      "artifact": "smartchem-0.9.5a1-py3-none-any.whl",
+      "commands": {
+        "decompile_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "implementation_digest": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "import": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "package_data": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "plan_formula": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "plan_smiles": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_human": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "recompile_refusal_json": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 2
+        },
+        "response_schema": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "verify_probes_help": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "version_dash_m_cli": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        },
+        "version_script": {
+          "differs_in": [],
+          "match_source": true,
+          "rc": 0
+        }
+      },
+      "location_check": "OK: imported from venv site-packages, no repo on sys.path",
+      "python": "/home/leah/.local/share/uv/python/cpython-3.13-linux-x86_64-gnu/bin/python3.13"
+    }
+  },
+  "failures": [],
+  "implementation_digest_source": "d526a8c04cdc19e81f8ddf534c71462aee9f773ebb047a8d2424d0eb8f70c593",
+  "interpreters_tested": {
+    "3.10": "/home/leah/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/bin/python3.10",
+    "3.11": "/home/leah/.local/share/uv/python/cpython-3.11-linux-x86_64-gnu/bin/python3.11",
+    "3.12": "/home/leah/.local/bin/python",
+    "3.13": "/home/leah/.local/share/uv/python/cpython-3.13-linux-x86_64-gnu/bin/python3.13"
+  },
+  "interpreters_unavailable": [],
+  "reference": {
+    "decompile_json": {
+      "rc": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "244a69144de8670ca913e3550c6edd039191711c24b9d22d87b0db57c475d75b"
+    },
+    "implementation_digest": {
+      "rc": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "60ae28b0265f05788e2f263e1b93aa532eae7b0a049d64ece664d6bab55fc65a"
+    },
+    "import": {
+      "rc": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "bb18762b936cb6e830de16a370945cde5968a3892f72b1cb2e41ba8fcf471b87"
+    },
+    "package_data": {
+      "rc": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "b0b6732c51da19612c132508583fc4f08f8655a62842bf7baeea729265a1c0ab"
+    },
+    "plan_formula": {
+      "rc": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "656bccac7a9e000f0928c32b54095ae67e331fd903e21e5c042d2571f95351e0"
+    },
+    "plan_smiles": {
+      "rc": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "e799a3378748ae0f2b1cf01044a040369fae9687505577bd9984b553708ea2fe"
+    },
+    "recompile_human": {
+      "rc": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "7db50bb5e857b39598e064037f3bd3a861387e6cf6528ac28c54355fdfb639c9"
+    },
+    "recompile_json": {
+      "rc": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "98d2842a2ae8b5af7e720e685e084bb495167aae74c76cd3ebdc40144287063b"
+    },
+    "recompile_refusal_json": {
+      "rc": 2,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "5825f3aefc7046cc3d361ea700a6c61dae1fabe8c8091c3140fa4a6932348c6f"
+    },
+    "response_schema": {
+      "rc": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "5311535806db4f3f932e057ef07f1dd49101359593f95cc5c1c76ceb5c6f2dee"
+    },
+    "verify_probes_help": {
+      "rc": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "f9f73fc0d00e4df2c1233d7551b1e1354672f551c20a53bae1c49c6370458741"
+    },
+    "version_dash_m_cli": {
+      "rc": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "679f8bfd6596ed56bc4383cb5a4506573abdaf19d8aab2bcdb07b63385632bf4"
+    },
+    "version_script": {
+      "rc": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "679f8bfd6596ed56bc4383cb5a4506573abdaf19d8aab2bcdb07b63385632bf4"
+    }
+  },
+  "source_tree": "<detached worktree @ 74414eb>",
+  "verdict": "ALL ENVIRONMENTS AGREE"
+}

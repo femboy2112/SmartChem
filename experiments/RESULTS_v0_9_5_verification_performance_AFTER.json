@@ -1,0 +1,476 @@
+{
+ "cold_n": 3,
+ "generated_utc": "2026-10-01T16:07:09Z",
+ "git_head": "74414eb",
+ "label": "AFTER",
+ "layer": {
+  "budget": true,
+  "enumeration_cache": true,
+  "load_response": false,
+  "present": true
+ },
+ "loadavg_end": [
+  4.85,
+  5.15,
+  5.72
+ ],
+ "loadavg_start": [
+  4.41,
+  4.89,
+  6.57
+ ],
+ "payloads": [
+  {
+   "bytes": 12415,
+   "cache_stats_after_warm_child": "EnumerationCacheStats(hits=10, misses=2, entries=2, retained_transforms=20, retained_size=46)",
+   "cold": {
+    "best": 0.46463978599058464,
+    "median": 0.4758511690306477,
+    "n": 3,
+    "p90": 0.4810638850321993,
+    "samples": [
+     0.476,
+     0.465,
+     0.481
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 0.4810638850321993
+   },
+   "description": "smiles:CC(=O)OC linear, max_depth=2, water, stock CO/CC(=O)O",
+   "entry": "service.response_from_payload",
+   "import_seconds": 0.9503574029658921,
+   "layer": {
+    "budget": true,
+    "enumeration_cache": true,
+    "load_response": false,
+    "present": true
+   },
+   "path_kind": "built-cache",
+   "payload": "a_tiny_linear",
+   "peak_rss_mb": 32.18359375,
+   "receipt_facets": null,
+   "receipt_work": null,
+   "warm": {
+    "best": 0.13614975404925644,
+    "median": 0.1366827089805156,
+    "n": 5,
+    "p90": 0.14249442104483023,
+    "samples": [
+     0.141,
+     0.142,
+     0.137,
+     0.136,
+     0.136
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 0.14249442104483023
+   }
+  },
+  {
+   "bytes": 234458,
+   "cache_stats_after_warm_child": "EnumerationCacheStats(hits=90, misses=18, entries=18, retained_transforms=702, retained_size=851)",
+   "cold": {
+    "best": 24.716015695943497,
+    "median": 25.371151448052842,
+    "n": 3,
+    "p90": 26.138637931027915,
+    "samples": [
+     26.139,
+     24.716,
+     25.371
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 26.138637931027915
+   },
+   "description": "isopentyl acetate thick 27-route, no capability profile",
+   "entry": "service.response_from_payload",
+   "import_seconds": 0.888112396991346,
+   "layer": {
+    "budget": true,
+    "enumeration_cache": true,
+    "load_response": false,
+    "present": true
+   },
+   "path_kind": "built-cache",
+   "payload": "b1_isopentyl_noprofile",
+   "peak_rss_mb": 40.640625,
+   "receipt_facets": null,
+   "receipt_work": null,
+   "warm": {
+    "best": 6.229693397006486,
+    "median": 6.480754276039079,
+    "n": 5,
+    "p90": 7.522069571015891,
+    "samples": [
+     6.481,
+     6.416,
+     7.522,
+     7.068,
+     6.23
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 7.522069571015891
+   }
+  },
+  {
+   "bytes": 663144,
+   "cache_stats_after_warm_child": "EnumerationCacheStats(hits=90, misses=18, entries=18, retained_transforms=702, retained_size=851)",
+   "cold": {
+    "best": 31.78047964401776,
+    "median": 34.067238570947666,
+    "n": 3,
+    "p90": 38.26011556899175,
+    "samples": [
+     31.78,
+     34.067,
+     38.26
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 38.26011556899175
+   },
+   "description": "isopentyl acetate thick 27-route + isopentyl_capability_fit_bench()",
+   "entry": "service.response_from_payload",
+   "import_seconds": 1.0074056199518964,
+   "layer": {
+    "budget": true,
+    "enumeration_cache": true,
+    "load_response": false,
+    "present": true
+   },
+   "path_kind": "built-cache",
+   "payload": "b2_isopentyl_fitbench",
+   "peak_rss_mb": 45.5390625,
+   "receipt_facets": null,
+   "receipt_work": null,
+   "warm": {
+    "best": 9.682835957966745,
+    "median": 10.731731395004317,
+    "n": 5,
+    "p90": 11.008079416991677,
+    "samples": [
+     9.683,
+     10.732,
+     10.763,
+     9.861,
+     11.008
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 11.008079416991677
+   }
+  },
+  {
+   "bytes": 21327,
+   "cache_stats_after_warm_child": "EnumerationCacheStats(hits=25, misses=5, entries=5, retained_transforms=56, retained_size=144)",
+   "cold": {
+    "best": 0.9654183309758082,
+    "median": 0.9788454109802842,
+    "n": 3,
+    "p90": 1.1392354929703288,
+    "samples": [
+     0.979,
+     0.965,
+     1.139
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 1.1392354929703288
+   },
+   "description": "methyl acetate CAPPED_SCISSION_CONVERGENT DAG, max_total_minutes=30",
+   "entry": "service.response_from_payload",
+   "import_seconds": 0.9872927169781178,
+   "layer": {
+    "budget": true,
+    "enumeration_cache": true,
+    "load_response": false,
+    "present": true
+   },
+   "path_kind": "built-cache",
+   "payload": "c1_methyl_acetate_dag",
+   "peak_rss_mb": 32.4609375,
+   "receipt_facets": null,
+   "receipt_work": null,
+   "warm": {
+    "best": 0.394353375013452,
+    "median": 0.40129691001493484,
+    "n": 5,
+    "p90": 0.4167315009981394,
+    "samples": [
+     0.409,
+     0.399,
+     0.394,
+     0.417,
+     0.401
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 0.4167315009981394
+   }
+  },
+  {
+   "bytes": 1140575,
+   "cache_stats_after_warm_child": "EnumerationCacheStats(hits=145, misses=29, entries=29, retained_transforms=832, retained_size=1230)",
+   "cold": {
+    "best": 53.24040820100345,
+    "median": 58.1464524519979,
+    "n": 3,
+    "p90": 58.23149424494477,
+    "samples": [
+     58.146,
+     58.231,
+     53.24
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 58.23149424494477
+   },
+   "description": "isopentyl acetate CAPPED_SCISSION_CONVERGENT DAG, ProcessBounds.quick()",
+   "entry": "service.response_from_payload",
+   "import_seconds": 0.9318690249929205,
+   "layer": {
+    "budget": true,
+    "enumeration_cache": true,
+    "load_response": false,
+    "present": true
+   },
+   "path_kind": "built-cache",
+   "payload": "c2_isopentyl_dag",
+   "peak_rss_mb": 65.359375,
+   "receipt_facets": null,
+   "receipt_work": null,
+   "warm": {
+    "best": 33.96837954799412,
+    "median": 37.34905637195334,
+    "n": 5,
+    "p90": 39.32665010500932,
+    "samples": [
+     33.968,
+     37.68,
+     37.349,
+     39.327,
+     35.129
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 39.32665010500932
+   }
+  },
+  {
+   "bytes": 7834,
+   "cache_stats_after_warm_child": "EnumerationCacheStats(hits=5, misses=1, entries=1, retained_transforms=1, retained_size=62)",
+   "cold": {
+    "best": 0.6651438319822773,
+    "median": 0.6726601509726606,
+    "n": 3,
+    "p90": 0.6769047359703109,
+    "samples": [
+     0.677,
+     0.665,
+     0.673
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 0.6769047359703109
+   },
+   "description": "Diels-Alder control C1CC=CCC1, certified-route-v07",
+   "entry": "service.response_from_payload",
+   "import_seconds": 0.9494313460309058,
+   "layer": {
+    "budget": true,
+    "enumeration_cache": true,
+    "load_response": false,
+    "present": true
+   },
+   "path_kind": "built-cache",
+   "payload": "d_diels_alder",
+   "peak_rss_mb": 31.72265625,
+   "receipt_facets": null,
+   "receipt_work": null,
+   "warm": {
+    "best": 0.07684616802725941,
+    "median": 0.0788196679786779,
+    "n": 5,
+    "p90": 0.08535591798136011,
+    "samples": [
+     0.079,
+     0.085,
+     0.077,
+     0.077,
+     0.085
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 0.08535591798136011
+   }
+  },
+  {
+   "bytes": 121195,
+   "cache_stats_after_warm_child": "EnumerationCacheStats(hits=0, misses=0, entries=0, retained_transforms=0, retained_size=0)",
+   "cold": {
+    "best": 1.8324579449836165,
+    "median": 1.9044003209564835,
+    "n": 3,
+    "p90": 1.9052900160313584,
+    "samples": [
+     1.905,
+     1.904,
+     1.832
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 1.9052900160313584
+   },
+   "description": "real v0.8 fixture response_isopentyl_acetate.json (legacy read leg)",
+   "entry": "service.response_from_payload",
+   "import_seconds": 0.9602646750281565,
+   "layer": {
+    "budget": true,
+    "enumeration_cache": true,
+    "load_response": false,
+    "present": true
+   },
+   "path_kind": "fixture",
+   "payload": "e_legacy_v08_isopentyl",
+   "peak_rss_mb": 33.703125,
+   "receipt_facets": null,
+   "receipt_work": null,
+   "warm": {
+    "best": 0.22740289196372032,
+    "median": 0.22907180798938498,
+    "n": 5,
+    "p90": 0.25242002098821104,
+    "samples": [
+     0.228,
+     0.227,
+     0.252,
+     0.229,
+     0.232
+    ],
+    "statuses": [
+     "ok",
+     "ok",
+     "ok",
+     "ok",
+     "ok"
+    ],
+    "worst": 0.25242002098821104
+   }
+  },
+  {
+   "bytes": 14278,
+   "cache_stats_after_warm_child": "EnumerationCacheStats(hits=0, misses=0, entries=0, retained_transforms=0, retained_size=0)",
+   "cold": {
+    "best": 0.21178258099826053,
+    "median": 0.21336495800642297,
+    "n": 3,
+    "p90": 0.2137391100404784,
+    "samples": [
+     0.214,
+     0.212,
+     0.213
+    ],
+    "statuses": [
+     "REFUSED(VerificationBudgetExceeded)",
+     "REFUSED(VerificationBudgetExceeded)",
+     "REFUSED(VerificationBudgetExceeded)"
+    ],
+    "worst": 0.2137391100404784
+   },
+   "description": "hostile large target: 45-heavy-atom wax ester, 6 helper reagents, default bounds (C7-1)",
+   "entry": "service.response_from_payload",
+   "import_seconds": 0.969150336983148,
+   "layer": {
+    "budget": true,
+    "enumeration_cache": true,
+    "load_response": false,
+    "present": true
+   },
+   "path_kind": "built-cache",
+   "payload": "f_hostile2_45",
+   "peak_rss_mb": 32.05078125,
+   "receipt_facets": null,
+   "receipt_work": null,
+   "warm": {
+    "best": 0.0647814020048827,
+    "median": 0.06584569101687521,
+    "n": 5,
+    "p90": 0.0823544729501009,
+    "samples": [
+     0.065,
+     0.082,
+     0.066,
+     0.065,
+     0.069
+    ],
+    "statuses": [
+     "REFUSED(VerificationBudgetExceeded)",
+     "REFUSED(VerificationBudgetExceeded)",
+     "REFUSED(VerificationBudgetExceeded)",
+     "REFUSED(VerificationBudgetExceeded)",
+     "REFUSED(VerificationBudgetExceeded)"
+    ],
+    "worst": 0.0823544729501009
+   }
+  }
+ ],
+ "python": "3.12.3",
+ "smartchem_version": "0.9.5a1",
+ "wall_seconds": 789.9775631427765,
+ "warm_n": 5
+}

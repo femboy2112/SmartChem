@@ -303,15 +303,16 @@ pytest -q
 python -m smartchem.bench
 ```
 
-Current committed-baseline suite result — the OOM-safe full run via `scripts/run_suite.sh`, measured with the
-optional RDKit and PySCF backends **absent** (the committed baseline; backend-gated tests `importorskip`-skip):
+Current committed-baseline suite result (0.9.5a1) — the OOM-safe full run via `scripts/run_suite.sh`, measured
+with the optional RDKit backend **absent** (its tests `importorskip`-skip) and PySCF 2.14.0 **present** in the dev
+venv (its integration tests ran):
 
 ```text
-5628 passed, 46 skipped, 0 xfailed  (5674 collected, 0 failed, 0 errors)
+7486 passed, 46 skipped, 0 xfailed  (7532 collected, 0 failed, 0 errors)
 ```
 
 There are **no xfails**: the last strict xfail (parallel interchange) was discharged by PR #79. The 46 skips are
-the optional-backend (RDKit/PySCF-gated) checks plus the explicit slow-test gate; skips are never represented as
+32 RDKit-gated checks plus 14 behind the explicit slow-test gate (`--runslow`); skips are never represented as
 passed. When the development-only RDKit oracle is present the seven RDKit-gated CIP checks additionally run, and
 when the optional PySCF stack is present the real-wavefunction integration tests additionally run. On this box
 the monolithic `pytest` run is OOM-killed, so `scripts/run_suite.sh` (short-lived batched processes) is the

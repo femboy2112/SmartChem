@@ -61,7 +61,7 @@ from .atoms import PT
 from .category import Bond, Molecule, _wl_colours
 from .contracts import canonical_digest
 from .data.periodic_table import ATOMIC_NUMBER, has_standard_atomic_weight, standard_atomic_weight
-from .verification import charge_canonical_work, work_transparent_cache
+from .verification import canonical_work_frame, charge_canonical_work, work_transparent_cache
 
 __all__ = [
     "SmilesError",
@@ -599,6 +599,16 @@ _RESONANCE_MAX_MATCHINGS = 128
 # parsed spelling is unaffected, its literal key already being its resonance key.
 _MAX_PLACEMENT_DFS_NODES = 1 << 20
 
+# 0.9.5 A13 (parent) -- the placement search's AGGREGATE work. Every complete placement is canonicalised, and each of
+# those calls is bounded only per call (``category._MAX_CANONICAL_CALL_WORK``), so _MAX_KEKULE_MATCHINGS placements of
+# a large symmetric pi-system were bounded only by matchings x per-call ceiling -- days, on the front door, where no
+# load budget applies. The search's cold work (DFS nodes plus every placement's canonicalisation, cache-independent:
+# ``verification.canonical_work_frame``) is checked before each placement is canonicalised; past this the search is
+# refused like the DFS cap (SmilesError; a decoded fragment takes the literal-key fallback). MEASURED
+# (experiments/v0_9_5_amplifier_bound.py --placement): honest maximum 37,675,177 units -- the synthetic 96-carbon
+# explicit-Kekule flake_r3, ~30-60 s; the largest real-corpus input 18,889,394 -- so 2**27 is 3.6x / 7.1x those.
+_MAX_PLACEMENT_SEARCH_WORK = 1 << 27
+
 
 def _aromatic_matchings(
     atoms: list[_Atom], bonds: list[list[int]]
@@ -861,6 +871,12 @@ def _min_constitution_placement(
         return y if x == a else x
 
     def _consider() -> None:
+        if spent.total > _MAX_PLACEMENT_SEARCH_WORK:   # read at call time; checked BEFORE this placement's canonical()
+            raise SmilesError(
+                f"structure's resonance placement search exceeded {_MAX_PLACEMENT_SEARCH_WORK:,} units of "
+                f"canonicalisation work ({spent.total:,} spent over {count[0]:,} placements); a resonance-canonical "
+                "identity for it is out of scope (give an aromatic-lowercase SMILES for the aromatic ring)"
+            )
         count[0] += 1
         if count[0] > max_matchings:
             raise SmilesError(
@@ -915,29 +931,30 @@ def _min_constitution_placement(
     # atom-walk descends one frame per pi-atom -- never blows the Python recursion limit; the earlier recursive
     # walk crashed with an uncaught RecursionError on a ~330-atom cumulene, the red-team fold).
     start = _next_pi(0)
-    if start == n:
-        _walk_node()
-        _consider()  # no multiple bond at all: the single all-single placement (a saturated molecule)
-    else:
-        stack: list[dict] = [{"atom": start, "dists": _atom_distributions(start), "idx": -1, "applied": None}]
-        while stack:
-            top = stack[-1]
-            if top["applied"] is not None:                 # backtrack: undo the distribution we had applied
-                _apply(top["atom"], top["applied"], -1)
-                top["applied"] = None
-            top["idx"] += 1
-            if top["idx"] >= len(top["dists"]):
-                stack.pop()
-                continue
-            dist = top["dists"][top["idx"]]
-            _walk_node()                                   # S16: every node, dead end or not
-            _apply(top["atom"], dist, +1)
-            top["applied"] = dist
-            nxt = _next_pi(top["atom"] + 1)
-            if nxt == n:
-                _consider()                                # a complete placement (every pi-demand met)
-            else:
-                stack.append({"atom": nxt, "dists": _atom_distributions(nxt), "idx": -1, "applied": None})
+    with canonical_work_frame() as spent:                  # A13: the search's cold work, read by _consider
+        if start == n:
+            _walk_node()
+            _consider()  # no multiple bond at all: the single all-single placement (a saturated molecule)
+        else:
+            stack: list[dict] = [{"atom": start, "dists": _atom_distributions(start), "idx": -1, "applied": None}]
+            while stack:
+                top = stack[-1]
+                if top["applied"] is not None:             # backtrack: undo the distribution we had applied
+                    _apply(top["atom"], top["applied"], -1)
+                    top["applied"] = None
+                top["idx"] += 1
+                if top["idx"] >= len(top["dists"]):
+                    stack.pop()
+                    continue
+                dist = top["dists"][top["idx"]]
+                _walk_node()                               # S16: every node, dead end or not
+                _apply(top["atom"], dist, +1)
+                top["applied"] = dist
+                nxt = _next_pi(top["atom"] + 1)
+                if nxt == n:
+                    _consider()                            # a complete placement (every pi-demand met)
+                else:
+                    stack.append({"atom": nxt, "dists": _atom_distributions(nxt), "idx": -1, "applied": None})
 
     if best[0] is None:  # pragma: no cover -- the drawn structure is always a valid placement
         raise SmilesError("could not assign a valid multiple-bond placement to the structure")

@@ -378,7 +378,12 @@ def _graph_payload(mol: "Molecule") -> tuple:
 
 
 def _graph_from_payload(payload: "tuple") -> "Molecule":
+    from .category import _MAX_CANONICAL_ATOMS
+
     atoms, bonds, charge, state = payload
+    if len(atoms) > _MAX_CANONICAL_ATOMS:  # 0.9.5 A13 (parent): refused before construction, as service's decoder
+        raise ValueError(f"IR graph payload carries {len(atoms):,} atoms, over the canonicaliser's "
+                         f"{_MAX_CANONICAL_ATOMS:,}-atom ceiling; refused before construction (0.9.5 A13)")
     return Molecule(tuple(atoms), frozenset(Bond(i, j, order) for i, j, order in bonds), int(charge), str(state))
 
 

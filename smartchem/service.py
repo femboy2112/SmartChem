@@ -4625,12 +4625,17 @@ def _molecule_to_payload(mol) -> dict:
 def _molecule_from_payload(payload) -> "object":
     """Rebuild a Molecule from its positional payload; wire types validated BEFORE construction (so a bool/float/str
     can never be silently coerced into an atom index or charge -- the edges int-coercion trap, avoided here)."""
-    from .category import Bond, Molecule
+    from .category import _MAX_CANONICAL_ATOMS, Bond, Molecule
     if type(payload) is not dict or set(payload) != _MOLECULE_PAYLOAD_FIELDS:
         raise ValueError("molecule payload must contain exactly atoms, bonds, charge, state")
     atoms, bonds, charge, state = payload["atoms"], payload["bonds"], payload["charge"], payload["state"]
     if type(atoms) is not list or any(type(a) is not str for a in atoms):
         raise TypeError("molecule atoms must be a list of element strings")
+    if len(atoms) > _MAX_CANONICAL_ATOMS:
+        # 0.9.5 A13 (parent): no identity can be established past the canonicaliser's atom ceiling, so a wire molecule
+        # that large is refused BEFORE its graph is built -- not after a linear digest fallback over every atom
+        raise ValueError(f"molecule payload carries {len(atoms):,} atoms, over the canonicaliser's "
+                         f"{_MAX_CANONICAL_ATOMS:,}-atom ceiling; refused before construction (0.9.5 A13)")
     if type(bonds) is not list:
         raise TypeError("molecule bonds must be a list of [i, j, order] triples")
     bond_objs = []

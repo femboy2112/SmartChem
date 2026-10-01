@@ -1068,6 +1068,26 @@ def _recording_canonical_work(metered: bool = True) -> "Iterator[_WorkFrame]":
         _CANONICAL_WORK_FRAMES.reset(token)
 
 
+@contextmanager
+def canonical_work_frame() -> "Iterator[_WorkFrame]":
+    """A TRANSPARENT frame around a stretch of canonicalisation (0.9.5 A13, parent): yields a frame whose ``total`` is the
+    stretch's COLD work so far -- a cache hit hands its closure up, so the total is identical cold, warm or after any
+    clear -- and on exit hands its own work and closure to the enclosing frame, exactly as if it had never been opened
+    (it inherits ``metered``; the load's meter and any enclosing cached node see the same charges). The resonance
+    placement search bounds its aggregate with it (``smiles._MAX_PLACEMENT_SEARCH_WORK``). Unlike
+    :func:`_recording_canonical_work` (a measuring probe), it is safe inside a cached computation."""
+    frames = _CANONICAL_WORK_FRAMES.get()
+    frame = _WorkFrame(not frames or frames[-1].metered)
+    token = _CANONICAL_WORK_FRAMES.set(frames + (frame,))
+    try:
+        yield frame
+    finally:
+        _CANONICAL_WORK_FRAMES.reset(token)
+        if frames:
+            frames[-1].own += frame.own
+            frames[-1].closure.update(frame.closure)
+
+
 def _hand_up(closure: "dict[object, int]") -> None:
     frames = _CANONICAL_WORK_FRAMES.get()
     if frames:

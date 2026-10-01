@@ -85,7 +85,9 @@ search bound (M-A17-1 the old max_depth law, M-A17-2 the bound's top power dropp
 (M-A13-1), canonical()'s atom ceiling (M-A13-2), the parser's atom ceiling (M-A13-3), the work meter booking its passes
 (M-A13-4) BEFORE each round (M-A13-5), the per-call work ceiling (M-A13-6) and the block path's per-candidate pass
 (M-A13-7); M-S16c is re-pointed at the nodes x atoms ceiling's successor (a search node's refinement on the call meter)
-and M-S16e re-anchored on the meter canonical() charges through.
+and M-S16e re-anchored on the meter canonical() charges through.  A13 parent: M-A13-8 the placement search's
+aggregate work ceiling, M-A13-9 the transparent frame it reads (hands its work up on exit), M-A13-10 the wire
+molecule decoder's atom ceiling (refused before construction).
 
 Run:  .venv/bin/python experiments/v0_9_mutation_calibration.py
       (dev only: SMARTCHEM_MUT_ONLY=M38,M104 runs a subset -- retirements then read VOID; the gate is the full run)
@@ -8539,6 +8541,64 @@ def m_a13_7():
                          ("meter.spend(budget * (n + 2 * len(self.bonds)))", "meter.spend(budget)"))
     bad_fn = getattr(bad_fn, "__wrapped__", bad_fn)
     return honest == 1_440 * (9 + 2 * 8), charged(bad_fn) == 1_440
+
+
+# -- 0.9.5 A13 (parent): the placement search's AGGREGATE work bound and the transparent frame it reads -------------
+
+_A13P_KEKULE = "C1=CC=C2C=CC=CC2=C1"   # naphthalene, three placements
+
+
+@mutant("M-A13-8", "the placement search's aggregate ceiling dropped: matchings x per-call work is unbounded again",
+        "smiles._min_constitution_placement (spent.total > _MAX_PLACEMENT_SEARCH_WORK)")
+def m_a13_8():
+    import smartchem.smiles as sm_m
+
+    def parses(fn) -> bool:
+        with _patch(sm_m, "_min_constitution_placement", fn):
+            try:
+                sm_m.parse_smiles(_A13P_KEKULE)
+                return True
+            except sm_m.SmilesError:
+                return False
+    with _patch(sm_m, "_MAX_PLACEMENT_SEARCH_WORK", 10), _s16_cold():
+        honest = not parses(sm_m._min_constitution_placement)
+        bad = _src_mutant(sm_m._min_constitution_placement, (
+            "if spent.total > _MAX_PLACEMENT_SEARCH_WORK:", "if False:"))
+        return honest, parses(bad)
+
+
+@mutant("M-A13-9", "the placement frame keeps its work: an enclosing cached computation under-records (cold != warm)",
+        "verification.canonical_work_frame (hands own work + closure up on exit)")
+def m_a13_9():
+    import smartchem.smiles as sm_m
+
+    def outer_total(frame_fn) -> int:
+        with _patch(sm_m, "canonical_work_frame", frame_fn), _s16_cold():
+            with ver_mod._recording_canonical_work() as outer:
+                sm_m.parse_smiles(_A13P_KEKULE)
+            return outer.total
+    honest = outer_total(ver_mod.canonical_work_frame)
+    bad_fn = _src_mutant(ver_mod.canonical_work_frame.__wrapped__, ("        if frames:\n            frames[-1].own += frame.own",
+                                                        "        if False:\n            frames[-1].own += frame.own"))
+    return honest > 0, outer_total(bad_fn) < honest
+
+
+@mutant("M-A13-10", "an over-ceiling wire molecule is built before refusal again (a linear digest fallback per atom)",
+        "service._molecule_from_payload (len(atoms) > _MAX_CANONICAL_ATOMS, before construction)")
+def m_a13_10():
+    import smartchem.category as cat_m
+
+    n = cat_m._MAX_CANONICAL_ATOMS + 1
+    star = {"atoms": ["C"] + ["H"] * (n - 1), "bonds": [[0, i, 1] for i in range(1, n)], "charge": 0, "state": "gas"}
+
+    def built(fn) -> bool:
+        try:
+            return len(fn(dict(star)).atoms) == n
+        except ValueError:
+            return False
+    honest = not built(svc._molecule_from_payload)
+    bad = _src_mutant(svc._molecule_from_payload, ("    if len(atoms) > _MAX_CANONICAL_ATOMS:", "    if False:"))
+    return honest, built(bad)
 
 
 # =================================================================================================================

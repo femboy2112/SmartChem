@@ -19,7 +19,11 @@ and it times the A13 refusals themselves (each must be fast: refused BEFORE the 
 atom ceiling ("C" * 4000 / "C" * 100000 through resolve_identity), the canonical() atom ceiling on a built graph, and a
 block-path call whose up-front charge is over the call ceiling.
 
-Run:  .venv/bin/python experiments/v0_9_5_amplifier_bound.py [--json out.json] [--quick]
+``--placement`` (parent) instead measures the resonance placement search's AGGREGATE cold work (DFS nodes plus every
+placement's canonicalisation, via ``verification.canonical_work_frame``) over the differential's literal corpus, its
+explicit-Kekule acenes and flakes 1-3: the honest maximum behind ``smiles._MAX_PLACEMENT_SEARCH_WORK``.
+
+Run:  .venv/bin/python experiments/v0_9_5_amplifier_bound.py [--json out.json] [--quick] [--placement]
 Timings on a shared box are +-30%; rates are taken from calls that ran >= 0.05 s.
 """
 from __future__ import annotations
@@ -254,11 +258,60 @@ def load_probe(hostile: Molecule, label: str) -> dict:
     return row
 
 
+def placement(results: dict) -> None:
+    """The placement search's cold work per search over the honest corpus (``--placement``)."""
+    import v0_9_5_canonical_differential as diff
+    import smartchem.smiles as sm
+    from smartchem import verification as ver
+
+    live, rows = sm._min_constitution_placement, []
+
+    def measured(*a, **k):
+        t = time.perf_counter()
+        with ver._recording_canonical_work() as frame:
+            try:
+                return live(*a, **k)
+            finally:
+                rows.append((frame.total, round(time.perf_counter() - t, 2), len(a[0])))
+    strings = list(diff.literal_strings())
+    synthetic = [diff.acene(n, seed) for n in range(2, 9) for seed in (1, 2)] + [diff.flake(r) for r in (1, 2, 3)]
+    sm._min_constitution_placement = measured
+    try:
+        real_max = synthetic_max = (0, 0.0, 0)
+        for corpus, which in ((strings, "real"), (synthetic, "synthetic")):
+            for text in corpus:
+                n0 = len(rows)
+                try:
+                    sm.parse_smiles(text)
+                except Exception:  # noqa: BLE001 -- a refusal is an outcome; the work it spent is still measured
+                    pass
+                for row in rows[n0:]:
+                    if which == "real":
+                        real_max = max(real_max, row)
+                    else:
+                        synthetic_max = max(synthetic_max, row)
+    finally:
+        sm._min_constitution_placement = live
+    results["placement"] = {"searches": len(rows), "ceiling": sm._MAX_PLACEMENT_SEARCH_WORK,
+                            "real_max": {"units": real_max[0], "seconds": real_max[1], "heavy_atoms": real_max[2]},
+                            "synthetic_max": {"units": synthetic_max[0], "seconds": synthetic_max[1],
+                                              "heavy_atoms": synthetic_max[2]}}
+    print(json.dumps(results["placement"], indent=1), flush=True)
+
+
 def main(argv: list) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     ap.add_argument("--json", default=None)
     ap.add_argument("--quick", action="store_true", help="skip the ~1,000-atom shapes")
+    ap.add_argument("--placement", action="store_true", help="measure the placement search's aggregate work only")
     args = ap.parse_args(argv)
+    if args.placement:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        results: dict = {"argv": argv}
+        placement(results)
+        if args.json:
+            Path(args.json).write_text(json.dumps(results, indent=1, sort_keys=True))
+        return 0
     print(f"[proof] measuring smartchem.category from {cat.__file__}", flush=True)
     budget = VerificationBudget().canonical_work
     results = {"argv": argv, "smartchem_file": cat.__file__, "atom_ceiling": cat._MAX_CANONICAL_ATOMS,

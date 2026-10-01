@@ -680,8 +680,8 @@ def _hazard_scan(
         for op in procedure.operations:
             for use in op.material_uses:
                 # A15: an identity-less use dedups on the EXACT spelling. ``hazards_for_named`` answers case variants
-                # differently now ("water" -> water's record, "WAtEr" -> None), so a fold-keyed merge would let the
-                # first spelling answer for the second and drop its UNKNOWN.
+                # differently now (a plain-word spelling reaches its record, a formula-shaped case variant of it reads
+                # None), so a fold-keyed merge would let the first spelling answer for the second and drop its UNKNOWN.
                 key = structure_key(use.identity) if use.identity is not None else f"name:{_exact_text(use.name)}"
                 if key in seen:
                     continue
@@ -980,8 +980,8 @@ def _procurement_catalysts_requirement(
     resolved through the UNMODIFIED ``catalyst_availability`` classifier (``None`` = honest UNRECOGNIZED).
 
     0.9.5 A15 (Wave D F7): the classifier reads a NAME, so it may vouch only for a name that IS the use's structure. A
-    typed CATALYST use whose display name does not resolve to its own identity (``name_resolves_to``: H2SO4 labelled
-    ``"water"``) earns no tier -- ``None``, UNRECOGNIZED, a declared catalyst that BLOCKS -- and neither does any
+    typed CATALYST use whose display name does not resolve to its own identity (``name_resolves_to``: a strong acid's
+    structure under a benign label) earns no tier -- ``None``, UNRECOGNIZED, a declared catalyst that BLOCKS -- and neither does any
     envelope string spelled exactly like it (the string would otherwise carry the label's vouch back in)."""
     unbound: "set[str]" = {
         _exact_text(u.name) for step in route.steps if step.envelope.procedure is not None

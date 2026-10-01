@@ -114,8 +114,9 @@ reads a payload-supplied path — recompile locally from the file).
     the honest maximum (117,006,226 units, an isopentyl DAG answer under pinned re-execution, over 117 honest loads).
     At the slowest measured rate (≈0.8M units/s on a dense hostile graph, ±30% on a shared box) the default admits
     about 22 minutes of canonicalisation per load.
-  * `capability_work`, one unit per declared bottle per capability assessment. Default 2^13, 14.4× the honest maximum
-    (567). A bench above roughly 100 bottles on a 27-route answer needs an explicit raise.
+  * `capability_work`, one unit per declared bottle and one per bottle component, per capability assessment. Default
+    2^14, 12.6× the honest maximum (1,296 = 16 units × 81 assessments). A much larger bench on a 27-route answer needs
+    an explicit raise.
 * **Shape before meaning:** every public loader (`load_response`, `load_response_text`, `response_from_payload`,
   `deserialize_response`, `request_from_payload`, `deserialize_request`, the summary / frontier / snapshot decoders,
   `compilation_ir.ir_from_payload` / `deserialize_ir`, `identity.identity_loss_from_payload`) refuses a type-confused
@@ -165,13 +166,15 @@ reads a payload-supplied path — recompile locally from the file).
   every Unicode decimal digit reads as its ASCII twin, refusals included (`C٦.5H12` is the refused decimal `C6.5H12`),
   and a superscript charge written against ASCII digits (`SO⁴2-`) is ambiguous. A bracket atom's hydrogen count is ONE
   digit (`[CH10]` is refused as SMILES); a ring closure onto a pair already bonded is refused (`C1C1`, `[CH3]1[CH3]1`,
-  `C1=C1`); an explicit `:` bond is legal only on a ring bond between two lowercase atoms (`C:C`, `c1cc1:c1cc1` are
-  refused). An InChI is read only with version `1S` or `1`, one ASCII Hill formula, each of `/q` `/p` at most once,
+  `C1=C1`). An aromatic ring is a cycle of lowercase atoms: a lowercase atom must lie on one; an explicit `:` bond is
+  legal only inside one (`C:C`, `c1cc1:c1cc1`, `c12cc1CCc1cc1:2` are refused); an implicit bond between two lowercase
+  atoms outside every aromatic ring is single, as OpenSMILES reads biphenyl's inter-ring bond — so a system that only
+  kekulises by doubling such a bond is refused (`c1cc1c1cc1`, `c1cccc1c1cccc1`), and `c1CCc1` / `o1CCo1` are refused. An InChI is read only with version `1S` or `1`, one ASCII Hill formula, each of `/q` `/p` at most once,
   and no `/f` or `/r` sublayer. Every front-door parse failure is typed invalid input (exit 2), never an internal
   error.
 * **Canonicaliser bounds (front door and wire alike):** a structure of more than 1,024 atoms (hydrogens included) is
   refused before it is built; one canonicalisation is bounded at 2^25 work units, and the resonance placement search
-  of an explicit-Kekulé π-system at 2^27. Past a bound the front door answers `IdentityOutOfBounds` (exit 2) — a
+  of an explicit-Kekulé π-system at 2^27 (computed once per parse). Past a bound the front door answers `IdentityOutOfBounds` (exit 2) — a
   refusal to assign an identity, never a guessed one.
 * **AUTO fallthrough (declared):** under AUTO, a string refused as SMILES is still offered to the formula grammar
   (`[CH10]` reads as the formula CH10, `[CH3]1[CH3]1` as C2H6, `C12CC12` as C25). The result is a FORMULA-layer

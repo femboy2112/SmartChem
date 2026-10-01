@@ -130,7 +130,8 @@ it stamps), **failure** (what happens on bad input) and **completeness** (what "
   rebuilt once, not per guard). The process-level enumeration cache holds RAW `registry.enumerate` outputs keyed on the
   full argument values + `registry.digest` (bounded by transform weight; cleared around any in-process patch).
 * **Work budget:** deterministic counters (payload nodes, dossiers, replay steps, enumeration targets, predicted
-  enumeration work `W`, re-executions, canonicalisation work in passes, capability work in bottle-assessments);
+  enumeration work `W`, re-executions, canonicalisation work in passes, capability work in bottles + components per
+  assessment);
   exhaustion raises `VerificationBudgetExceeded` — verification did not complete; it never skips a check. A
   type-confused payload is `MalformedPayloadError` (a `ValueError`) at every public loader.
 * **Canonicalisation is bounded before it runs:** 1,024 atoms (checked before any refinement, in the parser and on the

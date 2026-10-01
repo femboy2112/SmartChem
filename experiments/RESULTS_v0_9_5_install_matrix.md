@@ -3,7 +3,7 @@
 Verdict: **ALL ENVIRONMENTS AGREE**
 Interpreters tested: 3.10 (/home/leah/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/bin/python3.10), 3.11 (/home/leah/.local/share/uv/python/cpython-3.11-linux-x86_64-gnu/bin/python3.11), 3.12 (/home/leah/.local/bin/python), 3.13 (/home/leah/.local/share/uv/python/cpython-3.13-linux-x86_64-gnu/bin/python3.13)
 Interpreters UNAVAILABLE (not tested, not claimed): none
-Implementation digest (source): `d526a8c04cdc19e81f8ddf534c71462aee9f773ebb047a8d2424d0eb8f70c593`
+Implementation digest (source): `8b71c87190528d0ee89a79d381ea35936d360e5125bdcafcae85434f501421a7`
 
 | command | py3.10-wheel | py3.10-sdist | py3.11-wheel | py3.11-sdist | py3.12-wheel | py3.12-sdist | py3.13-wheel | py3.13-sdist |
 |---|---|---|---|---|---|---|---|---|
@@ -22,9 +22,9 @@ Implementation digest (source): `d526a8c04cdc19e81f8ddf534c71462aee9f773ebb047a8
 | verify_probes_help | rc=0 identical | rc=0 identical | rc=0 identical | rc=0 identical | rc=0 identical | rc=0 identical | rc=0 identical | rc=0 identical |
 
 
-## Release build (scripts/build_release.py --out <dir>, commit 74414eb)
+## Release build (scripts/build_release.py --out <dir>, commit 037a9fa)
 
 ```
-1de893339dfd5a134753831e16a07419584fdc22062f7b0ba7e9522fd36bf5f6  smartchem-0.9.5a1-py3-none-any.whl
-11c9b809072cff409f3b7a4b1e859cc6e88948e611ba194df2acb460c2a3db55  smartchem-0.9.5a1.tar.gz
+3c9bb1d02beb3dd147b75de6bcf836b99c5b07465521d592cdce4c52782908de  smartchem-0.9.5a1-py3-none-any.whl
+7d5ef80a8ba293605ad2f830ae7f4e6592e1f9d79ccd23a210fcceae37a016b8  smartchem-0.9.5a1.tar.gz
 ```

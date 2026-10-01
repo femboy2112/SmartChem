@@ -1,7 +1,7 @@
 {
   "artifacts": {
-    "smartchem-0.9.5a1-py3-none-any.whl": "1de893339dfd5a134753831e16a07419584fdc22062f7b0ba7e9522fd36bf5f6",
-    "smartchem-0.9.5a1.tar.gz": "11c9b809072cff409f3b7a4b1e859cc6e88948e611ba194df2acb460c2a3db55"
+    "smartchem-0.9.5a1-py3-none-any.whl": "3c9bb1d02beb3dd147b75de6bcf836b99c5b07465521d592cdce4c52782908de",
+    "smartchem-0.9.5a1.tar.gz": "7d5ef80a8ba293605ad2f830ae7f4e6592e1f9d79ccd23a210fcceae37a016b8"
   },
   "commands": [
     "import",
@@ -597,7 +597,7 @@
     }
   },
   "failures": [],
-  "implementation_digest_source": "d526a8c04cdc19e81f8ddf534c71462aee9f773ebb047a8d2424d0eb8f70c593",
+  "implementation_digest_source": "8b71c87190528d0ee89a79d381ea35936d360e5125bdcafcae85434f501421a7",
   "interpreters_tested": {
     "3.10": "/home/leah/.local/share/uv/python/cpython-3.10-linux-x86_64-gnu/bin/python3.10",
     "3.11": "/home/leah/.local/share/uv/python/cpython-3.11-linux-x86_64-gnu/bin/python3.11",
@@ -614,7 +614,7 @@
     "implementation_digest": {
       "rc": 0,
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "60ae28b0265f05788e2f263e1b93aa532eae7b0a049d64ece664d6bab55fc65a"
+      "stdout_sha256": "664081a7215a26d9c007133a8b50db218ed72d6435472d219417d5064034ba04"
     },
     "import": {
       "rc": 0,
@@ -672,6 +672,6 @@
       "stdout_sha256": "679f8bfd6596ed56bc4383cb5a4506573abdaf19d8aab2bcdb07b63385632bf4"
     }
   },
-  "source_tree": "<detached worktree @ 74414eb>",
+  "source_tree": "<detached worktree @ 037a9fa>",
   "verdict": "ALL ENVIRONMENTS AGREE"
 }

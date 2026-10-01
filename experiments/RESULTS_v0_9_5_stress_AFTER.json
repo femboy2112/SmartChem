@@ -1,6 +1,6 @@
 {
  "dag_every": 6,
- "generated_utc": "2026-10-01T17:38:02Z",
+ "generated_utc": "2026-10-01T20:23:09Z",
  "invariants": {
   "cache_on_off_identity": {
    "doc": "enumeration cache on/off byte-identical accepted results",
@@ -101,42 +101,42 @@
   ],
   "latency_seconds": {
    "compile": {
-    "max": 71.6455,
+    "max": 63.3611,
     "n": 41,
-    "p50": 0.171,
-    "p90": 0.6888,
-    "p99": 71.6455
+    "p50": 0.1063,
+    "p90": 0.5943,
+    "p99": 63.3611
    },
    "load": {
-    "max": 7.2136,
+    "max": 6.4364,
     "n": 41,
-    "p50": 0.1099,
-    "p90": 0.418,
-    "p99": 7.2136
+    "p50": 0.0664,
+    "p90": 0.3408,
+    "p99": 6.4364
    },
    "roundtrip": {
-    "max": 5.6465,
+    "max": 5.1761,
     "n": 41,
-    "p50": 0.1314,
-    "p90": 0.388,
-    "p99": 5.6465
+    "p50": 0.0684,
+    "p90": 0.3423,
+    "p99": 5.1761
    },
    "serialize": {
-    "max": 0.0104,
+    "max": 0.0093,
     "n": 41,
-    "p50": 0.002,
-    "p90": 0.0035,
-    "p99": 0.0104
+    "p50": 0.0017,
+    "p90": 0.0023,
+    "p99": 0.0093
    }
   },
   "rss_after_isopentyl_kb": [
-   49064
+   49276
   ],
-  "rss_kb_first": 34624,
-  "rss_kb_last": 35476,
-  "rss_kb_max": 35476,
-  "rss_slope_kb_per_iteration_all": 17.46,
-  "rss_slope_kb_per_iteration_post_warmup": 15.1
+  "rss_kb_first": 34688,
+  "rss_kb_last": 35588,
+  "rss_kb_max": 35588,
+  "rss_slope_kb_per_iteration_all": 17.42,
+  "rss_slope_kb_per_iteration_post_warmup": 14.24
  },
  "seed": 20260929,
  "specs_sample": [
@@ -206,5 +206,5 @@
    "target": "smiles:CCC(=O)OCC"
   }
  ],
- "wall_seconds": 243.9
+ "wall_seconds": 205.9
 }

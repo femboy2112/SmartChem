@@ -308,7 +308,7 @@ with the optional RDKit backend **absent** (its tests `importorskip`-skip) and P
 venv (its integration tests ran):
 
 ```text
-7486 passed, 46 skipped, 0 xfailed  (7532 collected, 0 failed, 0 errors)
+7505 passed, 46 skipped, 0 xfailed  (7551 collected, 0 failed, 0 errors)
 ```
 
 There are **no xfails**: the last strict xfail (parallel interchange) was discharged by PR #79. The 46 skips are

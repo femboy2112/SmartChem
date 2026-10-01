@@ -53,6 +53,7 @@ __all__ = [
     "IdentityOutOfBounds",
     "InputKindAmbiguity",
     "detect_auto_ambiguity",
+    "detect_target_file_ambiguity",
     "resolve_identity",
     "resolve_target",
     "resolve_target_with_features",
@@ -306,6 +307,16 @@ def _inchi_formula_layer(text: str) -> "tuple[object, tuple, tuple[str, ...]]":
         )
     layers = [p for p in parts[2:] if p]
     layer_tags = {p[0] for p in layers}
+    # 0.9.5 A14 (Wave D, InChI P3): a /f (fixed-H) or /r (reconnected) sublayer restarts the layer sequence -- its own
+    # /q and /p describe THAT sublayer's species, not the main layer's.  This reader has one flat layer list, so a /q
+    # after a /f or /r was consumed as the MAIN-layer charge ('InChI=1/CH4/f/q+1' read as CH4 +1).  Standard InChI
+    # (1S) never carries either sublayer; rather than learn to read them, the reader says it does not.
+    sublayers = sorted({"f", "r"} & layer_tags)
+    if sublayers:
+        raise IdentityParseError(
+            f"InChI {text!r} carries a {' and '.join('/' + t for t in sublayers)} sublayer; this reader does not read "
+            "the fixed-H / reconnected sublayers (standard InChI, 1S, never carries them) -- supply the standard InChI"
+        )
     for tag in ("q", "p"):
         # standard InChI writes each charge layer at most once; the old reader SUMMED repeats ('/q+1/q+1' -> +2)
         if sum(1 for p in layers if p[0] == tag) > 1:
@@ -614,8 +625,29 @@ def detect_auto_ambiguity(target_input: str) -> "InputKindAmbiguity | None":
     return InputKindAmbiguity(target_input, tuple(interpretations))
 
 
-def _resolve_target_file(target_input: str) -> ResolvedIdentity:
-    """Read a TARGET_FILE and resolve its contents as an inner target, preserving the inner receipt + a file note."""
+def detect_target_file_ambiguity(target_input: str) -> "InputKindAmbiguity | None":
+    """The input-kind ambiguity of a TARGET_FILE's contents, or ``None`` (0.9.5 A14, Wave D F4).
+
+    A TARGET_FILE's contents are resolved on the AUTO path, so an unprefixed ``CO`` in a file is exactly the bare
+    paste ``plan CO`` refuses -- and the file used to launch methanol planning anyway.  This reads the file the way
+    :func:`_resolve_target_file` does and asks :func:`detect_auto_ambiguity` about its contents, so the front door
+    refuses the same string wherever it was written.  A prefixed file (``smiles:CO``) is a decision and returns
+    ``None``.  An unreadable file also returns ``None``: resolution then raises its own typed refusal, and this
+    detector does not duplicate that verdict.
+    """
+    if not isinstance(target_input, str):
+        return None
+    try:
+        contents = _read_target_file(target_input)
+    except IdentityParseError:
+        return None
+    return detect_auto_ambiguity(contents)
+
+
+def _read_target_file(target_input: str) -> str:
+    """A TARGET_FILE's stripped contents, or a typed :class:`IdentityParseError` (missing, too large, unreadable,
+    empty).  Shared by :func:`_resolve_target_file` and :func:`detect_target_file_ambiguity`, so the reading the
+    ambiguity check inspects is the reading resolution uses."""
     import os
 
     if not os.path.isfile(target_input):
@@ -632,6 +664,14 @@ def _resolve_target_file(target_input: str) -> ResolvedIdentity:
         raise IdentityParseError(f"could not read target file {target_input!r}: {exc}") from exc
     if not contents:
         raise IdentityParseError(f"target file {target_input!r} is empty")
+    return contents
+
+
+def _resolve_target_file(target_input: str) -> ResolvedIdentity:
+    """Read a TARGET_FILE and resolve its contents as an inner target, preserving the inner receipt + a file note."""
+    import os
+
+    contents = _read_target_file(target_input)
     # resolve the contents on the AUTO path (which honours name:/smiles:/inchi:/formula: prefixes + a bare InChI=).
     inner = resolve_identity(contents, InputKind.AUTO)
     note = f"read target from file {os.path.basename(target_input)!r}"

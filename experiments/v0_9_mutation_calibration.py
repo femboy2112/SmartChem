@@ -70,7 +70,10 @@ as a refusal in every text loader (M264); S16 integration: a ceiling crossed aft
 ``algebra_profile``) is not duplicated: the v0.7 harness's re-read M16 already kills it.  S17 (barrier A8) front-door
 identity hardening: M-S17-1..20, one or more per law (aromatic ring members, terminal H, Unicode digits, bond / charge
 markers, InChI layers, ASCII letters, typed failures, the one name fold); A12 the plan front door's helper-reagent
-ambiguity refusal (M-A12-1).
+ambiguity refusal (M-A12-1).  A14 (Wave D front door): M-A14-1 a ring closure onto a bonded pair (F1), M-A14-2 the
+typed Molecule ValueError in _build_molecule (F3), M-A14-3 the plan TARGET_FILE ambiguity refusal (F4), M-A14-4 the
+synthesize human helper parser routed through resolve_target (F6), M-A14-5 / M-A14-6 the explicit ':' law's two legs
+(F9: aromatic ends, ring bond), M-A14-7 the InChI /f and /r sublayer refusal (P3).
 
 Run:  .venv/bin/python experiments/v0_9_mutation_calibration.py
       (dev only: SMARTCHEM_MUT_ONLY=M38,M104 runs a subset -- retirements then read VOID; the gate is the full run)
@@ -7792,6 +7795,166 @@ def m_s16m():
                       ("self._enabled and self._generation == generation and key not in self._entries",
                        "self._enabled and key not in self._entries"))
     return honest, _s16_inflight_clear(bad) == 1
+
+
+# -- A14 (Wave D): front-door fixes -- one mutant per fix (two for the ':' law's two legs) ------------------------------
+# Each re-opens exactly one A14 incision and shows the pre-fix hallucination / untyped crash / exit code coming back.
+
+_A14_DUP_ANCHOR = ("if ((other, prev) if other < prev else (prev, other)) in bonded:", "if False:")
+
+
+def _a14_key(text: str, kind: "InputKind | str" = InputKind.SMILES):
+    """The resonance key ``text`` resolves to under ``kind``, or ``None`` when it refuses TYPED / perceives no structure."""
+    from smartchem.identity_parse import IdentityParseError, resolve_identity
+    from smartchem.smiles import resonance_identity
+
+    try:
+        ident = resolve_identity(text, kind)
+    except IdentityParseError:
+        return None
+    return None if ident.molecule is None else resonance_identity(ident.molecule)
+
+
+@mutant("M-A14-1", "A14 F1: a ring closure onto an already-bonded pair accepted again -- '[CH3]1[CH3]1' keys as ethane",
+        "smiles._parse_skeleton_stereo (ring closure onto a bonded pair)")
+def m_a14_1():
+    import smartchem.smiles as smiles_mod
+
+    ethane, h2o2 = _a14_key("CC"), _a14_key("OO")
+    honest = _a14_key("[CH3]1[CH3]1") is None and _a14_key("[OH]1[OH]1") is None
+    bad_walk = _src_mutant(smiles_mod._parse_skeleton_stereo, _A14_DUP_ANCHOR)
+    with _patch(smiles_mod, "_parse_skeleton_stereo", bad_walk):
+        bad = _a14_key("[CH3]1[CH3]1") == ethane and _a14_key("[OH]1[OH]1") == h2o2
+    return honest, bad
+
+
+@mutant("M-A14-2", "A14 F3: _build_molecule's Molecule ValueError escapes untyped again -- with the walk's duplicate "
+        "check also off, 'C1=C1' is a bare ValueError through resolve_identity (plan exit 70)",
+        "smiles._build_molecule (except ValueError -> SmilesError)")
+def m_a14_2():
+    import smartchem.smiles as smiles_mod
+    from smartchem.identity_parse import IdentityParseError, resolve_identity
+
+    def escape_class():
+        try:
+            resolve_identity("C1=C1", InputKind.SMILES)
+        except IdentityParseError:
+            return IdentityParseError
+        except Exception as exc:  # noqa: BLE001 -- the CLASS is the fact
+            return type(exc)
+        return None
+
+    pair = [smiles_mod._Atom("C", False, 0, None), smiles_mod._Atom("C", False, 0, None)]
+    hand_built, typed = _attempt(lambda: smiles_mod._build_molecule(pair, [[0, 1, 1], [0, 1, 2]], 0))
+    bad_walk = _src_mutant(smiles_mod._parse_skeleton_stereo, _A14_DUP_ANCHOR)   # F1 masks F3; hold it out in both arms
+    with _patch(smiles_mod, "_parse_skeleton_stereo", bad_walk):
+        honest = (hand_built is None and isinstance(typed, smiles_mod.SmilesError)
+                  and escape_class() is IdentityParseError)
+        bad_build = _src_mutant(smiles_mod._build_molecule, ("    except ValueError as exc:",
+                                                             "    except ZeroDivisionError as exc:"))
+        with _patch(smiles_mod, "_build_molecule", bad_build):
+            escaped = escape_class()
+    return honest, escaped is ValueError
+
+
+@mutant("M-A14-3", "A14 F4: plan reads a TARGET_FILE's contents by AUTO precedence again -- a file holding 'CO' plans "
+        "methanol (no ambiguity refusal, a search runs)", "smartchem.plan.plan (detect_target_file_ambiguity)")
+def m_a14_3():
+    import tempfile
+
+    import smartchem.plan as plan_mod
+
+    calls = []
+
+    def no_search(request):
+        calls.append(request)
+        return None
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "target_CO.txt")
+        Path(path).write_text("CO\n", encoding="utf-8")
+
+        def run(fn):
+            calls.clear()
+            with _patch(svc, "run_compilation", no_search):
+                result = fn(path, InputKind.TARGET_FILE)
+            return result.status, len(calls)
+
+        honest = run(plan_mod.plan) == (plan_mod.PlanStatus.INPUT_KIND_AMBIGUOUS, 0)
+        bad_plan = _src_mutant(plan_mod.plan, ("        ambiguity = detect_target_file_ambiguity(target_input)",
+                                               "        ambiguity = None"))
+        bad = run(bad_plan) == (plan_mod.PlanStatus.STRUCTURAL_PLANNING, 1)
+    return honest, bad
+
+
+@mutant("M-A14-4", "A14 F6: synthesize's human helper parser bypasses the front-door authority again -- an over-bound "
+        "--have string escapes as CanonicalBoundExceeded (human exit 70, --json exit 2)",
+        "experiment.cli._parse (resolve_target, AUTO)")
+def m_a14_4():
+    import io
+    from contextlib import redirect_stderr, redirect_stdout
+
+    import smartchem.category as cat_m
+    import smartchem.experiment.cli as syn_cli
+
+    neo2 = "C(C(C)(C)C)(C(C)(C)C)(C(C)(C)C)C(C)(C)C"
+
+    def human_rc():
+        with _s16_cold(), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            return syn_cli.main(["CC(=O)OC", "--have", neo2])
+
+    with _patch(cat_m, "_MAX_INDIVIDUALISATION_NODES", 5):
+        honest = human_rc() == 2
+        # the pre-fix private parser: an offline name first, else smartchem.smiles.parse_smiles -- whose
+        # CanonicalBoundExceeded (a NotImplementedError) the input stage's (ScissionError, ValueError, TypeError) misses
+        bad_parse = _src_mutant(syn_cli._parse, (
+            "    return resolve_target(value, InputKind.AUTO)",
+            "    named = __import__('smartchem.structure', fromlist=['_']).structure_by_name(value)\n"
+            "    if named is not None:\n"
+            "        return named.molecule\n"
+            "    return __import__('smartchem.smiles', fromlist=['_']).parse_smiles(value)"))
+        with _patch(syn_cli, "_parse", bad_parse):
+            bad = human_rc() == 70
+    return honest, bad
+
+
+@mutant("M-A14-5", "A14 F9: an explicit ':' between non-aromatic atoms accepted again -- 'C:C' keys as ethene",
+        "smiles._parse_skeleton_stereo (_check_aromatic_bond_symbols)")
+def m_a14_5():
+    import smartchem.smiles as smiles_mod
+
+    ethene = _a14_key("C=C")
+    honest = _a14_key("C:C") is None and _a14_key("CC:CC") is None
+    bad_walk = _src_mutant(smiles_mod._parse_skeleton_stereo,
+                           ("    _check_aromatic_bond_symbols(atoms, bonds, colon_bonds)\n", ""))
+    with _patch(smiles_mod, "_parse_skeleton_stereo", bad_walk):
+        bad = _a14_key("C:C") == ethene and _a14_key("CC:CC") == _a14_key("CC=CC")
+    return honest, bad
+
+
+@mutant("M-A14-6", "A14 F9: an explicit ':' on a bond in no ring accepted again -- 'c1cc1:c1cc1' reads the bridge as a "
+        "DOUBLE bond (triafulvalene)", "smiles._check_aromatic_bond_symbols (bi not in ring_edges)")
+def m_a14_6():
+    import smartchem.smiles as smiles_mod
+
+    honest = _a14_key("c1cc1:c1cc1") is None and _a14_key("c1ccccc1:c1ccccc1") is None
+    bad_check = _src_mutant(smiles_mod._check_aromatic_bond_symbols, ("elif bi not in ring_edges:", "elif False:"))
+    with _patch(smiles_mod, "_check_aromatic_bond_symbols", bad_check):
+        bad = _a14_key("c1cc1:c1cc1") == _a14_key("C1=CC1=C1C=C1")
+    return honest, bad
+
+
+@mutant("M-A14-7", "A14 InChI P3: the /f and /r sublayers read again -- 'InChI=1/CH4/f/q+1' takes the sublayer's /q as "
+        "the main charge (CH4 +1)", "identity_parse._inchi_formula_layer (/f, /r refusal)")
+def m_a14_7():
+    import smartchem.identity_parse as ip_m
+
+    honest = _s17_read("InChI=1/CH4/f/q+1") is None and _s17_read("InChI=1S/CH4/r/q+1") is None
+    bad_layer = _src_mutant(ip_m._inchi_formula_layer, ("    if sublayers:\n", "    if False:\n"))
+    with _patch(ip_m, "_inchi_formula_layer", bad_layer):
+        bad = (_s17_read("InChI=1/CH4/f/q+1") == ({"C": 1, "H": 4}, 1)
+               and _s17_read("InChI=1S/CH4/r/q+1") == ({"C": 1, "H": 4}, 1))
+    return honest, bad
 
 
 # =================================================================================================================

@@ -324,10 +324,21 @@ def _parse_skeleton_stereo(
     # label -> (opening atom, pending order, pending dir, reserved written-neighbour slot)
     ring_open: dict[str, tuple[int, int | None, "bool | None", int]] = {}
     i, n = 0, len(text)
+    # 0.9.5 A14 (Wave D F1): every atom pair already joined, so a ring closure onto a bonded pair is refused in the walk.
+    # 'C1C1' used to write a chain bond AND a ring bond between atoms 0 and 1; hydrogens were filled from the doubled
+    # degree and only then did the Molecule's frozenset fold the two equal Bond records into one -- a graph nobody wrote
+    # ('[CH3]1[CH3]1' keyed as ethane, '[CH2]12[CH2][CH2]12' as cyclopropane, 'C1C1' as a C2H4 phantom), and unequal
+    # orders ('C1=C1') escaped as a bare ValueError.  OpenSMILES makes a duplicate bond between one pair an error.
+    bonded: set[tuple[int, int]] = set()
+    # A14 (Wave D F9): indices into ``bonds`` of the bonds written with an explicit ':' (checked after the walk).
+    colon_bonds: list[int] = []
 
     def connect(a: int, b: int, order: int | None, both_aromatic: bool, direction: "bool | None") -> None:
         if a == b:
             raise SmilesError("a bond connects an atom to itself")
+        bonded.add((a, b) if a < b else (b, a))
+        if order == _AROMATIC:           # an explicit order of _AROMATIC is only ever written as ':'
+            colon_bonds.append(len(bonds))
         o = order if order is not None else (_AROMATIC if both_aromatic else 1)
         bonds.append([a, b, o])
         if direction is not None:
@@ -394,6 +405,12 @@ def _parse_skeleton_stereo(
                     raise SmilesError(f"ring bond {label!r} is written with two different orders at its two ends; "
                                       "write the bond symbol once, or the same symbol at both ends")
                 order = pending if pending is not None else oorder
+                if ((other, prev) if other < prev else (prev, other)) in bonded:
+                    raise SmilesError(
+                        f"ring-closure bond {label!r} joins atoms #{min(other, prev)} and #{max(other, prev)}, which "
+                        "are already bonded; one pair of atoms has one bond, its order written once (e.g. 'C=C', "
+                        "not 'C1C1' or 'C1=C1')"
+                    )
                 connect(other, prev, order, atoms[other].aromatic and atoms[prev].aromatic,
                         odir if odir is not None else pending_dir)
                 written_neighbours[other][opening_slot] = prev
@@ -449,6 +466,7 @@ def _parse_skeleton_stereo(
         raise SmilesError("empty SMILES")
     _check_hydrogen_atoms(atoms, bonds)
     _check_aromatic_ring_members(atoms, bonds)
+    _check_aromatic_bond_symbols(atoms, bonds, colon_bonds)
     return atoms, bonds, directions, written_neighbours
 
 
@@ -507,6 +525,32 @@ def _check_aromatic_ring_members(atoms: list[_Atom], bonds: list[list[int]]) -> 
                 f"ring atom -- write {atoms[k].element!r} (uppercase) for a non-aromatic atom, or close the aromatic "
                 "ring"
             )
+
+
+def _check_aromatic_bond_symbols(atoms: list[_Atom], bonds: list[list[int]], colon_bonds: list[int]) -> None:
+    """Refuse an explicit ``:`` bond that is not a RING bond between two aromatic (lowercase) atoms (0.9.5 A14, F9).
+
+    The bond-side sibling of :func:`_check_aromatic_ring_members`.  ``:`` says "this bond is in an aromatic ring".
+    Between uppercase atoms the Kekule pass quietly chose an order for it: ``C:C`` keyed as ethene, ``CC:CC`` as
+    2-butene and ``C:1CCCCC:1`` as cyclohexene.  On a bridge (a bond in no ring) the claim is impossible, and
+    kekulisation could still turn it into a DOUBLE bond: ``c1cc1:c1cc1`` read as triafulvalene.  Every real use (a
+    ``:`` anywhere inside a lowercase ring, e.g. ``c1:c:c:c:c:c1``) passes untouched; for a single bond between two
+    aromatic rings, write ``-`` (``c1ccccc1-c1ccccc1``)."""
+    if not colon_bonds:
+        return
+    ring_edges = _cip_ring_edges(len(atoms), bonds)
+    for bi in colon_bonds:
+        a, b, _order = bonds[bi]
+        if not (atoms[a].aromatic and atoms[b].aromatic):
+            where = "joins a non-aromatic (uppercase) atom"
+        elif bi not in ring_edges:
+            where = "is not in a ring"
+        else:
+            continue
+        raise SmilesError(
+            f"explicit aromatic bond ':' between atoms #{a} and #{b} {where}; ':' marks a bond inside an aromatic ring "
+            "between two lowercase atoms -- write '=' or '-' for an explicit Kekule bond"
+        )
 
 
 # R2: bound the resonance enumeration. A benzenoid's Kekulé count is small (benzene 2, naphthalene 3,
@@ -998,11 +1042,23 @@ def _build_molecule(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> 
     # (benzene) all Kekulé forms are isomorphic already; for a fused benzenoid (naphthalene, anthracene) it
     # removes the Kekulé-choice ambiguity; for a MIXED aromatic-flagged + explicit-Kekulé spelling (R41) it
     # canonicalises the explicit ring too, so a charged ring cannot split its aromatic and explicit spellings.
-    orders = _canonical_kekule_orders(atoms, bonds, charge)
-    for k in range(len(bonds)):
-        bonds[k][2] = orders[k]
-    out_atoms, out_bonds = _fill_hydrogens(atoms, bonds)
-    return Molecule(tuple(out_atoms), frozenset(out_bonds), charge).canonical()
+    # 0.9.5 A14 (Wave D F3): the Molecule's own structural refusals (two records for one atom pair, a disconnected
+    # graph, a bad Bond) are plain ValueErrors.  Reached from a parse they mean malformed SMILES, not an internal fault:
+    # 'C1=C1' escaped every front door as a bare ValueError (plan exit 70).  The walk now refuses a duplicate pair
+    # itself; this is the second suture, typed, for whatever the walk does not catch.  The placement search builds a
+    # Molecule per candidate, so the whole materialisation is covered.  canonical()'s CanonicalBoundExceeded is a
+    # NotImplementedError and passes through untouched (its callers route it).
+    try:
+        orders = _canonical_kekule_orders(atoms, bonds, charge)
+        for k in range(len(bonds)):
+            bonds[k][2] = orders[k]
+        out_atoms, out_bonds = _fill_hydrogens(atoms, bonds)
+        molecule = Molecule(tuple(out_atoms), frozenset(out_bonds), charge)
+    except SmilesError:
+        raise
+    except ValueError as exc:
+        raise SmilesError(f"the parsed SMILES does not form a valid molecule graph: {exc}") from exc
+    return molecule.canonical()
 
 
 def _isotopic_identity(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> str:

@@ -124,7 +124,12 @@ def plan(target_input: str, input_kind: "InputKind | str" = InputKind.AUTO,
     Formula decomposition has no route to project, so it ignores this argument.
     """
     from .compilation_ir import CompilationOperation
-    from .identity_parse import IdentityParseError, detect_auto_ambiguity, resolve_identity
+    from .identity_parse import (
+        IdentityParseError,
+        detect_auto_ambiguity,
+        detect_target_file_ambiguity,
+        resolve_identity,
+    )
     from .service import build_decompile_request, build_recompile_request, run_compilation
 
     kind = input_kind if isinstance(input_kind, InputKind) else InputKind(input_kind)
@@ -133,13 +138,19 @@ def plan(target_input: str, input_kind: "InputKind | str" = InputKind.AUTO,
     # materially-distinct input-kind readings -- 'CO' is methanol (SMILES) AND carbon monoxide (formula).
     # An explicit kind (a flag, or an inline 'smiles:'/'formula:' prefix) is a DECISION, so detect_auto_ambiguity
     # returns None for it and planning proceeds; only a genuinely ambiguous bare AUTO input is refused here.
+    # 0.9.5 A14 (Wave D F4): a TARGET_FILE's contents are resolved on that same AUTO path, so an unprefixed string
+    # inside the file gets the same refusal -- 'plan CO' refused while a file holding 'CO' planned methanol.  The
+    # ambiguity names the file's inner string; a 'smiles:'/'formula:' prefix in the file is the decision, as ever.
+    ambiguity = None
     if kind is InputKind.AUTO:
         ambiguity = detect_auto_ambiguity(target_input)
-        if ambiguity is not None:
-            return PlanResult(
-                target_input, kind, PlanStatus.INPUT_KIND_AMBIGUOUS, None, None, False, None, None,
-                ambiguity=ambiguity,
-            )
+    elif kind is InputKind.TARGET_FILE:
+        ambiguity = detect_target_file_ambiguity(target_input)
+    if ambiguity is not None:
+        return PlanResult(
+            target_input, kind, PlanStatus.INPUT_KIND_AMBIGUOUS, None, None, False, None, None,
+            ambiguity=ambiguity,
+        )
 
     try:
         resolved = resolve_identity(target_input, kind)
@@ -295,8 +306,14 @@ def render_plan_human(result: PlanResult) -> str:
             lines.append(
                 f"    - as {kind.value:8} -> {ident.receipt.normalized} ({ident.receipt.identity_layer} layer)"
             )
-        lines.append("  the front door will NOT choose; re-run with an explicit kind (e.g. "
-                     f"smiles:{result.target_input} or formula:{result.target_input})")
+        # the ambiguous string itself: the paste for AUTO, the file's contents for TARGET_FILE (A14 F4)
+        inner = result.ambiguity.target_input
+        if result.input_kind is InputKind.TARGET_FILE:
+            lines.append("  the front door will NOT choose; prefix the file's contents with an explicit kind (e.g. "
+                         f"smiles:{inner} or formula:{inner})")
+        else:
+            lines.append("  the front door will NOT choose; re-run with an explicit kind (e.g. "
+                         f"smiles:{inner} or formula:{inner})")
         return "\n".join(lines)
     if result.resolved is None:
         lines.append(f"  INVALID INPUT: {result.invalid_reason}")

@@ -523,6 +523,7 @@ def main() -> int:
         return 0
     res = run(a)
     stem = a.out_dir / f"RESULTS_v0_9_5_stress_{a.label}"
+    stem.parent.mkdir(parents=True, exist_ok=True)   # never lose a finished run to a missing --out-dir
     stem.with_suffix(".json").write_text(json.dumps(res, indent=1, sort_keys=True) + "\n")
     stem.with_suffix(".md").write_text(_md(res))
     print(_md(res))

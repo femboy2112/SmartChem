@@ -1,0 +1,538 @@
+{
+  "_meta": {
+    "frozen_at_version": "0.9.5a1",
+    "note": "Executable 1.0 public-contract freeze. _meta is provenance, never compared. The package version is deliberately absent: a version bump must not move this surface."
+  },
+  "cli_verbs": {
+    "contract": [
+      "plan",
+      "recompile",
+      "decompile",
+      "compile"
+    ],
+    "present_noncontract": [
+      "audit",
+      "synthesize"
+    ]
+  },
+  "contract_schema": "smartchem.release/v1_0-public-contract-v1",
+  "python_entry_points": {
+    "functions": {
+      "build_decompile_request": [
+        [
+          "target_input",
+          "POSITIONAL_OR_KEYWORD",
+          "<required>"
+        ],
+        [
+          "input_kind",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "formula_inventory",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "max_multiplicity",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "budget",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "max_edges",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "identity_policy",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "match_layer",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "ranking_policy",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "evidence_provider_selection",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "output_policy",
+          "KEYWORD_ONLY",
+          "None"
+        ]
+      ],
+      "build_recompile_request": [
+        [
+          "target_input",
+          "POSITIONAL_OR_KEYWORD",
+          "<required>"
+        ],
+        [
+          "input_kind",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "helper_reagents",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "stock_materials",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "commodities_enabled",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "grammar",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "max_depth",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "max_routes",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "cut_budget",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "identity_policy",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "match_layer",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "constraints",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "process",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "max_temperature_k",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "min_pressure_atm",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "max_pressure_atm",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "min_temperature_k",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "ranking_policy",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "evidence_provider_selection",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "output_policy",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "algebra_profile",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "capability_profile",
+          "KEYWORD_ONLY",
+          "None"
+        ]
+      ],
+      "deserialize_response": [
+        [
+          "text",
+          "POSITIONAL_OR_KEYWORD",
+          "<required>"
+        ],
+        [
+          "verification_key",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "require_signature",
+          "KEYWORD_ONLY",
+          "False"
+        ],
+        [
+          "require_verified_admission",
+          "KEYWORD_ONLY",
+          "False"
+        ],
+        [
+          "expected_request_digest",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "expected_capability_question_digest",
+          "KEYWORD_ONLY",
+          "<default:object>"
+        ],
+        [
+          "require_reexecution",
+          "KEYWORD_ONLY",
+          "False"
+        ],
+        [
+          "policy",
+          "KEYWORD_ONLY",
+          "None"
+        ]
+      ],
+      "load_response": [
+        [
+          "payload",
+          "POSITIONAL_OR_KEYWORD",
+          "<required>"
+        ],
+        [
+          "policy",
+          "POSITIONAL_OR_KEYWORD",
+          "None"
+        ]
+      ],
+      "load_response_text": [
+        [
+          "text",
+          "POSITIONAL_OR_KEYWORD",
+          "<required>"
+        ],
+        [
+          "policy",
+          "POSITIONAL_OR_KEYWORD",
+          "None"
+        ]
+      ],
+      "request_from_payload": [
+        [
+          "payload",
+          "POSITIONAL_OR_KEYWORD",
+          "<required>"
+        ]
+      ],
+      "request_to_payload": [
+        [
+          "request",
+          "POSITIONAL_OR_KEYWORD",
+          "<required>"
+        ]
+      ],
+      "response_from_payload": [
+        [
+          "payload",
+          "POSITIONAL_OR_KEYWORD",
+          "<required>"
+        ],
+        [
+          "verification_key",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "require_signature",
+          "KEYWORD_ONLY",
+          "False"
+        ],
+        [
+          "require_verified_admission",
+          "KEYWORD_ONLY",
+          "False"
+        ],
+        [
+          "expected_request_digest",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "expected_capability_question_digest",
+          "KEYWORD_ONLY",
+          "<default:object>"
+        ],
+        [
+          "require_reexecution",
+          "KEYWORD_ONLY",
+          "False"
+        ],
+        [
+          "policy",
+          "KEYWORD_ONLY",
+          "None"
+        ]
+      ],
+      "response_schema": [],
+      "response_to_payload": [
+        [
+          "response",
+          "POSITIONAL_OR_KEYWORD",
+          "<required>"
+        ],
+        [
+          "signing_key",
+          "KEYWORD_ONLY",
+          "None"
+        ],
+        [
+          "include_replay",
+          "KEYWORD_ONLY",
+          "True"
+        ]
+      ],
+      "run_compilation": [
+        [
+          "request",
+          "POSITIONAL_OR_KEYWORD",
+          "<required>"
+        ],
+        [
+          "provider_snapshots",
+          "KEYWORD_ONLY",
+          "()"
+        ]
+      ]
+    },
+    "module": "smartchem.service"
+  },
+  "verdict_vocabulary": {
+    "capability_status": [
+      "FIT",
+      "BLOCKED",
+      "UNKNOWN",
+      "NOT_APPLICABLE",
+      "UNCONSTRAINED"
+    ],
+    "process_fit_status": [
+      "UNCONSTRAINED",
+      "FITS",
+      "EXCLUDED",
+      "UNKNOWN"
+    ],
+    "readiness_tiers_weakest_first": [
+      "FORMAL_CANDIDATE",
+      "REACTION_VOUCHED",
+      "CONDITIONS_SUPPORTED",
+      "PROCESS_SPECIFIED"
+    ],
+    "response_outcome": {
+      "exit_code": {
+        "INCOMPLETE": 4,
+        "INTERNAL_ERROR": 70,
+        "INVALID_INPUT": 2,
+        "NO_ROUTE_COMPLETE": 3,
+        "REFUSED": 5,
+        "ROUTES_FOUND": 0,
+        "TARGET_ALREADY_AVAILABLE": 0
+      },
+      "members": [
+        "ROUTES_FOUND",
+        "TARGET_ALREADY_AVAILABLE",
+        "NO_ROUTE_COMPLETE",
+        "INCOMPLETE",
+        "REFUSED",
+        "INVALID_INPUT",
+        "INTERNAL_ERROR"
+      ]
+    },
+    "search_space_status": [
+      "NO_ROUTE_IN_DECLARED_SPACE",
+      "INCOMPLETE_NO_ROUTE_OBSERVED",
+      "COMPLETE_CANDIDATE_SET",
+      "PARTIAL_CANDIDATE_SET"
+    ],
+    "transport_mode": [
+      "CANONICAL_VERIFIED",
+      "THIN_ADVISORY"
+    ]
+  },
+  "verification": {
+    "default_budget": {
+      "canonical_work": 1073741824,
+      "capability_work": 16384,
+      "dossiers": 256,
+      "enumeration_targets": 128,
+      "payload_nodes": 2097152,
+      "reexecutions": 1,
+      "replay_steps": 4096,
+      "steps_per_dossier": 32,
+      "work_per_target": 32768,
+      "work_total": 131072
+    },
+    "has_budget_exceeded": true,
+    "has_budget_unlimited": true,
+    "module": "smartchem.verification",
+    "types": {
+      "VerificationBudget": [
+        [
+          "payload_nodes",
+          "POSITIONAL_OR_KEYWORD",
+          "2097152"
+        ],
+        [
+          "dossiers",
+          "POSITIONAL_OR_KEYWORD",
+          "256"
+        ],
+        [
+          "replay_steps",
+          "POSITIONAL_OR_KEYWORD",
+          "4096"
+        ],
+        [
+          "steps_per_dossier",
+          "POSITIONAL_OR_KEYWORD",
+          "32"
+        ],
+        [
+          "enumeration_targets",
+          "POSITIONAL_OR_KEYWORD",
+          "128"
+        ],
+        [
+          "work_per_target",
+          "POSITIONAL_OR_KEYWORD",
+          "32768"
+        ],
+        [
+          "work_total",
+          "POSITIONAL_OR_KEYWORD",
+          "131072"
+        ],
+        [
+          "reexecutions",
+          "POSITIONAL_OR_KEYWORD",
+          "1"
+        ],
+        [
+          "canonical_work",
+          "POSITIONAL_OR_KEYWORD",
+          "1073741824"
+        ],
+        [
+          "capability_work",
+          "POSITIONAL_OR_KEYWORD",
+          "16384"
+        ]
+      ],
+      "VerificationPolicy": [
+        [
+          "verification_key",
+          "POSITIONAL_OR_KEYWORD",
+          "None"
+        ],
+        [
+          "require_signature",
+          "POSITIONAL_OR_KEYWORD",
+          "False"
+        ],
+        [
+          "require_verified_admission",
+          "POSITIONAL_OR_KEYWORD",
+          "False"
+        ],
+        [
+          "expected_request_digest",
+          "POSITIONAL_OR_KEYWORD",
+          "None"
+        ],
+        [
+          "expected_capability_question_digest",
+          "POSITIONAL_OR_KEYWORD",
+          "<default:Unpinned>"
+        ],
+        [
+          "require_reexecution",
+          "POSITIONAL_OR_KEYWORD",
+          "False"
+        ],
+        [
+          "require_canonical_transport",
+          "POSITIONAL_OR_KEYWORD",
+          "False"
+        ],
+        [
+          "budget",
+          "POSITIONAL_OR_KEYWORD",
+          "<default:VerificationBudget>"
+        ]
+      ],
+      "VerifiedLoad": [
+        [
+          "response",
+          "POSITIONAL_OR_KEYWORD",
+          "<required>"
+        ],
+        [
+          "receipt",
+          "POSITIONAL_OR_KEYWORD",
+          "<required>"
+        ]
+      ]
+    }
+  },
+  "wire_schema_ids": {
+    "current": {
+      "descriptor": "smartchem.service/compilation-response-schema-v1alpha21",
+      "material_component": "smartchem.experiment/material-component-v1alpha3",
+      "ranked_dag_summary": "smartchem.service/ranked-dag-summary-v1alpha6",
+      "ranked_route_summary": "smartchem.service/ranked-route-summary-v1alpha6",
+      "request": "smartchem.service/compilation-request-v1alpha7",
+      "response": "smartchem.service/compilation-response-v1alpha18",
+      "stock_material": "smartchem.experiment/stock-material-v1alpha4"
+    },
+    "legacy_v0_8_read_only": {
+      "ranked_dag_summary": "smartchem.service/ranked-dag-summary-v1alpha4",
+      "ranked_route_summary": "smartchem.service/ranked-route-summary-v1alpha3",
+      "request": "smartchem.service/compilation-request-v1alpha5",
+      "response": "smartchem.service/compilation-response-v1alpha15"
+    }
+  }
+}

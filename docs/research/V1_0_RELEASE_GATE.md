@@ -167,7 +167,7 @@ unchanged source, carried by the version-transition proof.
 | dependency-floor (numpy 1.24.0 / scipy 1.10.0 / py3.10) | pip-check clean; 73 numpy/scipy tests pass; CLI smoke OK | Fresh @ 1.0rc1 |
 | reproducible build (`scripts/build_release.py` ×2) | byte-identical wheel + sdist; generator `setuptools (84.0.0)` recorded | Fresh @ 1.0rc1 |
 | wheel/sdist install matrix (3.10/3.11/3.12/3.13) | ALL ENVIRONMENTS AGREE (13 commands × 8 envs, byte-identical to source) | Fresh @ 1.0rc1 |
-| hosted CI | <!--CI--> | pending push (Phase 13) |
+| hosted CI | **7/7 jobs GREEN** — run `37057241041` @ `60a5b05`: test (3.10) & test (3.12) each **7482 passed, 0 failed, 0 errors, 84 skipped** (7566 collected, PySCF absent); wheel-install 3.10/3.11/3.12/3.13 all pass (artifact byte-identical to source); PySCF smoke = backend discovery + one real CCSD(T)/cc-pVTZ calc + fast suite **7523 passed, 33 skipped, 14 deselected** + benchmark survives. The branch tip adds only docs + a strengthened test assertion (no production-code change CI exercises differently); its run re-confirms green. | Fresh @ 1.0rc1 |
 
 ---
 
@@ -177,7 +177,7 @@ unchanged source, carried by the version-transition proof.
 - [x] README capability claims match current main (current-tense updated; history preserved)
 - [x] ROADMAP points to the finite ladder with the stopping rule explicit
 - [x] stale current-tense comments corrected without falsifying history
-- [ ] CI/workflow state green on the actual RC (recorded under "hosted CI" above) <!--CI_CHECK-->
+- [x] CI/workflow state green on the actual RC (hosted CI run `37057241041`, 7/7 jobs green — see "hosted CI" above)
 - [x] supported Python versions tested (3.10–3.13 install matrix, fresh)
 - [x] installed CLI behavior tested from a built wheel/sdist, not editable source (install matrix)
 - [x] schemas versioned with migration notes (COMPATIBILITY §3; public-contract freeze)

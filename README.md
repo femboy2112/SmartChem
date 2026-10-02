@@ -311,13 +311,14 @@ pytest -q
 python -m smartchem.bench
 ```
 
-Current suite result (0.9.5a1, tip `d8146c7`) — the OOM-safe full run via `scripts/run_suite.sh` on hosted CI
-(run `36944326427`, jobs `test (3.10)` and `test (3.12)`, the optional RDKit and PySCF backends **absent**), plus
-the PySCF smoke job with PySCF 2.14.0 **present**:
+Current suite result (1.0.0rc1, tip `60a5b05`) — the OOM-safe full run via `scripts/run_suite.sh` on hosted CI
+(run `37057241041`, all 7 jobs green: jobs `test (3.10)` and `test (3.12)`, the optional RDKit and PySCF backends
+**absent**; the four wheel-install-matrix jobs 3.10–3.13 build and install the release artifact and prove it
+byte-identical to source), plus the PySCF smoke job with PySCF 2.14.0 **present**:
 
 ```text
-test (3.10), test (3.12):  7464 passed, 84 skipped, 0 xfailed  (7548 collected, 0 failed, 0 errors)
-PySCF smoke (-m "not slow"): 7505 passed, 33 skipped, 14 deselected  (7552 collected)
+test (3.10), test (3.12):  7482 passed, 84 skipped, 0 xfailed  (7566 collected, 0 failed, 0 errors)
+PySCF smoke (-m "not slow"): 7523 passed, 33 skipped, 14 deselected
 ```
 
 There are **no xfails**: the last strict xfail (parallel interchange) was discharged by PR #79. Every environment

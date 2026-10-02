@@ -1,0 +1,35 @@
+{
+ "family": "frontdoor",
+ "property": "P-silent-misparse",
+ "signature": "P-silent-misparse[R2 bare trailing-sign charge: 'X3+' read as +1 with count 3]",
+ "seed": 950,
+ "count_in_run": 4,
+ "detail": "'Fe１２Al４HZn3+' accepted as {'Al': 4, 'Fe': 12, 'H': 1, 'Zn': 3} charge 1; intended {'Fe': 12, 'Al': 4, 'H': 1, 'Zn': 1} charge 3",
+ "repro": {
+  "text": "Fe１２Al４HZn3+",
+  "text_codepoints": [
+   "U+0046",
+   "U+0065",
+   "U+FF11",
+   "U+FF12",
+   "U+0041",
+   "U+006C",
+   "U+FF14",
+   "U+0048",
+   "U+005A",
+   "U+006E",
+   "U+0033",
+   "U+002B"
+  ],
+  "kind": "confusable",
+  "surface": "FORMULA",
+  "intended": {
+   "Fe": 12,
+   "Al": 4,
+   "H": 1,
+   "Zn": 1
+  },
+  "intended_charge": 3,
+  "shrunk_from": null
+ }
+}

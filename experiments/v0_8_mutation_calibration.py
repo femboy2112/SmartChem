@@ -56,7 +56,7 @@ from smartchem.identity_parse import InputKind, resolve_target
 from smartchem.process_constraints import ProcessRequirements
 from smartchem.procedure_evidence import EvidenceField, EvidenceFieldStatus
 from smartchem.provenance import SourceCitation, SourceReview
-from smartchem.service import build_recompile_request, response_from_payload, response_to_payload, run_compilation
+from smartchem.service import build_recompile_request, response_to_payload, run_compilation
 from smartchem.smiles import parse_smiles
 
 _CERTIFIED = resolve_algebra_profile(DEFAULT_ROUTE_ALGEBRA_PROFILE)
@@ -73,13 +73,19 @@ def mutant(name: str):
 
 @contextlib.contextmanager
 def _patch(obj, name, value):
-    """Temporarily set ``obj.name = value`` (works on modules and class objects), restoring exactly on exit."""
+    """Temporarily set ``obj.name = value`` (works on modules and class objects), restoring exactly on exit.
+
+    0.9.5: the process enumeration cache is cleared on entry AND exit (a patch changes behaviour, never a cache key)."""
+    from smartchem.verification import ENUMERATION_CACHE
+
     had = name in getattr(obj, "__dict__", {})
     old = obj.__dict__.get(name) if had else None
+    ENUMERATION_CACHE.clear()
     setattr(obj, name, value)
     try:
         yield
     finally:
+        ENUMERATION_CACHE.clear()
         if had:
             setattr(obj, name, old)
         else:
@@ -87,6 +93,38 @@ def _patch(obj, name, value):
                 delattr(obj, name)
             except AttributeError:
                 pass
+
+
+def _loader_without_bare_dossier_check():
+    """``svc.response_from_payload`` re-compiled from its OWN source with the X-high D27.7 canonical bare-dossier
+    refusal (the ``if bare:`` block) disabled, its decorator re-applied -- an anchored edit (the anchor must occur
+    exactly once, so it can never silently patch nothing).  Used ONLY to hold a NEWER law out of both arms of a
+    re-read (0.9.5): the D27.7 block itself is never weakened for any real load."""
+    import __future__
+    import inspect
+    import textwrap
+
+    target = svc.response_from_payload.__wrapped__
+    src = textwrap.dedent(inspect.getsource(target))
+    if src.count("if bare:") != 1:
+        raise AssertionError(f"D27.7 anchor found {src.count('if bare:')}x in response_from_payload (expected 1)")
+    glb = dict(target.__globals__)
+    exec(compile(src.replace("if bare:", "if False:"), "<v0.8 re-read: response_from_payload without D27.7>", "exec",
+                 flags=__future__.annotations.compiler_flag, dont_inherit=True), glb)  # noqa: S102 -- in-repo source
+    return glb[target.__name__]
+
+
+@contextlib.contextmanager
+def _newer_laws_held_out():
+    """0.9.5 re-read (the v0.9 harness's M190 pattern): two NEWER, independent 0.9 laws now refuse the M10/M12
+    forgeries FIRST -- X-high D27.4 (``_check_ranking_coherence`` re-derives the whole ranked tuple, readiness
+    included, from the replays) and X-high D27.7 (a CANONICAL_VERIFIED dossier with no replay is refused before any
+    re-derivation) -- so the old arm could no longer see its own layer (they survived on the merged-0.9 tree too).
+    Both are held out in BOTH arms, never weakened: honest = refused by the v0.8 readiness law, mutant = loads once
+    that law is also disabled.  Loads must go through ``svc.response_from_payload`` (the patched name)."""
+    with _patch(svc.CompilationResponse, "_check_ranking_coherence", lambda self: None), \
+            _patch(svc, "response_from_payload", _loader_without_bare_dossier_check()):
+        yield
 
 
 # -- fixtures --------------------------------------------------------------------------------------------------
@@ -379,6 +417,12 @@ def m9() -> bool:
 
 @mutant("M10 a-serialized-tier-edited-without-evidence-moving-must-be-refused-on-load")
 def m10() -> bool:
+    """A carried readiness forged upward (conditions SATISFIED with a forged provenance) while the replay stays put.
+
+    0.9.5 re-read: X-high D27.4 re-derives the whole ranked tuple -- readiness included -- from the replays and refused
+    this forgery before the v0.8 law could, in the mutant arm as well (a masked survivor on the merged-0.9 tree
+    d26f0eb).  D27.4 (and D27.7, idle here: the replay is intact) is held out of BOTH arms by
+    :func:`_newer_laws_held_out`; the readiness law is read at its own layer, never by weakening the newer one."""
     req = build_recompile_request(
         "isopentyl acetate", input_kind=InputKind.NAME, helper_reagents=("water", "acetic acid"),
         stock_materials=("isopentyl alcohol",), max_depth=3,
@@ -405,18 +449,19 @@ def m10() -> bool:
     tampered_resp = replace(resp, ranked_route_dossiers=tuple(dossiers))
     payload = svc.response_to_payload(tampered_resp, include_replay=True)
 
-    real_refuses = False
-    try:
-        svc.response_from_payload(payload)
-    except ValueError:
-        real_refuses = True
-
-    with _patch(svc.CompilationResponse, "_check_readiness_coherence", lambda self, **kw: None):
+    with _newer_laws_held_out():
+        real_refuses = False
         try:
             svc.response_from_payload(payload)
-            mutant_loads = True
         except ValueError:
-            mutant_loads = False
+            real_refuses = True
+
+        with _patch(svc.CompilationResponse, "_check_readiness_coherence", lambda self, **kw: None):
+            try:
+                svc.response_from_payload(payload)
+                mutant_loads = True
+            except ValueError:
+                mutant_loads = False
     return real_refuses and mutant_loads
 
 
@@ -458,6 +503,13 @@ def m12() -> bool:
     the replay IS present but the replayed step's `envelope.procedure` inside it is stripped, the re-derivation
     disagrees with the carried readiness (a lower tier) and is refused too -- the SAME unconditional mechanism,
     exercised on the procedure axis rather than the whole replay.
+
+    0.9.5 re-read: two NEWER 0.9 laws refused both forgeries before the readiness law could, in the mutant arm too (a
+    masked survivor on the merged-0.9 tree d26f0eb) -- part (a) by X-high D27.7 (the canonical bare-dossier check, the
+    ``if bare:`` block of ``response_from_payload``), part (b) by X-high D27.4 (``_check_ranking_coherence``).  Both are
+    held out of BOTH arms of both parts by :func:`_newer_laws_held_out` (loads via ``svc.response_from_payload``); the
+    readiness law is read at its own layer, never by weakening the newer ones.  Part (a) is also made a real keyless
+    forgery: since X-high D27.2 the wire digest binds the whole body, so the strip recomputes that public digest.
     """
     req = build_recompile_request(
         "isopentyl acetate", input_kind=InputKind.NAME, helper_reagents=("water", "acetic acid"),
@@ -473,18 +525,23 @@ def m12() -> bool:
     # -- part (a): CANONICAL_VERIFIED payload, whole replay stripped ------------------------------------------
     payload_a = response_to_payload(resp, include_replay=True)
     assert payload_a["transport_mode"] == "CANONICAL_VERIFIED"
-    payload_a["ranked_route_dossiers"][idx]["replay_payload"] = None  # compare=False -> result_digest unaffected
-    real_refuses_a = False
-    try:
-        response_from_payload(payload_a)
-    except ValueError:
-        real_refuses_a = True
-    with _patch(svc.CompilationResponse, "_check_readiness_coherence", lambda self, **kw: None):
+    payload_a["ranked_route_dossiers"][idx]["replay_payload"] = None  # compare=False -> result identity unaffected
+    # 0.9.5 re-read: since X-high D27.2 the WIRE digest binds the whole body, replay included, so the keyless forger
+    # recomputes that public digest after the strip (otherwise the stale digest, not any readiness law, refuses it).
+    payload_a["result_digest"] = svc._transport_bound_result_digest(
+        resp.result_digest, payload_a["transport_mode"], svc._payload_body_digest(payload_a))
+    with _newer_laws_held_out():
+        real_refuses_a = False
         try:
-            response_from_payload(payload_a)
-            mutant_loads_a = True
+            svc.response_from_payload(payload_a)
         except ValueError:
-            mutant_loads_a = False
+            real_refuses_a = True
+        with _patch(svc.CompilationResponse, "_check_readiness_coherence", lambda self, **kw: None):
+            try:
+                svc.response_from_payload(payload_a)
+                mutant_loads_a = True
+            except ValueError:
+                mutant_loads_a = False
 
     # -- part (b): the carried readiness is FORGED upward on a route whose replay is left UNTOUCHED (so
     # route_digest still matches -- this is the readiness-specific MISMATCH branch of the re-derivation, not
@@ -519,17 +576,18 @@ def m12() -> bool:
     dossiers_b[idx_b] = forged_b
     resp_b = replace(resp, ranked_route_dossiers=tuple(dossiers_b))
     payload_b = response_to_payload(resp_b, include_replay=True)
-    real_refuses_b = False
-    try:
-        response_from_payload(payload_b)
-    except ValueError:
-        real_refuses_b = True
-    with _patch(svc.CompilationResponse, "_check_readiness_coherence", lambda self, **kw: None):
+    with _newer_laws_held_out():
+        real_refuses_b = False
         try:
-            response_from_payload(payload_b)
-            mutant_loads_b = True
+            svc.response_from_payload(payload_b)
         except ValueError:
-            mutant_loads_b = False
+            real_refuses_b = True
+        with _patch(svc.CompilationResponse, "_check_readiness_coherence", lambda self, **kw: None):
+            try:
+                svc.response_from_payload(payload_b)
+                mutant_loads_b = True
+            except ValueError:
+                mutant_loads_b = False
 
     return real_refuses_a and mutant_loads_a and real_refuses_b and mutant_loads_b
 

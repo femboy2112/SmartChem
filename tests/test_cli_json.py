@@ -109,8 +109,10 @@ class TestSchemaDescriptor:
         # -- the constraints box carries the temperature floor (physical-bounds-v1alpha2), the replayed procedure-
         # material phase is an evidence-graded PhaseClaim, the display origin is content-bound, the consumer can pin
         # the capability question, and the legacy whitelist names the released DAG-summary / physical-bounds ids.
-        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha20"
-        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha17"
+        # v1alpha21 (descriptor) / v1alpha18 (response): 0.9.5 S10 -- the replayed procedure carries
+        # stream_dispositions (StreamDisposition); the 0.9.0a1 ids are not migrated (S14).
+        assert schema["descriptor_version"] == "smartchem.service/compilation-response-schema-v1alpha21"
+        assert schema["response_schema_version"] == "smartchem.service/compilation-response-v1alpha18"
         assert schema["request_schema_version"] == "smartchem.service/compilation-request-v1alpha7"
 
     def test_descriptor_cannot_drift_from_a_real_payload(self):

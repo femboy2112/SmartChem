@@ -1,0 +1,5669 @@
+{
+ "schema": "smartchem.rc-funnel-oracle/v1",
+ "frozen_on": "2026-09-29",
+ "frozen_against_tree": "feat/v0.9.5-adversarial-rc @ 115dd71 (package 0.9.0a1); BEFORE the S7-S10 feature-closure writers land",
+ "stages": [
+  "raw_input",
+  "normalized_syntax",
+  "composition",
+  "identity",
+  "structure",
+  "search",
+  "search_receipt",
+  "reaction_vouch",
+  "route_readiness",
+  "capability_requirements",
+  "profile_projection",
+  "final_dossier",
+  "deserialize_verify"
+ ],
+ "status_legend": {
+  "OK": "the stage yields its output",
+  "DROP": "typed refusal at this stage",
+  "NOT_REACHED": "an earlier typed drop means the member never enters this stage",
+  "NA": "the stage does not apply to this member's question (typed reason)"
+ },
+ "s_marker_semantics": "a stage carrying `s` and `before` is a 0.9.5 semantic change: observed==expected -> the change has landed; observed==before -> PENDING(<S-id>) (never a pass); neither -> MISMATCH",
+ "members": [
+  {
+   "id": "FD-01",
+   "family": "front_door",
+   "driver": "plan",
+   "raw_input": "CuSO4·5H2O",
+   "params": {
+    "input_kind": "AUTO"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:cli.human.plan_*",
+    "PROBED@115dd71: identity block of `plan --json`"
+   ],
+   "note": "Unicode middle-dot hydrate: syntax normalized to the ASCII dot, the hydrate boundary retained as two components",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "CuSO4·5H2O",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "FORMULA",
+     "source": "FORMULA_PARSER",
+     "syntax": "CuSO4.5H2O",
+     "component_multipliers": [
+      1,
+      5
+     ]
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "CuH10O9S",
+     "charge": 0
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "FORMULA",
+     "constitution_established": false,
+     "registry_candidates": []
+    },
+    "structure": {
+     "status": "DROP",
+     "reason": "COMPOSITION_ONLY_NO_STRUCTURE_PERCEIVED"
+    },
+    "search": {
+     "status": "OK",
+     "plan_status": "FORMULA_DECOMPOSITION",
+     "operation": "DECOMPILE",
+     "outcome": "ROUTES_FOUND",
+     "exit_code": 0
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "formula decomposition: no ranked route dossiers, no bench question (barrier freeze cli.human)"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "formula decomposition: no ranked route dossiers, no bench question (barrier freeze cli.human)"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "formula decomposition: no ranked route dossiers, no bench question (barrier freeze cli.human)"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "formula decomposition: no ranked route dossiers, no bench question (barrier freeze cli.human)"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "formula decomposition: no ranked route dossiers, no bench question (barrier freeze cli.human)"
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 0,
+     "n_dags": 0,
+     "capability_fit_count": 0,
+     "transport_mode": "CANONICAL_VERIFIED"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "FD-02",
+   "family": "front_door",
+   "driver": "plan",
+   "raw_input": "SO4^2-",
+   "params": {
+    "input_kind": "AUTO"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:cli.human.plan_*",
+    "PROBED@115dd71: identity block of `plan --json`"
+   ],
+   "note": "charged: the identity answers, no neutral scission descent exists",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "SO4^2-",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "FORMULA",
+     "source": "FORMULA_PARSER",
+     "syntax": "SO4^2-",
+     "component_multipliers": [
+      1
+     ]
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "O4S -2",
+     "charge": -2
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "FORMULA",
+     "constitution_established": false,
+     "registry_candidates": []
+    },
+    "structure": {
+     "status": "DROP",
+     "reason": "COMPOSITION_ONLY_NO_STRUCTURE_PERCEIVED"
+    },
+    "search": {
+     "status": "DROP",
+     "reason": "IDENTITY_ONLY_CHARGED_NO_NEUTRAL_DESCENT",
+     "plan_status": "IDENTITY_ONLY",
+     "exit_code": 0
+    },
+    "search_receipt": {
+     "status": "NOT_REACHED",
+     "because": "search IDENTITY_ONLY_CHARGED_NO_NEUTRAL_DESCENT"
+    },
+    "reaction_vouch": {
+     "status": "NOT_REACHED",
+     "because": "search IDENTITY_ONLY_CHARGED_NO_NEUTRAL_DESCENT"
+    },
+    "route_readiness": {
+     "status": "NOT_REACHED",
+     "because": "search IDENTITY_ONLY_CHARGED_NO_NEUTRAL_DESCENT"
+    },
+    "capability_requirements": {
+     "status": "NOT_REACHED",
+     "because": "search IDENTITY_ONLY_CHARGED_NO_NEUTRAL_DESCENT"
+    },
+    "profile_projection": {
+     "status": "NOT_REACHED",
+     "because": "search IDENTITY_ONLY_CHARGED_NO_NEUTRAL_DESCENT"
+    },
+    "final_dossier": {
+     "status": "NOT_REACHED",
+     "because": "search IDENTITY_ONLY_CHARGED_NO_NEUTRAL_DESCENT"
+    },
+    "deserialize_verify": {
+     "status": "NOT_REACHED",
+     "because": "search IDENTITY_ONLY_CHARGED_NO_NEUTRAL_DESCENT"
+    }
+   }
+  },
+  {
+   "id": "FD-03",
+   "family": "front_door",
+   "driver": "plan",
+   "raw_input": "C8H10N4O2",
+   "params": {
+    "input_kind": "AUTO"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:cli.human.plan_*",
+    "PROBED@115dd71: identity block of `plan --json`"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "C8H10N4O2",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "FORMULA",
+     "source": "FORMULA_PARSER",
+     "syntax": "C8H10N4O2",
+     "component_multipliers": [
+      1
+     ]
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "C8H10N4O2",
+     "charge": 0
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "FORMULA",
+     "constitution_established": false,
+     "registry_candidates": [
+      "caffeine"
+     ]
+    },
+    "structure": {
+     "status": "DROP",
+     "reason": "COMPOSITION_ONLY_NO_STRUCTURE_PERCEIVED"
+    },
+    "search": {
+     "status": "OK",
+     "plan_status": "FORMULA_DECOMPOSITION",
+     "operation": "DECOMPILE",
+     "outcome": "ROUTES_FOUND",
+     "exit_code": 0
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "formula decomposition: no ranked route dossiers, no bench question (barrier freeze cli.human)"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "formula decomposition: no ranked route dossiers, no bench question (barrier freeze cli.human)"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "formula decomposition: no ranked route dossiers, no bench question (barrier freeze cli.human)"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "formula decomposition: no ranked route dossiers, no bench question (barrier freeze cli.human)"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "formula decomposition: no ranked route dossiers, no bench question (barrier freeze cli.human)"
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 0,
+     "n_dags": 0,
+     "capability_fit_count": 0,
+     "transport_mode": "CANONICAL_VERIFIED"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "FD-04",
+   "family": "front_door",
+   "driver": "plan",
+   "raw_input": "NH4+",
+   "params": {
+    "input_kind": "AUTO"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:cli.human.plan_*",
+    "PROBED@115dd71: identity block of `plan --json`"
+   ],
+   "note": "bare '+' reads +1; trailing 4 is the H count (documented in the receipt notes)",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "NH4+",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "FORMULA",
+     "source": "FORMULA_PARSER",
+     "syntax": "NH4+",
+     "component_multipliers": [
+      1
+     ]
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "H4N +",
+     "charge": 1
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "FORMULA",
+     "constitution_established": false,
+     "registry_candidates": []
+    },
+    "structure": {
+     "status": "DROP",
+     "reason": "COMPOSITION_ONLY_NO_STRUCTURE_PERCEIVED"
+    },
+    "search": {
+     "status": "DROP",
+     "reason": "IDENTITY_ONLY_CHARGED_NO_NEUTRAL_DESCENT",
+     "plan_status": "IDENTITY_ONLY",
+     "exit_code": 0
+    },
+    "search_receipt": {
+     "status": "NOT_REACHED",
+     "because": "search IDENTITY_ONLY_CHARGED_NO_NEUTRAL_DESCENT"
+    },
+    "reaction_vouch": {
+     "status": "NOT_REACHED",
+     "because": "search IDENTITY_ONLY_CHARGED_NO_NEUTRAL_DESCENT"
+    },
+    "route_readiness": {
+     "status": "NOT_REACHED",
+     "because": "search IDENTITY_ONLY_CHARGED_NO_NEUTRAL_DESCENT"
+    },
+    "capability_requirements": {
+     "status": "NOT_REACHED",
+     "because": "search IDENTITY_ONLY_CHARGED_NO_NEUTRAL_DESCENT"
+    },
+    "profile_projection": {
+     "status": "NOT_REACHED",
+     "because": "search IDENTITY_ONLY_CHARGED_NO_NEUTRAL_DESCENT"
+    },
+    "final_dossier": {
+     "status": "NOT_REACHED",
+     "because": "search IDENTITY_ONLY_CHARGED_NO_NEUTRAL_DESCENT"
+    },
+    "deserialize_verify": {
+     "status": "NOT_REACHED",
+     "because": "search IDENTITY_ONLY_CHARGED_NO_NEUTRAL_DESCENT"
+    }
+   }
+  },
+  {
+   "id": "FD-06",
+   "family": "front_door",
+   "driver": "plan",
+   "raw_input": "C2H6O",
+   "params": {
+    "input_kind": "AUTO"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:cli.human.plan_*",
+    "PROBED@115dd71: identity block of `plan --json`"
+   ],
+   "note": "the ambiguity set: composition does not select a constitution",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "C2H6O",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "FORMULA",
+     "source": "FORMULA_PARSER",
+     "syntax": "C2H6O",
+     "component_multipliers": [
+      1
+     ]
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "C2H6O",
+     "charge": 0
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "FORMULA",
+     "constitution_established": false,
+     "registry_candidates": [
+      "dimethyl ether",
+      "ethanol"
+     ]
+    },
+    "structure": {
+     "status": "DROP",
+     "reason": "COMPOSITION_ONLY_NO_STRUCTURE_PERCEIVED"
+    },
+    "search": {
+     "status": "OK",
+     "plan_status": "FORMULA_DECOMPOSITION",
+     "operation": "DECOMPILE",
+     "outcome": "ROUTES_FOUND",
+     "exit_code": 0
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "formula decomposition: no ranked route dossiers, no bench question (barrier freeze cli.human)"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "formula decomposition: no ranked route dossiers, no bench question (barrier freeze cli.human)"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "formula decomposition: no ranked route dossiers, no bench question (barrier freeze cli.human)"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "formula decomposition: no ranked route dossiers, no bench question (barrier freeze cli.human)"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "formula decomposition: no ranked route dossiers, no bench question (barrier freeze cli.human)"
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 0,
+     "n_dags": 0,
+     "capability_fit_count": 0,
+     "transport_mode": "CANONICAL_VERIFIED"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "FD-12",
+   "family": "front_door",
+   "driver": "plan",
+   "raw_input": "H₂O",
+   "params": {
+    "input_kind": "AUTO"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:cli.human.plan_*",
+    "PROBED@115dd71: identity block of `plan --json`"
+   ],
+   "note": "Unicode subscript normalized",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "H₂O",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "FORMULA",
+     "source": "FORMULA_PARSER",
+     "syntax": "H2O",
+     "component_multipliers": [
+      1
+     ]
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "H2O",
+     "charge": 0
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "FORMULA",
+     "constitution_established": false,
+     "registry_candidates": [
+      "water"
+     ]
+    },
+    "structure": {
+     "status": "DROP",
+     "reason": "COMPOSITION_ONLY_NO_STRUCTURE_PERCEIVED"
+    },
+    "search": {
+     "status": "OK",
+     "plan_status": "FORMULA_DECOMPOSITION",
+     "operation": "DECOMPILE",
+     "outcome": "ROUTES_FOUND",
+     "exit_code": 0
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "formula decomposition: no ranked route dossiers, no bench question (barrier freeze cli.human)"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "formula decomposition: no ranked route dossiers, no bench question (barrier freeze cli.human)"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "formula decomposition: no ranked route dossiers, no bench question (barrier freeze cli.human)"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "formula decomposition: no ranked route dossiers, no bench question (barrier freeze cli.human)"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "formula decomposition: no ranked route dossiers, no bench question (barrier freeze cli.human)"
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 0,
+     "n_dags": 0,
+     "capability_fit_count": 0,
+     "transport_mode": "CANONICAL_VERIFIED"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "FD-05",
+   "family": "front_door",
+   "driver": "plan",
+   "raw_input": "[NH4+]",
+   "params": {
+    "input_kind": "AUTO"
+   },
+   "depends_on": [],
+   "provenance": [
+    "PROBED@115dd71: recompile [NH4+] -> REFUSED exit 5 'capped scission currently supports neutral input species only'"
+   ],
+   "note": "charged/ionic boundary: same species, formula spelling (FD-04) is IDENTITY_ONLY, bracket spelling is a perceived constitution that the search refuses",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "[NH4+]",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "SMILES",
+     "source": "SMILES_PARSER"
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "H4N +",
+     "charge": 1
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "CONSTITUTION",
+     "constitution_established": true,
+     "registry_candidates": []
+    },
+    "structure": {
+     "status": "OK",
+     "atoms": 5,
+     "charge": 1,
+     "tetrahedral_stereo": false,
+     "isotopes": []
+    },
+    "search": {
+     "status": "DROP",
+     "reason": "REFUSED_CHARGED_SPECIES_CHEMISTRY_MODEL_BOUNDARY",
+     "plan_status": "STRUCTURAL_PLANNING",
+     "outcome": "REFUSED",
+     "exit_code": 5
+    },
+    "search_receipt": {
+     "status": "NOT_REACHED",
+     "because": "search REFUSED_CHARGED_SPECIES_CHEMISTRY_MODEL_BOUNDARY"
+    },
+    "reaction_vouch": {
+     "status": "NOT_REACHED",
+     "because": "search REFUSED_CHARGED_SPECIES_CHEMISTRY_MODEL_BOUNDARY"
+    },
+    "route_readiness": {
+     "status": "NOT_REACHED",
+     "because": "search REFUSED_CHARGED_SPECIES_CHEMISTRY_MODEL_BOUNDARY"
+    },
+    "capability_requirements": {
+     "status": "NOT_REACHED",
+     "because": "search REFUSED_CHARGED_SPECIES_CHEMISTRY_MODEL_BOUNDARY"
+    },
+    "profile_projection": {
+     "status": "NOT_REACHED",
+     "because": "search REFUSED_CHARGED_SPECIES_CHEMISTRY_MODEL_BOUNDARY"
+    },
+    "final_dossier": {
+     "status": "NOT_REACHED",
+     "because": "search REFUSED_CHARGED_SPECIES_CHEMISTRY_MODEL_BOUNDARY"
+    },
+    "deserialize_verify": {
+     "status": "NOT_REACHED",
+     "because": "search REFUSED_CHARGED_SPECIES_CHEMISTRY_MODEL_BOUNDARY"
+    }
+   }
+  },
+  {
+   "id": "FD-07",
+   "family": "front_door",
+   "driver": "plan",
+   "raw_input": "CCO",
+   "params": {
+    "input_kind": "AUTO"
+   },
+   "depends_on": [],
+   "provenance": [
+    "PROBED@115dd71: detect_auto_ambiguity('CCO') -> SMILES->C2H6O | FORMULA->C2O"
+   ],
+   "note": "ethanol's SMILES is also a legal formula (C2 C... 'CCO' = C2O): the bare AUTO paste is refused, never guessed",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "CCO",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "SMILES",
+     "source": "SMILES_PARSER"
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "C2H6O",
+     "charge": 0
+    },
+    "identity": {
+     "status": "DROP",
+     "reason": "INPUT_KIND_AMBIGUOUS",
+     "plan_status": "INPUT_KIND_AMBIGUOUS",
+     "exit_code": 2,
+     "interpretations": [
+      "FORMULA:C2O",
+      "SMILES:C2H6O"
+     ]
+    },
+    "structure": {
+     "status": "NOT_REACHED",
+     "because": "identity INPUT_KIND_AMBIGUOUS"
+    },
+    "search": {
+     "status": "NOT_REACHED",
+     "because": "identity INPUT_KIND_AMBIGUOUS"
+    },
+    "search_receipt": {
+     "status": "NOT_REACHED",
+     "because": "identity INPUT_KIND_AMBIGUOUS"
+    },
+    "reaction_vouch": {
+     "status": "NOT_REACHED",
+     "because": "identity INPUT_KIND_AMBIGUOUS"
+    },
+    "route_readiness": {
+     "status": "NOT_REACHED",
+     "because": "identity INPUT_KIND_AMBIGUOUS"
+    },
+    "capability_requirements": {
+     "status": "NOT_REACHED",
+     "because": "identity INPUT_KIND_AMBIGUOUS"
+    },
+    "profile_projection": {
+     "status": "NOT_REACHED",
+     "because": "identity INPUT_KIND_AMBIGUOUS"
+    },
+    "final_dossier": {
+     "status": "NOT_REACHED",
+     "because": "identity INPUT_KIND_AMBIGUOUS"
+    },
+    "deserialize_verify": {
+     "status": "NOT_REACHED",
+     "because": "identity INPUT_KIND_AMBIGUOUS"
+    }
+   }
+  },
+  {
+   "id": "FD-08",
+   "family": "front_door",
+   "driver": "plan",
+   "raw_input": "CuSO4.5H2O",
+   "params": {
+    "input_kind": "AUTO"
+   },
+   "depends_on": [],
+   "provenance": [
+    "PROBED@115dd71: '4.5' read as a decimal point (P0-C guard); the middle dot is the supported hydrate separator"
+   ],
+   "note": "typed refusal of the common ASCII-dot hydrate spelling: safe (never a mis-parse) but user-hostile",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "CuSO4.5H2O",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "DROP",
+     "reason": "FORMULA_DECIMAL_POINT",
+     "plan_status": "INVALID_INPUT",
+     "exit_code": 2
+    },
+    "composition": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax FORMULA_DECIMAL_POINT"
+    },
+    "identity": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax FORMULA_DECIMAL_POINT"
+    },
+    "structure": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax FORMULA_DECIMAL_POINT"
+    },
+    "search": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax FORMULA_DECIMAL_POINT"
+    },
+    "search_receipt": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax FORMULA_DECIMAL_POINT"
+    },
+    "reaction_vouch": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax FORMULA_DECIMAL_POINT"
+    },
+    "route_readiness": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax FORMULA_DECIMAL_POINT"
+    },
+    "capability_requirements": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax FORMULA_DECIMAL_POINT"
+    },
+    "profile_projection": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax FORMULA_DECIMAL_POINT"
+    },
+    "final_dossier": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax FORMULA_DECIMAL_POINT"
+    },
+    "deserialize_verify": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax FORMULA_DECIMAL_POINT"
+    }
+   }
+  },
+  {
+   "id": "FD-09",
+   "family": "front_door",
+   "driver": "plan",
+   "raw_input": "SO4 2-",
+   "params": {
+    "input_kind": "AUTO"
+   },
+   "depends_on": [],
+   "provenance": [
+    "PROBED@115dd71: 'SO42-' ambiguous ASCII ion"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "SO4 2-",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "DROP",
+     "reason": "AMBIGUOUS_ASCII_ION",
+     "plan_status": "INVALID_INPUT",
+     "exit_code": 2
+    },
+    "composition": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax AMBIGUOUS_ASCII_ION"
+    },
+    "identity": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax AMBIGUOUS_ASCII_ION"
+    },
+    "structure": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax AMBIGUOUS_ASCII_ION"
+    },
+    "search": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax AMBIGUOUS_ASCII_ION"
+    },
+    "search_receipt": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax AMBIGUOUS_ASCII_ION"
+    },
+    "reaction_vouch": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax AMBIGUOUS_ASCII_ION"
+    },
+    "route_readiness": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax AMBIGUOUS_ASCII_ION"
+    },
+    "capability_requirements": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax AMBIGUOUS_ASCII_ION"
+    },
+    "profile_projection": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax AMBIGUOUS_ASCII_ION"
+    },
+    "final_dossier": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax AMBIGUOUS_ASCII_ION"
+    },
+    "deserialize_verify": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax AMBIGUOUS_ASCII_ION"
+    }
+   }
+  },
+  {
+   "id": "FD-10",
+   "family": "front_door",
+   "driver": "plan",
+   "raw_input": "C2H((",
+   "params": {
+    "input_kind": "AUTO"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:cli.human.plan_malformed (exit 2)",
+    "PROBED@115dd71"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "C2H((",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "DROP",
+     "reason": "UNBALANCED_PAREN",
+     "plan_status": "INVALID_INPUT",
+     "exit_code": 2
+    },
+    "composition": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax UNBALANCED_PAREN"
+    },
+    "identity": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax UNBALANCED_PAREN"
+    },
+    "structure": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax UNBALANCED_PAREN"
+    },
+    "search": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax UNBALANCED_PAREN"
+    },
+    "search_receipt": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax UNBALANCED_PAREN"
+    },
+    "reaction_vouch": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax UNBALANCED_PAREN"
+    },
+    "route_readiness": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax UNBALANCED_PAREN"
+    },
+    "capability_requirements": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax UNBALANCED_PAREN"
+    },
+    "profile_projection": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax UNBALANCED_PAREN"
+    },
+    "final_dossier": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax UNBALANCED_PAREN"
+    },
+    "deserialize_verify": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax UNBALANCED_PAREN"
+    }
+   }
+  },
+  {
+   "id": "FD-11",
+   "family": "front_door",
+   "driver": "plan",
+   "raw_input": "[Na+].[Cl-]",
+   "params": {
+    "input_kind": "AUTO"
+   },
+   "depends_on": [],
+   "provenance": [
+    "PROBED@115dd71: a Molecule is one connected species; salts are name-keyed"
+   ],
+   "note": "ionic boundary: a salt is not one Molecule",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "[Na+].[Cl-]",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "DROP",
+     "reason": "DISCONNECTED_SMILES",
+     "plan_status": "INVALID_INPUT",
+     "exit_code": 2
+    },
+    "composition": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax DISCONNECTED_SMILES"
+    },
+    "identity": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax DISCONNECTED_SMILES"
+    },
+    "structure": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax DISCONNECTED_SMILES"
+    },
+    "search": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax DISCONNECTED_SMILES"
+    },
+    "search_receipt": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax DISCONNECTED_SMILES"
+    },
+    "reaction_vouch": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax DISCONNECTED_SMILES"
+    },
+    "route_readiness": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax DISCONNECTED_SMILES"
+    },
+    "capability_requirements": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax DISCONNECTED_SMILES"
+    },
+    "profile_projection": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax DISCONNECTED_SMILES"
+    },
+    "final_dossier": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax DISCONNECTED_SMILES"
+    },
+    "deserialize_verify": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax DISCONNECTED_SMILES"
+    }
+   }
+  },
+  {
+   "id": "ID-01",
+   "family": "identity",
+   "driver": "identity_pair",
+   "raw_input": [
+    "smiles:CCO",
+    "smiles:COC"
+   ],
+   "params": {
+    "max_depth": 1
+   },
+   "depends_on": [],
+   "provenance": [
+    "PROBED@115dd71: resonance_identity differs (c8d92683.. vs 37866c69..)",
+    "BARRIER:S7 control (constitutional isomers stay distinct)"
+   ],
+   "note": "same-formula constitutional isomers never merge",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "texts": [
+      "smiles:CCO",
+      "smiles:COC"
+     ]
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kinds": [
+      "SMILES",
+      "SMILES"
+     ]
+    },
+    "composition": {
+     "status": "OK",
+     "hills": [
+      "C2H6O",
+      "C2H6O"
+     ],
+     "same_composition": true
+    },
+    "identity": {
+     "status": "OK",
+     "layers": [
+      "CONSTITUTION",
+      "CONSTITUTION"
+     ],
+     "same_identity_digest": false,
+     "pairwise_distinct": true
+    },
+    "structure": {
+     "status": "OK",
+     "atoms": [
+      9,
+      9
+     ]
+    },
+    "search": {
+     "status": "NA",
+     "because": "identity-only member (ethanol is a commodity terminal): the search stage is exercised by ID-04/ID-05"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "deserialize_verify": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    }
+   }
+  },
+  {
+   "id": "ID-02",
+   "family": "identity",
+   "driver": "identity_pair",
+   "raw_input": [
+    "smiles:Cc1ccccc1C",
+    "smiles:Cc1cccc(C)c1",
+    "smiles:Cc1ccc(C)cc1"
+   ],
+   "params": {
+    "max_depth": 1
+   },
+   "depends_on": [],
+   "provenance": [
+    "PROBED@115dd71: three distinct resonance_identity digests",
+    "BARRIER:S7 mutant (resonance key merges o/m/p-xylene)"
+   ],
+   "note": "o/m/p-xylene: one composition, three identities",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "texts": [
+      "smiles:Cc1ccccc1C",
+      "smiles:Cc1cccc(C)c1",
+      "smiles:Cc1ccc(C)cc1"
+     ]
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kinds": [
+      "SMILES",
+      "SMILES",
+      "SMILES"
+     ]
+    },
+    "composition": {
+     "status": "OK",
+     "hills": [
+      "C8H10",
+      "C8H10",
+      "C8H10"
+     ],
+     "same_composition": true
+    },
+    "identity": {
+     "status": "OK",
+     "layers": [
+      "CONSTITUTION",
+      "CONSTITUTION",
+      "CONSTITUTION"
+     ],
+     "same_identity_digest": false,
+     "pairwise_distinct": true
+    },
+    "structure": {
+     "status": "OK",
+     "atoms": [
+      18,
+      18,
+      18
+     ]
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "deserialize_verify": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    }
+   }
+  },
+  {
+   "id": "ID-04",
+   "family": "identity",
+   "driver": "identity_pair",
+   "raw_input": [
+    "smiles:C[C@H](O)CC",
+    "smiles:C[C@@H](O)CC"
+   ],
+   "params": {
+    "max_depth": 1
+   },
+   "depends_on": [],
+   "provenance": [
+    "PROBED@115dd71: identical resonance_identity c0dfe428..; configuration digests differ; IR loss stereochemistry BLOCKER",
+    "BARRIER §7 declared identity boundary (constitution-level; stereo disclosed as a loss)"
+   ],
+   "note": "enantiomer pair: identity collapses (declared boundary) but the collapse is DISCLOSED as a BLOCKER loss on the request",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "texts": [
+      "smiles:C[C@H](O)CC",
+      "smiles:C[C@@H](O)CC"
+     ]
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kinds": [
+      "SMILES",
+      "SMILES"
+     ]
+    },
+    "composition": {
+     "status": "OK",
+     "hills": [
+      "C4H10O",
+      "C4H10O"
+     ],
+     "same_composition": true
+    },
+    "identity": {
+     "status": "OK",
+     "layers": [
+      "CONSTITUTION",
+      "CONSTITUTION"
+     ],
+     "same_identity_digest": true,
+     "identity_losses": [
+      [
+       "stereochemistry"
+      ],
+      [
+       "stereochemistry"
+      ]
+     ],
+     "loss_severities": [
+      [
+       "BLOCKER"
+      ],
+      [
+       "BLOCKER"
+      ]
+     ]
+    },
+    "structure": {
+     "status": "OK",
+     "tetrahedral_stereo": [
+      true,
+      true
+     ],
+     "distinct_configuration_digests": true,
+     "cip_labels": [
+      [
+       "S"
+      ],
+      [
+       "R"
+      ]
+     ]
+    },
+    "search": {
+     "status": "OK",
+     "outcomes": [
+      "INCOMPLETE",
+      "INCOMPLETE"
+     ],
+     "exit_codes": [
+      4,
+      4
+     ]
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "deserialize_verify": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    }
+   }
+  },
+  {
+   "id": "ID-05",
+   "family": "identity",
+   "driver": "identity_pair",
+   "raw_input": [
+    "smiles:[2H]O[2H]",
+    "smiles:O"
+   ],
+   "params": {
+    "max_depth": 1
+   },
+   "depends_on": [],
+   "provenance": [
+    "PROBED@115dd71: D2O target 'already available' via water stock, loss isotope-labeling BLOCKER"
+   ],
+   "note": "isotopologue: D2O is reported TARGET_ALREADY_AVAILABLE (water bottle) -- the collapse is disclosed, not hidden",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "texts": [
+      "smiles:[2H]O[2H]",
+      "smiles:O"
+     ]
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kinds": [
+      "SMILES",
+      "SMILES"
+     ]
+    },
+    "composition": {
+     "status": "OK",
+     "hills": [
+      "H2O",
+      "H2O"
+     ],
+     "same_composition": true
+    },
+    "identity": {
+     "status": "OK",
+     "layers": [
+      "CONSTITUTION",
+      "CONSTITUTION"
+     ],
+     "same_identity_digest": true,
+     "identity_losses": [
+      [
+       "isotope-labeling"
+      ],
+      []
+     ],
+     "loss_severities": [
+      [
+       "BLOCKER"
+      ],
+      []
+     ]
+    },
+    "structure": {
+     "status": "OK",
+     "isotopes": [
+      [
+       2
+      ],
+      []
+     ],
+     "distinct_isotopic_digests": true
+    },
+    "search": {
+     "status": "OK",
+     "outcomes": [
+      "TARGET_ALREADY_AVAILABLE",
+      "TARGET_ALREADY_AVAILABLE"
+     ],
+     "exit_codes": [
+      0,
+      0
+     ]
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    },
+    "deserialize_verify": {
+     "status": "NA",
+     "because": "stage not applicable to driver identity_pair"
+    }
+   }
+  },
+  {
+   "id": "ID-06",
+   "family": "identity",
+   "driver": "identity_pair",
+   "raw_input": [
+    "smiles:CC(=O)[O-]"
+   ],
+   "params": {
+    "max_depth": 1
+   },
+   "depends_on": [],
+   "provenance": [
+    "REASONED from FD-05 (same guard)",
+    "PROBED@115dd71 (NH4+ only; acetate is REASONED)"
+   ],
+   "note": "charged constitution: identity survives, search refuses (typed)",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "texts": [
+      "smiles:CC(=O)[O-]"
+     ]
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kinds": [
+      "SMILES"
+     ]
+    },
+    "composition": {
+     "status": "OK",
+     "hills": [
+      "C2H3O2 -"
+     ]
+    },
+    "identity": {
+     "status": "OK",
+     "layers": [
+      "CONSTITUTION"
+     ]
+    },
+    "structure": {
+     "status": "OK",
+     "atoms": [
+      7
+     ],
+     "charge": [
+      -1
+     ]
+    },
+    "search": {
+     "status": "DROP",
+     "reason": "REFUSED_CHARGED_SPECIES_CHEMISTRY_MODEL_BOUNDARY",
+     "outcomes": [
+      "REFUSED"
+     ],
+     "exit_codes": [
+      5
+     ]
+    },
+    "search_receipt": {
+     "status": "NOT_REACHED",
+     "because": "search REFUSED_CHARGED_SPECIES_CHEMISTRY_MODEL_BOUNDARY"
+    },
+    "reaction_vouch": {
+     "status": "NOT_REACHED",
+     "because": "search REFUSED_CHARGED_SPECIES_CHEMISTRY_MODEL_BOUNDARY"
+    },
+    "route_readiness": {
+     "status": "NOT_REACHED",
+     "because": "search REFUSED_CHARGED_SPECIES_CHEMISTRY_MODEL_BOUNDARY"
+    },
+    "capability_requirements": {
+     "status": "NOT_REACHED",
+     "because": "search REFUSED_CHARGED_SPECIES_CHEMISTRY_MODEL_BOUNDARY"
+    },
+    "profile_projection": {
+     "status": "NOT_REACHED",
+     "because": "search REFUSED_CHARGED_SPECIES_CHEMISTRY_MODEL_BOUNDARY"
+    },
+    "final_dossier": {
+     "status": "NOT_REACHED",
+     "because": "search REFUSED_CHARGED_SPECIES_CHEMISTRY_MODEL_BOUNDARY"
+    },
+    "deserialize_verify": {
+     "status": "NOT_REACHED",
+     "because": "search REFUSED_CHARGED_SPECIES_CHEMISTRY_MODEL_BOUNDARY"
+    }
+   }
+  },
+  {
+   "id": "MK-01",
+   "family": "material_identity",
+   "driver": "model",
+   "raw_input": "MK-01",
+   "params": {},
+   "depends_on": [
+    "S7"
+   ],
+   "provenance": [
+    "BARRIER:S7 (C7-2)",
+    "REASONED from stock._structure_key = canonical() (not resonance)"
+   ],
+   "note": "salicylic acid bottle (parsed spelling) vs a Kekule-flipped requirement: S7 member. Today's literal key splits the two spellings of ONE resonance structure -> false-BLOCKED; after S7 the material axis is not BLOCKED.",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "bottle": "OC(=O)c1ccccc1O",
+     "requirement": "alternate-Kekule graph surgery of the same molecule"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "identity": {
+     "status": "OK",
+     "resonance_identity_equal": true
+    },
+    "structure": {
+     "status": "OK",
+     "stock_key_equal": true,
+     "active_fraction_interval_found": true,
+     "s": "S7",
+     "before": {
+      "status": "OK",
+      "stock_key_equal": false,
+      "active_fraction_interval_found": false
+     }
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "capability_requirements": {
+     "status": "OK",
+     "material_requirements": 2
+    },
+    "profile_projection": {
+     "status": "OK",
+     "material_axis_not": "BLOCKED",
+     "s": "S7",
+     "before": {
+      "status": "OK",
+      "material_axis": "BLOCKED"
+     }
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "deserialize_verify": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    }
+   }
+  },
+  {
+   "id": "MK-02",
+   "family": "material_identity",
+   "driver": "model",
+   "raw_input": "MK-02",
+   "params": {},
+   "depends_on": [
+    "S7"
+   ],
+   "provenance": [
+    "BARRIER:S7"
+   ],
+   "note": "REVERSE direction: the bottle is the flipped spelling, the requirement the parsed one (S7 both directions).",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "bottle": "alternate-Kekule graph surgery",
+     "requirement": "OC(=O)c1ccccc1O"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "identity": {
+     "status": "OK",
+     "resonance_identity_equal": true
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "profile_projection": {
+     "status": "OK",
+     "material_axis_not": "BLOCKED",
+     "s": "S7",
+     "before": {
+      "status": "OK",
+      "material_axis": "BLOCKED"
+     }
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "deserialize_verify": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    }
+   }
+  },
+  {
+   "id": "MK-03",
+   "family": "material_identity",
+   "driver": "model",
+   "raw_input": "MK-03",
+   "params": {},
+   "depends_on": [],
+   "provenance": [
+    "REASONED"
+   ],
+   "note": "CONTROL: identical spelling bottle x requirement is never BLOCKED in either era (the control the surgery pairs are judged against).",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "bottle": "OC(=O)c1ccccc1O",
+     "requirement": "OC(=O)c1ccccc1O"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "identity": {
+     "status": "OK",
+     "resonance_identity_equal": true
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "profile_projection": {
+     "status": "OK",
+     "material_axis_not": "BLOCKED"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "deserialize_verify": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    }
+   }
+  },
+  {
+   "id": "MK-04",
+   "family": "material_identity",
+   "driver": "model",
+   "raw_input": "MK-04",
+   "params": {},
+   "depends_on": [],
+   "provenance": [
+    "BARRIER:S7 mutant (merges o/m/p-xylene)",
+    "REASONED"
+   ],
+   "note": "NEGATIVE control: o-xylene bottle vs m-xylene requirement stays a miss in both eras (S7 must not merge constitutional isomers).",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "bottle": "Cc1ccccc1C",
+     "requirement": "Cc1cccc(C)c1"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "identity": {
+     "status": "OK",
+     "resonance_identity_equal": false
+    },
+    "structure": {
+     "status": "OK",
+     "stock_key_equal": false,
+     "active_fraction_interval_found": false
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "deserialize_verify": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    }
+   }
+  },
+  {
+   "id": "MK-05",
+   "family": "material_identity",
+   "driver": "model",
+   "raw_input": "MK-05",
+   "params": {},
+   "depends_on": [],
+   "provenance": [
+    "BARRIER §7 named boundary",
+    "PROBED@115dd71 (identical resonance_identity)"
+   ],
+   "note": "declared boundary: (R)/(S) share a stock key (constitution-level identity, disclosed loss) in both eras.",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "bottle": "C[C@H](O)CC",
+     "requirement": "C[C@@H](O)CC"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "identity": {
+     "status": "OK",
+     "resonance_identity_equal": true
+    },
+    "structure": {
+     "status": "OK",
+     "stock_key_equal": true,
+     "active_fraction_interval_found": true
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "deserialize_verify": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    }
+   }
+  },
+  {
+   "id": "MK-06",
+   "family": "material_identity",
+   "driver": "model",
+   "raw_input": "MK-06",
+   "params": {},
+   "depends_on": [
+    "S8"
+   ],
+   "provenance": [
+    "BARRIER:S8",
+    "REASONED from stock._norm = strip+casefold only"
+   ],
+   "note": "S8: a name requirement spelled with internal double space / different case vs a bottle component named 'vegetable oil'.",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "bottle_name": "vegetable oil",
+     "requirement_name": "Vegetable  Oil"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "structure": {
+     "status": "OK",
+     "name_match_found": true,
+     "s": "S8",
+     "before": {
+      "status": "OK",
+      "name_match_found": false
+     }
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "deserialize_verify": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    }
+   }
+  },
+  {
+   "id": "R-01",
+   "family": "route",
+   "driver": "recompile",
+   "raw_input": "smiles:CC(=O)OC",
+   "params": {
+    "max_depth": 2
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:service.methyl_acetate"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "smiles:CC(=O)OC",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "SMILES",
+     "source": "SMILES_PARSER"
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "C3H6O2"
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "CONSTITUTION",
+     "constitution_established": true
+    },
+    "structure": {
+     "status": "OK"
+    },
+    "search": {
+     "status": "OK",
+     "outcome": "ROUTES_FOUND",
+     "exit_code": 0,
+     "search_space_status": "COMPLETE_CANDIDATE_SET",
+     "n_routes": 2,
+     "n_dags": 0
+    },
+    "search_receipt": {
+     "status": "OK",
+     "complete": true,
+     "max_depth": 2,
+     "cut_budget": 20000,
+     "result_limit": 100
+    },
+    "reaction_vouch": {
+     "status": "OK",
+     "routes": 2,
+     "routes_all_steps_reaction_satisfied": 1
+    },
+    "route_readiness": {
+     "status": "OK",
+     "tier_counts": {
+      "REACTION_VOUCHED": 1,
+      "FORMAL_CANDIDATE": 1
+     }
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED: no capability question asked"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED"
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 2,
+     "n_dags": 0,
+     "fit_status_set": [
+      "UNCONSTRAINED",
+      "UNKNOWN"
+     ],
+     "capability_fit_count": 0,
+     "transport_mode": "CANONICAL_VERIFIED"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "pinned_va_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thin": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "R-02",
+   "family": "route",
+   "driver": "recompile",
+   "raw_input": "smiles:CC(=O)OC",
+   "params": {
+    "max_depth": 2,
+    "capability_profile": "poor-man"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:service.methyl_acetate@poor-man"
+   ],
+   "note": "poor-man bench: containment BLOCKED (no fume hood/ventilation declared) on every route",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "smiles:CC(=O)OC",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "SMILES",
+     "source": "SMILES_PARSER"
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "C3H6O2"
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "CONSTITUTION",
+     "constitution_established": true
+    },
+    "structure": {
+     "status": "OK"
+    },
+    "search": {
+     "status": "OK",
+     "outcome": "ROUTES_FOUND",
+     "exit_code": 0,
+     "search_space_status": "COMPLETE_CANDIDATE_SET",
+     "n_routes": 2,
+     "n_dags": 0
+    },
+    "search_receipt": {
+     "status": "OK",
+     "complete": true,
+     "max_depth": 2,
+     "cut_budget": 20000,
+     "result_limit": 100
+    },
+    "reaction_vouch": {
+     "status": "OK",
+     "routes": 2,
+     "routes_all_steps_reaction_satisfied": 1
+    },
+    "route_readiness": {
+     "status": "OK",
+     "tier_counts": {
+      "REACTION_VOUCHED": 1,
+      "FORMAL_CANDIDATE": 1
+     }
+    },
+    "capability_requirements": {
+     "status": "OK",
+     "question_asked": true,
+     "routes_projected": 2
+    },
+    "profile_projection": {
+     "status": "OK",
+     "profile": "poor-man",
+     "overall_set": [
+      "BLOCKED"
+     ],
+     "axes_distinct": [
+      {
+       "attention_care": "NOT_APPLICABLE",
+       "containment": "BLOCKED",
+       "equipment": "UNKNOWN",
+       "material": "UNKNOWN",
+       "measurement": "UNKNOWN",
+       "monetary": "UNKNOWN",
+       "physical": "UNKNOWN",
+       "process": "UNKNOWN",
+       "procurement": "NOT_APPLICABLE",
+       "ventilation": "NOT_APPLICABLE",
+       "waste": "UNKNOWN"
+      }
+     ],
+     "capability_fit_count": 0
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 2,
+     "n_dags": 0,
+     "fit_status_set": [
+      "UNCONSTRAINED",
+      "UNKNOWN"
+     ],
+     "capability_fit_count": 0,
+     "transport_mode": "CANONICAL_VERIFIED"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "pinned_va_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thin": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "R-03",
+   "family": "route",
+   "driver": "recompile",
+   "raw_input": "smiles:CC(=O)OC",
+   "params": {
+    "max_depth": 2,
+    "capability_profile": "research-lab"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:service.methyl_acetate@research-lab"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "smiles:CC(=O)OC",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "SMILES",
+     "source": "SMILES_PARSER"
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "C3H6O2"
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "CONSTITUTION",
+     "constitution_established": true
+    },
+    "structure": {
+     "status": "OK"
+    },
+    "search": {
+     "status": "OK",
+     "outcome": "ROUTES_FOUND",
+     "exit_code": 0,
+     "search_space_status": "COMPLETE_CANDIDATE_SET",
+     "n_routes": 2,
+     "n_dags": 0
+    },
+    "search_receipt": {
+     "status": "OK",
+     "complete": true,
+     "max_depth": 2,
+     "cut_budget": 20000,
+     "result_limit": 100
+    },
+    "reaction_vouch": {
+     "status": "OK",
+     "routes": 2,
+     "routes_all_steps_reaction_satisfied": 1
+    },
+    "route_readiness": {
+     "status": "OK",
+     "tier_counts": {
+      "REACTION_VOUCHED": 1,
+      "FORMAL_CANDIDATE": 1
+     }
+    },
+    "capability_requirements": {
+     "status": "OK",
+     "question_asked": true,
+     "routes_projected": 2
+    },
+    "profile_projection": {
+     "status": "OK",
+     "profile": "research-lab",
+     "overall_set": [
+      "UNKNOWN"
+     ],
+     "axes_distinct": [
+      {
+       "attention_care": "NOT_APPLICABLE",
+       "containment": "UNKNOWN",
+       "equipment": "UNKNOWN",
+       "material": "UNKNOWN",
+       "measurement": "UNKNOWN",
+       "monetary": "UNKNOWN",
+       "physical": "UNKNOWN",
+       "process": "UNKNOWN",
+       "procurement": "NOT_APPLICABLE",
+       "ventilation": "NOT_APPLICABLE",
+       "waste": "UNKNOWN"
+      }
+     ],
+     "capability_fit_count": 0
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 2,
+     "n_dags": 0,
+     "fit_status_set": [
+      "UNCONSTRAINED",
+      "UNKNOWN"
+     ],
+     "capability_fit_count": 0,
+     "transport_mode": "CANONICAL_VERIFIED"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "pinned_va_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thin": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "R-04",
+   "family": "route",
+   "driver": "recompile",
+   "raw_input": "smiles:CC(=O)Oc1ccccc1C(=O)O",
+   "params": {
+    "max_depth": 1,
+    "max_temperature_k": 350.0
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:service.aspirin"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "smiles:CC(=O)Oc1ccccc1C(=O)O",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "SMILES",
+     "source": "SMILES_PARSER"
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "C9H8O4"
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "CONSTITUTION",
+     "constitution_established": true
+    },
+    "structure": {
+     "status": "OK"
+    },
+    "search": {
+     "status": "OK",
+     "outcome": "INCOMPLETE",
+     "exit_code": 4,
+     "search_space_status": "PARTIAL_CANDIDATE_SET",
+     "n_routes": 2,
+     "n_dags": 0
+    },
+    "search_receipt": {
+     "status": "OK",
+     "complete": false,
+     "max_depth": 1,
+     "cut_budget": 20000,
+     "result_limit": 100
+    },
+    "reaction_vouch": {
+     "status": "OK",
+     "routes": 2,
+     "routes_all_steps_reaction_satisfied": 1
+    },
+    "route_readiness": {
+     "status": "OK",
+     "tier_counts": {
+      "FORMAL_CANDIDATE": 1,
+      "REACTION_VOUCHED": 1
+     }
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED: no capability question asked"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED"
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 2,
+     "n_dags": 0,
+     "fit_status_set": [
+      "UNKNOWN"
+     ],
+     "capability_fit_count": 0,
+     "transport_mode": "CANONICAL_VERIFIED"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "pinned_va_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thin": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "R-05",
+   "family": "route",
+   "driver": "recompile",
+   "raw_input": "smiles:CC(=O)Oc1ccccc1C(=O)O",
+   "params": {
+    "max_depth": 1,
+    "max_temperature_k": 350.0,
+    "capability_profile": "poor-man"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:service.aspirin@poor-man"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "smiles:CC(=O)Oc1ccccc1C(=O)O",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "SMILES",
+     "source": "SMILES_PARSER"
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "C9H8O4"
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "CONSTITUTION",
+     "constitution_established": true
+    },
+    "structure": {
+     "status": "OK"
+    },
+    "search": {
+     "status": "OK",
+     "outcome": "INCOMPLETE",
+     "exit_code": 4,
+     "search_space_status": "PARTIAL_CANDIDATE_SET",
+     "n_routes": 2,
+     "n_dags": 0
+    },
+    "search_receipt": {
+     "status": "OK",
+     "complete": false,
+     "max_depth": 1,
+     "cut_budget": 20000,
+     "result_limit": 100
+    },
+    "reaction_vouch": {
+     "status": "OK",
+     "routes": 2,
+     "routes_all_steps_reaction_satisfied": 1
+    },
+    "route_readiness": {
+     "status": "OK",
+     "tier_counts": {
+      "FORMAL_CANDIDATE": 1,
+      "REACTION_VOUCHED": 1
+     }
+    },
+    "capability_requirements": {
+     "status": "OK",
+     "question_asked": true,
+     "routes_projected": 2
+    },
+    "profile_projection": {
+     "status": "OK",
+     "profile": "poor-man",
+     "overall_set": [
+      "BLOCKED"
+     ],
+     "axes_distinct": [
+      {
+       "attention_care": "NOT_APPLICABLE",
+       "containment": "BLOCKED",
+       "equipment": "BLOCKED",
+       "material": "UNKNOWN",
+       "measurement": "UNKNOWN",
+       "monetary": "UNKNOWN",
+       "physical": "UNKNOWN",
+       "process": "UNKNOWN",
+       "procurement": "FIT",
+       "ventilation": "NOT_APPLICABLE",
+       "waste": "BLOCKED"
+      },
+      {
+       "attention_care": "NOT_APPLICABLE",
+       "containment": "BLOCKED",
+       "equipment": "UNKNOWN",
+       "material": "UNKNOWN",
+       "measurement": "UNKNOWN",
+       "monetary": "UNKNOWN",
+       "physical": "UNKNOWN",
+       "process": "UNKNOWN",
+       "procurement": "NOT_APPLICABLE",
+       "ventilation": "NOT_APPLICABLE",
+       "waste": "UNKNOWN"
+      }
+     ],
+     "capability_fit_count": 0
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 2,
+     "n_dags": 0,
+     "fit_status_set": [
+      "UNKNOWN"
+     ],
+     "capability_fit_count": 0,
+     "transport_mode": "CANONICAL_VERIFIED"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "pinned_va_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thin": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "R-06",
+   "family": "route",
+   "driver": "recompile",
+   "raw_input": "smiles:CC(=O)Nc1ccc(O)cc1",
+   "params": {
+    "max_depth": 1
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:service.paracetamol"
+   ],
+   "note": "paracetamol litmus: depth-1 partial, weakest-link tiers FORMAL/REACTION_VOUCHED",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "smiles:CC(=O)Nc1ccc(O)cc1",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "SMILES",
+     "source": "SMILES_PARSER"
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "C8H9NO2"
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "CONSTITUTION",
+     "constitution_established": true
+    },
+    "structure": {
+     "status": "OK"
+    },
+    "search": {
+     "status": "OK",
+     "outcome": "INCOMPLETE",
+     "exit_code": 4,
+     "search_space_status": "PARTIAL_CANDIDATE_SET",
+     "n_routes": 2,
+     "n_dags": 0
+    },
+    "search_receipt": {
+     "status": "OK",
+     "complete": false,
+     "max_depth": 1,
+     "cut_budget": 20000,
+     "result_limit": 100
+    },
+    "reaction_vouch": {
+     "status": "OK",
+     "routes": 2,
+     "routes_all_steps_reaction_satisfied": 1
+    },
+    "route_readiness": {
+     "status": "OK",
+     "tier_counts": {
+      "FORMAL_CANDIDATE": 1,
+      "REACTION_VOUCHED": 1
+     }
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED: no capability question asked"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED"
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 2,
+     "n_dags": 0,
+     "fit_status_set": [
+      "UNCONSTRAINED"
+     ],
+     "capability_fit_count": 0,
+     "transport_mode": "CANONICAL_VERIFIED"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "pinned_va_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thin": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "R-07",
+   "family": "route",
+   "driver": "recompile",
+   "raw_input": "smiles:CC(=O)Nc1ccc(O)cc1",
+   "params": {
+    "max_depth": 1,
+    "capability_profile": "research-lab"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:service.paracetamol@research-lab"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "smiles:CC(=O)Nc1ccc(O)cc1",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "SMILES",
+     "source": "SMILES_PARSER"
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "C8H9NO2"
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "CONSTITUTION",
+     "constitution_established": true
+    },
+    "structure": {
+     "status": "OK"
+    },
+    "search": {
+     "status": "OK",
+     "outcome": "INCOMPLETE",
+     "exit_code": 4,
+     "search_space_status": "PARTIAL_CANDIDATE_SET",
+     "n_routes": 2,
+     "n_dags": 0
+    },
+    "search_receipt": {
+     "status": "OK",
+     "complete": false,
+     "max_depth": 1,
+     "cut_budget": 20000,
+     "result_limit": 100
+    },
+    "reaction_vouch": {
+     "status": "OK",
+     "routes": 2,
+     "routes_all_steps_reaction_satisfied": 1
+    },
+    "route_readiness": {
+     "status": "OK",
+     "tier_counts": {
+      "FORMAL_CANDIDATE": 1,
+      "REACTION_VOUCHED": 1
+     }
+    },
+    "capability_requirements": {
+     "status": "OK",
+     "question_asked": true,
+     "routes_projected": 2
+    },
+    "profile_projection": {
+     "status": "OK",
+     "profile": "research-lab",
+     "overall_set": [
+      "UNKNOWN"
+     ],
+     "axes_distinct": [
+      {
+       "attention_care": "NOT_APPLICABLE",
+       "containment": "FIT",
+       "equipment": "UNKNOWN",
+       "material": "UNKNOWN",
+       "measurement": "UNKNOWN",
+       "monetary": "UNKNOWN",
+       "physical": "UNKNOWN",
+       "process": "UNKNOWN",
+       "procurement": "NOT_APPLICABLE",
+       "ventilation": "NOT_APPLICABLE",
+       "waste": "UNKNOWN"
+      },
+      {
+       "attention_care": "NOT_APPLICABLE",
+       "containment": "UNKNOWN",
+       "equipment": "UNKNOWN",
+       "material": "UNKNOWN",
+       "measurement": "UNKNOWN",
+       "monetary": "UNKNOWN",
+       "physical": "UNKNOWN",
+       "process": "UNKNOWN",
+       "procurement": "NOT_APPLICABLE",
+       "ventilation": "NOT_APPLICABLE",
+       "waste": "UNKNOWN"
+      }
+     ],
+     "capability_fit_count": 0
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 2,
+     "n_dags": 0,
+     "fit_status_set": [
+      "UNCONSTRAINED"
+     ],
+     "capability_fit_count": 0,
+     "transport_mode": "CANONICAL_VERIFIED"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "pinned_va_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thin": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "R-08",
+   "family": "route",
+   "driver": "recompile",
+   "raw_input": "paracetamol",
+   "params": {
+    "max_depth": 1,
+    "cut_budget": 1
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:service.paracetamol_incomplete"
+   ],
+   "note": "incomplete search: a 1-cut budget observes no route; INCOMPLETE_NO_ROUTE_OBSERVED, never 'no route'",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "paracetamol",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "NAME",
+     "source": "OFFLINE_REGISTRY"
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "C8H9NO2"
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "CONSTITUTION",
+     "constitution_established": true
+    },
+    "structure": {
+     "status": "OK"
+    },
+    "search": {
+     "status": "OK",
+     "outcome": "INCOMPLETE",
+     "exit_code": 4,
+     "search_space_status": "INCOMPLETE_NO_ROUTE_OBSERVED",
+     "n_routes": 0,
+     "n_dags": 0
+    },
+    "search_receipt": {
+     "status": "OK",
+     "complete": false,
+     "max_depth": 1,
+     "cut_budget": 1,
+     "result_limit": 100
+    },
+    "reaction_vouch": {
+     "status": "NOT_REACHED",
+     "because": "search produced no ranked dossier (INCOMPLETE_NO_ROUTE_OBSERVED / no route)"
+    },
+    "route_readiness": {
+     "status": "NOT_REACHED",
+     "because": "search produced no ranked dossier"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED: no capability question asked"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED"
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 0,
+     "n_dags": 0,
+     "fit_status_set": [],
+     "capability_fit_count": 0,
+     "transport_mode": "CANONICAL_VERIFIED"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "pinned_va_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thin": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "R-09",
+   "family": "route",
+   "driver": "recompile",
+   "raw_input": "methyl salicylate",
+   "params": {
+    "max_depth": 1
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:service.methyl_salicylate"
+   ],
+   "note": "conditions-supported tier route",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "methyl salicylate",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "NAME",
+     "source": "OFFLINE_REGISTRY"
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "C8H8O3"
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "CONSTITUTION",
+     "constitution_established": true
+    },
+    "structure": {
+     "status": "OK"
+    },
+    "search": {
+     "status": "OK",
+     "outcome": "INCOMPLETE",
+     "exit_code": 4,
+     "search_space_status": "PARTIAL_CANDIDATE_SET",
+     "n_routes": 1,
+     "n_dags": 0
+    },
+    "search_receipt": {
+     "status": "OK",
+     "complete": false,
+     "max_depth": 1,
+     "cut_budget": 20000,
+     "result_limit": 100
+    },
+    "reaction_vouch": {
+     "status": "OK",
+     "routes": 1,
+     "routes_all_steps_reaction_satisfied": 1
+    },
+    "route_readiness": {
+     "status": "OK",
+     "tier_counts": {
+      "CONDITIONS_SUPPORTED": 1
+     }
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED: no capability question asked"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED"
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 1,
+     "n_dags": 0,
+     "fit_status_set": [
+      "UNCONSTRAINED"
+     ],
+     "capability_fit_count": 0,
+     "transport_mode": "CANONICAL_VERIFIED"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "pinned_va_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thin": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "R-10",
+   "family": "route",
+   "driver": "recompile",
+   "raw_input": "C1CC=CCC1",
+   "params": {
+    "max_depth": 3,
+    "input_kind": "SMILES",
+    "algebra_profile": "certified-route-v07"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:service.diels_alder_control"
+   ],
+   "note": "Diels-Alder control: the certified algebra finds the [4+2] route, vouched",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "C1CC=CCC1",
+     "kind": "SMILES"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "SMILES",
+     "source": "SMILES_PARSER"
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "C6H10"
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "CONSTITUTION",
+     "constitution_established": true
+    },
+    "structure": {
+     "status": "OK"
+    },
+    "search": {
+     "status": "OK",
+     "outcome": "ROUTES_FOUND",
+     "exit_code": 0,
+     "search_space_status": "COMPLETE_CANDIDATE_SET",
+     "n_routes": 1,
+     "n_dags": 0
+    },
+    "search_receipt": {
+     "status": "OK",
+     "complete": true,
+     "max_depth": 3,
+     "cut_budget": 20000,
+     "result_limit": 100
+    },
+    "reaction_vouch": {
+     "status": "OK",
+     "routes": 1,
+     "routes_all_steps_reaction_satisfied": 1
+    },
+    "route_readiness": {
+     "status": "OK",
+     "tier_counts": {
+      "REACTION_VOUCHED": 1
+     }
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED: no capability question asked"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED"
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 1,
+     "n_dags": 0,
+     "fit_status_set": [
+      "UNCONSTRAINED"
+     ],
+     "capability_fit_count": 0,
+     "transport_mode": "CANONICAL_VERIFIED"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "pinned_va_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thin": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "R-11",
+   "family": "route",
+   "driver": "recompile",
+   "raw_input": "bromine",
+   "params": {
+    "max_depth": 1
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:service.bromine"
+   ],
+   "note": "DOW bromine: the NAME is not in the offline table -> INVALID_INPUT (typed, closed-world names)",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "bromine",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "DROP",
+     "reason": "LOWERCASE_ELEMENT_NOT_A_KNOWN_NAME",
+     "service_outcome": "INVALID_INPUT",
+     "exit_code": 2
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver recompile"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver recompile"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver recompile"
+    },
+    "search": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax LOWERCASE_ELEMENT_NOT_A_KNOWN_NAME"
+    },
+    "search_receipt": {
+     "status": "NOT_REACHED",
+     "because": "search INVALID_INPUT_UNRESOLVABLE_IDENTITY"
+    },
+    "reaction_vouch": {
+     "status": "NOT_REACHED",
+     "because": "search INVALID_INPUT_UNRESOLVABLE_IDENTITY"
+    },
+    "route_readiness": {
+     "status": "NOT_REACHED",
+     "because": "search INVALID_INPUT_UNRESOLVABLE_IDENTITY"
+    },
+    "capability_requirements": {
+     "status": "NOT_REACHED",
+     "because": "search INVALID_INPUT_UNRESOLVABLE_IDENTITY"
+    },
+    "profile_projection": {
+     "status": "NOT_REACHED",
+     "because": "search INVALID_INPUT_UNRESOLVABLE_IDENTITY"
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 0,
+     "n_dags": 0,
+     "capability_fit_count": 0
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "pinned_va_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thin": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "R-12",
+   "family": "route",
+   "driver": "recompile",
+   "raw_input": "smiles:BrBr",
+   "params": {
+    "max_depth": 1
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:service.bromine_smiles"
+   ],
+   "note": "DOW bromine: Br2 is a commodity terminal -> TARGET_ALREADY_AVAILABLE",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "smiles:BrBr",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "SMILES",
+     "source": "SMILES_PARSER"
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "Br2"
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "CONSTITUTION",
+     "constitution_established": true
+    },
+    "structure": {
+     "status": "OK"
+    },
+    "search": {
+     "status": "OK",
+     "outcome": "TARGET_ALREADY_AVAILABLE",
+     "exit_code": 0,
+     "search_space_status": null,
+     "n_routes": 0,
+     "n_dags": 0
+    },
+    "search_receipt": {
+     "status": "OK",
+     "complete": true,
+     "max_depth": 1,
+     "candidates_emitted": 0
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "target already in terminal stock: no route dossiers to grade"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "target already in terminal stock: no route dossiers to grade"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "target already in terminal stock: no route dossiers to grade"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "target already in terminal stock: no route dossiers to grade"
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 0,
+     "n_dags": 0,
+     "capability_fit_count": 0
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "pinned_va_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thin": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "R-13",
+   "family": "route",
+   "driver": "recompile",
+   "raw_input": "not-a-real-name-zzz",
+   "params": {},
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:service.invalid_name"
+   ],
+   "note": "unresolvable name",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "not-a-real-name-zzz",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "DROP",
+     "reason": "LOWERCASE_ELEMENT_NOT_A_KNOWN_NAME",
+     "service_outcome": "INVALID_INPUT",
+     "exit_code": 2
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver recompile"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver recompile"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver recompile"
+    },
+    "search": {
+     "status": "NOT_REACHED",
+     "because": "normalized_syntax LOWERCASE_ELEMENT_NOT_A_KNOWN_NAME"
+    },
+    "search_receipt": {
+     "status": "NOT_REACHED",
+     "because": "search INVALID_INPUT_UNRESOLVABLE_IDENTITY"
+    },
+    "reaction_vouch": {
+     "status": "NOT_REACHED",
+     "because": "search INVALID_INPUT_UNRESOLVABLE_IDENTITY"
+    },
+    "route_readiness": {
+     "status": "NOT_REACHED",
+     "because": "search INVALID_INPUT_UNRESOLVABLE_IDENTITY"
+    },
+    "capability_requirements": {
+     "status": "NOT_REACHED",
+     "because": "search INVALID_INPUT_UNRESOLVABLE_IDENTITY"
+    },
+    "profile_projection": {
+     "status": "NOT_REACHED",
+     "because": "search INVALID_INPUT_UNRESOLVABLE_IDENTITY"
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 0,
+     "n_dags": 0,
+     "capability_fit_count": 0
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "pinned_va_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thin": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "R-14",
+   "family": "route",
+   "driver": "decompile",
+   "raw_input": "C8H9NO2",
+   "params": {},
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:service.decompile_paracetamol"
+   ],
+   "note": "decompile of a formula: composition-level, COMPLETE, no ranked dossiers",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "C8H9NO2",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "FORMULA",
+     "source": "FORMULA_PARSER"
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "C8H9NO2"
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "FORMULA",
+     "constitution_established": false
+    },
+    "structure": {
+     "status": "DROP",
+     "reason": "COMPOSITION_ONLY_NO_STRUCTURE_PERCEIVED"
+    },
+    "search": {
+     "status": "OK",
+     "outcome": "ROUTES_FOUND",
+     "exit_code": 0,
+     "search_space_status": "COMPLETE_CANDIDATE_SET",
+     "n_routes": 0,
+     "n_dags": 0
+    },
+    "search_receipt": {
+     "status": "OK",
+     "complete": true
+    },
+    "reaction_vouch": {
+     "status": "NOT_REACHED",
+     "because": "search produced no ranked dossier (INCOMPLETE_NO_ROUTE_OBSERVED / no route)"
+    },
+    "route_readiness": {
+     "status": "NOT_REACHED",
+     "because": "search produced no ranked dossier"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED: no capability question asked"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED"
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 0,
+     "n_dags": 0,
+     "fit_status_set": [],
+     "capability_fit_count": 0,
+     "transport_mode": "CANONICAL_VERIFIED"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "pinned_va_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thin": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "R-15",
+   "family": "route",
+   "driver": "recompile",
+   "raw_input": "isopentyl acetate",
+   "params": {
+    "helper_reagents": [
+     "water",
+     "acetic acid"
+    ],
+    "stock_materials": [
+     "isopentyl alcohol"
+    ]
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:service.isopentyl"
+   ],
+   "note": "isopentyl acetate: 27 routes, one PROCESS_SPECIFIED (LibreTexts-sourced), zero CAPABILITY_FIT",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "isopentyl acetate",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "NAME",
+     "source": "OFFLINE_REGISTRY"
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "C7H14O2"
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "CONSTITUTION",
+     "constitution_established": true
+    },
+    "structure": {
+     "status": "OK"
+    },
+    "search": {
+     "status": "OK",
+     "outcome": "INCOMPLETE",
+     "exit_code": 4,
+     "search_space_status": "PARTIAL_CANDIDATE_SET",
+     "n_routes": 27,
+     "n_dags": 0
+    },
+    "search_receipt": {
+     "status": "OK",
+     "complete": false,
+     "max_depth": 3,
+     "cut_budget": 20000,
+     "result_limit": 100
+    },
+    "reaction_vouch": {
+     "status": "OK",
+     "routes": 27,
+     "routes_all_steps_reaction_satisfied": 1
+    },
+    "route_readiness": {
+     "status": "OK",
+     "tier_counts": {
+      "FORMAL_CANDIDATE": 26,
+      "PROCESS_SPECIFIED": 1
+     }
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED: no capability question asked"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED"
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 27,
+     "n_dags": 0,
+     "fit_status_set": [
+      "UNCONSTRAINED",
+      "UNKNOWN"
+     ],
+     "capability_fit_count": 0,
+     "transport_mode": "CANONICAL_VERIFIED"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "pinned_va_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thin": {
+      "accepted": false,
+      "exc": "ValueError",
+      "msg": "ranked route d94500451dacf7217b81c8fbdc74541ca798a76bad9188a1fe0ba100813bf90e claims readiness tier PROCESS_SPECIFIED on a THIN_ADVISORY transport -- PROCESS_SPECIFIED is not admissible on an unsigned thin wire (the producer must serialize "
+     }
+    }
+   }
+  },
+  {
+   "id": "R-16",
+   "family": "route",
+   "driver": "recompile",
+   "raw_input": "isopentyl acetate",
+   "params": {
+    "helper_reagents": [
+     "water",
+     "acetic acid"
+    ],
+    "stock_materials": [
+     "isopentyl alcohol"
+    ],
+    "capability_profile": "poor-man"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:service.isopentyl@poor-man"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "isopentyl acetate",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "NAME",
+     "source": "OFFLINE_REGISTRY"
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "C7H14O2"
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "CONSTITUTION",
+     "constitution_established": true
+    },
+    "structure": {
+     "status": "OK"
+    },
+    "search": {
+     "status": "OK",
+     "outcome": "INCOMPLETE",
+     "exit_code": 4,
+     "search_space_status": "PARTIAL_CANDIDATE_SET",
+     "n_routes": 27,
+     "n_dags": 0
+    },
+    "search_receipt": {
+     "status": "OK",
+     "complete": false,
+     "max_depth": 3,
+     "cut_budget": 20000,
+     "result_limit": 100
+    },
+    "reaction_vouch": {
+     "status": "OK",
+     "routes": 27,
+     "routes_all_steps_reaction_satisfied": 1
+    },
+    "route_readiness": {
+     "status": "OK",
+     "tier_counts": {
+      "FORMAL_CANDIDATE": 26,
+      "PROCESS_SPECIFIED": 1
+     }
+    },
+    "capability_requirements": {
+     "status": "OK",
+     "question_asked": true,
+     "routes_projected": 27
+    },
+    "profile_projection": {
+     "status": "OK",
+     "profile": "poor-man",
+     "overall_set": [
+      "BLOCKED"
+     ],
+     "axes_distinct": [
+      {
+       "attention_care": "NOT_APPLICABLE",
+       "containment": "BLOCKED",
+       "equipment": "BLOCKED",
+       "material": "UNKNOWN",
+       "measurement": "BLOCKED",
+       "monetary": "UNKNOWN",
+       "physical": "UNKNOWN",
+       "process": "UNKNOWN",
+       "procurement": "FIT",
+       "ventilation": "NOT_APPLICABLE",
+       "waste": "BLOCKED"
+      },
+      {
+       "attention_care": "NOT_APPLICABLE",
+       "containment": "BLOCKED",
+       "equipment": "UNKNOWN",
+       "material": "UNKNOWN",
+       "measurement": "UNKNOWN",
+       "monetary": "UNKNOWN",
+       "physical": "UNKNOWN",
+       "process": "UNKNOWN",
+       "procurement": "NOT_APPLICABLE",
+       "ventilation": "NOT_APPLICABLE",
+       "waste": "BLOCKED"
+      },
+      {
+       "attention_care": "NOT_APPLICABLE",
+       "containment": "BLOCKED",
+       "equipment": "UNKNOWN",
+       "material": "UNKNOWN",
+       "measurement": "UNKNOWN",
+       "monetary": "UNKNOWN",
+       "physical": "UNKNOWN",
+       "process": "UNKNOWN",
+       "procurement": "NOT_APPLICABLE",
+       "ventilation": "NOT_APPLICABLE",
+       "waste": "UNKNOWN"
+      }
+     ],
+     "capability_fit_count": 0
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 27,
+     "n_dags": 0,
+     "fit_status_set": [
+      "UNCONSTRAINED",
+      "UNKNOWN"
+     ],
+     "capability_fit_count": 0,
+     "transport_mode": "CANONICAL_VERIFIED"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "pinned_va_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thin": {
+      "accepted": false,
+      "exc": "ValueError",
+      "msg": "ranked route d94500451dacf7217b81c8fbdc74541ca798a76bad9188a1fe0ba100813bf90e claims readiness tier PROCESS_SPECIFIED on a THIN_ADVISORY transport -- PROCESS_SPECIFIED is not admissible on an unsigned thin wire (the producer must serialize "
+     }
+    }
+   }
+  },
+  {
+   "id": "R-17",
+   "family": "route",
+   "driver": "recompile",
+   "raw_input": "isopentyl acetate",
+   "params": {
+    "helper_reagents": [
+     "water",
+     "acetic acid"
+    ],
+    "stock_materials": [
+     "isopentyl alcohol"
+    ],
+    "capability_profile": "custom-fit-bench"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:service.isopentyl@custom-fit-bench"
+   ],
+   "note": "the fully-declared Custom bench: still zero FIT (source under-specifies whole-process duration / spent-stream disposal); material axis BLOCKED on 24 routes, UNKNOWN on 3",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "isopentyl acetate",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "NAME",
+     "source": "OFFLINE_REGISTRY"
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "C7H14O2"
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "CONSTITUTION",
+     "constitution_established": true
+    },
+    "structure": {
+     "status": "OK"
+    },
+    "search": {
+     "status": "OK",
+     "outcome": "INCOMPLETE",
+     "exit_code": 4,
+     "search_space_status": "PARTIAL_CANDIDATE_SET",
+     "n_routes": 27,
+     "n_dags": 0
+    },
+    "search_receipt": {
+     "status": "OK",
+     "complete": false,
+     "max_depth": 3,
+     "cut_budget": 20000,
+     "result_limit": 100
+    },
+    "reaction_vouch": {
+     "status": "OK",
+     "routes": 27,
+     "routes_all_steps_reaction_satisfied": 1
+    },
+    "route_readiness": {
+     "status": "OK",
+     "tier_counts": {
+      "FORMAL_CANDIDATE": 26,
+      "PROCESS_SPECIFIED": 1
+     }
+    },
+    "capability_requirements": {
+     "status": "OK",
+     "question_asked": true,
+     "routes_projected": 27
+    },
+    "profile_projection": {
+     "status": "OK",
+     "profile": "custom",
+     "overall_set": [
+      "BLOCKED",
+      "UNKNOWN"
+     ],
+     "axes_distinct": [
+      {
+       "attention_care": "NOT_APPLICABLE",
+       "containment": "UNKNOWN",
+       "equipment": "UNKNOWN",
+       "material": "BLOCKED",
+       "measurement": "UNKNOWN",
+       "monetary": "UNKNOWN",
+       "physical": "UNKNOWN",
+       "process": "UNKNOWN",
+       "procurement": "NOT_APPLICABLE",
+       "ventilation": "NOT_APPLICABLE",
+       "waste": "UNKNOWN"
+      },
+      {
+       "attention_care": "NOT_APPLICABLE",
+       "containment": "UNKNOWN",
+       "equipment": "UNKNOWN",
+       "material": "UNKNOWN",
+       "measurement": "UNKNOWN",
+       "monetary": "UNKNOWN",
+       "physical": "UNKNOWN",
+       "process": "UNKNOWN",
+       "procurement": "FIT",
+       "ventilation": "NOT_APPLICABLE",
+       "waste": "UNKNOWN"
+      },
+      {
+       "attention_care": "NOT_APPLICABLE",
+       "containment": "UNKNOWN",
+       "equipment": "UNKNOWN",
+       "material": "UNKNOWN",
+       "measurement": "UNKNOWN",
+       "monetary": "UNKNOWN",
+       "physical": "UNKNOWN",
+       "process": "UNKNOWN",
+       "procurement": "NOT_APPLICABLE",
+       "ventilation": "NOT_APPLICABLE",
+       "waste": "UNKNOWN"
+      }
+     ],
+     "capability_fit_count": 0
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 27,
+     "n_dags": 0,
+     "fit_status_set": [
+      "UNCONSTRAINED",
+      "UNKNOWN"
+     ],
+     "capability_fit_count": 0,
+     "transport_mode": "CANONICAL_VERIFIED"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "pinned_va_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thin": {
+      "accepted": false,
+      "exc": "ValueError",
+      "msg": "ranked route d94500451dacf7217b81c8fbdc74541ca798a76bad9188a1fe0ba100813bf90e claims readiness tier PROCESS_SPECIFIED on a THIN_ADVISORY transport -- PROCESS_SPECIFIED is not admissible on an unsigned thin wire (the producer must serialize "
+     }
+    }
+   }
+  },
+  {
+   "id": "R-18",
+   "family": "route",
+   "driver": "recompile",
+   "raw_input": "smiles:CC(=O)OC",
+   "params": {
+    "max_depth": 2,
+    "grammar": "CAPPED_SCISSION_CONVERGENT"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:service.methyl_acetate_dag"
+   ],
+   "note": "convergent-DAG grammar: 4 DAG dossiers, incomplete",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "smiles:CC(=O)OC",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "SMILES",
+     "source": "SMILES_PARSER"
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "C3H6O2"
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "CONSTITUTION",
+     "constitution_established": true
+    },
+    "structure": {
+     "status": "OK"
+    },
+    "search": {
+     "status": "OK",
+     "outcome": "INCOMPLETE",
+     "exit_code": 4,
+     "search_space_status": "PARTIAL_CANDIDATE_SET",
+     "n_routes": 0,
+     "n_dags": 4
+    },
+    "search_receipt": {
+     "status": "OK",
+     "complete": false,
+     "max_depth": 2,
+     "cut_budget": 20000,
+     "result_limit": 100
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "DAG dossiers carry per-node readiness, not linear route tiers (freeze: dags only)"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "DAG dossiers"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED: no capability question asked"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED"
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 0,
+     "n_dags": 4,
+     "fit_status_set": [],
+     "capability_fit_count": 0,
+     "transport_mode": "CANONICAL_VERIFIED"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "pinned_va_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thin": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "R-19",
+   "family": "route",
+   "driver": "recompile",
+   "raw_input": "isopentyl acetate",
+   "params": {
+    "helper_reagents": [
+     "water",
+     "acetic acid"
+    ],
+    "stock_materials": [
+     "isopentyl alcohol"
+    ],
+    "grammar": "CAPPED_SCISSION_CONVERGENT",
+    "capability_profile": "poor-man"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:service.isopentyl_dag@poor-man"
+   ],
+   "note": "a convergent DAG under a capability profile is typed-REFUSED (exit 5), never silently linearized",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "isopentyl acetate",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver recompile"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver recompile"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver recompile"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver recompile"
+    },
+    "search": {
+     "status": "DROP",
+     "reason": "REFUSED_CONVERGENT_DAG_UNDER_CAPABILITY_PROFILE",
+     "outcome": "REFUSED",
+     "exit_code": 5
+    },
+    "search_receipt": {
+     "status": "NOT_REACHED",
+     "because": "search REFUSED_CONVERGENT_DAG_UNDER_CAPABILITY_PROFILE"
+    },
+    "reaction_vouch": {
+     "status": "NOT_REACHED",
+     "because": "search REFUSED_CONVERGENT_DAG_UNDER_CAPABILITY_PROFILE"
+    },
+    "route_readiness": {
+     "status": "NOT_REACHED",
+     "because": "search REFUSED_CONVERGENT_DAG_UNDER_CAPABILITY_PROFILE"
+    },
+    "capability_requirements": {
+     "status": "NOT_REACHED",
+     "because": "search REFUSED_CONVERGENT_DAG_UNDER_CAPABILITY_PROFILE"
+    },
+    "profile_projection": {
+     "status": "NOT_REACHED",
+     "because": "search REFUSED_CONVERGENT_DAG_UNDER_CAPABILITY_PROFILE"
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 0,
+     "n_dags": 0,
+     "capability_fit_count": 0
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "pinned_va_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thin": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "R-20",
+   "family": "route",
+   "driver": "recompile",
+   "raw_input": "smiles:O",
+   "params": {
+    "max_depth": 1
+   },
+   "depends_on": [],
+   "provenance": [
+    "PROBED@115dd71"
+   ],
+   "note": "water is a commodity terminal",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "smiles:O",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "SMILES",
+     "source": "SMILES_PARSER"
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "H2O"
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "CONSTITUTION",
+     "constitution_established": true
+    },
+    "structure": {
+     "status": "OK",
+     "atoms": 3
+    },
+    "search": {
+     "status": "OK",
+     "outcome": "TARGET_ALREADY_AVAILABLE",
+     "exit_code": 0,
+     "n_routes": 0,
+     "n_dags": 0
+    },
+    "search_receipt": {
+     "status": "OK",
+     "complete": true,
+     "max_depth": 1,
+     "candidates_emitted": 0,
+     "nodes_visited": 0
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "target already in terminal stock"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "target already in terminal stock"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED"
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 0,
+     "n_dags": 0,
+     "capability_fit_count": 0
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "R-21",
+   "family": "route",
+   "driver": "recompile",
+   "raw_input": "smiles:CBr",
+   "params": {
+    "max_depth": 1
+   },
+   "depends_on": [],
+   "provenance": [
+    "PROBED@115dd71: no supported bromide route exists in the linear route algebra at depth 1 (12 bromide targets probed)"
+   ],
+   "note": "DOW bromine: NO supported bromide ROUTE was found among 12 probed bromides (bromomethane, EtBr, BrCCBr, bromoacetic acid, ...). The Dow litmus lives in the dow_bromine_* cost/kinetics probes, not the route search; recorded, not papered over",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "text": "smiles:CBr",
+     "kind": "AUTO"
+    },
+    "normalized_syntax": {
+     "status": "OK",
+     "resolved_kind": "SMILES",
+     "source": "SMILES_PARSER"
+    },
+    "composition": {
+     "status": "OK",
+     "hill": "CH3Br"
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "CONSTITUTION",
+     "constitution_established": true
+    },
+    "structure": {
+     "status": "OK",
+     "atoms": 5
+    },
+    "search": {
+     "status": "OK",
+     "outcome": "NO_ROUTE_COMPLETE",
+     "exit_code": 3,
+     "search_space_status": "NO_ROUTE_IN_DECLARED_SPACE",
+     "n_routes": 0,
+     "n_dags": 0
+    },
+    "search_receipt": {
+     "status": "OK",
+     "complete": true,
+     "max_depth": 1,
+     "cut_budget": 20000,
+     "result_limit": 100,
+     "candidates_emitted": 0,
+     "nodes_visited": 1
+    },
+    "reaction_vouch": {
+     "status": "NOT_REACHED",
+     "because": "search NO_ROUTE_COMPLETE: zero dossiers"
+    },
+    "route_readiness": {
+     "status": "NOT_REACHED",
+     "because": "search NO_ROUTE_COMPLETE"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "NO_PROFILE_DECLARED"
+    },
+    "final_dossier": {
+     "status": "OK",
+     "n_routes": 0,
+     "n_dags": 0,
+     "capability_fit_count": 0
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     }
+    }
+   }
+  },
+  {
+   "id": "C-01",
+   "family": "route",
+   "driver": "cli",
+   "raw_input": "recompile 'acetic anhydride' --elements --max-depth 2",
+   "params": {
+    "argv": [
+     "recompile",
+     "acetic anhydride",
+     "--elements",
+     "--max-depth",
+     "2"
+    ]
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:cli.human.recompile_no_route (exit 3)",
+    "PROBED@115dd71 (nodes=5 transforms=40)"
+   ],
+   "note": "no-route COMPLETE: an exhaustive-within-bounds absence, never a claim about chemistry outside the bounds",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "argv": [
+      "recompile",
+      "acetic anhydride",
+      "--elements",
+      "--max-depth",
+      "2"
+     ]
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver cli"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver cli"
+    },
+    "identity": {
+     "status": "OK",
+     "layer": "CONSTITUTION"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver cli"
+    },
+    "search": {
+     "status": "OK",
+     "exit_code": 3,
+     "stdout_contains": [
+      "NO_ROUTE_COMPLETE (exit 3)",
+      "search: COMPLETE_WITHIN_DECLARED_SPACE",
+      "candidates: 0"
+     ]
+    },
+    "search_receipt": {
+     "status": "OK",
+     "stdout_contains": [
+      "receipt (LINEAR_ROUTE)",
+      "nodes=5, transforms=40, results=0"
+     ],
+     "complete": true
+    },
+    "reaction_vouch": {
+     "status": "NOT_REACHED",
+     "because": "search NO_ROUTE_COMPLETE"
+    },
+    "route_readiness": {
+     "status": "NOT_REACHED",
+     "because": "search NO_ROUTE_COMPLETE"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver cli"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver cli"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver cli"
+    },
+    "deserialize_verify": {
+     "status": "NA",
+     "because": "stage not applicable to driver cli"
+    }
+   }
+  },
+  {
+   "id": "L-01",
+   "family": "legacy",
+   "driver": "legacy",
+   "raw_input": "tests/fixtures/v08/plan_isopentyl_acetate.json",
+   "params": {
+    "fixture": "plan_isopentyl_acetate.json"
+   },
+   "depends_on": [
+    "S1"
+   ],
+   "provenance": [
+    "FREEZE:legacy_v08.plan_isopentyl_acetate.json"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "fixture": "plan_isopentyl_acetate.json"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "plain": {
+      "accepted": true,
+      "outcome": "INCOMPLETE",
+      "is_legacy_v08": true
+     },
+     "canonical_policy": {
+      "accepted": false,
+      "exc": "ValueError"
+     },
+     "s": "S1",
+     "before": {
+      "status": "OK",
+      "plain": {
+       "accepted": true,
+       "outcome": "INCOMPLETE",
+       "is_legacy_v08": true
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "L-02",
+   "family": "legacy",
+   "driver": "legacy",
+   "raw_input": "tests/fixtures/v08/request_ethyl_acetate_smiles.json",
+   "params": {
+    "fixture": "request_ethyl_acetate_smiles.json"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:legacy_v08.request_ethyl_acetate_smiles.json"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "fixture": "request_ethyl_acetate_smiles.json"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "plain": {
+      "accepted": true
+     }
+    }
+   }
+  },
+  {
+   "id": "L-03",
+   "family": "legacy",
+   "driver": "legacy",
+   "raw_input": "tests/fixtures/v08/request_invalid_input_ethyl_acetate_name.json",
+   "params": {
+    "fixture": "request_invalid_input_ethyl_acetate_name.json"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:legacy_v08.request_invalid_input_ethyl_acetate_name.json"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "fixture": "request_invalid_input_ethyl_acetate_name.json"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "plain": {
+      "accepted": true
+     }
+    }
+   }
+  },
+  {
+   "id": "L-04",
+   "family": "legacy",
+   "driver": "legacy",
+   "raw_input": "tests/fixtures/v08/request_isopentyl_acetate.json",
+   "params": {
+    "fixture": "request_isopentyl_acetate.json"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:legacy_v08.request_isopentyl_acetate.json"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "fixture": "request_isopentyl_acetate.json"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "plain": {
+      "accepted": true
+     }
+    }
+   }
+  },
+  {
+   "id": "L-05",
+   "family": "legacy",
+   "driver": "legacy",
+   "raw_input": "tests/fixtures/v08/request_sulfuric_acid_name.json",
+   "params": {
+    "fixture": "request_sulfuric_acid_name.json"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:legacy_v08.request_sulfuric_acid_name.json"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "fixture": "request_sulfuric_acid_name.json"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "deserialize_verify": {
+     "status": "DROP",
+     "reason": "LEGACY_PAYLOAD_REFUSED",
+     "plain": {
+      "accepted": false,
+      "exc": "ValueError",
+      "msg_head": "legacy v0.8 payload; the name resolver changed since v0.8 (stored norm"
+     }
+    }
+   }
+  },
+  {
+   "id": "L-06",
+   "family": "legacy",
+   "driver": "legacy",
+   "raw_input": "tests/fixtures/v08/response_ethyl_acetate_smiles.json",
+   "params": {
+    "fixture": "response_ethyl_acetate_smiles.json"
+   },
+   "depends_on": [
+    "S1"
+   ],
+   "provenance": [
+    "FREEZE:legacy_v08.response_ethyl_acetate_smiles.json",
+    "BARRIER:S1 (opt-in canonical policy refuses legacy at dispatch)"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "fixture": "response_ethyl_acetate_smiles.json"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "plain": {
+      "accepted": true,
+      "outcome": "ROUTES_FOUND",
+      "is_legacy_v08": true
+     },
+     "canonical_policy": {
+      "accepted": false,
+      "exc": "ValueError"
+     },
+     "s": "S1",
+     "before": {
+      "status": "OK",
+      "plain": {
+       "accepted": true,
+       "outcome": "ROUTES_FOUND",
+       "is_legacy_v08": true
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "L-07",
+   "family": "legacy",
+   "driver": "legacy",
+   "raw_input": "tests/fixtures/v08/response_ethyl_acetate_smiles_thin.json",
+   "params": {
+    "fixture": "response_ethyl_acetate_smiles_thin.json"
+   },
+   "depends_on": [
+    "S1"
+   ],
+   "provenance": [
+    "FREEZE:legacy_v08.response_ethyl_acetate_smiles_thin.json",
+    "BARRIER:S1 (opt-in canonical policy refuses legacy at dispatch)"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "fixture": "response_ethyl_acetate_smiles_thin.json"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "plain": {
+      "accepted": true,
+      "outcome": "ROUTES_FOUND",
+      "is_legacy_v08": true
+     },
+     "canonical_policy": {
+      "accepted": false,
+      "exc": "ValueError"
+     },
+     "s": "S1",
+     "before": {
+      "status": "OK",
+      "plain": {
+       "accepted": true,
+       "outcome": "ROUTES_FOUND",
+       "is_legacy_v08": true
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "L-08",
+   "family": "legacy",
+   "driver": "legacy",
+   "raw_input": "tests/fixtures/v08/response_invalid_input_ethyl_acetate_name.json",
+   "params": {
+    "fixture": "response_invalid_input_ethyl_acetate_name.json"
+   },
+   "depends_on": [
+    "S1"
+   ],
+   "provenance": [
+    "FREEZE:legacy_v08.response_invalid_input_ethyl_acetate_name.json",
+    "BARRIER:S1 (opt-in canonical policy refuses legacy at dispatch)"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "fixture": "response_invalid_input_ethyl_acetate_name.json"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "plain": {
+      "accepted": true,
+      "outcome": "INVALID_INPUT",
+      "is_legacy_v08": true
+     },
+     "canonical_policy": {
+      "accepted": false,
+      "exc": "ValueError"
+     },
+     "s": "S1",
+     "before": {
+      "status": "OK",
+      "plain": {
+       "accepted": true,
+       "outcome": "INVALID_INPUT",
+       "is_legacy_v08": true
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "L-09",
+   "family": "legacy",
+   "driver": "legacy",
+   "raw_input": "tests/fixtures/v08/response_isopentyl_acetate.json",
+   "params": {
+    "fixture": "response_isopentyl_acetate.json"
+   },
+   "depends_on": [
+    "S1"
+   ],
+   "provenance": [
+    "FREEZE:legacy_v08.response_isopentyl_acetate.json",
+    "BARRIER:S1 (opt-in canonical policy refuses legacy at dispatch)"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "fixture": "response_isopentyl_acetate.json"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "plain": {
+      "accepted": true,
+      "outcome": "INCOMPLETE",
+      "is_legacy_v08": true
+     },
+     "canonical_policy": {
+      "accepted": false,
+      "exc": "ValueError"
+     },
+     "s": "S1",
+     "before": {
+      "status": "OK",
+      "plain": {
+       "accepted": true,
+       "outcome": "INCOMPLETE",
+       "is_legacy_v08": true
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "L-10",
+   "family": "legacy",
+   "driver": "legacy",
+   "raw_input": "tests/fixtures/v08/response_isopentyl_acetate_dag.json",
+   "params": {
+    "fixture": "response_isopentyl_acetate_dag.json"
+   },
+   "depends_on": [
+    "S1"
+   ],
+   "provenance": [
+    "FREEZE:legacy_v08.response_isopentyl_acetate_dag.json",
+    "BARRIER:S1 (opt-in canonical policy refuses legacy at dispatch)"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "fixture": "response_isopentyl_acetate_dag.json"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "plain": {
+      "accepted": true,
+      "outcome": "INCOMPLETE",
+      "is_legacy_v08": true
+     },
+     "canonical_policy": {
+      "accepted": false,
+      "exc": "ValueError"
+     },
+     "s": "S1",
+     "before": {
+      "status": "OK",
+      "plain": {
+       "accepted": true,
+       "outcome": "INCOMPLETE",
+       "is_legacy_v08": true
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "L-12",
+   "family": "legacy",
+   "driver": "legacy",
+   "raw_input": "tests/fixtures/v08/response_stereo_isopentyl_acetate_smiles.json",
+   "params": {
+    "fixture": "response_stereo_isopentyl_acetate_smiles.json"
+   },
+   "depends_on": [
+    "S1"
+   ],
+   "provenance": [
+    "FREEZE:legacy_v08.response_stereo_isopentyl_acetate_smiles.json",
+    "BARRIER:S1 (opt-in canonical policy refuses legacy at dispatch)"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "fixture": "response_stereo_isopentyl_acetate_smiles.json"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "plain": {
+      "accepted": true,
+      "outcome": "INCOMPLETE",
+      "is_legacy_v08": true
+     },
+     "canonical_policy": {
+      "accepted": false,
+      "exc": "ValueError"
+     },
+     "s": "S1",
+     "before": {
+      "status": "OK",
+      "plain": {
+       "accepted": true,
+       "outcome": "INCOMPLETE",
+       "is_legacy_v08": true
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "L-13",
+   "family": "legacy",
+   "driver": "legacy",
+   "raw_input": "tests/fixtures/v08/response_sulfuric_acid_name.json",
+   "params": {
+    "fixture": "response_sulfuric_acid_name.json"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:legacy_v08.response_sulfuric_acid_name.json"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "fixture": "response_sulfuric_acid_name.json"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "deserialize_verify": {
+     "status": "DROP",
+     "reason": "LEGACY_PAYLOAD_REFUSED",
+     "plain": {
+      "accepted": false,
+      "exc": "ValueError",
+      "msg_head": "legacy v0.8 payload; the name resolver changed since v0.8 (stored norm"
+     }
+    }
+   }
+  },
+  {
+   "id": "L-14",
+   "family": "legacy",
+   "driver": "legacy",
+   "raw_input": "tests/fixtures/v08/tamper/T1_request_v08id_injected_capability.json",
+   "params": {
+    "fixture": "tamper/T1_request_v08id_injected_capability.json"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:legacy_v08.tamper/T1_request_v08id_injected_capability.json"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "fixture": "tamper/T1_request_v08id_injected_capability.json"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "deserialize_verify": {
+     "status": "DROP",
+     "reason": "LEGACY_PAYLOAD_REFUSED",
+     "plain": {
+      "accepted": false,
+      "exc": "ValueError",
+      "msg_head": "legacy 'smartchem.service/compilation-request-v1alpha5' request carrie"
+     }
+    }
+   }
+  },
+  {
+   "id": "L-15",
+   "family": "legacy",
+   "driver": "legacy",
+   "raw_input": "tests/fixtures/v08/tamper/T4b_response_v08id_injected_profile_and_pin.json",
+   "params": {
+    "fixture": "tamper/T4b_response_v08id_injected_profile_and_pin.json"
+   },
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:legacy_v08.tamper/T4b_response_v08id_injected_profile_and_pin.json"
+   ],
+   "note": null,
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "fixture": "tamper/T4b_response_v08id_injected_profile_and_pin.json"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver legacy"
+    },
+    "deserialize_verify": {
+     "status": "DROP",
+     "reason": "LEGACY_PAYLOAD_REFUSED",
+     "plain": {
+      "accepted": false,
+      "exc": "ValueError",
+      "msg_head": "legacy 'smartchem.service/compilation-response-v1alpha15' response car"
+     }
+    }
+   }
+  },
+  {
+   "id": "W-01",
+   "family": "wire",
+   "driver": "wire",
+   "raw_input": "methyl_acetate@poor-man canonical payload",
+   "params": {
+    "case": "methyl_acetate@poor-man"
+   },
+   "depends_on": [
+    "S1",
+    "S14"
+   ],
+   "provenance": [
+    "FREEZE:refusals.T11_thin_under_verified_admission",
+    "FREEZE:refusals.T12_thin_plain_is_advisory",
+    "BARRIER:S1",
+    "BARRIER:S14"
+   ],
+   "note": "canonical() = require_canonical_transport + require_verified_admission: a thin advisory payload must be refused at dispatch; a 0.9.0a1 wire id relabel must be refused as an unsupported schema version",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "case": "methyl_acetate@poor-man"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver wire"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver wire"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver wire"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver wire"
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver wire"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver wire"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver wire"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver wire"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver wire"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver wire"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver wire"
+    },
+    "deserialize_verify": {
+     "status": "OK",
+     "plain_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "pinned_va_thick": {
+      "accepted": true,
+      "round_trip_identical": true
+     },
+     "plain_thin": {
+      "accepted": true
+     },
+     "thin_under_verified_admission": {
+      "accepted": false,
+      "exc": "ValueError"
+     },
+     "canonical_thick": {
+      "accepted": true,
+      "s": "S1",
+      "before": "policy API absent"
+     },
+     "canonical_thin": {
+      "accepted": false,
+      "exc": "ValueError",
+      "s": "S1"
+     },
+     "prerelease_id_relabel": {
+      "accepted": false,
+      "exc": "ValueError",
+      "s": "S14",
+      "before": {
+       "accepted": true
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "H-01",
+   "family": "heldout",
+   "driver": "heldout",
+   "raw_input": "experiments/v0_9_heldout_saponification_probe.py::run()",
+   "params": {},
+   "depends_on": [],
+   "provenance": [
+    "FREEZE:receipts.held_out (12 PASS / 1 lawful DIVERGE / 0 FAIL)"
+   ],
+   "note": "the held-out benign procedure: an unsourced synthesized case can never reach PROCESS_SPECIFIED; P10 (containment) diverges lawfully",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "case": "synthesized benign saponification (blind oracle eb01d67c9b76..)"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver heldout"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver heldout"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver heldout"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver heldout"
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver heldout"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver heldout"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver heldout"
+    },
+    "route_readiness": {
+     "status": "OK",
+     "tier_not": "PROCESS_SPECIFIED",
+     "source_is_none": true
+    },
+    "capability_requirements": {
+     "status": "OK",
+     "graded": 13
+    },
+    "profile_projection": {
+     "status": "OK",
+     "PASS": 12,
+     "DIVERGES_LAWFUL": 1,
+     "FAIL": 0,
+     "diverging_probe": "P10"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver heldout"
+    },
+    "deserialize_verify": {
+     "status": "NA",
+     "because": "stage not applicable to driver heldout"
+    }
+   }
+  },
+  {
+   "id": "SD-01",
+   "family": "stream_disposition",
+   "driver": "model",
+   "raw_input": "DME synthetic witness (2 MeOH -> DME + H2O)",
+   "params": {},
+   "depends_on": [
+    "S10"
+   ],
+   "provenance": [
+    "FREEZE:receipts (zero FIT)",
+    "BARRIER §6 baseline: derive_waste with NO disposition is byte-identical -> exactly 3 unresolved"
+   ],
+   "note": "baseline half of the witness: with no dispositions FIT is unreachable (the 0.9 theorem)",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "fixture": "dimethyl-ether zero-FIT witness route + exactly-sufficient Custom bench"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "search": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "search_receipt": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    },
+    "capability_requirements": {
+     "status": "OK",
+     "unresolved_waste_obligations": 3
+    },
+    "profile_projection": {
+     "status": "OK",
+     "waste_axis": "UNKNOWN",
+     "overall": "UNKNOWN",
+     "capability_fit": false,
+     "other_axes_open": []
+    },
+    "final_dossier": {
+     "status": "OK",
+     "with_three_dispositions": {
+      "overall": "CAPABILITY_FIT",
+      "unresolved": 0
+     },
+     "delete_any_one_disposition": {
+      "overall": "UNKNOWN"
+     },
+     "bench_without_AQUEOUS_NEUTRAL": {
+      "overall": "BLOCKED"
+     },
+     "s": "S10",
+     "before": {
+      "status": "PENDING_FEATURE_ABSENT"
+     }
+    },
+    "deserialize_verify": {
+     "status": "NA",
+     "because": "stage not applicable to driver model"
+    }
+   }
+  },
+  {
+   "id": "LT-01",
+   "family": "lateral",
+   "driver": "lateral",
+   "raw_input": "C1=CCCC=C1 (1,3-cyclohexadiene)",
+   "params": {
+    "seed": "C1=CCCC=C1",
+    "goal": "C=CC=CC=C"
+   },
+   "depends_on": [],
+   "provenance": [
+    "PROBED@115dd71: grep smartchem/service.py smartchem/cli.py -> no lateral_search reference",
+    "tests/test_lateral_search.py::test_electrocyclization_closure_reaches_the_open_isomer"
+   ],
+   "note": "lateral search is a sound library core deliberately separate from the W1 route search; no CLI/service door exists (recorded typed drop, not a pass)",
+   "stages": {
+    "raw_input": {
+     "status": "OK",
+     "seed": "C1=CCCC=C1",
+     "goal": "C=CC=CC=C"
+    },
+    "normalized_syntax": {
+     "status": "NA",
+     "because": "stage not applicable to driver lateral"
+    },
+    "composition": {
+     "status": "NA",
+     "because": "stage not applicable to driver lateral"
+    },
+    "identity": {
+     "status": "NA",
+     "because": "stage not applicable to driver lateral"
+    },
+    "structure": {
+     "status": "NA",
+     "because": "stage not applicable to driver lateral"
+    },
+    "search": {
+     "status": "DROP",
+     "reason": "NOT_PUBLICLY_REACHABLE",
+     "detail": "smartchem.lateral_search is not imported by service.py or cli.py; reachable only as a Python library function"
+    },
+    "search_receipt": {
+     "status": "OK",
+     "library_closure_status": "COMPLETE_TO_DEPTH",
+     "library_closure_isomers": 2,
+     "library_route_length": 1
+    },
+    "reaction_vouch": {
+     "status": "NA",
+     "because": "stage not applicable to driver lateral"
+    },
+    "route_readiness": {
+     "status": "NA",
+     "because": "stage not applicable to driver lateral"
+    },
+    "capability_requirements": {
+     "status": "NA",
+     "because": "stage not applicable to driver lateral"
+    },
+    "profile_projection": {
+     "status": "NA",
+     "because": "stage not applicable to driver lateral"
+    },
+    "final_dossier": {
+     "status": "NA",
+     "because": "stage not applicable to driver lateral"
+    },
+    "deserialize_verify": {
+     "status": "NA",
+     "because": "stage not applicable to driver lateral"
+    }
+   }
+  }
+ ]
+}

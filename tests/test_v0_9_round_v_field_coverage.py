@@ -42,7 +42,7 @@ from smartchem.procedure_evidence import OperationKind, OperationRole
 
 def test_every_field_of_every_covered_type_has_exactly_one_ledger_row():
     assert missing_coverage() == ()
-    assert len(COVERED_TYPES) == 8
+    assert len(COVERED_TYPES) == 10  # 0.9.5 S10: + StreamDisposition, StreamSubject
     assert all(type(v) is FieldCoverage and type(v.primary) is FieldOwner and v.law.strip()
                for v in FIELD_COVERAGE.values())
 

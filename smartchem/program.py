@@ -146,27 +146,43 @@ def _compiler_source_paths() -> tuple[Path, ...]:
     chemistry execution also depends on category, diagnosis, thermochemistry, and oracle
     adapter code.  Over-invalidation is safer than allowing an approved plan to survive a
     material implementation change, so the narrow local runtime binds every shipped Python
-    module plus the package/dependency declaration.
+    module of THIS package.
+
+    0.9.5 (S12): the manifest is the package's own ``.py`` files and nothing else.  It used
+    to also fold in ``<package parent>/pyproject.toml`` when one existed -- present in a
+    source checkout, absent beside ``site-packages/smartchem`` -- so byte-identical code
+    digested differently from a checkout and from an installed wheel (and a stray
+    ``site-packages/pyproject.toml`` would have moved it).  Nothing ambient may enter.
     """
     package = Path(__file__).resolve().parent
-    project = package.parent
-    paths = tuple(
-        sorted(
-            package.rglob("*.py"), key=lambda item: item.relative_to(project).as_posix()
-        )
-    )
-    pyproject = project / "pyproject.toml"
-    return paths + ((pyproject,) if pyproject.exists() else ())
+    # 0.9.5 (Wave C7 F1): fail CLOSED -- imported from a zip (or any non-directory loader) the glob finds nothing and
+    # the digest would collapse to a hash of the version string alone, binding approval to NO code.
+    if not package.is_dir():
+        raise RuntimeError(f"cannot bind the compiler implementation digest: {package} is not a directory (a zipped "
+                           f"or otherwise non-filesystem install); refused")
+    paths = tuple(sorted((item for item in package.rglob("*.py") if item.is_file()),  # C7 F6: files only
+                         key=lambda item: item.relative_to(package).as_posix()))
+    if not paths:
+        raise RuntimeError(f"cannot bind the compiler implementation digest: no source files under {package}; refused")
+    return paths
 
 
 def _compiler_implementation_digest() -> str:
-    """Bind approval to the complete shipped compiler/runtime source manifest."""
+    """Bind approval to the complete shipped compiler/runtime source manifest.
+
+    Preimage: for each package ``.py`` file (sorted, path relative to the package root),
+    ``relpath \\0 sha256(content)``; then the declared ``smartchem.__version__``.
+    """
+    from . import __version__
+
     digest = hashlib.sha256()
-    root = Path(__file__).resolve().parent.parent
+    root = Path(__file__).resolve().parent
     for path in _compiler_source_paths():
         digest.update(path.relative_to(root).as_posix().encode("utf-8"))
         digest.update(b"\0")
         digest.update(hashlib.sha256(path.read_bytes()).digest())
+    digest.update(b"\0version\0")
+    digest.update(__version__.encode("utf-8"))
     return digest.hexdigest()
 
 

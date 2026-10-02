@@ -1,12 +1,17 @@
-"""Round V X-high (Part VII): the ZERO-FIT THEOREM, pinned -- and the proof that it is a missing EVIDENCE TYPE, not an
-overconstrained evaluator.
+"""Round V X-high (Part VII) + 0.9.5 S10: the ZERO-FIT THEOREM, restated for the evidence vocabulary that now exists.
 
-**Wubba lubba dub dub, the verdict word nobody can say.** The corpus has no ``CAPABILITY_FIT``. That is not graded as a
-defect -- but a verdict word the implementation can NEVER return, even in a fully-specified synthetic world, would be.
-So this file pins BOTH halves:
+**Wubba lubba dub dub, the verdict word nobody can say -- yet.** Round V pinned "FIT is unreachable from ANY evidence
+vocabulary": no branch of ``derive_waste`` read a disposition, because no disposition type existed. 0.9.5 S10 added
+exactly one (:mod:`smartchem.stream_disposition`), so the theorem changes shape. It is now:
 
-* **The theorem (every route, not just the corpus).** For every ``ExperimentRoute`` and every profile, the waste axis
-  can never be FIT/NOT_APPLICABLE, hence overall is never ``CAPABILITY_FIT``. Independent guards, each sufficient:
+    **CAPABILITY_FIT is unreachable from any CURRENT CORPUS evidence -- no cited page states disposal, so no corpus
+    procedure carries a stream disposition -- yet it is REPRESENTABLE.**
+
+This file pins all three parts:
+
+* **The disposition-free theorem (every route, not just the corpus).** For every ``ExperimentRoute`` whose procedures
+  carry NO stream disposition and every profile, the waste axis can never be FIT/NOT_APPLICABLE, hence overall is never
+  ``CAPABILITY_FIT``. Independent guards, each sufficient:
   - **T0 (spent stream)** -- PROCESS_SPECIFIED requires ``workup_isolation`` PRESENT; the coherence guard then
     requires an op that realizes it; EVERY workup-realizing (kind x role) pair yields an unresolved D9 spent-stream
     obligation (exhaustive over the closed enums, below);
@@ -14,13 +19,16 @@ So this file pins BOTH halves:
     "unreacted/excess" residual), a role contradiction (F-7), a spent-stream role, or keeps its ``UNKNOWN`` leaf demand
     on the MATERIAL axis (never EXACT); no typed role launders a consumed leaf out of both axes;
   - **T2 (byproducts)** -- an empty-GHS byproduct (the water of every condensation) is an untyped stream.
-  No branch of ``derive_waste`` reads any disposition / recovery / full-consumption evidence: the ceiling is a missing
-  evidence TYPE (``StreamDisposition``, parked to 0.9.5), never missing data.
-* **The witness (the evaluator is not overconstrained).** A REAL ``PROCESS_SPECIFIED`` route (2 MeOH -> dimethyl
-  ether + water, the real capped-scission transform, a sourced complete procedure typed so every D14-D18 law is
-  satisfied) is FIT on every axis except waste under a fully-declared bench; its compiled requirements with ONLY the
-  waste obligation discharged fold to overall ``CAPABILITY_FIT``. So FIT is reachable the moment the evidence
-  vocabulary can say where the streams go -- and nowhere earlier.
+  Only a step-bound, SOURCE_QUOTED disposition on an ACCEPTED source can discharge one of these, and only the ONE
+  obligation its exact subject names (law L1, ``tests/test_v0_9_5_disposition_consumption.py``).
+* **The corpus premise (T3).** No production procedure carries a disposition (Lane C read the cited isopentyl page: zero
+  disposal sentences), so the disposition-free theorem covers every corpus route. Fabricating one is banned.
+* **The witness (FIT is representable; the evaluator is not overconstrained).** A SYNTHETIC ``PROCESS_SPECIFIED`` route
+  (2 MeOH -> dimethyl ether + water, the real capped-scission transform, a sourced complete procedure typed so every
+  D14-D24 law is satisfied) is FIT on every axis except waste under a fully-declared bench; with three real stream
+  dispositions -- ROUTED(AQUEOUS_NEUTRAL) on the water byproduct, ROUTED(AQUEOUS_NEUTRAL) on the op #3 filtration
+  stream, CONSUMED_COMPLETELY on the methanol residual -- it folds to overall ``CAPABILITY_FIT``. It is a MODEL-LEVEL
+  object, not a real procedure: no page says these things about this reaction, and none is claimed to.
 """
 from __future__ import annotations
 
@@ -39,7 +47,7 @@ from smartchem.capability.enums import (
 )
 from smartchem.capability.presets import custom
 from smartchem.capability.quantity import QuantityKnowledge
-from smartchem.capability.requirements import WasteRequirement, compile_capability_requirements
+from smartchem.capability.requirements import compile_capability_requirements
 from smartchem.capability.waste import derive_waste
 from smartchem.conditions import ConditionEnvelope, Interval
 from smartchem.constraints import PhysicalBounds
@@ -64,6 +72,7 @@ from smartchem.process_constraints import Agitation, Attention, ProcessBounds, P
 from smartchem.provenance import SourceCitation, SourceReview
 from smartchem.smiles import parse_smiles
 from smartchem.transform_provider import CappedScissionProvider
+from smartchem.stream_disposition import DispositionValue, StreamDisposition, SubjectKind, stream_subjects
 
 _METHANOL, _ACETIC, _WATER = parse_smiles("CO"), parse_smiles("CC(=O)O"), parse_smiles("O")
 _MEOAC, _DME = parse_smiles("CC(=O)OC"), parse_smiles("COC")
@@ -229,14 +238,41 @@ def test_witness_the_real_dme_route_is_process_specified_and_fit_on_every_axis_b
     assert a.overall is CapabilityStatus.UNKNOWN
 
 
-def test_witness_discharging_only_waste_reaches_capability_fit_the_evaluator_is_not_overconstrained():
-    """The DISCHARGE is what 0.9 cannot express from evidence (a typed disposition vocabulary is the 0.9.5 boundary);
-    here it is supplied as a public ``WasteRequirement`` value -- no law is weakened, no production code is patched."""
+def test_t3_no_corpus_procedure_carries_a_stream_disposition():
+    """The corpus premise: the disposition-free theorem above covers every production route."""
+    from smartchem import decompiler_conditions
+
+    procedures = [v for v in vars(decompiler_conditions).values() if type(v) is ProcedureEvidence]
+    assert len(procedures) >= 3 and all(p.stream_dispositions == () for p in procedures)
+
+
+def _with_witness_dispositions(route: ExperimentRoute) -> ExperimentRoute:
+    """The three SYNTHETIC statements (model-level; see the module docstring), each bound to its exact subject."""
+    step = route.steps[0]
+    subjects = {s.kind: s for s in stream_subjects(step)}
+    assert set(subjects) == {SubjectKind.BYPRODUCT, SubjectKind.OP_STREAM, SubjectKind.RESIDUAL}
+    sq = EvidenceKind.SOURCE_QUOTED
+    dispositions = (
+        StreamDisposition(subjects[SubjectKind.BYPRODUCT], DispositionValue.ROUTED, sq, _URL,
+                          category=WasteCapability.AQUEOUS_NEUTRAL),
+        StreamDisposition(subjects[SubjectKind.OP_STREAM], DispositionValue.ROUTED, sq, _URL,
+                          category=WasteCapability.AQUEOUS_NEUTRAL),
+        StreamDisposition(subjects[SubjectKind.RESIDUAL], DispositionValue.CONSUMED_COMPLETELY, sq, _URL),
+    )
+    procedure = dc.replace(step.envelope.procedure, stream_dispositions=dispositions)
+    return ExperimentRoute(ROUTE_SCHEMA, (dc.replace(step, envelope=dc.replace(step.envelope, procedure=procedure)),))
+
+
+def test_witness_three_bound_dispositions_reach_capability_fit_fit_is_representable():
+    """No law is weakened and no requirement is replaced wholesale: each disposition discharges exactly the ONE
+    obligation its subject names (T2 water, T0 filtration stream, T1 methanol residual) through derive_waste itself."""
     route = _dme_route()
-    readiness = evaluate_route(route)
-    reqs = compile_capability_requirements(route)
-    assert reqs.waste.unresolved  # the honest ceiling: T0 (FILTER stream), T1 (methanol residual), T2 (water)
-    discharged = dc.replace(reqs, waste=WasteRequirement(frozenset(), (), ()))
-    a = assess(_maximal_profile((_pure("methanol-pure", _METHANOL),)), discharged, readiness)
+    assert len(compile_capability_requirements(route).waste.unresolved) == 3  # the honest ceiling: T0, T1, T2
+    witnessed = _with_witness_dispositions(route)
+    readiness = evaluate_route(witnessed)
+    assert readiness.tier == PROCESS_SPECIFIED
+    reqs = compile_capability_requirements(witnessed)
+    assert reqs.waste.unresolved == () and reqs.waste.categories == frozenset({WasteCapability.AQUEOUS_NEUTRAL})
+    a = assess(_maximal_profile((_pure("methanol-pure", _METHANOL),)), reqs, readiness)
     assert a.overall is CapabilityStatus.FIT and a.is_capability_fit
     assert all(s in _SAFE_STATUSES for s in _axis_statuses(a).values())

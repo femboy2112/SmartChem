@@ -26,7 +26,6 @@ import argparse
 import sys
 
 from ..decompiler import IdentityUnsupportedError
-from ..smiles import SmilesError, parse_smiles
 from ..structure_descent import ScissionError
 from .drafter import ConstraintBox
 
@@ -53,24 +52,19 @@ def _positive_float(value: str) -> float:
 
 
 def _parse(value: str):
-    from ..structure import structure_by_name
+    """Resolve one ``--reagents`` / ``--have`` helper string to its molecule, through the ONE parser service.
 
-    kind = None
-    payload = value
-    if ":" in value:
-        prefix, rest = value.split(":", 1)
-        if prefix.casefold() in {"name", "smiles"}:
-            kind, payload = prefix.casefold(), rest
-    if kind != "smiles":
-        named = structure_by_name(payload)
-        if named is not None:
-            return named.molecule
-        if kind == "name":
-            raise ValueError(f"unknown offline chemical name {payload!r}; provide SMILES instead")
-    try:
-        return parse_smiles(payload)
-    except SmilesError as exc:
-        raise ValueError(f"could not parse or resolve {value!r} as an offline name or SMILES: {exc}") from exc
+    0.9.5 A14 (Wave D F6): this used to be a second name -> SMILES parser, and it had drifted -- a SMILES whose
+    canonical relabelling exceeded the canonicaliser's bound raised ``CanonicalBoundExceeded`` straight past the
+    input-stage ``except``, so human ``synthesize --have <over-bound>`` exited 70 while ``--json`` exited 2.  It is
+    now :func:`~smartchem.identity_parse.resolve_target` on the AUTO path, the exact call the ``--json`` corridor
+    (``service._canonical_helper_molecules``) makes: the same ``name:``/``smiles:`` prefixes, the same name-first-
+    then-SMILES order, the same molecule, and every refusal an :class:`IdentityParseError` (a ValueError, exit 2).
+    One parser, two corridors, one verdict.
+    """
+    from ..identity_parse import InputKind, resolve_target
+
+    return resolve_target(value, InputKind.AUTO)
 
 
 def _syn_domain_exit(exc: BaseException) -> int:

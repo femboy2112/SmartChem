@@ -27,6 +27,7 @@ about chemistry.  A formula-level candidate is ``FORMAL_CANDIDATE`` and is never
 """
 from __future__ import annotations
 
+import functools
 import json
 from dataclasses import dataclass
 from enum import Enum
@@ -52,6 +53,7 @@ from .transform_provider import (
 # the transform-registry identity lives in a shared leaf (below both the search and IR layers) so the receipts
 # and the IR stamp the SAME digest (see smartchem.transform_registry).
 from .transform_registry import transform_registry_digest as _transform_registry_digest
+from .verification import MalformedPayloadError, _malformed_is_refused, count_payload_nodes
 
 __all__ = [
     "CHEMICAL_COMPILATION_IR_SCHEMA",
@@ -376,7 +378,12 @@ def _graph_payload(mol: "Molecule") -> tuple:
 
 
 def _graph_from_payload(payload: "tuple") -> "Molecule":
+    from .category import _MAX_CANONICAL_ATOMS
+
     atoms, bonds, charge, state = payload
+    if len(atoms) > _MAX_CANONICAL_ATOMS:  # 0.9.5 A13 (parent): refused before construction, as service's decoder
+        raise ValueError(f"IR graph payload carries {len(atoms):,} atoms, over the canonicaliser's "
+                         f"{_MAX_CANONICAL_ATOMS:,}-atom ceiling; refused before construction (0.9.5 A13)")
     return Molecule(tuple(atoms), frozenset(Bond(i, j, order) for i, j, order in bonds), int(charge), str(state))
 
 
@@ -1976,7 +1983,12 @@ def _structural_species_to_payload(species: StructuralSpecies) -> dict:
 
 
 def _structural_species_from_payload(p: dict) -> StructuralSpecies:
+    from .category import _MAX_CANONICAL_ATOMS
+
     _require_exact_keys(p, _SPECIES_PAYLOAD_KEYS, "structural species", "D29.2")
+    if len(p["atoms"]) > _MAX_CANONICAL_ATOMS:  # A18 (Wave E): the species leg too -- refused before its graph is built
+        raise ValueError(f"structural species payload carries {len(p['atoms']):,} atoms, over the canonicaliser's "
+                         f"{_MAX_CANONICAL_ATOMS:,}-atom ceiling; refused before construction (0.9.5 A13/A18)")
     return StructuralSpecies(
         p["schema_version"],
         _identity_from_payload(p["structure"]),
@@ -2120,6 +2132,20 @@ def ir_to_payload(ir: ChemicalCompilationIR) -> dict:
     }
 
 
+def _refusing_malformed(decode):
+    """0.9.5 (Wave D F5 + C8 F4, dict leg) -- this module's twin of ``service._refusing_malformed`` (each module keeps
+    its own so the wrapper's globals are the decorated loader's, see there): a cyclic or too-deep payload is refused by
+    :func:`~smartchem.verification.count_payload_nodes` before decoding, and a shape the decoder cannot read refuses as
+    :class:`~smartchem.verification.MalformedPayloadError`, never a bare ``TypeError`` / ``KeyError`` / ..."""
+    @functools.wraps(decode)
+    def refusing(payload):
+        with _malformed_is_refused():
+            count_payload_nodes(payload)
+            return decode(payload)
+    return refusing
+
+
+@_refusing_malformed
 def ir_from_payload(payload: dict) -> ChemicalCompilationIR:
     """Rebuild a :class:`ChemicalCompilationIR` from :func:`ir_to_payload`'s dict, re-validating every invariant.
 
@@ -2183,8 +2209,12 @@ def serialize_ir(ir: ChemicalCompilationIR) -> str:
 def deserialize_ir(text: str) -> ChemicalCompilationIR:
     """Parse a :func:`serialize_ir` string back into a validated :class:`ChemicalCompilationIR`."""
     if not isinstance(text, str):
-        raise TypeError("deserialize_ir needs a str")
-    return ir_from_payload(json.loads(text))
+        raise MalformedPayloadError("deserialize_ir needs a str; refused (0.9.5 Wave D F5)")
+    try:
+        payload = json.loads(text)
+    except RecursionError:  # 0.9.5 (C8 F4): text nested past the JSON decoder's recursion is a refusal, not a crash
+        raise ValueError("IR text nests deeper than the JSON decoder can read; refused (0.9.5 C8 F4)") from None
+    return ir_from_payload(payload)
 
 
 # == IR-INV-01: the recompiler consumes a SERIALIZED decompile artifact, end to end =======================

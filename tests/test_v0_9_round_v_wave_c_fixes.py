@@ -176,7 +176,12 @@ def test_k3_molar_components_are_not_capped_at_one_and_six_molar_is_expressible(
 @pytest.mark.parametrize("raw", ["dilute sodium hydroxide in water", "benzene/water", "benzene (water co-solvent)"])
 def test_k4_a_second_species_beside_a_typed_name_is_not_covered(raw):
     assert not _name_covers("water", raw)
-    assert _name_covers("water", "  Water ")
+    # the honest control is the CERTIFYING fold -- whitespace only.  0.9.5 S18 (C1-3) made coverage case-preserving
+    # (a typed "CO" covered a raw "Co" and the metal vanished), so the pre-S18 control "  Water " is now UNCOVERED:
+    # it fails closed to an unresolved requirement.  Pre-fix on this branch the old control asserted it was covered.
+    assert _name_covers("water", "  water ")
+    assert not _name_covers("water", "  Water ")
+    assert not _name_covers("CO", "Co")
 
 
 # -- C1-K5: one package, one entry ------------------------------------------------------------------------------------------

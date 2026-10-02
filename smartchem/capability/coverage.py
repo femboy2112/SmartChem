@@ -45,6 +45,7 @@ from ..procedure_evidence import (
     _field_matches,
 )
 from ..process_constraints import ProcessRequirements
+from ..stream_disposition import StreamDisposition, StreamSubject
 from .measurement_resolver import classify_measurement_strings
 
 __all__ = [
@@ -103,6 +104,7 @@ class FieldCoverage:
 COVERED_TYPES: "tuple[type, ...]" = (
     ProcedureEvidence, ProcedureOperation, ProcedureMaterialUse, EvidenceField,
     ConditionEnvelope, ProcessRequirements, ExperimentStep, ExperimentRoute,
+    StreamDisposition, StreamSubject,
 )
 
 _M, _PH, _PR, _EQ, _ME, _W = (FieldOwner.MATERIAL, FieldOwner.PHYSICAL, FieldOwner.PROCESS, FieldOwner.EQUIPMENT,
@@ -142,6 +144,36 @@ FIELD_COVERAGE: "dict[tuple[str, str], FieldCoverage]" = {
     ("ProcedureEvidence", "evidence_scope"): _c(_PS, "free-text scope note"),
     ("ProcedureEvidence", "unresolved_omissions"): _c(_RD, "blocks completeness (PROCESS_SPECIFIED); the HARD LAW is "
                                                            "the capability backstop"),
+    # 0.9.5 S10: a disposition can only ever REMOVE the one obligation its exact subject names, or ADD a category.
+    ("ProcedureEvidence", "stream_dispositions"): _c(_W, "S10: a step-bound SOURCE_QUOTED disposition on a sourced "
+                                                         "procedure may discharge exactly ONE waste obligation (its "
+                                                         "exact StreamSubject) and ROUTED adds its WasteCapability; it "
+                                                         "never deletes a derived category; unmatched or absent -> the "
+                                                         "obligation stays unresolved (UNKNOWN)"),
+    # -- StreamDisposition / StreamSubject (0.9.5 S10: what the source says happens to ONE stream) --------------------
+    # Every field is either the exact lookup key derive_waste matches on, or the discharge's own content; a disposition
+    # never widens a demand on any axis but WASTE, and it hosts no free text (no presentation host was added).
+    ("StreamDisposition", "subject"): _c(_KEY, "the EXACT StreamSubject derive_waste looks the obligation up by; no "
+                                               "match (other kind/ordinal/index/core/step signature) -> inert, the "
+                                               "obligation stays unresolved", _W),
+    ("StreamDisposition", "value"): _c(_KEY, "routes the discharge law: which obligations it may discharge (byproduct/"
+                                             "op stream: ROUTED only; CONSUMED_COMPLETELY only a net-consumed "
+                                             "SUBSTRATE/REACTANT residual); inadmissible -> refused, unresolved", _W),
+    ("StreamDisposition", "evidence"): _c(_W, "SOURCE_QUOTED only (construction AND derive time); anything else "
+                                              "discharges nothing"),
+    ("StreamDisposition", "locator"): _c(_PS, "source locator (quoted in the discharge reason)"),
+    ("StreamDisposition", "category"): _c(_W, "ROUTED: ADDED to the derived categories (never swapped for one) -> "
+                                              "membership vs profile.waste_handling; a category the bench lacks -> "
+                                              "BLOCKED; an OFFGAS/CONDENSED fate contradiction -> unresolved"),
+    ("StreamDisposition", "via_op"): _c(_W, "RECOVERED: must name a DISTILL/FILTER/SEPARATE op of the same procedure, "
+                                            "else no discharge; that op's own spent stream stays an obligation"),
+    ("StreamSubject", "kind"): _c(_KEY, "the closed subject algebra (BYPRODUCT/RESIDUAL/OP_STREAM/USE_STREAM)", _W),
+    ("StreamSubject", "step_signature"): _c(_KEY, "reaction_signature of the owning step; a foreign signature binds "
+                                                  "nothing (refused at step construction, never matched)", _W),
+    ("StreamSubject", "ordinal"): _c(_KEY, "the op ordinal of an OP_STREAM/USE_STREAM (reorder -> vanishes)", _W),
+    ("StreamSubject", "index"): _c(_KEY, "the use position of a USE_STREAM (per-use: D-C1)", _W),
+    ("StreamSubject", "core"): _c(_KEY, "species structure key / use_core / op_core digest (a retyped role or other "
+                                        "species -> vanishes)", _W),
     # -- ProcedureOperation (one ordered op) ------------------------------------------------------------------------
     ("ProcedureOperation", "ordinal"): _c(_PS, "the total ORDER the D15 timeline composes over"),
     ("ProcedureOperation", "kind"): _c(_KEY, "routes the op to equipment (hardware kinds), measurement (VERIFY), "

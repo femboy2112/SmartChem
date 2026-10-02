@@ -53,14 +53,17 @@ stated resonance boundary, not a silent one). A giant PAH beyond the enumeration
 
 from __future__ import annotations
 
+from contextvars import ContextVar
+
 from dataclasses import dataclass
 from fractions import Fraction
-from functools import cmp_to_key, lru_cache
+from functools import cmp_to_key
 
 from .atoms import PT
 from .category import Bond, Molecule, _wl_colours
 from .contracts import canonical_digest
 from .data.periodic_table import ATOMIC_NUMBER, has_standard_atomic_weight, standard_atomic_weight
+from .verification import canonical_work_frame, charge_canonical_work, work_transparent_cache
 
 __all__ = [
     "SmilesError",
@@ -165,20 +168,57 @@ class _Atom:
         self.chirality = chirality            # tetrahedral SENSE: 0 none, 1 '@' (anticlockwise), 2 '@@' (clockwise)
 
 
+def _bracket_int(digits: str, what: str, atom_text: str) -> int:
+    """``int(digits)`` for one decimal run inside a bracket atom, refusing typed where ``int()`` would raise.
+
+    0.9.5 S17 (C6-F1b): a run past Python's int-string limit (4,300 digits -- ``'[' + '1' * 4400 + 'C]'``) made
+    ``int()`` raise a bare ``ValueError`` that left the front door untyped (exit 70).  The run is already decimal
+    (every caller tests ``isdecimal()``), so the limit is the only refusal this helper types.  A NON-decimal run is
+    not its business: that is the callers' ``isdecimal()`` gate failing (S15 F-1, mutant M249), and it must stay loud
+    rather than be quietly typed here."""
+    try:
+        return int(digits)
+    except ValueError:
+        if not digits.isdecimal():
+            raise
+        raise SmilesError(
+            f"bracket atom {atom_text!r} has a {len(digits)}-digit {what}; that is not a chemical quantity"
+        ) from None
+
+
+def _ascii_letter(ch: str) -> bool:
+    """An ASCII letter -- the only alphabet element symbols are spelled in."""
+    return ch.isascii() and ch.isalpha()
+
+
 def _parse_bracket(text: str, start: int) -> tuple[_Atom, int]:
     """Parse ``[...]`` starting at the ``[`` (index ``start``); return the atom and the index past ``]``."""
     end = text.find("]", start)
     if end == -1:
         raise SmilesError(f"unclosed bracket atom at position {start}")
     body = text[start + 1:end]
+    atom_text = text[start:end + 1]
     i = 0
     iso = ""
-    while i < len(body) and body[i].isdigit():      # isotope: CAPTURED (ID-STEREO-01), dropped from the graph
+    # every digit run below tests isdecimal(), NOT isdigit(): isdigit() also admits superscripts ('³'), which
+    # int() refuses, so '[³]' used to escape as a bare ValueError and the CLI exited 70 (0.9.5 A1/F-1).
+    # isdecimal() is exactly the set int() reads, so a superscript now falls through to a typed SmilesError
+    # and every decimal spelling that parsed before still parses.  Wrong glyph, right error class.
+    while i < len(body) and body[i].isdecimal():    # isotope: CAPTURED (ID-STEREO-01), dropped from the graph
         iso += body[i]
         i += 1
-    isotope = int(iso) if iso else 0
+    isotope = _bracket_int(iso, "isotope", atom_text) if iso else 0
     if i >= len(body):
-        raise SmilesError(f"bracket atom {text[start:end + 1]!r} has no element")
+        raise SmilesError(f"bracket atom {atom_text!r} has no element")
+    # 0.9.5 S17 (C6-F9): the element letters must be ASCII.  str.upper()/capitalize() below map non-ASCII
+    # confusables onto real symbols -- U+0131 dotless 'ı' upper-cases to 'I' (iodine), U+017F long 'ſ' to 'S'
+    # (sulfur, and 'ſi' to silicon) -- so '[ı]' used to parse as iodine.  A glyph that merely LOOKS like a
+    # symbol is not one; refuse it before any case mapping gets a chance to be creative.
+    if not _ascii_letter(body[i]) or (i + 1 < len(body) and body[i + 1].isalpha() and not body[i + 1].isascii()):
+        raise SmilesError(
+            f"bracket atom {atom_text!r} spells its element with a non-ASCII letter; element symbols are ASCII "
+            "(e.g. [I], [S], [Si])"
+        )
     aromatic = body[i].islower()
     # element symbol: a two-letter element (Upper+lower, e.g. 'Cl', 'Se') when the capitalised
     # pair is a real element, else a single letter. Aromatic atoms are written lowercase.
@@ -187,7 +227,7 @@ def _parse_bracket(text: str, start: int) -> tuple[_Atom, int]:
     elif body[i].upper() in PT or body[i].upper() == "H":
         element, i = body[i].upper(), i + 1
     else:
-        raise SmilesError(f"unknown element in bracket atom {text[start:end + 1]!r}")
+        raise SmilesError(f"unknown element in bracket atom {atom_text!r}")
     # chirality markers @ / @@: CAPTURED LOSSLESSLY as the tetrahedral SENSE (ID-STEREO-01): 0 = none, 1 = '@'
     # (TH1, anticlockwise from the first neighbour), 2 = '@@' (TH2, clockwise).  ROUND-12 widened this from a bare
     # boolean -- the sense is what a chirality PARITY descriptor needs; it is still dropped from the constitution
@@ -198,32 +238,50 @@ def _parse_bracket(text: str, start: int) -> tuple[_Atom, int]:
         chirality += 1
         i += 1
     if chirality > 2:
-        raise SmilesError(f"bracket atom {text[start:end + 1]!r} has more than two '@' chirality marks")
+        raise SmilesError(f"bracket atom {atom_text!r} has more than two '@' chirality marks")
     h_count = 0
     if i < len(body) and body[i] == "H":
         i += 1
         num = ""
-        while i < len(body) and body[i].isdigit():
+        while i < len(body) and body[i].isdecimal():
             num += body[i]
             i += 1
-        h_count = int(num) if num else 1
+        # 0.9.5 (A13): OpenSMILES spells a bracket hydrogen count with ONE digit (``hcount ::= 'H' DIGIT?``).  Every H
+        # becomes an atom (_fill_hydrogens) before any canonicaliser ceiling runs, so a longer run was an amplifier: a
+        # string's WORK grew with the number it spelled, not its length -- [CH1234567] (17 characters) held the parser
+        # past 60 s and [CH123456789] asked for 10**8 atoms (MemoryError under a 1.5 GB cap), on the front door and on
+        # every load that re-derives a carried target.  More than one digit is not a chemical H count; refused, typed.
+        if len(num) > 1:
+            raise SmilesError(
+                f"bracket atom {atom_text!r} has a {len(num)}-digit hydrogen count; a bracket H count is one digit "
+                "(0-9, OpenSMILES) -- write the hydrogens as atoms or fix the count"
+            )
+        h_count = _bracket_int(num, "hydrogen count", atom_text) if num else 1
     charge = 0
-    while i < len(body) and body[i] in "+-":
+    # ONE charge run: '+', '-', '+<n>', '-<n>', or a same-sign repeat ('++', '---').  0.9.5 S17 (C6-F8): the old
+    # loop took run after run and SUMMED them, so '[O-+]' cancelled to a neutral O, '[Fe+2+]' became +3 and
+    # '[O-2+]' -1 -- arithmetic on a contradiction.  A second run is refused, not added up.
+    if i < len(body) and body[i] in "+-":
         sign = 1 if body[i] == "+" else -1
         i += 1
         num = ""
-        while i < len(body) and body[i].isdigit():
+        while i < len(body) and body[i].isdecimal():
             num += body[i]
             i += 1
         if num:
-            charge += sign * int(num)
+            charge = sign * _bracket_int(num, "charge", atom_text)
         else:
-            charge += sign
-            while i < len(body) and body[i] in "+-" and body[i] == ("+" if sign == 1 else "-"):
+            charge = sign
+            while i < len(body) and body[i] == ("+" if sign == 1 else "-"):
                 charge += sign
                 i += 1
+        if i < len(body) and body[i] in "+-":
+            raise SmilesError(
+                f"bracket atom {atom_text!r} writes more than one charge (a second {body[i]!r} run); give ONE "
+                "charge, e.g. [Fe+3] or [O-]"
+            )
     if i != len(body):
-        raise SmilesError(f"could not parse bracket atom {text[start:end + 1]!r}")
+        raise SmilesError(f"could not parse bracket atom {atom_text!r}")
     return _Atom(element, aromatic, charge, h_count, isotope, chirality), end + 1
 
 
@@ -278,46 +336,93 @@ def _parse_skeleton_stereo(
     # label -> (opening atom, pending order, pending dir, reserved written-neighbour slot)
     ring_open: dict[str, tuple[int, int | None, "bool | None", int]] = {}
     i, n = 0, len(text)
+    # 0.9.5 A14 (Wave D F1): every atom pair already joined, so a ring closure onto a bonded pair is refused in the walk.
+    # 'C1C1' used to write a chain bond AND a ring bond between atoms 0 and 1; hydrogens were filled from the doubled
+    # degree and only then did the Molecule's frozenset fold the two equal Bond records into one -- a graph nobody wrote
+    # ('[CH3]1[CH3]1' keyed as ethane, '[CH2]12[CH2][CH2]12' as cyclopropane, 'C1C1' as a C2H4 phantom), and unequal
+    # orders ('C1=C1') escaped as a bare ValueError.  OpenSMILES makes a duplicate bond between one pair an error.
+    bonded: set[tuple[int, int]] = set()
+    # A14 (Wave D F9): indices into ``bonds`` of the bonds written with an explicit ':' (checked after the walk).
+    colon_bonds: list[int] = []
 
     def connect(a: int, b: int, order: int | None, both_aromatic: bool, direction: "bool | None") -> None:
         if a == b:
             raise SmilesError("a bond connects an atom to itself")
+        bonded.add((a, b) if a < b else (b, a))
+        if order == _AROMATIC:           # an explicit order of _AROMATIC is only ever written as ':'
+            colon_bonds.append(len(bonds))
         o = order if order is not None else (_AROMATIC if both_aromatic else 1)
         bonds.append([a, b, o])
         if direction is not None:
             directions[(a, b)] = direction
 
+    # 0.9.5 S17 (C6-F5): a bond symbol binds the atom (or ring label) that FOLLOWS it -- nothing else.  The walk
+    # used to overwrite ``pending`` with the last symbol and silently drop one with nothing to bind, so 'C=#C' read
+    # as ethyne, 'CC=' (a truncated CC=O) as ethane, 'C(=)C' as ethene and 'C=1CCCC-1' as cyclopentane.  Two
+    # symbols in a row, a symbol with no atom after it (before '(' / ')' / the end) or before any atom, and a ring
+    # bond whose two ends disagree on its order are each refused.  A typo is a typo, not a different molecule.
+    def dangling(where: str) -> SmilesError:
+        return SmilesError(f"bond symbol {text[pending_at]!r} at position {pending_at} is {where}; a bond symbol "
+                           "must be followed by the atom or ring-closure label it binds")
+
+    pending_at = -1                      # the text position of the symbol that set ``pending`` (for the message)
     while i < n:
         ch = text[i]
         if ch == "(":
             if prev is None:
                 raise SmilesError("branch '(' before any atom")
+            if pending is not None:
+                raise dangling("followed by a branch '('")
             branch_stack.append(prev)
             i += 1
         elif ch == ")":
             if not branch_stack:
                 raise SmilesError("unbalanced ')'")
+            if pending is not None:
+                raise dangling("followed by ')'")
             prev = branch_stack.pop()
             i += 1
         elif ch in "-=#:/\\":
+            if prev is None:
+                raise SmilesError(f"bond symbol {ch!r} at position {i} comes before any atom")
+            if pending is not None:
+                raise SmilesError(f"two bond symbols in a row ({text[pending_at]!r} then {ch!r}) at position {i}; "
+                                  "a bond has exactly one order -- write one symbol")
+            pending_at = i
             pending = _AROMATIC if ch == ":" else _BOND_ORDER.get(ch, 1)
             if ch in "/\\":
                 pending_dir = ch == "/"
             i += 1
         elif ch == ".":
             raise SmilesError("disconnected SMILES ('.'): a Molecule is one connected species")
-        elif ch.isdigit() or ch == "%":
+        elif ch.isdecimal() or ch == "%":
+            # ring-closure labels are DECIMAL digits only (0.9.5 A1/F-4).  isdigit() let a superscript become a
+            # ring label, so AUTO read 'S²N²' as a silent S=N ring; a superscript now falls to the atom branch
+            # below and is refused as an unexpected character.  isdecimal(), not ASCII-only, on purpose: a
+            # fullwidth 'C１CC１' keeps its SMILES reading, so plan still flags it input-kind ambiguous instead of
+            # silently decompiling the formula C3.  A '²' is not a ring bond, whatever Unicode thinks of it.
             if prev is None:
                 raise SmilesError("ring-closure digit before any atom")
             if ch == "%":
                 label = text[i + 1:i + 3]
+                if len(label) != 2 or not label.isdecimal():
+                    raise SmilesError(f"'%' ring closure at position {i} needs two decimal digits, got {label!r}")
                 i += 3
             else:
                 label = ch
                 i += 1
             if label in ring_open:
                 other, oorder, odir, opening_slot = ring_open.pop(label)
+                if pending is not None and oorder is not None and pending != oorder:
+                    raise SmilesError(f"ring bond {label!r} is written with two different orders at its two ends; "
+                                      "write the bond symbol once, or the same symbol at both ends")
                 order = pending if pending is not None else oorder
+                if ((other, prev) if other < prev else (prev, other)) in bonded:
+                    raise SmilesError(
+                        f"ring-closure bond {label!r} joins atoms #{min(other, prev)} and #{max(other, prev)}, which "
+                        "are already bonded; one pair of atoms has one bond, its order written once (e.g. 'C=C', "
+                        "not 'C1C1' or 'C1=C1')"
+                    )
                 connect(other, prev, order, atoms[other].aromatic and atoms[prev].aromatic,
                         odir if odir is not None else pending_dir)
                 written_neighbours[other][opening_slot] = prev
@@ -363,13 +468,122 @@ def _parse_skeleton_stereo(
             pending_dir = None
             prev = idx
 
+    if pending is not None:
+        raise dangling("at the end of the string")
     if branch_stack:
         raise SmilesError("unbalanced '(' -- a branch was not closed")
     if ring_open:
         raise SmilesError(f"unclosed ring bond(s): {sorted(ring_open)}")
     if not atoms:
         raise SmilesError("empty SMILES")
+    _check_hydrogen_atoms(atoms, bonds)
+    _check_aromatic_ring_members(atoms, bonds)
+    _check_aromatic_bond_symbols(atoms, bonds, colon_bonds)
     return atoms, bonds, directions, written_neighbours
+
+
+def _check_hydrogen_atoms(atoms: list[_Atom], bonds: list[list[int]]) -> None:
+    """Refuse any explicit hydrogen ATOM that is not one terminal, single-bonded atom (0.9.5 S17, C6-F2).
+
+    Hydrogen has one valence.  A bracket atom carries no valence check, so ``[H]`` could be written bridging two
+    atoms (``C1C[H]1``, ``C[H]C``), chained to another H (``C[H][H]``) or multiply bonded (``[O]#[H]``); the parse
+    kept the graph, and ``resonance_canonical`` then re-derived every H as a terminal one, so ``C1C[H]1`` (C2H5)
+    shared ethane's key and a bridging H crashed the rebuild.  Its coordination -- graph neighbours plus its own
+    bracket H count -- is at most one, through an order-1 bond.  ``[H][H]`` / ``[HH]`` (H2), ``[H+]``, ``[H-]``
+    and ``[2H]C`` stay exactly as they were: each of those hydrogens has at most the one neighbour it is owed."""
+    degree = [0] * len(atoms)
+    for a, b, order in bonds:
+        degree[a] += 1
+        degree[b] += 1
+        for end in (a, b):
+            if atoms[end].element == "H" and order != 1:
+                raise SmilesError(
+                    f"hydrogen atom #{end} is joined by a bond of order {'aromatic' if order == _AROMATIC else order}; "
+                    "hydrogen forms exactly one single bond"
+                )
+    for k, atom in enumerate(atoms):
+        if atom.element == "H" and degree[k] + (atom.h_explicit or 0) > 1:
+            raise SmilesError(
+                f"hydrogen atom #{k} has {degree[k] + (atom.h_explicit or 0)} neighbours; hydrogen is a terminal "
+                "atom with one single bond (a bridging or chained [H] is outside this parser's scope)"
+            )
+
+
+def _check_aromatic_ring_members(atoms: list[_Atom], bonds: list[list[int]]) -> None:
+    """Refuse a lowercase (aromatic) atom that is not in an aromatic ring (0.9.5 S17, C8-F3).
+
+    Lowercase means "this atom is a member of an aromatic ring".  An aromatic atom with no aromatic ring bond has
+    nothing to kekulise, and the old path quietly filled it as its aliphatic self: ``Co`` (cobalt, to a human) became
+    methanol, ``Cs`` / ``Sc`` methanethiol, ``Cc`` ethane, ``c`` methane, ``o`` water, and ``c1CCCCC1`` cyclohexane.
+    OpenSMILES makes every one of those an error.  The rule: each aromatic atom is incident to at least one bond that
+    is BOTH aromatic (implicit between two lowercase atoms, or ``:``) AND a ring edge -- which is exactly what being a
+    member of an aromatic ring means.  Every real aromatic spelling (benzene, pyridine, furan, indole, naphthalene,
+    ``c1ccccc1O``, biphenyl's ``c1ccccc1c1ccccc1``) passes untouched; only the lowercase-that-meant-nothing refuses."""
+    aromatic = [k for k, atom in enumerate(atoms) if atom.aromatic]
+    if not aromatic:
+        return
+    # A18 (Wave E): a ring through an uppercase atom is not an aromatic ring -- 'c1CCc1' used to pass here (its c-c
+    # closure is a ring edge of the whole graph) and kekulise to cyclobutene
+    ring_edges = _aromatic_ring_bonds(atoms, bonds)
+    in_aromatic_ring = set()
+    for bi in ring_edges:
+        a, b, order = bonds[bi]
+        if order == _AROMATIC:
+            in_aromatic_ring.add(a)
+            in_aromatic_ring.add(b)
+    for k in aromatic:
+        if k not in in_aromatic_ring:
+            lower = atoms[k].element.lower()
+            raise SmilesError(
+                f"aromatic atom {lower!r} (atom #{k}) is not a member of an aromatic ring; lowercase marks an aromatic "
+                f"ring atom -- write {atoms[k].element!r} (uppercase) for a non-aromatic atom, or close the aromatic "
+                "ring"
+            )
+
+
+def _check_aromatic_bond_symbols(atoms: list[_Atom], bonds: list[list[int]], colon_bonds: list[int]) -> None:
+    """Refuse an explicit ``:`` bond that is not a RING bond between two aromatic (lowercase) atoms (0.9.5 A14, F9).
+
+    The bond-side sibling of :func:`_check_aromatic_ring_members`.  ``:`` says "this bond is in an aromatic ring".
+    Between uppercase atoms the Kekule pass quietly chose an order for it: ``C:C`` keyed as ethene, ``CC:CC`` as
+    2-butene and ``C:1CCCCC:1`` as cyclohexene.  On a bridge (a bond in no ring) the claim is impossible, and
+    kekulisation could still turn it into a DOUBLE bond: ``c1cc1:c1cc1`` read as triafulvalene.  Every real use (a
+    ``:`` anywhere inside a lowercase ring, e.g. ``c1:c:c:c:c:c1``) passes untouched; for a single bond between two
+    aromatic rings, write ``-`` (``c1ccccc1-c1ccccc1``).
+
+    0.9.5 A18 (Wave E): "in a ring" was the wrong test -- it must be an AROMATIC ring, a cycle of lowercase atoms
+    (:func:`_aromatic_ring_bonds`). A ring closed through an uppercase bridge let ``c12cc1CCc1cc1:2`` kekulise its
+    ``:`` to a double. And an IMPLICIT bond between two lowercase atoms in no aromatic ring is, per OpenSMILES, single
+    (biphenyl's inter-ring bond): it was flagged aromatic, so ``c1cc1c1cc1`` kekulised its bridge to a double and keyed
+    as triafulvalene, ``c1cccc1c1cccc1`` as fulvalene. Such a bond is now single before kekulisation, so a system that
+    cannot be kekulised without it is refused."""
+    ring_edges = _aromatic_ring_bonds(atoms, bonds)
+    for bi in colon_bonds:
+        a, b, _order = bonds[bi]
+        if not (atoms[a].aromatic and atoms[b].aromatic):
+            where = "joins a non-aromatic (uppercase) atom"
+        elif bi not in ring_edges:
+            where = "is not in an aromatic ring"
+        else:
+            continue
+        raise SmilesError(
+            f"explicit aromatic bond ':' between atoms #{a} and #{b} {where}; ':' marks a bond inside an aromatic ring "
+            "between two lowercase atoms -- write '=' or '-' for an explicit Kekule bond"
+        )
+    colon = set(colon_bonds)
+    for bi, bond in enumerate(bonds):
+        if bond[2] == _AROMATIC and bi not in colon and bi not in ring_edges:
+            bond[2] = 1                     # an implicit bond between aromatic atoms outside any aromatic ring
+
+
+def _aromatic_ring_bonds(atoms: list[_Atom], bonds: list[list[int]]) -> frozenset[int]:
+    """The bonds inside an aromatic ring (0.9.5 A18): a bond between two lowercase atoms that lies on a cycle of the
+    subgraph induced by the lowercase atoms -- every bond among them, whatever its written order (so a mixed spelling
+    such as ``c1=cc=cc=c1`` keeps its ring). A bond on a cycle only through an uppercase atom, or a bridge between two
+    aromatic rings, is not one."""
+    among = [bi for bi, (a, b, _order) in enumerate(bonds) if atoms[a].aromatic and atoms[b].aromatic]
+    ring = _cip_ring_edges(len(atoms), [bonds[bi] for bi in among])
+    return frozenset(among[k] for k in ring)
 
 
 # R2: bound the resonance enumeration. A benzenoid's Kekulé count is small (benzene 2, naphthalene 3,
@@ -391,6 +605,32 @@ _MAX_KEKULE_MATCHINGS = 5000
 # so no work budget separates them, and the caps stay a size proxy for a limit no real (<=24-heavy) target approaches.
 _RESONANCE_MAX_HEAVY = 64
 _RESONANCE_MAX_MATCHINGS = 128
+
+# 0.9.5 S16 (Wave C6 C6-F4): the placement caps above count only COMPLETE placements; the DFS in
+# `_min_constitution_placement` never counted its dead ends.  An explicit-Kekule polyacene has only
+# L+1 valid placements yet a dead-branch tree that explodes with L -- L=24 walks ~32k nodes, L=50
+# ran 23.8 minutes, under every cap.  So every DFS node now counts, bounded here; exceeding it takes
+# the placement cap's own road (the same SmilesError: the parser refuses the string, the identity
+# path falls back to the literal bond-order key), never a hang.  MEASURED 2026-09-30 by the S16
+# differential (`experiments/v0_9_5_canonical_differential.py`): every non-benzenoid string of the
+# corpus (test literals, named, frozen targets) <= 901 nodes; explicit-Kekule acenes on the parse
+# path L=24 31,928 / L=30 545,048 (all L <= 30, two atom orders each, byte-identical to the old
+# search); L=50 and L=60 now refuse in ~4 s.  The resonance path (heavy atoms re-materialised in
+# canonical order, a far worse DFS order) walks L=10 259,673 / L=11 948,391 nodes, and L=12 3.3M
+# (14 s per call uncapped) / L=13 11.7M (56 s): explicit-Kekule acene FRAGMENTS of >= 50 heavy
+# atoms now take the literal-key fallback after ~4 s -- a false split, the safe direction; a
+# parsed spelling is unaffected, its literal key already being its resonance key.
+_MAX_PLACEMENT_DFS_NODES = 1 << 20
+
+# 0.9.5 A13 (parent) -- the placement search's AGGREGATE work. Every complete placement is canonicalised, and each of
+# those calls is bounded only per call (``category._MAX_CANONICAL_CALL_WORK``), so _MAX_KEKULE_MATCHINGS placements of
+# a large symmetric pi-system were bounded only by matchings x per-call ceiling -- days, on the front door, where no
+# load budget applies. The search's cold work (DFS nodes plus every placement's canonicalisation, cache-independent:
+# ``verification.canonical_work_frame``) is checked before each placement is canonicalised; past this the search is
+# refused like the DFS cap (SmilesError; a decoded fragment takes the literal-key fallback). MEASURED
+# (experiments/v0_9_5_amplifier_bound.py --placement): honest maximum 37,675,177 units -- the synthetic 96-carbon
+# explicit-Kekule flake_r3, ~30-60 s; the largest real-corpus input 18,889,394 -- so 2**27 is 3.6x / 7.1x those.
+_MAX_PLACEMENT_SEARCH_WORK = 1 << 27
 
 
 def _aromatic_matchings(
@@ -548,30 +788,49 @@ def _fill_hydrogens(atoms: list[_Atom], bonds: list[list[int]]) -> tuple[list[st
     Bracket atoms carry an exact H count; organic-subset atoms fill to the smallest normal valence
     at least as large as their used bond order (the OpenSMILES rule). Charge lives on bracket atoms,
     where H is explicit, so it never interacts with implicit-H filling.
+
+    0.9.5 A13: the graph is COUNTED before it is built -- heavy atoms plus every hydrogen, implicit
+    or bracket -- and refused past the canonicaliser's atom ceiling (``category._MAX_CANONICAL_ATOMS``,
+    read at call time: one ceiling, never two that drift), so no SMILES materialises a graph
+    ``canonical()`` would refuse; ``"C" * 100000`` stops here, not after 300,002 atoms. It refuses with
+    the canonicaliser's own :class:`~smartchem.category.CanonicalBoundExceeded`, not ``SmilesError``:
+    the string IS SMILES, only too large to identify -- so every front door files it where it already
+    files that refusal (``IdentityOutOfBounds``, INVALID_INPUT, exit 2), and AUTO never re-reads it as
+    a formula (a ``SmilesError`` there falls through to the formula grammar: ``"C" * 400`` read as C400).
     """
+    from .category import _MAX_CANONICAL_ATOMS, CanonicalBoundExceeded
+
     used = [0] * len(atoms)
     for a, b, o in bonds:
         used[a] += o
         used[b] += o
-    out_atoms = [atom.element for atom in atoms]
-    out_bonds = [Bond(a, b, o) for a, b, o in bonds]
+    h_counts = []
     for k, atom in enumerate(atoms):
         if atom.h_explicit is not None:
-            h_count = atom.h_explicit
-        else:
-            valset = _VALENCES.get(atom.element)
-            if valset is None:
-                raise SmilesError(
-                    f"{atom.element!r} is not an organic-subset atom; write it in brackets "
-                    "with an explicit H count, e.g. [Se H2]"
-                )
-            target = next((v for v in valset if v >= used[k]), None)
-            if target is None:
-                raise SmilesError(
-                    f"atom {atom.element!r} has bond order {used[k]} exceeding its normal valence "
-                    f"{valset}; state hydrogens explicitly in brackets"
-                )
-            h_count = target - used[k]
+            h_counts.append(atom.h_explicit)
+            continue
+        valset = _VALENCES.get(atom.element)
+        if valset is None:
+            raise SmilesError(
+                f"{atom.element!r} is not an organic-subset atom; write it in brackets "
+                "with an explicit H count, e.g. [Se H2]"
+            )
+        target = next((v for v in valset if v >= used[k]), None)
+        if target is None:
+            raise SmilesError(
+                f"atom {atom.element!r} has bond order {used[k]} exceeding its normal valence "
+                f"{valset}; state hydrogens explicitly in brackets"
+            )
+        h_counts.append(target - used[k])
+    total = len(atoms) + sum(h_counts)
+    if total > _MAX_CANONICAL_ATOMS:
+        raise CanonicalBoundExceeded(
+            f"structure spells {total:,} atoms with its hydrogens, over the {_MAX_CANONICAL_ATOMS:,}-atom ceiling the "
+            "canonicaliser identifies within; refused before it is built"
+        )
+    out_atoms = [atom.element for atom in atoms]
+    out_bonds = [Bond(a, b, o) for a, b, o in bonds]
+    for k, h_count in enumerate(h_counts):
         for _ in range(h_count):
             hi = len(out_atoms)
             out_atoms.append("H")
@@ -580,7 +839,8 @@ def _fill_hydrogens(atoms: list[_Atom], bonds: list[list[int]]) -> tuple[list[st
 
 
 def _min_constitution_placement(
-    atoms: list[_Atom], bonds: list[list[int]], charge: int, max_matchings: int = _MAX_KEKULE_MATCHINGS
+    atoms: list[_Atom], bonds: list[list[int]], charge: int, max_matchings: int = _MAX_KEKULE_MATCHINGS,
+    max_nodes: "int | None" = None,
 ) -> tuple[int, ...]:
     """The bond-order assignment that minimises the constitution digest over EVERY multiple-bond placement
     consistent with the fixed sigma-skeleton and per-atom pi-demand -- resonance-canonical for an EXPLICIT
@@ -597,6 +857,11 @@ def _min_constitution_placement(
     pi-system.  A molecule with a UNIQUE placement (every localised/pinned double, i.e. most molecules) returns its
     drawn orders unchanged, so this is byte-identical for everything except a genuinely resonance-degenerate
     unflagged system.  Refuses (never truncates to a non-deterministic minimum) if the placements exceed the bound.
+
+    0.9.5 S16: so does a search that walks more than ``max_nodes`` DFS nodes (one node = one per-atom distribution
+    tried; dead ends count), with the same ``SmilesError`` -- and every node is charged to the active verification
+    context's ``canonical_work`` before it is walked (a :func:`resonance_canonical` hit replays that charge).  The walk
+    order is unchanged, so under both bounds the placement returned is the one it always was.
     """
     n = len(atoms)
     need = [0] * n
@@ -611,12 +876,30 @@ def _min_constitution_placement(
     extra = [0] * len(bonds)
     best: list = [None, None]  # [orders_tuple, digest_key]
     count = [0]
+    walked = [0]  # S16: DFS nodes, dead ends included
+    node_limit = _MAX_PLACEMENT_DFS_NODES if max_nodes is None else max_nodes   # read at call time, not def time
+
+    def _walk_node() -> None:
+        # one more node of the placement DFS: bounded, then charged ahead of the work it stands for
+        if walked[0] >= node_limit:
+            raise SmilesError(
+                f"structure's resonance placement search exceeded {node_limit:,} search nodes; a resonance-canonical "
+                "identity for it is out of scope (give an aromatic-lowercase SMILES for the aromatic ring)"
+            )
+        walked[0] += 1
+        charge_canonical_work(1)
 
     def _other(bi: int, a: int) -> int:
         x, y, _o = bonds[bi]
         return y if x == a else x
 
     def _consider() -> None:
+        if spent.total > _MAX_PLACEMENT_SEARCH_WORK:   # read at call time; checked BEFORE this placement's canonical()
+            raise SmilesError(
+                f"structure's resonance placement search exceeded {_MAX_PLACEMENT_SEARCH_WORK:,} units of "
+                f"canonicalisation work ({spent.total:,} spent over {count[0]:,} placements); a resonance-canonical "
+                "identity for it is out of scope (give an aromatic-lowercase SMILES for the aromatic ring)"
+            )
         count[0] += 1
         if count[0] > max_matchings:
             raise SmilesError(
@@ -671,34 +954,60 @@ def _min_constitution_placement(
     # atom-walk descends one frame per pi-atom -- never blows the Python recursion limit; the earlier recursive
     # walk crashed with an uncaught RecursionError on a ~330-atom cumulene, the red-team fold).
     start = _next_pi(0)
-    if start == n:
-        _consider()  # no multiple bond at all: the single all-single placement (a saturated molecule)
-    else:
-        stack: list[dict] = [{"atom": start, "dists": _atom_distributions(start), "idx": -1, "applied": None}]
-        while stack:
-            top = stack[-1]
-            if top["applied"] is not None:                 # backtrack: undo the distribution we had applied
-                _apply(top["atom"], top["applied"], -1)
-                top["applied"] = None
-            top["idx"] += 1
-            if top["idx"] >= len(top["dists"]):
-                stack.pop()
-                continue
-            dist = top["dists"][top["idx"]]
-            _apply(top["atom"], dist, +1)
-            top["applied"] = dist
-            nxt = _next_pi(top["atom"] + 1)
-            if nxt == n:
-                _consider()                                # a complete placement (every pi-demand met)
-            else:
-                stack.append({"atom": nxt, "dists": _atom_distributions(nxt), "idx": -1, "applied": None})
+    with canonical_work_frame() as spent:                  # A13: the search's cold work, read by _consider
+        if start == n:
+            _walk_node()
+            _consider()  # no multiple bond at all: the single all-single placement (a saturated molecule)
+        else:
+            stack: list[dict] = [{"atom": start, "dists": _atom_distributions(start), "idx": -1, "applied": None}]
+            while stack:
+                top = stack[-1]
+                if top["applied"] is not None:             # backtrack: undo the distribution we had applied
+                    _apply(top["atom"], top["applied"], -1)
+                    top["applied"] = None
+                top["idx"] += 1
+                if top["idx"] >= len(top["dists"]):
+                    stack.pop()
+                    continue
+                dist = top["dists"][top["idx"]]
+                _walk_node()                               # S16: every node, dead end or not
+                _apply(top["atom"], dist, +1)
+                top["applied"] = dist
+                nxt = _next_pi(top["atom"] + 1)
+                if nxt == n:
+                    _consider()                            # a complete placement (every pi-demand met)
+                else:
+                    stack.append({"atom": nxt, "dists": _atom_distributions(nxt), "idx": -1, "applied": None})
 
     if best[0] is None:  # pragma: no cover -- the drawn structure is always a valid placement
         raise SmilesError("could not assign a valid multiple-bond placement to the structure")
     return best[0]
 
 
+#: 0.9.5 A18 (Wave E): ONE parse computes the resonance-canonical placement once. parse_smiles_features asks for it
+#: four times on identical inputs -- the isotope key, configuration perception, the CIP labels and the build -- and each
+#: ran its own placement search (an explicit-Kekule flake: four searches of 4.8M units each), so the placement-search
+#: ceiling bounded a search, never the call. Set only for the duration of one parse (never process-wide), keyed on the
+#: whole input content, so the result and its accounting are the same cold or warm.
+_PLACEMENT_MEMO: "ContextVar[dict | None]" = ContextVar("smartchem_placement_memo", default=None)
+
+
 def _canonical_kekule_orders(
+    atoms: list[_Atom], bonds: list[list[int]], charge: int, max_matchings: int = _MAX_KEKULE_MATCHINGS
+) -> tuple[int, ...]:
+    """:func:`_canonical_kekule_orders_computed`, computed once per parse for one exact input (``_PLACEMENT_MEMO``)."""
+    memo = _PLACEMENT_MEMO.get()
+    if memo is None:
+        return _canonical_kekule_orders_computed(atoms, bonds, charge, max_matchings)
+    key = (tuple((a.element, a.aromatic, a.charge, a.h_explicit, a.isotope, a.chirality) for a in atoms),
+           tuple(tuple(b) for b in bonds), charge, max_matchings)
+    hit = memo.get(key)
+    if hit is None:
+        hit = memo[key] = _canonical_kekule_orders_computed(atoms, bonds, charge, max_matchings)
+    return hit
+
+
+def _canonical_kekule_orders_computed(
     atoms: list[_Atom], bonds: list[list[int]], charge: int, max_matchings: int = _MAX_KEKULE_MATCHINGS
 ) -> tuple[int, ...]:
     """The resonance-canonical bond-order tuple for a (possibly MIXED aromatic-flagged + explicit) pi system.
@@ -724,7 +1033,9 @@ def _canonical_kekule_orders(
     return _min_constitution_placement(atoms, work, charge, max_matchings=max_matchings)
 
 
-@lru_cache(maxsize=8192)
+# 0.9.5 S16: work-transparent, not a bare lru_cache -- a hit here skips every canonical() of the
+# placement search, so it must replay their charge or a load's budget would depend on what is warm.
+@work_transparent_cache(maxsize=8192)
 def resonance_canonical(molecule: Molecule) -> Molecule:
     """The resonance-canonical representative of ``molecule`` (CANON-KEKULE-01, generalised off the SMILES parser).
 
@@ -753,6 +1064,21 @@ def resonance_canonical(molecule: Molecule) -> Molecule:
     if not heavy or len(heavy) > _RESONANCE_MAX_HEAVY:
         # O(1) DoS guard: a molecule too large to canonicalise per-placement cheaply keeps its literal identity
         # (no worse than pre-fix -- it simply won't unify across Kekulé spellings; see the cap note above).
+        return molecule.canonical()
+    # 0.9.5 S17 (C6-F2): the rebuild below re-derives hydrogens -- each heavy atom gets one TERMINAL H per H
+    # neighbour -- which is a resonance form of the input only when every H already IS one terminal, order-1 atom.
+    # A bridging H (counted once per heavy neighbour), an H-H bond or a multiply bonded H made the rebuild a
+    # DIFFERENT formula sharing the honest species' key ('C1C[H]1', C2H5, keyed as ethane) or crashed it.  The parser
+    # now refuses those spellings, but a wire / surgery graph never meets the parser: such a graph keeps its literal
+    # identity instead -- distinct formulas, distinct keys, and nobody's hydrogens get rewritten behind their back.
+    h_degree = dict.fromkeys((i for i, s in enumerate(atoms) if s == "H"), 0)
+    for b in bonds:
+        for end, other in ((b.i, b.j), (b.j, b.i)):
+            if end in h_degree:
+                if b.order != 1 or other in h_degree:
+                    return molecule.canonical()
+                h_degree[end] += 1
+    if any(d != 1 for d in h_degree.values()):
         return molecule.canonical()
     old_to_new = {old: new for new, old in enumerate(heavy)}
     h_count = [0] * len(heavy)
@@ -808,11 +1134,23 @@ def _build_molecule(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> 
     # (benzene) all Kekulé forms are isomorphic already; for a fused benzenoid (naphthalene, anthracene) it
     # removes the Kekulé-choice ambiguity; for a MIXED aromatic-flagged + explicit-Kekulé spelling (R41) it
     # canonicalises the explicit ring too, so a charged ring cannot split its aromatic and explicit spellings.
-    orders = _canonical_kekule_orders(atoms, bonds, charge)
-    for k in range(len(bonds)):
-        bonds[k][2] = orders[k]
-    out_atoms, out_bonds = _fill_hydrogens(atoms, bonds)
-    return Molecule(tuple(out_atoms), frozenset(out_bonds), charge).canonical()
+    # 0.9.5 A14 (Wave D F3): the Molecule's own structural refusals (two records for one atom pair, a disconnected
+    # graph, a bad Bond) are plain ValueErrors.  Reached from a parse they mean malformed SMILES, not an internal fault:
+    # 'C1=C1' escaped every front door as a bare ValueError (plan exit 70).  The walk now refuses a duplicate pair
+    # itself; this is the second suture, typed, for whatever the walk does not catch.  The placement search builds a
+    # Molecule per candidate, so the whole materialisation is covered.  canonical()'s CanonicalBoundExceeded is a
+    # NotImplementedError and passes through untouched (its callers route it).
+    try:
+        orders = _canonical_kekule_orders(atoms, bonds, charge)
+        for k in range(len(bonds)):
+            bonds[k][2] = orders[k]
+        out_atoms, out_bonds = _fill_hydrogens(atoms, bonds)
+        molecule = Molecule(tuple(out_atoms), frozenset(out_bonds), charge)
+    except SmilesError:
+        raise
+    except ValueError as exc:
+        raise SmilesError(f"the parsed SMILES does not form a valid molecule graph: {exc}") from exc
+    return molecule.canonical()
 
 
 def _isotopic_identity(atoms: list[_Atom], bonds: list[list[int]], charge: int) -> str:
@@ -836,7 +1174,7 @@ def _isotopic_identity(atoms: list[_Atom], bonds: list[list[int]], charge: int) 
     stereo perception -- a canonical CIP parity, which graph canonicalisation cannot supply because chirality is a
     reflection); that, and CONFIGURATION, stay the named ID-STEREO-01 deferral.
     """
-    from .category import _canonical_by_individualisation
+    from .category import _CanonicalMeter, _canonical_by_individualisation
 
     work = [list(b) for b in bonds]                       # a private copy: never disturb the caller's pending bonds
 
@@ -848,7 +1186,11 @@ def _isotopic_identity(atoms: list[_Atom], bonds: list[list[int]], charge: int) 
             f"{atoms[k].isotope}:{out_atoms[k]}" if k < len(atoms) and atoms[k].isotope else out_atoms[k]
             for k in range(len(out_atoms))
         )
-        symbols, edges = _canonical_by_individualisation(colored, frozenset(out_bonds))
+        # S16: the same search canonical() runs, so the same charge -- A13: every refinement round on a charged
+        # meter, bounded per call by the canonicaliser's own ceiling
+        symbols, edges = _canonical_by_individualisation(
+            colored, frozenset(out_bonds), meter=_CanonicalMeter(charge=True)
+        )
         return canonical_digest((symbols, edges, charge))
 
     # Commit to the EXACT Kekulé structure :func:`_build_molecule` commits to, via the shared
@@ -966,10 +1308,13 @@ def _perceive_configuration(
     marked = [a for a in range(len(atoms)) if atoms[a].chirality]
     if not marked:
         return None, True                                        # achiral: trivially complete, reduces to constitution
+    from .category import _CanonicalMeter
+
     work = [list(b) for b in bonds]
     _kekulize_in_place(atoms, work, charge)
     filled_atoms, filled_bonds = _fill_hydrogens(atoms, work)     # heavy indices 0..n-1 preserved; H appended after
-    wl = _wl_colours(tuple(filled_atoms), frozenset(filled_bonds))
+    # A13: refinement is canonicalisation work wherever it runs -- metered (charged, bounded per call) like canonical()
+    wl = _wl_colours(tuple(filled_atoms), frozenset(filled_bonds), _CanonicalMeter(charge=True))
     n = len(atoms)
     neighbours: dict[int, list[int]] = {i: [] for i in range(len(filled_atoms))}
     for b in filled_bonds:
@@ -2204,6 +2549,15 @@ def parse_smiles_features(text: str) -> tuple[Molecule, SmilesFeatures]:
         raise SmilesError("empty SMILES")
     atoms, bonds, directions, written_neighbours = _parse_skeleton_stereo(stripped)
     charge = sum(a.charge for a in atoms)
+    token = _PLACEMENT_MEMO.set({})      # A18: the four layers below share ONE placement search per exact input
+    try:
+        return _parse_smiles_features_layers(stripped, atoms, bonds, directions, written_neighbours, charge)
+    finally:
+        _PLACEMENT_MEMO.reset(token)
+
+
+def _parse_smiles_features_layers(stripped, atoms, bonds, directions, written_neighbours, charge):
+    """The body of :func:`parse_smiles_features` after the skeleton walk (A18: run inside one placement memo)."""
     # The isotope-refined key must see the PRISTINE aromatic bonds (_build_molecule mutates them during Kekulisation),
     # so compute it FIRST -- it takes a private copy of `bonds` and leaves the caller's list untouched.
     isotopic_digest = _isotopic_identity(atoms, bonds, charge) if any(a.isotope for a in atoms) else None

@@ -35,7 +35,6 @@ Nothing here decides FIT/BLOCKED/UNKNOWN -- that fold lives in :mod:`smartchem.c
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
 
 from ..category import Molecule
 from ..constraints import PhysicalBounds
@@ -46,9 +45,15 @@ from ..experiment.catalyst_availability import catalyst_availability
 from ..experiment.equipment import EquipmentKind, equipment_for_step
 from ..experiment.handling import CareLevel, verify_handling
 from ..experiment.step import ExperimentRoute
+from ..experiment.stock import collapse_material_name as _exact_text
+# A15: no call here folds case any more (the hazard-scan dedups moved to the exact fold); the binding stays because the
+# S8 one-owner pin (tests/test_v0_9_5_material_identity.py) and the mutation gate (M98, M-S18-15) read it by name.
+from ..experiment.stock import normalize_material_name as _norm_text  # noqa: F401
+from ..experiment.stock import structure_key
 from ..material_spec import MaterialSpecification, PhaseClaim
 from ..procedure_evidence import OperationKind, ProcedureMaterialRole
 from ..process_constraints import Agitation, ProcessRequirements
+from ..verification import work_transparent_cache
 from .coverage import SUMMARY_FIELDS, render_op_quantity, render_scale, render_summary, render_verification
 from .enums import ContainmentCapability, EquipmentCapability, MeasurementMethod, WasteCapability
 from .equipment_resolver import classify_apparatus_strings
@@ -229,37 +234,32 @@ class RouteCapabilityRequirements(Digestible):
 
 # -- structure-identity + name-coverage helpers (pure, route-only) ---------------------------------------------
 
-def _struct_digest(molecule: Molecule) -> str:
-    """The canonical STRUCTURE digest of ``molecule`` -- the same isomer-proof key the stock layer uses. A molecule
-    that cannot canonicalise falls back to its as-given digest (never a crash, never a false match)."""
-    try:
-        return canonical_digest(molecule.canonical())
-    except NotImplementedError:
-        return canonical_digest(molecule)
+# Barrier S7/S8: the structure key and the name fold are OWNED by :mod:`smartchem.experiment.stock` and imported
+# here (``structure_key``; ``normalize_material_name`` bound to the historical local name ``_norm_text``). The local
+# literal-digest twin is gone -- a requirement and a bottle can no longer disagree about what one molecule is.
 
 
-@lru_cache(maxsize=1024)
-def _resolved_name_digest(name: str) -> "str | None":
-    """The canonical structure digest the OFFLINE NAME resolver assigns to ``name``, or ``None`` when the name does not
-    resolve (unknown to the offline table, or not a name at all). Pure and deterministic -- no network."""
+@work_transparent_cache(maxsize=1024)  # 0.9.5 S16: a hit replays the canonical work beneath it
+def _resolved_name_key(name: str) -> "str | None":
+    """The :func:`~smartchem.experiment.stock.structure_key` of the structure the OFFLINE NAME resolver assigns to
+    ``name``, or ``None`` when the name does not resolve (unknown to the offline table, or not a name at all). Pure
+    and deterministic -- no network."""
     from ..identity_parse import InputKind, resolve_target  # lazy: identity_parse is a heavier front-door module
 
     try:
-        return _struct_digest(resolve_target(name, InputKind.NAME))
+        return structure_key(resolve_target(name, InputKind.NAME))
     except (ValueError, NotImplementedError):
         return None
 
 
 def name_resolves_to(name: str, identity: Molecule) -> bool:
-    """D25.1/D25.4 (Wave-C'' NEW-1, C6): does ``name`` resolve, through the offline NAME resolver, to the SAME canonical
-    structure as ``identity``? A name the resolver does not know -- or one carrying extra words ("<species> + 2 g <a
-    second species> in a sealed tube at 650 K", "cold <species>") -- is NOT a name of that identity."""
-    digest = _resolved_name_digest(name.strip())
-    return digest is not None and digest == _struct_digest(identity)
-
-
-def _norm_text(text: str) -> str:
-    return " ".join(text.strip().casefold().split())
+    """D25.1/D25.4 (Wave-C'' NEW-1, C6): does ``name`` resolve, through the offline NAME resolver, to the SAME
+    structure key as ``identity`` (barrier S7: the ONE resonance-canonical key on BOTH sides, so a Kekule-flipped
+    identity still answers to its own name)? A name the resolver does not know -- or one carrying extra words
+    ("<species> + 2 g <a second species> in a sealed tube at 650 K", "cold <species>") -- is NOT a name of that
+    identity."""
+    key = _resolved_name_key(name.strip())
+    return key is not None and key == structure_key(identity)
 
 
 #: The use roles that represent a leaf reactant's stoichiometric charge (Wave-C nag: a wash never stands in).
@@ -267,11 +267,13 @@ _STOICHIOMETRIC_ROLES = frozenset({ProcedureMaterialRole.SUBSTRATE, ProcedureMat
 
 
 def _name_covers(use_name: str, raw: str) -> bool:
-    """Does a typed use named ``use_name`` cover the raw source string ``raw``? Case/whitespace-folded EQUALITY only
-    (Wave-C K4): a whole-word containment test let a raw string naming a SECOND species beside a typed name
+    """Does a typed use named ``use_name`` cover the raw source string ``raw``? Whitespace-folded, CASE-PRESERVING
+    EQUALITY only (Wave-C K4): a whole-word containment test let a raw string naming a SECOND species beside a typed name
     ("<other species> in <typed name>") vanish behind the typed use. The source author aligns ``op.materials`` with the typed names; any raw string that
-    is not exactly a typed name is UNCOVERED and becomes an unresolved requirement (fail closed)."""
-    name, text = _norm_text(use_name), _norm_text(raw)
+    is not exactly a typed name is UNCOVERED and becomes an unresolved requirement (fail closed). 0.9.5 S18 (C1-3):
+    the case-fold is gone from this rule -- a typed ``"CO"`` (carbon monoxide) used to cover a raw ``"Co"`` (cobalt),
+    and the metal vanished from the material, waste and containment projections at once."""
+    name, text = _exact_text(use_name), _exact_text(raw)
     return bool(name) and name == text
 
 
@@ -388,8 +390,10 @@ def _material_requirements(route: ExperimentRoute) -> "tuple[MaterialRequirement
                 if contradiction is not None:
                     spec = MaterialSpecification(composition=spec.composition, states=spec.states,
                                                  unresolved_terms=spec.unresolved_terms + (contradiction,))
-                species_key = (("struct", _struct_digest(use.identity)) if use.identity is not None
-                               else ("name", _norm_text(use.name)))
+                # S18 (C1-3): a name-only species groups by its EXACT spelling -- a case-fold would merge "CO" and
+                # "Co" into one demand that one bottle then certifies for both.
+                species_key = (("struct", structure_key(use.identity)) if use.identity is not None
+                               else ("name", _exact_text(use.name)))
                 phase_key = None if use.phase is None else canonical_digest(use.phase)
                 key = (species_key, canonical_digest(spec), phase_key)
                 group = groups.get(key)
@@ -416,10 +420,11 @@ def _material_requirements(route: ExperimentRoute) -> "tuple[MaterialRequirement
             role=f"procedure material ({roles})",
             evidence_source="; ".join(group["evidence"]), name=name, specification=group["spec"],
         ))
-    # D13: untyped raw source strings -- one requirement per distinct (folded) string, every occurrence counted.
+    # D13: untyped raw source strings -- one requirement per distinct (exactly-folded, S18) string, every occurrence
+    # counted.
     untyped: "dict[str, dict]" = {}
     for raw, locator in _untyped_source_materials(route):
-        entry = untyped.setdefault(_norm_text(raw), {"raw": raw.strip(), "locators": []})
+        entry = untyped.setdefault(_exact_text(raw), {"raw": raw.strip(), "locators": []})
         entry["locators"].append(locator)
     for entry in untyped.values():
         requirements.append(MaterialRequirement(
@@ -643,7 +648,9 @@ def _hazard_scan(
     hazard_unresolved)``. Three sources, one law (a real GHS record forces containment; NO record is UNRESOLVED;
     an empty-GHS record forces nothing):
 
-    * every typed ``ProcedureMaterialUse`` (structure lookup first, then the sourced name);
+    * every typed ``ProcedureMaterialUse`` (structure lookup first; the sourced NAME only for an identity-less use,
+      or -- for a typed structure with no record -- only when the name's record carries GHS codes: a name may
+      force containment on a structure, never clear it);
     * every untyped raw source material string (D13, by name only);
     * every BALANCED species of every step (D13 P0-2b: parity with the typed path -- a reactant/product with no
       hazard record is unresolved, never silently skipped).
@@ -672,17 +679,25 @@ def _hazard_scan(
             continue
         for op in procedure.operations:
             for use in op.material_uses:
-                key = _struct_digest(use.identity) if use.identity is not None else f"name:{_norm_text(use.name)}"
+                # A15: an identity-less use dedups on the EXACT spelling. ``hazards_for_named`` answers case variants
+                # differently now (a plain-word spelling reaches its record, a formula-shaped case variant of it reads
+                # None), so a fold-keyed merge would let the first spelling answer for the second and drop its UNKNOWN.
+                key = structure_key(use.identity) if use.identity is not None else f"name:{_exact_text(use.name)}"
                 if key in seen:
                     continue
                 seen.add(key)
                 hazard = molecule_hazards(use.identity) if use.identity is not None else None
                 if hazard is None:
-                    hazard = hazards_for_named(use.name)
+                    # 0.9.5 S18 (barrier A10): a display name is not bound to a typed structure -- its record may
+                    # FORCE containment (the safe direction) but never CLEAR a structure that has no record of its own
+                    # (a structure with no record, labelled with a benign name, read benign; C5-F6 on the containment leg).
+                    named = hazards_for_named(use.name)
+                    if use.identity is None or (named is not None and named.ghs_codes):
+                        hazard = named
                 kind = "an unresolvable ionic/mixture species" if use.identity is None else "no GHS record"
                 _fold(f"procedure-only {use.name!r} ({use.role.value})", hazard, kind)
     for raw, locator in untyped:
-        key = f"untyped:{_norm_text(raw)}"
+        key = f"untyped:{_exact_text(raw)}"  # A15: exact spelling, as above
         if key in seen:
             continue
         seen.add(key)
@@ -690,7 +705,7 @@ def _hazard_scan(
               "raw source text with no typed identity and no hazard record")
     for s_index, step in enumerate(route.steps, start=1):
         for molecule in (*step.reactants, *step.products):
-            key = _struct_digest(molecule)
+            key = structure_key(molecule)
             if key in seen:
                 continue
             seen.add(key)
@@ -960,8 +975,19 @@ def _procurement_catalysts_requirement(
     route: ExperimentRoute,
 ) -> "tuple[tuple[str, Availability | None], ...]":
     """One ``(name, tier)`` pair per catalyst the route DECLARES -- every ``envelope.catalysts`` entry AND (D13) every
-    typed CATALYST use not already listed -- deduplicated case-insensitively, ``tier`` resolved through the UNMODIFIED
-    ``catalyst_availability`` classifier (``None`` = honest UNRECOGNIZED)."""
+    typed CATALYST use not already listed -- deduplicated under the case-KEEPING fold (0.9.5 S18, barrier A10: a
+    case-only merge could drop ``"Na2Co3"`` behind ``"Na2CO3"``, and the classifier answers them differently), ``tier``
+    resolved through the UNMODIFIED ``catalyst_availability`` classifier (``None`` = honest UNRECOGNIZED).
+
+    0.9.5 A15 (Wave D F7): the classifier reads a NAME, so it may vouch only for a name that IS the use's structure. A
+    typed CATALYST use whose display name does not resolve to its own identity (``name_resolves_to``: a strong acid's
+    structure under a benign label) earns no tier -- ``None``, UNRECOGNIZED, a declared catalyst that BLOCKS -- and neither does any
+    envelope string spelled exactly like it (the string would otherwise carry the label's vouch back in)."""
+    unbound: "set[str]" = {
+        _exact_text(u.name) for step in route.steps if step.envelope.procedure is not None
+        for op in step.envelope.procedure.operations for u in op.material_uses
+        if u.role is ProcedureMaterialRole.CATALYST and u.identity is not None
+        and not name_resolves_to(u.name, u.identity)}
     seen: "dict[str, tuple[str, Availability | None]]" = {}
     for step in route.steps:
         names = list(step.envelope.catalysts)
@@ -970,9 +996,9 @@ def _procurement_catalysts_requirement(
             names.extend(u.name for op in procedure.operations for u in op.material_uses
                          if u.role is ProcedureMaterialRole.CATALYST)
         for cat in names:
-            key = _norm_text(cat)
+            key = _exact_text(cat)
             if key and key not in seen:
-                seen[key] = (cat, catalyst_availability(cat))
+                seen[key] = (cat, None if key in unbound else catalyst_availability(cat))
     return tuple(seen.values())
 
 

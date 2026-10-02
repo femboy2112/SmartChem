@@ -1,0 +1,21 @@
+{
+ "family": "frontdoor",
+ "property": "P-crash",
+ "signature": "P-crash",
+ "seed": 950,
+ "count_in_run": 4,
+ "detail": "ValueError: invalid literal for int() with base 10: '²'",
+ "repro": {
+  "text": "[³]",
+  "text_codepoints": [
+   "U+005B",
+   "U+00B3",
+   "U+005D"
+  ],
+  "kind": "confusable",
+  "surface": "AUTO",
+  "intended": "(belongs to shrunk_from, not to this minimal text)",
+  "intended_charge": null,
+  "shrunk_from": "[²Zn⁴•AlO³]3+"
+ }
+}

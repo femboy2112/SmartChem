@@ -402,7 +402,9 @@ def test_unknown_request_version_is_refused_precisely(bad):
 
 @pytest.mark.parametrize("bad", ["smartchem.service/compilation-response-v1alpha12",
                                  "smartchem.service/compilation-response-v1alpha16",
-                                 "smartchem.service/compilation-response-v1alpha18", "garbage"])
+                                 # 0.9.5 S14: the 0.9.0a1 pre-release id is refused like any other non-current id
+                                 "smartchem.service/compilation-response-v1alpha17",
+                                 "smartchem.service/compilation-response-v1alpha19", "garbage"])
 def test_unknown_response_version_is_refused_precisely(bad):
     payload = _load("response_isopentyl_acetate.json")
     payload["schema_version"] = bad
@@ -661,7 +663,7 @@ def test_current_request_normalized_identity_forgery_keeps_its_original_refusal(
 def test_smith_P2_signature_binds_the_capability_question_with_zero_dossiers(label):
     from smartchem.service import InputKind, TransformGrammar, _capability_profile_to_payload
     from smartchem.capability import resolve_capability_profile
-    key = b"producer-key"
+    key = b"producer-key-0.9.5-min16"   # 0.9.5 barrier section 2: a verification key is >= 16 bytes
     req = (build_recompile_request("ethyl acetate", capability_profile="poor-man") if label == "INVALID_INPUT" else
            build_recompile_request("CCOC(C)=O", input_kind=InputKind.SMILES, capability_profile="poor-man",
                                    grammar=TransformGrammar.CAPPED_SCISSION_CONVERGENT))

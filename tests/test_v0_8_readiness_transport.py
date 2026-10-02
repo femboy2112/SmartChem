@@ -409,22 +409,36 @@ def test_thin_advisory_with_replay_present_still_refuses_process_specified(isope
     the replay is KEPT. Relabel CANONICAL_VERIFIED->THIN_ADVISORY, leave every replay_payload IN PLACE, and recompute
     the bare transport-bound digest (an honest downgrade). Before the fix, keeping the replay skipped the refusal (it
     sat inside the replay-absent branch) and delivered PROCESS_SPECIFIED on a thin wire; now the refusal is keyed off
-    the DECLARED mode, checked for every dossier regardless of replay-presence."""
+    the DECLARED mode, checked for every dossier regardless of replay-presence.
+
+    0.9.5 (Wave C8 F6): a thin payload still carrying a replay is now refused earlier, at dispatch, by the one-law
+    guard both loaders share -- so the PROCESS_SPECIFIED refusal's replay-PRESENT leg is defense in depth behind it
+    (pinned by mutant M38, re-read with the C8-F6 guard off in both arms).  Pre-fix on this branch the test expected the
+    thin-wire message and failed on the C8 one; the payload was refused both before and after."""
     payload = copy.deepcopy(isopentyl_payload)
     assert any(r.get("replay_payload") is not None for r in payload["ranked_route_dossiers"]), \
         "fixture must carry replay so this exercises the replay-PRESENT path evil-morty found"
     payload["transport_mode"] = "THIN_ADVISORY"
     _recompute_derived_fields(payload)
-    with pytest.raises(ValueError, match="not admissible on an unsigned thin wire"):
+    with pytest.raises(ValueError, match="THIN_ADVISORY payload carries a replay_payload"):
         response_from_payload(payload)
 
 
 def test_transport_mode_downgrade_without_recompute_is_a_digest_mismatch(isopentyl_payload):
     """The fold's whole point: flipping CANONICAL_VERIFIED->THIN_ADVISORY to dodge the mandatory re-derivation, WITHOUT
     recomputing the transport-bound result_digest, is caught as a plain result_digest mismatch -- a downgrade-strip is
-    a detectable identity change, exactly like a readiness tamper."""
+    a detectable identity change, exactly like a readiness tamper.
+
+    0.9.5 (Wave C8 F6): a relabel that KEEPS the replays is refused first by the thin-carries-replay law, so the digest
+    leg is exercised on the consistent downgrade (replays dropped too, digest NOT recomputed) -- the case only the
+    result_digest binding can catch."""
     payload = copy.deepcopy(isopentyl_payload)
     payload["transport_mode"] = "THIN_ADVISORY"  # but result_digest still binds CANONICAL_VERIFIED
+    with pytest.raises(ValueError, match="THIN_ADVISORY payload carries a replay_payload"):
+        response_from_payload(copy.deepcopy(payload))
+    for key in ("ranked_route_dossiers", "ranked_dag_dossiers"):
+        for dossier in payload.get(key) or ():
+            dossier.pop("replay_payload", None)
     with pytest.raises(ValueError, match="result_digest does not match"):
         response_from_payload(payload)
 

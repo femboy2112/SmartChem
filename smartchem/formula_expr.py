@@ -30,7 +30,9 @@ to kill:
 The grammar is deliberately finite -- the smallest durable thing that eats the "copy a formula off
 Wikipedia" surface.  What is *supported* (and every one is pinned by a committed test):
 ASCII formulas, Unicode subscript counts, a Unicode middle-dot (``·``) or a SPACED ASCII-dot
-(``CuSO4 . 5 H2O``) hydrate separator with a leading component multiplier, harmless whitespace, nested
+(``CuSO4 . 5 H2O``) hydrate separator with a leading component multiplier, harmless whitespace (removed
+only where removal cannot change tokenization -- ``H2 O``; a space that would glue a count, ``CuSO4 5H2O``, is
+refused, 0.9.5 A1/F-2), nested
 ``()`` and ``[]`` grouping, and the charge spellings ``NH4+``, ``[NH4]+``, ``SO4^2-``, ``SO4²⁻``
 (Unicode superscript), ``[Fe(CN)6]4-``.  Everything else is one of the typed refusals above.  Nothing
 here needs RDKit or any network.
@@ -60,6 +62,7 @@ quantity, not one molecular identity (P0-D).
 """
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass, field
 
 from .contracts import Digestible
@@ -96,7 +99,31 @@ _SUPERSCRIPT_CHARS = frozenset("⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻")
 _SEPARATOR_CHARS = "·⋅•∙"  # middle dot, dot operator, bullet, bullet operator
 _CANONICAL_SEP = "."  # the internal parse separator (normalize folds every dot glyph to this)
 _RENDER_SEP = "·"     # the canonical RENDER separator (a middle-dot, never an ambiguous compact ASCII '.')
-_ASCII_DIGITS = "0123456789"
+_ASCII_DIGITS = "0123456789"  # the decimal-point guard's digits (v0.6 mutant 11 disables the guard through this)
+# 0.9.5 S17: the digits every COUNT / magnitude check reads, once _fold_decimal_digits has run -- deliberately a
+# separate name from the guard's, so disabling one check can never silently disable the whole grammar.
+_COUNT_DIGITS = "0123456789"
+
+
+def _fold_decimal_digits(text: str) -> str:
+    """Every Unicode DECIMAL digit (category Nd -- Arabic-Indic, fullwidth, Devanagari, ...) -> its ASCII digit.
+
+    0.9.5 S17 (C6-F3): the decimal-point and ion-ambiguity guards look at ASCII digits, while ``int()`` downstream
+    reads every Nd digit -- so the twin of a REFUSED spelling sailed through: ``C٦.5H12`` / ``C６.５H12`` (C6.5H12
+    refused) read as C6H60, ``H٢.٥O`` as H2O5, ``CuSO٤.5H2O`` as a hydrate.  Folding FIRST means every guard sees
+    the digits ``int()`` will read; a digit twin keeps the reading of its ASCII twin, refusals included.  Superscripts
+    and subscripts are not Nd (they keep their own charge / count meaning below); any other digit-looking glyph
+    (circled, dingbat) is not a count at all and is refused by the body parser as an unexpected character."""
+    if text.isascii():
+        return text
+    return "".join(str(unicodedata.decimal(ch)) if ch.isdecimal() and not ch.isascii() else ch for ch in text)
+
+
+def _ascii_digit_run(text: str) -> bool:
+    """A non-empty run of ASCII digits -- the only digits left once :func:`_fold_decimal_digits` has run.  (``isdigit()``
+    also says yes to '④' and '²', which ``int()`` then refuses with a bare ValueError: exit 70, C6-F1a.)"""
+    return bool(text) and all(ch in _COUNT_DIGITS for ch in text)
+
 
 # Markers that make an expression PARAMETRIC (a family of molecules, not one) -- refused, not coerced.
 # 'n'/'m'/'x'/'y' as a *standalone count position* is a variable subscript; '±'/'~' is an interval.
@@ -132,7 +159,9 @@ class AmbiguousChargeError(FormulaSyntaxError):
     trailing run before a bare sign is **two or more digits** (``SO42-`` → ``SO4``+``2-`` vs ``SO42``+``1-``;
     also ``PO43-``, ``CO32-``, ``Cr2O72-``) -- accepting it would fail open to an absurd 42-oxygen composition.
     A **multi-element** body with a **single** trailing digit (``NH4+``, ``NO3-``) is unambiguous -- that digit
-    is the last element's count and the bare sign is ±1 -- and is accepted.  A *subclass* of
+    is the last element's count and the bare sign is ±1 -- and is accepted.  A whitespace-separated trailing
+    ``<digits><sign>`` (``SO4 2-``, ``[Fe(CN)6] 4-``) is the same ambiguity and is refused by the normalizer
+    with this type (0.9.5 A1/F-2), rather than glued into ``SO42-`` first.  A *subclass* of
     :class:`FormulaSyntaxError`, so the identity front door's
     ``except FormulaSyntaxError`` maps it to a typed :class:`~smartchem.identity_parse.IdentityParseError`,
     while a caller can catch this exact type.  The message names the unambiguous spellings (caret, Unicode
@@ -245,9 +274,10 @@ def normalize_formula_text(text: str) -> str:
     Idempotent (``normalize(normalize(x)) == normalize(x)``).  It: translates Unicode subscript digits
     to ASCII counts; converts a Unicode superscript charge run (``²⁻``) to caret form (``^2-``) so the
     subscript/superscript distinction that ASCII would otherwise lose is PRESERVED; folds every
-    middle-dot variant to a single ``.`` separator; and strips whitespace that surrounds a separator
-    and collapses interior runs.  It does NOT decide validity -- that is :func:`parse_formula_expr` --
-    it only produces the canonical spelling that parser reads.
+    middle-dot variant to a single ``.`` separator; and removes interior whitespace only where removal
+    cannot change tokenization (:func:`_drop_safe_whitespace` -- a space that would glue a count or fuse a
+    symbol is a typed refusal, never a silent merge).  It does NOT otherwise decide validity -- that is
+    :func:`parse_formula_expr` -- it only produces the canonical spelling that parser reads.
     """
     if not isinstance(text, str):
         raise FormulaSyntaxError("formula text must be a string")
@@ -259,8 +289,9 @@ def normalize_formula_text(text: str) -> str:
     if not work:
         raise FormulaSyntaxError("formula text must be a non-empty string")
 
+    # 0) every Unicode decimal digit -> ASCII (S17), so no later guard is blind to a digit int() would read.
     # 1) subscript counts -> ASCII digits.
-    work = work.translate(_SUBSCRIPTS)
+    work = _fold_decimal_digits(work).translate(_SUBSCRIPTS)
 
     # 2) superscript charge run -> caret form.  A maximal run of superscript glyphs is a charge suffix;
     #    emit it as '^' + its ASCII translation so '²⁻' becomes '^2-' (never merged into the count digits).
@@ -272,6 +303,15 @@ def normalize_formula_text(text: str) -> str:
             j = i
             while j < n and work[j] in _SUPERSCRIPT_CHARS:
                 j += 1
+            if j < n and work[j] in _COUNT_DIGITS:
+                # 0.9.5 S17 (C6-F3): a superscript run glued to ASCII digits ('SO⁴2-') used to MERGE into one
+                # magnitude (SO, charge -42).  Which digits are the charge and which the count is exactly what the
+                # writer did not say -- the P0-B ambiguity again, in a mixed alphabet.  Refused, not concatenated.
+                raise AmbiguousChargeError(
+                    f"{text!r} writes a superscript {work[i:j]!r} directly before the ASCII digit {work[j]!r}; it is "
+                    "unclear which digits are the charge and which are a count. Write the charge in ONE spelling: a "
+                    "caret (e.g. SO4^2-), a Unicode superscript (SO₄²⁻), or a bracket ion (e.g. [SO4]2-)."
+                )
             out.append("^")
             out.append(work[i:j].translate(_SUPERSCRIPTS))
             i = j
@@ -284,12 +324,67 @@ def normalize_formula_text(text: str) -> str:
     for sep in _SEPARATOR_CHARS:
         work = work.replace(sep, _CANONICAL_SEP)
 
-    # 4) whitespace: drop it around a separator, collapse interior runs to nothing between atoms but
-    #    keep a boundary where a digit meets a following capital (so "5 H2O" -> "5H2O", "CuSO4 . 5 H2O"
-    #    -> "CuSO4.5H2O").  A formula has no meaningful internal spaces once separators are canonical, so
-    #    all remaining whitespace is removed; the separator carries the only real boundary.
-    work = "".join(work.split())
-    return work
+    # 4) whitespace (0.9.5 A1/F-2): removed ONLY where removal cannot change tokenization ("H2 O" -> "H2O",
+    #    "CuSO4 . 5 H2O" -> "CuSO4.5H2O"); a run whose removal would attach a count or fuse a symbol is refused.
+    #    The old blanket delete turned 'CuSO4 5H2O' into CuH2O46S with exit 0 -- the one place the front door
+    #    handed a chemist a confident wrong composition.  Deleting evidence is not normalizing it.
+    return _drop_safe_whitespace(work, text)
+
+
+def _drop_safe_whitespace(work: str, original: str) -> str:
+    """Remove each interior whitespace run only where removal cannot change tokenization; else refuse (A1/F-2).
+
+    ``work`` is already stripped, so every run has a non-space neighbour on each side, ``left`` and ``right``.
+    The run is REFUSED iff
+
+    * ``right`` is a digit and ``left`` is a letter, a digit, ``)`` or ``]`` -- removal would attach a count
+      across it (``CuSO4 5H2O`` -> ``O45``, ``H 2O`` -> ``H2``, ``Ca(OH) 2`` -> a group multiplier).  When the
+      text after the run is exactly a trailing ``<digits><sign>`` the digits are a candidate charge magnitude,
+      so it is the P0-B ion ambiguity (:class:`AmbiguousChargeError`: ``SO4 2-`` is ``SO4^2-`` or ``SO42-``);
+      otherwise a :class:`FormulaSyntaxError` naming the explicit component separator;
+    * ``right`` is lowercase and ``left`` is a capital -- removal would fuse them into a different element
+      symbol (``C l`` -> ``Cl``, ``N a`` -> ``Na``).  The tokenizer takes at most ONE lowercase, and only right
+      after a capital, so a lowercase ``left`` can never fuse (``Na l`` -> ``Nal`` is ``Na`` + a stray ``l``).
+
+    Every other run is removable because one neighbour already fixes the token boundary: a capital, ``(`` or
+    ``[`` always STARTS a token whatever precedes it (``H2 O``, ``Na Cl`` -- a lowercase ``l`` can never absorb
+    the following ``C``), the separator and the charge glyphs ``^ + -`` never belong to a count, and anything
+    left over (``H2 n``, ``Na l``, prose) is refused by the body parser with or without the space.  The result
+    carries no whitespace, so the normalizer stays idempotent.
+    """
+    out: list[str] = []
+    i, n = 0, len(work)
+    while i < n:
+        if not work[i].isspace():
+            out.append(work[i])
+            i += 1
+            continue
+        j = i
+        while j < n and work[j].isspace():
+            j += 1
+        left, right = work[i - 1], work[j]
+        if right in _COUNT_DIGITS and (left.isalpha() or left in _COUNT_DIGITS or left in ")]"):
+            tail = work[j:]
+            if tail[-1] in "+-" and _ascii_digit_run(tail[:-1]):
+                raise AmbiguousChargeError(
+                    f"{original!r} is an ambiguous ASCII ion: the whitespace before the trailing {tail!r} leaves it "
+                    f"unclear whether {tail[:-1]!r} is the charge magnitude or a count joined to the preceding "
+                    f"{left!r}. Write the charge unambiguously with a caret (e.g. SO4^2-), a Unicode superscript "
+                    f"(SO₄²⁻), or a bracket ion (e.g. [SO4]2-)."
+                )
+            raise FormulaSyntaxError(
+                f"{original!r} has whitespace between {left!r} and {right!r}; deleting it would attach the count "
+                f"{right!r} to the preceding {left!r} and change the composition. A hydrate/adduct boundary needs an "
+                f"explicit separator: write CuSO4·5H2O (middle dot) or the spaced ASCII dot CuSO4 . 5 H2O."
+            )
+        if right.islower() and left.isupper():
+            raise FormulaSyntaxError(
+                f"{original!r} has whitespace between {left!r} and {right!r}; deleting it would fuse them into the "
+                f"element symbol {left + right!r}. Write an element symbol without internal whitespace, and join "
+                f"components with an explicit separator (CuSO4·5H2O or CuSO4 . 5 H2O)."
+            )
+        i = j
+    return "".join(out)
 
 
 def _looks_parametric(text: str) -> "str | None":
@@ -344,7 +439,7 @@ def _parse_body(text: str, source: str) -> Formula:
             open_kinds.pop()
             i += 1
             j = i
-            while j < n and text[j].isdigit():
+            while j < n and text[j] in _COUNT_DIGITS:
                 j += 1
             mult = int(text[i:j]) if j > i else 1
             if mult == 0:
@@ -362,7 +457,7 @@ def _parse_body(text: str, source: str) -> Formula:
             symbol = text[i:j]
             i = j
             k = i
-            while k < n and text[k].isdigit():
+            while k < n and text[k] in _COUNT_DIGITS:
                 k += 1
             mult = int(text[i:k]) if k > i else 1
             if mult == 0:
@@ -377,7 +472,7 @@ def _parse_body(text: str, source: str) -> Formula:
             raise FormulaSyntaxError(
                 f"unexpected lowercase {c!r} in {source!r} (an element symbol must start uppercase)"
             )
-        elif c.isdigit():
+        elif c in _COUNT_DIGITS:
             raise FormulaSyntaxError(f"count {c!r} with no preceding element in formula {source!r}")
         else:
             raise FormulaSyntaxError(f"unexpected character {c!r} in formula {source!r}")
@@ -417,7 +512,7 @@ def _extract_charge(text: str) -> "tuple[str, int, str]":
         if not sign:
             raise FormulaSyntaxError(f"caret charge in {text!r} has no sign (+/-)")
         mag_text = suffix[:-1]
-        if mag_text and not mag_text.isdigit():
+        if mag_text and not _ascii_digit_run(mag_text):
             raise FormulaSyntaxError(f"malformed caret charge {suffix!r} in {text!r}")
         mag = int(mag_text) if mag_text else 1
         if mag == 0:
@@ -428,7 +523,7 @@ def _extract_charge(text: str) -> "tuple[str, int, str]":
         # digits immediately before the sign (if any).
         j = len(text) - 1
         d = j
-        while d - 1 >= 0 and text[d - 1].isdigit():
+        while d - 1 >= 0 and text[d - 1] in _COUNT_DIGITS:
             d -= 1
         digits = text[d:j]
         preceding = text[:d]
@@ -447,6 +542,11 @@ def _extract_charge(text: str) -> "tuple[str, int, str]":
         # A MULTI-element body with a SINGLE trailing digit (NH4+, NO3-) is unambiguous -- the digit is the last
         # element's count and the bare sign is +-1 -- and falls through to the reading below.  Element count =
         # uppercase letters; brackets are handled above.  n_elements == 0 (e.g. '3+') is left to the body parser.
+        # DECLARED CONVENTION (0.9.5 A1 adjudication, F-3 refuted as a defect): for a MULTI-element body a single
+        # digit before a bare sign is ALWAYS the last element's count and the sign is +-1 -- the polyatomic-ion
+        # reading (NH4+, NO3-, H3O+, VO2+) -- and that includes spellings like HZn3+ (H1 Zn3, +1).  A SINGLE-element
+        # body stays refused as ambiguous.  This is a chosen convention, not a discovered truth: changing it is a
+        # front-door semantic decision, pinned by tests/test_v0_9_5_front_door.py, not a tidy-up.
         if digits:
             body_with_digits = text[:-1]
             n_elements = sum(1 for ch in body_with_digits if ch.isupper())
@@ -488,7 +588,7 @@ def parse_formula_expr(text: str) -> FormulaExpr:
     # trips as a decimal).  Doing it here rather than inside normalize keeps normalize idempotent on a folded
     # hydrate 'CuSO4.5H2O'.  Only the ambiguous COMPACT ASCII period between two ASCII digits is a decimal.
     if isinstance(text, str):
-        raw = text.strip().translate(_SUBSCRIPTS)
+        raw = _fold_decimal_digits(text.strip()).translate(_SUBSCRIPTS)
         for k in range(1, len(raw) - 1):
             if raw[k] == "." and raw[k - 1] in _ASCII_DIGITS and raw[k + 1] in _ASCII_DIGITS:
                 raise FormulaSyntaxError(
@@ -520,7 +620,7 @@ def parse_formula_expr(text: str) -> FormulaExpr:
         # the identity of one molecular species, so it is refused at the identity front door rather than folded
         # into composition.
         m = 0
-        while m < len(part) and part[m].isdigit():
+        while m < len(part) and part[m] in _COUNT_DIGITS:
             m += 1
         mult_text, body_text = part[:m], part[m:]
         if mult_text and idx == 0:

@@ -50,13 +50,19 @@ def mutant(name: str):
 
 @contextlib.contextmanager
 def _patch(obj, name, value):
-    """Temporarily set ``obj.name = value`` (works on modules and class objects), restoring exactly on exit."""
+    """Temporarily set ``obj.name = value`` (works on modules and class objects), restoring exactly on exit.
+
+    0.9.5: the process enumeration cache is cleared on entry AND exit (a patch changes behaviour, never a cache key)."""
+    from smartchem.verification import ENUMERATION_CACHE
+
     had = name in getattr(obj, "__dict__", {})
     old = obj.__dict__.get(name) if had else None
+    ENUMERATION_CACHE.clear()
     setattr(obj, name, value)
     try:
         yield
     finally:
+        ENUMERATION_CACHE.clear()
         if had:
             setattr(obj, name, old)
         else:
@@ -290,21 +296,29 @@ def m14() -> bool:
 # 15. a response's request profile and IR algebra are rebound inconsistently on LOAD -> MUST refuse (SS4).
 @mutant("M15 response-algebra-rebind-must-refuse-on-load")
 def m15() -> bool:
+    """A certified-algebra answer carried under a legacy-algebra request must be refused by the load-time rebind.
+
+    0.9.5 re-read (the v0.9 harness's M190 pattern): X-high D26.1 (``_check_request_answer_coherence``) now re-derives
+    the IR's request and transform-registry digests from the carried request by its OWN route, so it refused this
+    tamper in the mutant arm as well -- a masked survivor on the merged-0.9 tree d26f0eb.  D26.1 is held out of BOTH
+    arms (never weakened): honest = refused by the 0.7 rebind ("algebra-rebind mismatch"), mutant = loads once the
+    rebind resolves the wrong registry."""
     cert = run_compilation(_req("certified-route-v07", ()))
     frank = replace(cert, request=_req("legacy-capped-v1"))  # legacy request + certified IR (coherent tamper)
-    try:
-        response_from_payload(response_to_payload(frank))
-        real_refuses = False
-    except ValueError:
-        real_refuses = True
-    # MUTANT: the load-time rebind check resolves the WRONG registry (ignores the request's profile), so expected
-    # always matches the IR -> the coherent cross-profile rebind loads.
-    with _patch(svc, "resolve_algebra_profile", lambda pid: ap.ALGEBRA_PROFILES["certified-route-v07"]):
+    with _patch(svc.CompilationResponse, "_check_request_answer_coherence", lambda self: None):
         try:
             response_from_payload(response_to_payload(frank))
-            mutant_loads = True
-        except ValueError:
-            mutant_loads = False
+            real_refuses = False
+        except ValueError as exc:
+            real_refuses = "algebra-rebind mismatch" in str(exc)
+        # MUTANT: the load-time rebind check resolves the WRONG registry (ignores the request's profile), so expected
+        # always matches the IR -> the coherent cross-profile rebind loads.
+        with _patch(svc, "resolve_algebra_profile", lambda pid: ap.ALGEBRA_PROFILES["certified-route-v07"]):
+            try:
+                response_from_payload(response_to_payload(frank))
+                mutant_loads = True
+            except ValueError:
+                mutant_loads = False
     return real_refuses and mutant_loads
 
 
@@ -312,13 +326,36 @@ def m15() -> bool:
 #     be caught (SS5: the wire-migration law is decoupled from the promotable build default).
 @mutant("M16 pre-0_7-missing-profile-must-stay-legacy")
 def m16() -> bool:
+    """0.9.5 re-read (Wave C8 F7, same law, stronger enforcement): a missing ``algebra_profile`` must NEVER follow the
+    promotable build default.  The accepted generations (current, v0.8) all carry the key, so its absence is now
+    REFUSED rather than decoded to the frozen legacy value.  Honest: refused.  Mutant: the decoder defaults the missing
+    field to the (promoted) build default -- a wider algebra silently selected."""
+    import inspect
+    import textwrap
+
     payload = request_to_payload(_req("legacy-capped-v1"))
-    del payload["algebra_profile"]  # a pre-0.7 serialized request
+    del payload["algebra_profile"]
+    # MUTANT (the REAL decoder, recompiled from its own source with two anchored edits -- a stale anchor raises): the
+    # key is optional again and a missing one follows the build default.  Globals are the LIVE module dict, so the
+    # simulated default promotion below reaches the mutant exactly as it would reach a real default change.
+    src = textwrap.dedent(inspect.getsource(svc.request_from_payload))
+    for old, new in (('else _V08_REQUEST_PAYLOAD_KEYS, "request")',
+                      'else _V08_REQUEST_PAYLOAD_KEYS, "request", optional=frozenset({"algebra_profile"}))'),
+                     ('algebra_profile=payload["algebra_profile"],',
+                      'algebra_profile=payload.get("algebra_profile", DEFAULT_ROUTE_ALGEBRA_PROFILE),')):
+        assert src.count(old) == 1, f"M16 anchor found {src.count(old)}x: {old!r}"
+        src = src.replace(old, new)
+    ns: dict = {}
+    exec(compile(src, "<M16 mutant>", "exec"), svc.__dict__, ns)  # noqa: S102 -- the mutation harness's own source
+    mutant_decode = ns["request_from_payload"]
     with _patch(svc, "DEFAULT_ROUTE_ALGEBRA_PROFILE", "certified-route-v07"):  # simulate the default promotion
-        real_legacy = request_from_payload(payload).algebra_profile == "legacy-capped-v1"  # REAL: frozen law
-        # MUTANT: missing-field deserialization follows the promoted build default instead of the frozen law.
-        mutant_profile = payload.get("algebra_profile", svc.DEFAULT_ROUTE_ALGEBRA_PROFILE)
-    return real_legacy and mutant_profile == "certified-route-v07"
+        try:
+            request_from_payload(payload)
+            real_refuses = False
+        except ValueError:
+            real_refuses = True
+        mutant_profile = mutant_decode(payload).algebra_profile
+    return real_refuses and mutant_profile == "certified-route-v07"
 
 
 # 17. a fresh hetero-DA holdout is silently absent (its family dropped) -> MUST be caught (SS6: the holdout must fire

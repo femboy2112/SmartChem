@@ -276,7 +276,9 @@ def test_a_legacy_dag_dossier_carrying_0_9_content_is_refused():
 
 
 @pytest.mark.parametrize("bad", ["smartchem.service/ranked-dag-summary-v1alpha3",
-                                 "smartchem.service/ranked-dag-summary-v1alpha6", "garbage"])
+                                 # 0.9.5 S14: the 0.9.0a1 pre-release id is refused like any other non-current id
+                                 "smartchem.service/ranked-dag-summary-v1alpha5",
+                                 "smartchem.service/ranked-dag-summary-v1alpha7", "garbage"])
 def test_an_unknown_dag_summary_id_is_refused_precisely(bad):
     raw = _v08_dag_dossier_with_procedure()
     raw["schema_version"] = bad
@@ -415,7 +417,9 @@ def test_a_target_file_response_is_unverifiable_on_load_and_the_loader_never_rea
         return real_open(path, *a, **k)
 
     monkeypatch.setattr("builtins.open", spy)
-    with pytest.raises(ValueError, match="TARGET_FILE response's identity losses cannot be re-derived"):
+    # 0.9.5 S6: refused at dispatch now (before the identity-loss re-derivation that used to refuse it second) -- the
+    # law this test pins, "the loader never reads the path", is unchanged and now holds by structure, not by order.
+    with pytest.raises(ValueError, match=r"TARGET_FILE response cannot be verified on load.*0\.9\.5 S6"):
         response_from_payload(payload)
     assert str(target) not in opened
 
@@ -984,6 +988,7 @@ def test_d27_1_c4t1_the_legacy_graft_is_refused_under_verified_admission_and_adv
     envelope = svc._steps_to_replay_payload((dc.replace(step, envelope=_isopentyl_corpus_envelope()),))[0]["envelope"]
     for op in envelope["procedure"]["operations"]:
         op.pop("material_uses", None)            # the only v0.8-expressible value is [] (the decoder re-adds it)
+    envelope["procedure"].pop("stream_dispositions", None)   # 0.9.5 S10: likewise a 0.9-only slot (decoder re-adds [])
     victim["replay_payload"][0]["envelope"] = envelope
     route = _reconstruct_route(svc._migrate_legacy_v08_dossier(copy.deepcopy(victim))["replay_payload"])
     ready = evaluate_route(route, identity_losses=honest.identity_losses)

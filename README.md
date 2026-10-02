@@ -155,7 +155,7 @@ general multiphysics category.
 
 For the module-by-module map and scientific caveats, see [MANIFEST.md](docs/history/MANIFEST.md).
 
-## Chemical compiler (v0.9.0a1 — an alpha in progress)
+## Chemical compiler (v0.9.5a1 — an alpha in progress)
 
 A newer line of work turns the chemistry core into a bidirectional *chemical compiler*: a
 **decompiler** that descends a target compound to its elemental buckets as an AND–OR
@@ -185,9 +185,9 @@ The CIP namer now handles bounded neutral aryl/heteroaryl ligands using exact ma
 averaging, localized and exocyclic ring unsaturation, supported aromatic-fused systems, Rule-1a-distinct ring pairs,
 and acyclic Rule-3 E/Z priorities. Its Rule-1a/2/3 traversals use a FIFO paired-node queue. Ring-on-centre Rules 4/5,
 isotope-on-Rule-1a-tied rings, and unsupported conjugated/charged ring systems still defer. Declared
-duration intervals require `min`, including on replay. The latest source reconnaissance recovered
+duration intervals require `min`, including on replay. An earlier source reconnaissance round (~R30) recovered
 Br₂ dissociation data and a dated Cl₂ procurement offer; their model and procurement limits remain
-explicit in the [current roadmap](ROADMAP.md).
+explicit in the [roadmap](ROADMAP.md).
 
 ### v0.6 — the human chemical front door
 
@@ -219,8 +219,8 @@ receipt, IR, serialization and response. Widening the chemistry is a typed, audi
   load-bearing guards, the supported uses, and the reagent capability — so a chemistry-bearing change moves the
   digest while a prose edit does not; the exact profile is bound into the request digest, receipts and IR, and a
   search under one algebra cannot be packaged or loaded as another;
-- `--algebra legacy-capped-v1` reproduces the pre-0.7 capped-scission-only behaviour exactly; a pre-0.7 serialized
-  request (no algebra field) still means the legacy algebra, forever;
+- `--algebra legacy-capped-v1` reproduces the pre-0.7 capped-scission-only behaviour exactly; every serialized request
+  names its algebra (since 0.9.5 a payload missing the field is refused, never defaulted);
 - `--no-helper-reagents` declares an explicit empty reagent pool (no invented water) for the reagentless families.
 
 ```bash
@@ -231,6 +231,28 @@ python -m smartchem recompile --smiles 'C1CC=CCC1' --algebra legacy-capped-v1   
 The default promotion rode a measured gate — a full default-promotion blast radius (no legacy route lost, every new
 route reaction-type-vouched, bounded performance) and an independent hostile review — recorded in its
 [release decision record](docs/research/V0_7_PRODUCTION_CHEMICAL_ALGEBRA_RELEASE_2026-09-27.md).
+
+### v0.8 – 0.9.5 — route dossiers, the capability compiler, verified loading
+
+- **Route dossiers (0.8):** every candidate carries a *derived* readiness ladder (`FORMAL_CANDIDATE` <
+  `REACTION_VOUCHED` < `CONDITIONS_SUPPORTED` < `PROCESS_SPECIFIED`, weakest link wins); `PROCESS_SPECIFIED` needs a
+  structurally complete, *sourced* procedure on the step.
+- **Capability compiler (0.9):** `--capability-profile research-lab|poor-man` projects each ranked route through a
+  declared bench, axis by axis (material, equipment, physical, process, containment, ventilation, measurement, waste,
+  procurement, attention, monetary). A real demand on an unmodeled or unevidenced capacity reads `UNKNOWN`, never a
+  pass; `CAPABILITY_FIT` requires `PROCESS_SPECIFIED` and is a profile-fit claim, **not a safety certificate**. The
+  profile never enters the search identity. 0.9.5 added the one evidence type that can discharge a waste obligation
+  (`StreamDisposition`, source-quoted and bound to one stream); no current corpus page states a disposal, so no
+  production route reaches `CAPABILITY_FIT` today — a synthetic witness proves the verdict is reachable.
+- **Verified loading (0.9.5):** `load_response(payload, VerificationPolicy)` re-derives or binds every verdict-bearing
+  field from the carried evidence and returns the response with an out-of-band `VerificationReceipt` stating what the
+  load established; verification work is budgeted in deterministic units and exhaustion is a refusal, never a skipped
+  check. The contract is [COMPATIBILITY.md](COMPATIBILITY.md); the stage map is
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+```bash
+python -m smartchem recompile 'smiles:CC(=O)OCCC(C)C' --capability-profile poor-man --json
+```
 
 This is an **alpha under active construction, not a finished release.** The v0.5.0a1 base standard remains
 inherited: the normative contract is
@@ -281,16 +303,23 @@ pytest -q
 python -m smartchem.bench
 ```
 
-Current committed-baseline suite result — the OOM-safe full run via `scripts/run_suite.sh`, measured with the
-optional RDKit and PySCF backends **absent** (the committed baseline; backend-gated tests `importorskip`-skip):
+Current suite result (0.9.5a1, tip `d8146c7`) — the OOM-safe full run via `scripts/run_suite.sh` on hosted CI
+(run `36944326427`, jobs `test (3.10)` and `test (3.12)`, the optional RDKit and PySCF backends **absent**), plus
+the PySCF smoke job with PySCF 2.14.0 **present**:
 
 ```text
-5628 passed, 46 skipped, 0 xfailed  (5674 collected, 0 failed, 0 errors)
+test (3.10), test (3.12):  7464 passed, 84 skipped, 0 xfailed  (7548 collected, 0 failed, 0 errors)
+PySCF smoke (-m "not slow"): 7505 passed, 33 skipped, 14 deselected  (7552 collected)
 ```
 
-There are **no xfails**: the last strict xfail (parallel interchange) was discharged by PR #79. The 46 skips are
-the optional-backend (RDKit/PySCF-gated) checks plus the explicit slow-test gate; skips are never represented as
-passed. When the development-only RDKit oracle is present the seven RDKit-gated CIP checks additionally run, and
+There are **no xfails**: the last strict xfail (parallel interchange) was discharged by PR #79. Every environment
+skips 32 RDKit-gated checks and leaves out the 14 tests behind the explicit slow-test gate (skipped without
+`--runslow`, deselected by the smoke job's marker). Without PySCF, its 36 integration tests also skip, and
+`test_eris_reuse.py`'s 5 tests are reported as one module-level skip (hence 7548 collected, not 7552). One test reads
+payloads present only on the maintainer's box and skips elsewhere. Skips are never represented as passed. The
+release record's *Suite environments* table reconciles every count, including the dev venv's (7505 passed, 46
+skipped, 7551 collected on `b16749e`, with PySCF present).
+When the development-only RDKit oracle is present the seven RDKit-gated CIP checks additionally run, and
 when the optional PySCF stack is present the real-wavefunction integration tests additionally run. On this box
 the monolithic `pytest` run is OOM-killed, so `scripts/run_suite.sh` (short-lived batched processes) is the
 maintained full-suite runner. An earlier process-accessibility audit receipt records a historical PySCF-absent
@@ -331,13 +360,14 @@ as the next release boundary. The normative plan is
 **0.6 human front door -> 0.7 production chemical algebra -> 0.8 real route dossiers -> 0.9 capability compiler ->
 0.9.5 coverage/adversarial RC -> 1.0 stable semantics**.
 
-The immediate implementation round is
-[`docs/research/V0_6_HUMAN_CHEMICAL_FRONT_DOOR_PLAN_v0.1.md`](docs/research/V0_6_HUMAN_CHEMICAL_FRONT_DOOR_PLAN_v0.1.md).
-Until that gate is complete, new reaction-family expansion is non-release-critical by default: the priority is one
-measured input -> identity -> chemistry -> evidence -> capability funnel, not an unbounded sequence of local rounds.
+0.6, 0.7, 0.8 and 0.9 are merged; the live round is the **0.9.5 adversarial release candidate**
+([plan](docs/research/V0_9_5_ADVERSARIAL_RC_PLAN_v0.1.md), [architecture freeze](docs/research/V0_9_5_ARCHITECTURE_FREEZE.md)):
+consolidate, bound verification work, close the minimum pre-1.0 representation gaps, attack the whole product, and
+freeze the public semantics ([COMPATIBILITY.md](COMPATIBILITY.md)). New reaction-family expansion stays
+non-release-critical by default.
 
 
-> **The live chemical-compiler (v0.9.0a1) work queue is pinned in [`ROADMAP.md`](ROADMAP.md)** — done ledger, ranked
+> **The live chemical-compiler (v0.9.5a1) work queue is pinned in [`ROADMAP.md`](ROADMAP.md)** — done ledger, ranked
 > next-steps (S/M/L), what's deliberately not being built, and tracked debt, ground-truthed against the source and
 > re-stamped each round. The narrative below is the longer-horizon Physical-IR / cross-domain program.
 

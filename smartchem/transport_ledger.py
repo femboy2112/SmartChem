@@ -94,6 +94,13 @@ _IR_POST = _IR + "ChemicalCompilationIR.__post_init__"
 _RECEIPT_POST = _IR + "Section81ReceiptView.__post_init__"
 _CANDIDATE_POST = _IR + "CandidateSummary.__post_init__"
 
+_CONSISTENT_REWRITE = ("0.9.5 S11: a function of the ADVISORY IR search status / candidate set -- a single-field relabel is "
+                       "refused, but a CONSISTENT rewrite of what the search found (the D25.3 boundary) moves it with "
+                       "them; only require_reexecution or the producer HMAC closes that")
+_CONSISTENT_DELETION = ("0.9.5 (Wave C2 F3): the member SET is bound to the IR candidate set and the receipt count, which are "
+                        "advisory search output -- a CONSISTENT deletion of a candidate together with its dossier, frontier "
+                        "entry and the receipt count (the D25.3 boundary) moves it with them; each PRESENT member is still "
+                        "re-derived; only require_reexecution or the producer HMAC closes the deletion")
 _THIN_VERDICT = ("thin: no replay, so only the process axis (PROCESS-ADMIT-01) is re-derived; PROCESS_SPECIFIED and "
                  "CAPABILITY_FIT are refused on a thin wire, and verified admission fail-closes above-FORMAL claims")
 _SEARCH_OUTPUT = ("search output: a CONSISTENT rewrite (the D25.3 boundary; ATK5d's INCOMPLETE->COMPLETE flip) is "
@@ -123,8 +130,9 @@ TRANSPORT_LEDGER: dict[str, dict[str, LedgerEntry]] = {
                                "consumer's question only by expected_request_digest / expected_capability_question_"
                                "digest (unpinned, the D26.1 binds say only 'the answer answers THIS request')"),
         "outcome": LedgerEntry(RE, (_OUTCOME, _ANSWER), "the producer's _classify of the IR under the request's "
-                               "availability (D27.3)"),
-        "standard_status": LedgerEntry(RE, (_OUTCOME,), "== the IR's standard_status (itself advisory search output)"),
+                               "availability (D27.3)", advisory_when=_CONSISTENT_REWRITE),
+        "standard_status": LedgerEntry(RE, (_OUTCOME,), "== the IR's standard_status (itself advisory search output)",
+                                       advisory_when=_CONSISTENT_REWRITE),
         "compilation_ir": LedgerEntry(REQ, (_ANSWER, _LOSSES), "container law: the IR answers the carried request "
                                       "(D26.1); members in the ChemicalCompilationIR table"),
         "diagnostics": LedgerEntry(RE, (_RANKING, _ANSWER), "== the IR's diagnostics (themselves re-derived, D28.2) + "
@@ -132,26 +140,33 @@ TRANSPORT_LEDGER: dict[str, dict[str, LedgerEntry]] = {
                                    advisory_when="a decompile's incompleteness line is its receipt's own stop_reason "
                                                  "(advisory search output)"),
         "ranked_route_dossiers": LedgerEntry(RE, (_COMPLETE, _RANKING), "set == the IR's route candidates (D24.14); "
-                                             "order and every member re-derived (D27.4)", thin=ADV),
+                                             "order and every member re-derived (D27.4)", thin=ADV,
+                                             advisory_when=_CONSISTENT_DELETION),
         "affordability_frontier": LedgerEntry(RE, (_RANKING, _POST, _FRONTIER), "== _route_frontier over the replayed "
-                                              "routes (D27.4); thin keeps only the hard-blocker channel", thin=ADV),
+                                              "routes (D27.4); thin keeps only the hard-blocker channel", thin=ADV,
+                                              advisory_when=_CONSISTENT_DELETION),
         "provider_snapshots": LedgerEntry(ADV, note="caller-attached dated provenance: HMAC only (re-execution cannot "
                                           "reproduce a fetch time)"),
         "parse_receipt_summary": LedgerEntry(ADV, note="provenance of how the request was READ (outside the result "
                                              "identity, SVC-REQ-01); HMAC + re-execution"),
         "ranked_dag_dossiers": LedgerEntry(RE, (_COMPLETE, _RANKING), "set == the IR's DAG candidates iff the box "
-                                           "constrains (D24.14); order and members re-derived (D27.4)", thin=ADV),
+                                           "constrains (D24.14); order and members re-derived (D27.4)", thin=ADV,
+                                           advisory_when=_CONSISTENT_DELETION),
     },
     "CompilationResponse.wire": {
-        "exit_code": LedgerEntry(RE, (_LOAD,), "round-trip: == the reconstructed response's"),
+        "exit_code": LedgerEntry(RE, (_LOAD,), "round-trip: == the reconstructed response's",
+                                 advisory_when=_CONSISTENT_REWRITE),
         "process_selection_status": LedgerEntry(RE, (_LOAD,), "round-trip: == the reconstructed response's"),
         "admissible_route_digests": LedgerEntry(RE, (_LOAD,), "round-trip: == the reconstructed response's"),
-        "search_space_status": LedgerEntry(RE, (_LOAD,), "round-trip: == the reconstructed response's (D27.8)"),
+        "search_space_status": LedgerEntry(RE, (_LOAD,), "round-trip: == the reconstructed response's (D27.8)",
+                                           advisory_when=_CONSISTENT_REWRITE),
         "capability_question_digest": LedgerEntry(REQ, (_LOAD,), "== the reconstructed request's question pin"),
         "result_digest": LedgerEntry(RE, (_LOAD,), "the whole-body wire digest (D27.2)"),
         "transport_mode": LedgerEntry(ADV, note="self-declared; a downgrade relabel only WEAKENS what is re-derived "
-                                      "(thin = advisory) -- a consumer that needs the canonical guarantees requires "
-                                      "CANONICAL_VERIFIED or loads with require_verified_admission"),
+                                      "(thin = advisory; a thin payload still carrying a replay is refused, 0.9.5 "
+                                      "C8) -- a consumer that needs the canonical guarantees loads with "
+                                      "VerificationPolicy(require_canonical_transport=True), which refuses THIN (and "
+                                      "legacy) at dispatch (0.9.5 S1)"),
         "producer_signature": LedgerEntry(ADV, note="the authenticator itself (outside the digest); meaningless "
                                           "without the verification key"),
     },
@@ -243,7 +258,7 @@ TRANSPORT_LEDGER: dict[str, dict[str, LedgerEntry]] = {
         "transforms_considered": LedgerEntry(ADV, note="search telemetry"),
         "candidates_emitted": LedgerEntry(ADV, note="search telemetry (>= results_returned by construction)"),
         "results_returned": LedgerEntry(RE, (_COMPLETE,), "an int (never null, D28.3) == the carried candidate count, "
-                                        "every kind (D27.5)"),
+                                        "every kind (D27.5)", advisory_when=_CONSISTENT_DELETION),
         "candidates_rejected_by_reason": LedgerEntry(ADV, note="search telemetry"),
         "cut_enumeration_complete": LedgerEntry(ADV, note=_SEARCH_OUTPUT),
         "candidate_enumeration_complete": LedgerEntry(ADV, note=_SEARCH_OUTPUT),

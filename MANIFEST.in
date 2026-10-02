@@ -1,0 +1,12 @@
+# The sdist is a source distribution of the package, not a test kit: the tests need
+# tests/conftest.py, tests/fixtures/** and experiments/ (none shipped), so the 290 test
+# files setuptools auto-included were unrunnable.  Prune them; keep the metadata files.
+include README.md
+include LICENSE
+include pyproject.toml
+include COMPATIBILITY.md
+prune tests
+prune experiments
+prune docs
+prune scripts
+global-exclude __pycache__ *.py[cod]

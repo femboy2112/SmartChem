@@ -21,7 +21,7 @@ class TestUsage:
 
     def test_version_flag(self, capsys):
         assert main(["--version"]) == 0
-        assert capsys.readouterr().out.strip() == "smartchem 0.9.0a1"
+        assert capsys.readouterr().out.strip() == "smartchem 0.9.5a1"
 
     def test_unknown_command_is_error(self, capsys):
         assert main(["frobnicate"]) == 2

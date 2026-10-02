@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from .conditions import Interval
     from .experiment.stock import StockQuantity
     from .material_spec import MaterialSpecification, PhaseClaim
+    from .stream_disposition import StreamDisposition
 
 __all__ = [
     "EvidenceFieldStatus",
@@ -378,6 +379,10 @@ class ProcedureEvidence(Digestible):
     analytical_verification: EvidenceField
     evidence_scope: str = ""
     unresolved_omissions: tuple[str, ...] = ()
+    #: 0.9.5 S10: what the source says happens to individual streams (:mod:`smartchem.stream_disposition`). APPENDED
+    #: LAST so positional callers keep working; digest-covered (compare=True) so a disposition moves every identity
+    #: above it; canonically sorted by subject. Empty is the honest default -- absence is UNKNOWN, never "handled".
+    stream_dispositions: "tuple[StreamDisposition, ...]" = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.reaction_scope, str) or not self.reaction_scope.strip():
@@ -423,6 +428,29 @@ class ProcedureEvidence(Digestible):
             raise TypeError("unresolved_omissions must be a tuple of non-empty strings")
         object.__setattr__(self, "unresolved_omissions",
                            tuple(sorted({o.strip() for o in self.unresolved_omissions})))
+
+        # 0.9.5 S10: the dispositions' procedure-internal structure. Their binding to a REAL step (signature, subject
+        # existence, net consumption) is ExperimentStep's; the accepted-source gate is derive_waste's. A procedure
+        # without dispositions never loads the module -- the healthy majority of patients skip this ward entirely.
+        if type(self.stream_dispositions) is not tuple:
+            raise TypeError("stream_dispositions must be a tuple of StreamDisposition")
+        if self.stream_dispositions:
+            from .stream_disposition import RECOVERY_OP_KINDS, StreamDisposition  # lazy: it imports THIS module
+
+            if any(type(d) is not StreamDisposition for d in self.stream_dispositions):
+                raise TypeError("stream_dispositions must be a tuple of smartchem.stream_disposition.StreamDisposition")
+            subjects = [d.subject for d in self.stream_dispositions]
+            if len(set(subjects)) != len(subjects):
+                raise ValueError("two stream dispositions name the same subject -- one statement per stream, never a "
+                                 "first-or-last-wins merge")
+            kind_of = {op.ordinal: op.kind for op in self.operations}
+            for d in self.stream_dispositions:
+                if d.via_op is not None and kind_of.get(d.via_op) not in RECOVERY_OP_KINDS:
+                    raise ValueError(
+                        f"RECOVERED via_op={d.via_op} must name a DISTILL/FILTER/SEPARATE operation of THIS procedure "
+                        f"(found {getattr(kind_of.get(d.via_op), 'value', 'no such op')})")
+            object.__setattr__(self, "stream_dispositions",
+                               tuple(sorted(self.stream_dispositions, key=lambda d: d.subject.sort_key)))
 
     @property
     def is_sourced(self) -> bool:

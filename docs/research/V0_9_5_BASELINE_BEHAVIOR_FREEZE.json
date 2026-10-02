@@ -1,0 +1,3637 @@
+{
+ "cli": {
+  "goldens": {
+   "decompile_paracetamol.json": {
+    "exit_code": 0,
+    "file_sha": "e1b71f280ff6297599f4b142d99b48b3bdebe0d55d63857467bddca4c220363c",
+    "live_equals_golden": true,
+    "live_sha": "a7a7bc57c684374125c901b4093ae89ef9f35ddb80f4328040940e38a259b348"
+   },
+   "decompile_smiles_paracetamol.json": {
+    "exit_code": 0,
+    "file_sha": "2af2da237019eb9f2694f2317f80b1dfecc7c25b7bc09a46604f92968c1d1386",
+    "live_equals_golden": true,
+    "live_sha": "207c53436c81d347853f8bb4a7a17e55fd482a24426f62a17d46bc9d64527f46"
+   },
+   "recompile_capability_poor_man.json": {
+    "exit_code": 0,
+    "file_sha": "e8b38d99a19bd70a8f00830a9f7e90f2ea366a8084d7a1bcae8a86e436432aae",
+    "live_equals_golden": true,
+    "live_sha": "71b68fdac3a9dff417130202a788376d7085840a946235e807087eb95808f6ae"
+   },
+   "recompile_invalid.json": {
+    "exit_code": 2,
+    "file_sha": "af25a2bc8ece0aca3763a40f81ef08c897fe1db314b90c23351de5983cf39ec7",
+    "live_equals_golden": true,
+    "live_sha": "44af5bcc2740eb3e47338ff0b5bb4ba00fe3aa96a5eccdaeb26b29077cb3c64b"
+   },
+   "recompile_no_route.json": {
+    "exit_code": 3,
+    "file_sha": "ef3bee7b460d7a325602e9c9b34f81c4e32aaf2135ab602765c2e1694d0422b6",
+    "live_equals_golden": true,
+    "live_sha": "1b584f955e5176a8cd619a05effcaf2ac34ad9221bf9a9c7db52d70199e662f2"
+   },
+   "recompile_routes_found.json": {
+    "exit_code": 0,
+    "file_sha": "116520d4313ea24bf68fe5aad08a8857d4afd6b1f38099c86731a48f7d76b79e",
+    "live_equals_golden": true,
+    "live_sha": "1469b73be5ff4c363758df29fb1e36feb9c5f18627d2b47920d44e84f4f77be8"
+   },
+   "response_schema.json": {
+    "file_sha": "1bf8fcf71f7708ebeba2b1ff5b54ed2f28ba75e49c4cd71580e288b826ba074e",
+    "live_equals_golden": true
+   }
+  },
+  "human": {
+   "decompile_paracetamol": {
+    "exit_code": 0,
+    "stderr_sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_lines": 136,
+    "stdout_sha": "3166274a0556f6a245bc29d13d179e5ce02debf0a0f07d35bb509ed93f110aed"
+   },
+   "plan_ambiguous_formula": {
+    "exit_code": 0,
+    "stderr_sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_lines": 7,
+    "stdout_sha": "4350a0175808c00c01c462f54c6e7083ce8e4e6282c9b3a7c5665904d502aae8"
+   },
+   "plan_charged_ion": {
+    "exit_code": 0,
+    "stderr_sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_lines": 8,
+    "stdout_sha": "2f7a78ea2478e00dca4dc152facd93899e9ab78e33adf3c9c3b0004541736204"
+   },
+   "plan_diels_alder_json": {
+    "exit_code": 3,
+    "stderr_sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_lines": 210,
+    "stdout_sha": "3206330003b4216f3a0d5bd70684c36c5666dac052741b3b860088e8d56b6e1f"
+   },
+   "plan_hydrate_unicode": {
+    "exit_code": 0,
+    "stderr_sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_lines": 10,
+    "stdout_sha": "656bccac7a9e000f0928c32b54095ae67e331fd903e21e5c042d2571f95351e0"
+   },
+   "plan_malformed": {
+    "exit_code": 2,
+    "stderr_sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_lines": 2,
+    "stdout_sha": "3aa982169cc554f62f9b031d41a0abce8fa2e43c0cb0b7bee6a9aef139287ca3"
+   },
+   "plan_name": {
+    "exit_code": 2,
+    "stderr_sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_lines": 2,
+    "stdout_sha": "7b39ee9719661179cd3152dc8dbfe3f8d7d19b5c9deeda077d7fb13a4a38ea95"
+   },
+   "plan_unknown_flag_refused": {
+    "exit_code": 2,
+    "stderr_sha": "4d30ee58c31cbe39b9e2b11d07dd5fbf57d93bfc43b72cc418211227be2ae443",
+    "stdout_lines": 0,
+    "stdout_sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   "recompile_invalid": {
+    "exit_code": 2,
+    "stderr_sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_lines": 2,
+    "stdout_sha": "68459351a2ed17ba7538a3930489c4c29b4e7979fb26f284ef0e5f53f168d45f"
+   },
+   "recompile_methyl_acetate": {
+    "exit_code": 0,
+    "stderr_sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_lines": 15,
+    "stdout_sha": "7db50bb5e857b39598e064037f3bd3a861387e6cf6528ac28c54355fdfb639c9"
+   },
+   "recompile_methyl_acetate_poor_man": {
+    "exit_code": 0,
+    "stderr_sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_lines": 41,
+    "stdout_sha": "8c37c9614e0be9810bac68315d602d7d3182a4875b2157bb65996a4cf87a64b5"
+   },
+   "recompile_no_route": {
+    "exit_code": 3,
+    "stderr_sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_lines": 8,
+    "stdout_sha": "cc78af8036b2f424b614eb7b99c0e481b53c6ad4108f708463dfbbbc7e9c960d"
+   }
+  }
+ },
+ "ledgers": {
+  "field_coverage_entries": 85,
+  "field_coverage_sha": "2d031afd24ba787f7b16712b65148b881e7c500771a1d5b601814583907a3e7c",
+  "missing_coverage": [],
+  "response_schema_descriptor_id": "smartchem.service/compilation-response-schema-v1alpha21",
+  "response_schema_sha": "9d91c4d53c2eb8c01220a66319f82e1c30aa80943de694b47f1b33553e3e17f2",
+  "transport_ledger_entries": 97,
+  "transport_ledger_sha": "f7ce51b255ded970d988fd6567b62b66cce38db23193aa2fc05d0445c2371f8f",
+  "transport_status_counts": {
+   "BOUND_TO_REQUEST": 21,
+   "DIGEST_ONLY_ADVISORY": 19,
+   "LEGACY_FROZEN": 9,
+   "RE_DERIVED_ON_LOAD": 48
+  }
+ },
+ "legacy_v08": {
+  "plan_isopentyl_acetate.json": {
+   "accepted": true,
+   "file_sha": "0ddcb73db66884b0e2fa8e0feb99441b1152811eaff39dccc592069a2b1ad384",
+   "is_legacy_v08": true,
+   "outcome": "INCOMPLETE",
+   "result_digest": "f5099a518d8ed887480abc4a2099201bd9cf97aaa715f7a14b780ca60786b2aa"
+  },
+  "request_ethyl_acetate_smiles.json": {
+   "accepted": true,
+   "file_sha": "ec3fb3d8e0ecb3fbb9c7d8243c8b50567bf27569a31d7f906e4d2d4eff33c575",
+   "semantic_digest": "1523ea4a482e07e87c43b3c9feecfef2c835d9db2441f49e5e728fc18a15f9b6"
+  },
+  "request_invalid_input_ethyl_acetate_name.json": {
+   "accepted": true,
+   "file_sha": "5b3787fb55598c76d07938ecb5c15d8cbee623a98dc848ee3d63ae0da4b42481",
+   "semantic_digest": "ee83a92313224323c985bc27233f314e8c8fbd109b16fb55f0fd7ab8845a8d61"
+  },
+  "request_isopentyl_acetate.json": {
+   "accepted": true,
+   "file_sha": "4cba7f31cdabed41993740611dfeb56d18fc09348b8819db4b48da55f7de92bb",
+   "semantic_digest": "8ae5c3036eb26966dff34f3d38fee8e82fc4e9cbeeb047483960118c5c1d2197"
+  },
+  "request_sulfuric_acid_name.json": {
+   "accepted": false,
+   "exc": "ValueError",
+   "file_sha": "0b2acad46d1969594c76dc9a867302fc22dcd004d1bae57849f047fdc7f1f4c0",
+   "msg": "legacy v0.8 payload; the name resolver changed since v0.8 (stored normalized_identity '' vs today's '7e175d016bedc02d86a8600796742a5b1a33b21a4965246613248b881ca915a8'); recompile under 0.9"
+  },
+  "response_ethyl_acetate_smiles.json": {
+   "accepted": true,
+   "file_sha": "d0ec6b1cc3f14e04d2ead84880aba2ae97324f5b23cb7d90022e4c17f2bb39d4",
+   "is_legacy_v08": true,
+   "outcome": "ROUTES_FOUND",
+   "result_digest": "e42560c2bf4229654a62bb2bfeb9b7cebc6e0eab952cc647ea359ee74899bb44"
+  },
+  "response_ethyl_acetate_smiles_thin.json": {
+   "accepted": true,
+   "file_sha": "abf28f6c75783a3e180deb1450b16783fbee44b2a84451d2fd758aea73aa4cd5",
+   "is_legacy_v08": true,
+   "outcome": "ROUTES_FOUND",
+   "result_digest": "e42560c2bf4229654a62bb2bfeb9b7cebc6e0eab952cc647ea359ee74899bb44"
+  },
+  "response_invalid_input_ethyl_acetate_name.json": {
+   "accepted": true,
+   "file_sha": "1eb4f4beb1e833d413e1221676c6d571944c9e0572fd1a8be327dece59d8209d",
+   "is_legacy_v08": true,
+   "outcome": "INVALID_INPUT",
+   "result_digest": "edac220554faa72341e6e8eb1693d9e8ca5f82fb647c297b3cd2fbc2347e61a7"
+  },
+  "response_isopentyl_acetate.json": {
+   "accepted": true,
+   "file_sha": "214036447e18e83288062a6eef1111e621e6816c9bf17cd9728abb9fa59831c3",
+   "is_legacy_v08": true,
+   "outcome": "INCOMPLETE",
+   "result_digest": "f5099a518d8ed887480abc4a2099201bd9cf97aaa715f7a14b780ca60786b2aa"
+  },
+  "response_isopentyl_acetate_dag.json": {
+   "accepted": true,
+   "file_sha": "0098ba9422ff8e2db70cf994ccbf87e800c9a4c723c7f0ecd65e2bca4db02f7d",
+   "is_legacy_v08": true,
+   "outcome": "INCOMPLETE",
+   "result_digest": "397be5eb89d6f1e953b6c90d8aa76797c74a015f4542e0e63a2127e14009aa0b"
+  },
+  "response_schema_descriptor.json": {
+   "file_sha": "25f54817e2d32ee0aec680b7aa47afe9229494540153674d131b127d2265af8a"
+  },
+  "response_stereo_isopentyl_acetate_smiles.json": {
+   "accepted": true,
+   "file_sha": "145d2454104b66a3c7626371b7b87f6defa2c9a2ec3f525aeaa83ce1dfee8925",
+   "is_legacy_v08": true,
+   "outcome": "INCOMPLETE",
+   "result_digest": "2d906d281687173f7201c508829a0b4ce0543f2b134c291da72b924acb64000c"
+  },
+  "response_sulfuric_acid_name.json": {
+   "accepted": false,
+   "exc": "ValueError",
+   "file_sha": "1a8f5d8a916f3da6204d21e227a8f67aecf31d003acda8e335f7d5bda24a9814",
+   "msg": "legacy v0.8 payload; the name resolver changed since v0.8 (stored normalized_identity '' vs today's '7e175d016bedc02d86a8600796742a5b1a33b21a4965246613248b881ca915a8'); recompile under 0.9"
+  },
+  "tamper/T1_request_v08id_injected_capability.json": {
+   "accepted": false,
+   "exc": "ValueError",
+   "file_sha": "b8d8a184ef2a6e3138d1598ceecd50f0d77ef48f164d95659901f265f1673b37",
+   "msg": "legacy 'smartchem.service/compilation-request-v1alpha5' request carries 0.9-only key(s) ['capability_profile', 'capability_profile_origin']; refused (a v0.8 request cannot declare a capability profile -- re-emit it under 'smartchem.service/"
+  },
+  "tamper/T4b_response_v08id_injected_profile_and_pin.json": {
+   "accepted": false,
+   "exc": "ValueError",
+   "file_sha": "431a9e3579ee61d4febf3f4d4b99e099b10faaae3628359d476aecf2642bb205",
+   "msg": "legacy 'smartchem.service/compilation-response-v1alpha15' response carries 0.9-only key(s) ['capability_profile', 'capability_profile_origin', 'capability_question_digest']; refused (a v0.8 payload cannot carry a capability question/assessm"
+  }
+ },
+ "receipts": {
+  "full_suite": "6529 collected / 6483 passed / 0 failed / 0 errors / 46 skipped, 35 batches (d6c7edc)",
+  "funnel": "34/34 properties; 7/7 profile divergence; zero CAPABILITY_FIT",
+  "held_out": "12 PASS / 1 lawful DIVERGE / 0 FAIL (experiments/v0_9_heldout_saponification_probe.py, re-run 2026-09-29)",
+  "mutation": "ACTIVE 217/217 killed, 0 survived | RETIRED 4 (0 void) | DEFERRED 0 (Round V, code tip d6c7edc); pre-merge live subset 14/14 killed incl. D29 M212-M217 + all retirement replacements",
+  "noninterference": "HOLDS on isopentyl acetate: 27 candidates, search receipt ea1c8afaaa1b9053.., IR 17c1c09cf357589a.. (experiments/v0_9_search_noninterference.py, re-run 2026-09-29)"
+ },
+ "refusals": {
+  "T01_unknown_schema_id": {
+   "accepted": false,
+   "exc": "ValueError",
+   "msg": "unsupported response schema_version 'smartchem.service/compilation-response-v0' (supported: 'smartchem.service/compilation-response-v1alpha18'; legacy 'smartchem.service/compilation-response-v1alpha15'); a payload of any other generation --"
+  },
+  "T02_delete_transport_mode": {
+   "accepted": false,
+   "exc": "ValueError",
+   "msg": "response payload must carry EXACTLY its versioned fields: unknown [], missing ['transport_mode']; refused (D28.5)"
+  },
+  "T03_insert_unknown_key": {
+   "accepted": false,
+   "exc": "ValueError",
+   "msg": "response payload must carry EXACTLY its versioned fields: unknown ['zzz'], missing []; refused (D28.5)"
+  },
+  "T04_flip_result_digest": {
+   "accepted": false,
+   "exc": "ValueError",
+   "msg": "result_digest does not match the reconstructed response"
+  },
+  "T05_relabel_transport_thin": {
+   "accepted": false,
+   "exc": "ValueError",
+   "msg": "a THIN_ADVISORY payload carries a replay_payload -- the thin wire has no replay evidence (a canonical payload relabelled thin); refused (0.9.5)"
+  },
+  "T06_relabel_fit_status": {
+   "accepted": false,
+   "exc": "ValueError",
+   "msg": "result_digest does not match the reconstructed response"
+  },
+  "T07_request_pin_mismatch": {
+   "accepted": false,
+   "exc": "ValueError",
+   "msg": "response.request does not match expected_request_digest: the response answers a DIFFERENT request than the consumer asked for (e.g. relaxed bench bounds); refused"
+  },
+  "T08_capability_pin_mismatch": {
+   "accepted": false,
+   "exc": "ValueError",
+   "msg": "response capability_question_digest 'aa97328c44e9d6d3b3cd4c450034575de1fcc108fb3d40881431825cfa19c307' does not match expected_capability_question_digest '0000000000000000000000000000000000000000000000000000000000000000': the response answe"
+  },
+  "T09_require_signature_without_key": {
+   "accepted": false,
+   "exc": "ValueError",
+   "msg": "require_signature needs a verification_key"
+  },
+  "T10_unsigned_under_required_signature": {
+   "accepted": false,
+   "exc": "ValueError",
+   "msg": "producer_signature is required but the payload is unsigned"
+  },
+  "T11_thin_under_verified_admission": {
+   "accepted": false,
+   "exc": "ValueError",
+   "msg": "verified admission: ranked route 1421b62b5244f3e89bd5104ebd6b0c0ba1fc9e61164ec422c24d22bd0133419d claims readiness tier REACTION_VOUCHED but carries no replay_payload -- the claim is UNVERIFIED (the DEFAULT thin transport omits the replay, "
+  },
+  "T12_thin_plain_is_advisory": {
+   "accepted": true
+  },
+  "T13_delete_first_dossier": {
+   "accepted": false,
+   "exc": "ValueError",
+   "msg": "affordability frontier must reference ranked_route_dossiers routes -- an entry whose route_digest matches no dossier is UNVERIFIABLE (its disposition cannot be re-derived); refused (TAMPER-HARDENING-01, frontier<=dossiers)"
+  },
+  "T14_not_a_dict": {
+   "accepted": false,
+   "exc": "ValueError",
+   "msg": "a response payload must be a JSON object, got list; refused"
+  },
+  "T15_thin_relabel_fit_status": {
+   "accepted": false,
+   "exc": "ValueError",
+   "msg": "result_digest does not match the reconstructed response"
+  }
+ },
+ "schema_ids": {
+  "dag_summary": "smartchem.service/ranked-dag-summary-v1alpha6",
+  "descriptor": "smartchem.service/compilation-response-schema-v1alpha21",
+  "package": "0.9.5a1",
+  "request": "smartchem.service/compilation-request-v1alpha7",
+  "response": "smartchem.service/compilation-response-v1alpha18",
+  "route_summary": "smartchem.service/ranked-route-summary-v1alpha6"
+ },
+ "service": {
+  "aspirin": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": true,
+     "round_trip_identical": true
+    }
+   },
+   "request_capability_question_digest": null,
+   "request_payload_sha": "7d633913239c0b2306d12954d3c1530a5244551b959223c0df34901ac4d18a43",
+   "request_semantic_digest": "012b286393ef4597542644b679fde6b3404d6561630a11b52ad11e89f6ceef39",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": null,
+    "dags": [],
+    "exit_code": 4,
+    "frontier_sha": "35eb17d30ca11847fb7eb85ac95f1b165c10fb4f6ef6387ad0ffd8fea82ddf02",
+    "ir_sha": "7f4b5e9f492256bc6ec22faf41e1179df5cc21055ca9c293fd0c3948719bb0b1",
+    "outcome": "INCOMPLETE",
+    "result_digest": "b872d1e0fdc781a929c4fea8a10e22f59254b282c41f442db8fa4fc963f16746",
+    "routes": [
+     {
+      "capability": null,
+      "dossier_sha": "ab827ccd45ca3f243940f37165ec729465ca7eb0bb84362243086673a17334c9",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "6f5a68e95cff09afa52e33304a91dc5f461553236ae717fc6c931c8215b1bf7c"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "8b8ee65bd78cf7618a1383aed129cf00055b87fad01529de9c47c28de34d4694",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "REACTION_VOUCHED",
+      "route_digest": "acdf2dffc9284d8df5d194d46b1409519dbf4af091e67c5c91de500ad902fa9d"
+     }
+    ],
+    "search_space_status": "PARTIAL_CANDIDATE_SET",
+    "semantic_fields_sha": "58734ef8335a673dc0bb6257e4d869fec0166ede6d60de377f496923de8bf4ff",
+    "thick_payload_sha": "cb895d74e6094d90551ab7bd6122818c6ade7825c097c8781ca5be24f511d6dc",
+    "thin_payload_sha": "cceec11e705cc771ea140fa331cc734b3d8f917ac51b8e0b0147d44cf0aabcef",
+    "thin_wire_result_digest": "a770051a5a1bc98e418f51956e80b9bafb4763c23cfdbd9e3e6f83884ae21ab9",
+    "wire_result_digest": "dc1ab1f0b8d9267a11fc94e488705b904ffbed0f77e4943779dc7f154f9443b1"
+   },
+   "target": "smiles:CC(=O)Oc1ccccc1C(=O)O"
+  },
+  "aspirin@poor-man": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": true,
+     "round_trip_identical": true
+    }
+   },
+   "request_capability_question_digest": "7369de87515b88fd52730c1832bb5af2adab54808095b8d4467463d0d18a99fa",
+   "request_payload_sha": "890e00df9f607db409031d81d53f6bc50fa82eb17f17f1bd5222c99283d8750f",
+   "request_semantic_digest": "012b286393ef4597542644b679fde6b3404d6561630a11b52ad11e89f6ceef39",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": "7369de87515b88fd52730c1832bb5af2adab54808095b8d4467463d0d18a99fa",
+    "dags": [],
+    "exit_code": 4,
+    "frontier_sha": "35eb17d30ca11847fb7eb85ac95f1b165c10fb4f6ef6387ad0ffd8fea82ddf02",
+    "ir_sha": "7f4b5e9f492256bc6ec22faf41e1179df5cc21055ca9c293fd0c3948719bb0b1",
+    "outcome": "INCOMPLETE",
+    "result_digest": "f58fc9564001d1f1e07fe7e8641ca6ae090cb6b3bbd2f71860d00add3747323f",
+    "routes": [
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "BLOCKED",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "FIT",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "2c81ce355b4b1f7d53499659fa637d0a7745a20f5cadcf225419b690aa72c5cb",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "a125a373d6dc95fe1635ad537e1ec4c8a9ee6a93e05087841158e6b82c3fdd04",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "6f5a68e95cff09afa52e33304a91dc5f461553236ae717fc6c931c8215b1bf7c"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "5f8c38ca565b70bdef65f3b2235216124f353fb553d6fcb4834a1082c55e1ae7",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "c1ca72c416ce3ad6d57b34b87762a33c1bf93b5628718c1161deede7176dec49",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "REACTION_VOUCHED",
+      "route_digest": "acdf2dffc9284d8df5d194d46b1409519dbf4af091e67c5c91de500ad902fa9d"
+     }
+    ],
+    "search_space_status": "PARTIAL_CANDIDATE_SET",
+    "semantic_fields_sha": "b924d841ea0612607686c210bacc1f11ec90e7e728554d6686287d1472bdf7b0",
+    "thick_payload_sha": "0b35c430851660a80cc1fc84809fd0820d12e18da3692fc9d89018990cc2c5cf",
+    "thin_payload_sha": "b181049c1201d19e7bb1e1c5c73daeb92eb97b64092e93c2d92d8f4111fb36b5",
+    "thin_wire_result_digest": "1f28b8d31d12a676f6ac61476578143ff06c5ff10e6f719f85c8509a7a9c1f4d",
+    "wire_result_digest": "14a713af5ce6224b41429d5a4778fb91ec5cd35b41c1e0f1d41b46e7ee9a28b9"
+   },
+   "target": "smiles:CC(=O)Oc1ccccc1C(=O)O"
+  },
+  "bromine": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": true,
+     "round_trip_identical": true
+    }
+   },
+   "request_capability_question_digest": null,
+   "request_payload_sha": "510d633966a2c0c5c0bde5fc76c55e3be6aa5e6bb0c389e3e129beb62b6dcca0",
+   "request_semantic_digest": "365e10f3bc06c47f370ab3181671eaaf4de0552786e8b9476cc3fd0d508b4351",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": null,
+    "dags": [],
+    "exit_code": 2,
+    "frontier_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "ir_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+    "outcome": "INVALID_INPUT",
+    "result_digest": "33b5c9f95675c7e2fecfe6704ca0edbf958e9d44e01d2f621eb89d91a3fdb122",
+    "routes": [],
+    "search_space_status": null,
+    "semantic_fields_sha": "eec8df3c66f5f9477dba512052a89f98fe91c0e462b9e77bdc97c0ff0329c0e3",
+    "thick_payload_sha": "0d8f91a0c6986c379bd07e52381673c48aa90638aa0c7320030e1f04f8733a11",
+    "thin_payload_sha": "152f747f914a2c535c8a87ef7d4b4c85ee5fa1e31a2ad2944e55c7cfede2763a",
+    "thin_wire_result_digest": "50cea858b48c772e4d126120dabffd14effe27c22e0c4efb7f07e95da9185559",
+    "wire_result_digest": "b44d5f19926363276f30d6700ffd2ec2139a8d6f2c8f8af055ff73bc2ca98e2a"
+   },
+   "target": "bromine"
+  },
+  "bromine_smiles": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": true,
+     "round_trip_identical": true
+    }
+   },
+   "request_capability_question_digest": null,
+   "request_payload_sha": "40be521e9033731258a7884456d3493ad49e2e593b96ae30dfa902a6651919f5",
+   "request_semantic_digest": "cb30cbbb1d14540f90f21dc0be2f062cb8b653393bd583c46254dec3e7f62d43",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": null,
+    "dags": [],
+    "exit_code": 0,
+    "frontier_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "ir_sha": "be0eabeee77579b03e839688566804c1de8acde369024bef13668bd2ef985df3",
+    "outcome": "TARGET_ALREADY_AVAILABLE",
+    "result_digest": "56643fdef2f1550080fd81b24fc5610485916da69e744a38833b468fa7b314b5",
+    "routes": [],
+    "search_space_status": null,
+    "semantic_fields_sha": "4cc8f51ae65099045eae63f37b8d3647360e2d9890f5c329d6e3a1e9f4fc993b",
+    "thick_payload_sha": "f6fe33080f0824a3d602862c29f3f1f23731eefb75faa628b2436a4f79674bf6",
+    "thin_payload_sha": "64a6f7afe53ca464c58b0da7d394e4e2dbf9bcf01201b4de8dcbb8c7dccec221",
+    "thin_wire_result_digest": "635f9f06901fe21a5429b80b80b3a9ab01ec38a6274bbb4c4b9a00ccd395db23",
+    "wire_result_digest": "bfb7073dcabf750a95bab6254eaeb22c715319c316abf5848d03f614306bbc34"
+   },
+   "target": "smiles:BrBr"
+  },
+  "decompile_paracetamol": {
+   "builder": "decompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": true,
+     "round_trip_identical": true
+    }
+   },
+   "request_capability_question_digest": null,
+   "request_payload_sha": "949e60e6737e48c43fb4521b69c3c47c7cdd3ddde55b0d67f7bdef667723c1fa",
+   "request_semantic_digest": "a35f949c193fd3e48e5516ec814d9c5607d8a7abaf539aaf4b3d9eb5df65511f",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": null,
+    "dags": [],
+    "exit_code": 0,
+    "frontier_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "ir_sha": "b26003b9e1c812e8a236052c61a879e8f569d82cd23c200cebaafea34cd1a818",
+    "outcome": "ROUTES_FOUND",
+    "result_digest": "faa0555609c318098a0a1138005aa6490e2ea5f1cabe7c01d8efef41b31a9102",
+    "routes": [],
+    "search_space_status": "COMPLETE_CANDIDATE_SET",
+    "semantic_fields_sha": "184f618e6b6ac1b8b2ed34e1ed35cd2ec7dcbec62cc831a373eface7c6ab1457",
+    "thick_payload_sha": "b62b60e4779b81cde386db9815d41fdfdc06a14271545a2abc598e85fe066769",
+    "thin_payload_sha": "2fcc0e91a9b03a047d6474e67c18d5f09ff5a4abf717cf94edcbe87a2775e758",
+    "thin_wire_result_digest": "cec07e51d007717813f1dca8f57fb39a92888221402d34d21c7ddaa556a46a03",
+    "wire_result_digest": "1fbc67affa9d5279625648c9afe291911f8682fa2f3f127b44f1358a6845dc03"
+   },
+   "target": "C8H9NO2"
+  },
+  "diels_alder_control": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": true,
+     "round_trip_identical": true
+    }
+   },
+   "request_capability_question_digest": null,
+   "request_payload_sha": "36634949ed53dd4e5ace1500679ade28841807d113aba5f08b592bc146718f38",
+   "request_semantic_digest": "811190a3dd5bc8d6ac33977a00c641a5503f49f81531f1b863b8867df81048cb",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": null,
+    "dags": [],
+    "exit_code": 0,
+    "frontier_sha": "ca380f6b175c4324e708c827d2f26893a095db78f8d89f84073630df534cacd4",
+    "ir_sha": "5dcf7c084b6795338051b181c2d89ad1c990451879efce69ab249f4aa8fae221",
+    "outcome": "ROUTES_FOUND",
+    "result_digest": "c764437bb76481784b217fb00b5bc3301cb3a152ffde99bbae8058e5a008d4a1",
+    "routes": [
+     {
+      "capability": null,
+      "dossier_sha": "54bceebe4f08eb3ec6ed40be81338d2089db5bb6e7628b373442a844076bffb6",
+      "fit_status": "UNCONSTRAINED",
+      "readiness_tier": "REACTION_VOUCHED",
+      "route_digest": "cca76ba2d2a2206f630c4cfa352ce03489acdfb4203b0df2a2d680d1d54095b8"
+     }
+    ],
+    "search_space_status": "COMPLETE_CANDIDATE_SET",
+    "semantic_fields_sha": "124b9d583ee433757b5118e07c8c8c7752d462e23d4c96b50d8504436162fe9b",
+    "thick_payload_sha": "b837ea97753e98fc6c0a3e12c1b11800eb1214cab17b2d4b16b2a5cc90aa2010",
+    "thin_payload_sha": "bd8988caf10f7dfe91d2a6b5f716799600ebd55986fb83522cfb5bb3ee7a3b14",
+    "thin_wire_result_digest": "7198f0902ca650c54dcfd0418d948a071db5d531f523e2c0a86fa1c783f18764",
+    "wire_result_digest": "533a258ea38072fe65f0fb3ff85870c04d0bf288b90b6b87f5e3b49810c9274e"
+   },
+   "target": "C1CC=CCC1"
+  },
+  "invalid_name": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": true,
+     "round_trip_identical": true
+    }
+   },
+   "request_capability_question_digest": null,
+   "request_payload_sha": "81b0171a6ffc87f43592bd59aad21a17c7e337e7100239d6c988d8ffa6b5993f",
+   "request_semantic_digest": "4e589cedbfbe8e1f79ed015d9cb6d23e622ccdfd83de8fe14d84f8dc518c7a7c",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": null,
+    "dags": [],
+    "exit_code": 2,
+    "frontier_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "ir_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+    "outcome": "INVALID_INPUT",
+    "result_digest": "3379341122e314ec6b1d14aaae4789614e5da5e7b59c5cd565c4a0cc8522515f",
+    "routes": [],
+    "search_space_status": null,
+    "semantic_fields_sha": "809812d35d44af02db3b861532a9c31827600183c7eab6539cd5c7ad21a00b71",
+    "thick_payload_sha": "44af5bcc2740eb3e47338ff0b5bb4ba00fe3aa96a5eccdaeb26b29077cb3c64b",
+    "thin_payload_sha": "5a5dd4abc84d5bc3193af02ffe895cf43aef6bf0d06bbd500d203ee00d52aa07",
+    "thin_wire_result_digest": "3dba32fe7d785f74780bc7d3ce2b33b1d3adca887ddbaba2e16c4d0d41d53575",
+    "wire_result_digest": "317bb2a264fdf1777d36a6f8d00da801404f0a2ee32c44920973419460c263af"
+   },
+   "target": "not-a-real-name-zzz"
+  },
+  "isopentyl": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": false,
+     "exc": "ValueError",
+     "msg": "ranked route 56275fa760f8a1e510b13f39499b02495b387981784a875ef18e782c097dd806 claims readiness tier PROCESS_SPECIFIED on a THIN_ADVISORY transport -- PROCESS_SPECIFIED is not admissible on an unsigned thin wire (the producer must serialize "
+    }
+   },
+   "request_capability_question_digest": null,
+   "request_payload_sha": "9cc57b061b7e5564f032411ee73d36d08e68c25d9c2130d0eadb730e8686363c",
+   "request_semantic_digest": "3f71762e8cf117cecc084000f7b87ab853b0bc2e87ce0ad69bd9e0f2cecff7f3",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": null,
+    "dags": [],
+    "exit_code": 4,
+    "frontier_sha": "8cad68aa0ebcab39e3bd7b1e2859f0e9726bd58630f3b11376a2f080e481416b",
+    "ir_sha": "df1a3e8920860a594154d4c7b614365e531ae06b2ad9ac6edf20d04ccf58ba89",
+    "outcome": "INCOMPLETE",
+    "result_digest": "a03d968bd364250378c8a018f3ce63022ccf2c8238c8c4092529553efecb0b1f",
+    "routes": [
+     {
+      "capability": null,
+      "dossier_sha": "6a3a6c053da21cfbdae36ef26d5db0d01381d6817f2f5ef2e23c39b14f6d734c",
+      "fit_status": "UNCONSTRAINED",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "18c432ef3d277207f0bc9170cbcfddb88ae0cdf74ce6d6c72c83441632c654d9"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "c1c14bc694fe38e862f1c8784cd6b99d7b8029464011b477221863f2ae2eca21",
+      "fit_status": "UNCONSTRAINED",
+      "readiness_tier": "PROCESS_SPECIFIED",
+      "route_digest": "56275fa760f8a1e510b13f39499b02495b387981784a875ef18e782c097dd806"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "2316bb986fd57555389210c4001414219bcfb41ef69f4d83f3b502cd46346093",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "84ffbf450dc3b8a4fa8bfcb259d41b1ff49d690f10d80ca0d848fd11f71b8375"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "de244c879a66fd04e393e8784db7e368c90f48fed572f36965d6ed7e1bd1b654",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "dca8adb158554c484a1eb23adbd480a3620f7cf51e12dd93db0af612596b7343"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "a9a96417e7cacc9d08b6ac0a7d3429854c4051f9d8f27d90f072362a993b52c8",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "733216bfc9f4c19c52e8a2faa95206313ec890080d711fd7bba4a6a2e4812d7f"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "9c366f6f43e979a6d1788d559c0686e7013c2cecbe1074ce0efffeda8755b41f",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "1e1449f6e646022886ac2fb745cb19e2f042f1ea9629e6bea4bea9c93c7df331"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "de4dc997a63bc0c6b4f10a8c91ef5858b9aa4663753f8a052bb8e3449c34ff05",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "064e8ac8727925e26f8ffe8b16dc2e86043f2b2615cbd3c0d32f9f8ad42116fc"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "5113230063aad59a810b8b1781c4400dcc59eeb22eb8e7be8ecc9c0cce591f44",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "27af2c28b9e213930ccfe8a8e9a0f97aa8127df90f10df19e5c4ad753ac7fc74"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "7b49d6d1a9ced9c79996100a6208aafc3988a7bcaa4f66ff435717bf9661cdd7",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "8b3eeba819ee307e1b50f627bc161d4f6cbf4ccbf8a12165aa24bf93f5b6b753"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "c2f3877241ae85c37fc4ed88a607a86503b3c7d011e97bd7aaa19e55eac8e593",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "970d144bf054904be75b72060e31072db1e460dfd5241103d74c7f70871adc58"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "c3d2cd30f1e92797f4167c660b115f541a0ab70102741cf8da20cc654871b686",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "9f5bd13f8bcbd3c1c5dbb88be1faac61bf18da5c133e6c54a2377f910553c20b"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "b975eaf727b38629685850e2dc61a54b386ee33fb1669522a4580aadfb7c728e",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "86f6379e727ee59bb7edc94c726b82ae8eef97c02cf56f4b6e695aa2e3bcd818"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "77049072fc61e3266c661181b8662d5cc61ff6dd1b49aa0e96cd4bbab2b86dcb",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "0b601d01906363c598e3396de61f595597ae6f67f5d3c6c740cae0616a9d9f29"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "d2f370d8dd109d0c663bead80d5f8a208edb9e9bb5636fc5570c86a9858d9f6f",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "3ab870a52c282868c66dbdf4e0c038213e25102cabb910b4e4a3f4ebb6a6241e"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "fead7f754e2208fd2c5d3e68b0e0cbb677c3dfc8b260a93506a3bf15e487bc0e",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "29280c8cbeba0a6b955cf9902036a6fdb775607f7a2447d87fbd3aa39ffc4111"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "76fe25ca090762e479d5a64f970553c90d17dc132341a8e5ac4e96390bd29366",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "2b0bedc0a21ddc3dc345dea20cfa79a720e09ba7d71fd25a560d6d48b2ec185e"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "beb9f73d44aadbb7df85d64e426286117256c905b261af1594eeb700ffa76d39",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "6775d6ca79128f0588fcf0599d3106606b6e220bde35ca01468bdc6d8fe8bb38"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "745d44ae8de9c9ad36affcbbdb3a5ae3c209f3af32db93a0f3ab4b643980992e",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "c5dfaa75952af3726dddb44618f76ca6577099203c3ce578915382ee0a481ef4"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "16f80e29fc29e4d9b97ac23cf4424708cbbd881f055ffd268d9328b15a71890f",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "6358da49d4458d236e3abdca79159447f451c97aeb99d369eaec310f30413ae2"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "6e24f6514d4ef18800c4c22b4bcb2ee6fd516eb6d5871df3a3bac3cf3743d2c0",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "64e67c90cc884ff112539e3603e56351b853601a000d46b95031d51a49ed13e8"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "1e2d254c95e83acee6cc11e423f560c405dab0401b0aca428070ccb6458737e5",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "3ab037b721c422109c4cc610183f4a85aaed8e1a08181c85e5d8f5991d61386a"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "f6019a965bc0e864962027669c03a1df9080049e60551a88b9285f11518c1af0",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "8cf684a3abcb586f9e170d9fd22213e11e511d78cecb7086727734ac86872834"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "02c7cf9d4b1705500fbf84e6a63b6bababa928bf300a7672b44303e25670f6e7",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "d540864f45220dddf111cd36952b106ceb7ab00622c642a2368ea345821f5f26"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "b70fd478d5a0e92124cfc5552556dd729e4359b3cab973e381960d6cfc51433c",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "7eb952217256bd53d780cfa8fc3be68977ddbde03393e049b8265f74dd6b62af"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "738de55103f0aab9744561f6a260d9e83ae66f05a45e90d2fcd3e0e0700f9f83",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "ccbf72b8271a1029f1b528d0f1ca3f6429729294c9ffa72ed009d30bad7bcc9e"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "09487873bcd4f7f1337d0cef1bba3a50927a8af10421e68033c7b08f93426941",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "8f19fd365b63ca30a7278424909127378903a5f67e1f60a50b5d70a5220b9919"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "a738bcece61549ae7e37ba2ccb272a88e902e9083f8c866e5661bfe4c7dec5b7",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "c1d83ddfcdb064aee4a208be532ca6c1842bc22631398fe35569cff925358e0f"
+     }
+    ],
+    "search_space_status": "PARTIAL_CANDIDATE_SET",
+    "semantic_fields_sha": "3c741d17f7173f5453353053b21c632e3a970109578bd876c33c78f7e3326288",
+    "thick_payload_sha": "cd78224b2b336eb07108e53bdb40288b78ce1c183d1bff482a8ece48bc911f67",
+    "thin_payload_sha": "a598e9405febfd8c12a660b0a48ac89734f09d16d7aa9a05c04bdb719ba8e41d",
+    "thin_wire_result_digest": "ceb9174ad22081a00d601a2dcf1d34d7ecd4e65be7d52247b06552e93cde994d",
+    "wire_result_digest": "f663e55e7ee873ee6697408e8f5112ac7fc9823f25d7cfe3ac7d73cf675703b3"
+   },
+   "target": "isopentyl acetate"
+  },
+  "isopentyl@custom-fit-bench": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": false,
+     "exc": "ValueError",
+     "msg": "ranked route 56275fa760f8a1e510b13f39499b02495b387981784a875ef18e782c097dd806 claims readiness tier PROCESS_SPECIFIED on a THIN_ADVISORY transport -- PROCESS_SPECIFIED is not admissible on an unsigned thin wire (the producer must serialize "
+    }
+   },
+   "request_capability_question_digest": "50107260e7b000d41ac3adbbf31fed0f24965070b38ff3038bb016ba129a63a2",
+   "request_payload_sha": "365e5c9af5620e9961e5576e1ac051b3cb6150028d48504413622e89c94fb59c",
+   "request_semantic_digest": "3f71762e8cf117cecc084000f7b87ab853b0bc2e87ce0ad69bd9e0f2cecff7f3",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": "50107260e7b000d41ac3adbbf31fed0f24965070b38ff3038bb016ba129a63a2",
+    "dags": [],
+    "exit_code": 4,
+    "frontier_sha": "8cad68aa0ebcab39e3bd7b1e2859f0e9726bd58630f3b11376a2f080e481416b",
+    "ir_sha": "df1a3e8920860a594154d4c7b614365e531ae06b2ad9ac6edf20d04ccf58ba89",
+    "outcome": "INCOMPLETE",
+    "result_digest": "1fb8d59568ed7aa42f95962526d6691844397ad9416c8d57629f8816d2be6b47",
+    "routes": [
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "3cd330112d61d8e990913c26854ef37453880a68862cd3d429e344c9e63408d8",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "19570417a1f11ffd1825c7fd3d771fd4872f53e1bbefa1064513cbb9b6296a90",
+      "fit_status": "UNCONSTRAINED",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "18c432ef3d277207f0bc9170cbcfddb88ae0cdf74ce6d6c72c83441632c654d9"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "FIT",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "1c3805b6ff19adc07157401b1fdeb34ac4b4e5744512ef736615cb24c2182564",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "7d490bb762f69818d8ba37491d885fe51fe8b4ff319ac816fd551d99e60adc97",
+      "fit_status": "UNCONSTRAINED",
+      "readiness_tier": "PROCESS_SPECIFIED",
+      "route_digest": "56275fa760f8a1e510b13f39499b02495b387981784a875ef18e782c097dd806"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "c57eea2fa6ca5dfd02e1d17aff1c8bfc3d0b153ecf18cc5e1d1e5d1e0c4b87c7",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "38a146c75ea1b35786e9ea144b3c53ac4e0fc97d73a7391e26aae4e77517a9e8",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "84ffbf450dc3b8a4fa8bfcb259d41b1ff49d690f10d80ca0d848fd11f71b8375"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "87553803ca68c6234868d23b5f5800ce7ade6c919cda593239e079699454e16f",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "f86f5af9eee6b25825b92e17b86e6410daac35f17a50549c395254f07605f135",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "dca8adb158554c484a1eb23adbd480a3620f7cf51e12dd93db0af612596b7343"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "6ceac99bbd3e532015ffae0fdb0e423eb6aadefc879bcf3467705b3136fa0f7d",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "c5d57131833fb120b988d7ddd936b7844f802de361115af1dc3ba1781ec7882d",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "733216bfc9f4c19c52e8a2faa95206313ec890080d711fd7bba4a6a2e4812d7f"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "dc81d526097c36dcaaab61039854d186443215605343f73595397f0af30ef157",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "662ee053430a765efd1627fe57855cb58552353a5769076036edb3f466e0b45f",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "1e1449f6e646022886ac2fb745cb19e2f042f1ea9629e6bea4bea9c93c7df331"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "7ad4156f67ff1f53abf4ada9b2c4920f7b0d55ed71c3d3473449223b2e9f908b",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "be6de91c95d693b6c0d441ffb12d5109701a96ed72b9efcce25f9c486bd15704",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "064e8ac8727925e26f8ffe8b16dc2e86043f2b2615cbd3c0d32f9f8ad42116fc"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "4ac0819a8992c3aa28333373d78259113f202cfbf1db13d34e560400ab970c1b",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "280b1067042197cad763ae4838c97927686aadac75ddf2d1bc62df31002592e0",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "27af2c28b9e213930ccfe8a8e9a0f97aa8127df90f10df19e5c4ad753ac7fc74"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "ea8a1b90e9e582d06ab5fdee25b4d566f595d09806a63005ea0c667c6a244a6b",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "518050a9a73af70e815a5225b9ce8dd272157d6a33074bccbe6daac46aab5503",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "8b3eeba819ee307e1b50f627bc161d4f6cbf4ccbf8a12165aa24bf93f5b6b753"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "7bb38bc3cdafdcf6663180b498be586661d707df732ae6dbef57ba2678a892ba",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "82af791bfbf2b7e1989e6891c95eb6c1b8bc7b075e58e9908b85549dc7df40ea",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "970d144bf054904be75b72060e31072db1e460dfd5241103d74c7f70871adc58"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "26e8e461d569927aae3c2dcdd8af0e17dc15f0198bfc05903a12f214197ff472",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "0748159db86b3b03a36b2de5c39241b1ef6367c09c59d6072875af6df3c17170",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "9f5bd13f8bcbd3c1c5dbb88be1faac61bf18da5c133e6c54a2377f910553c20b"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "2314c46da8173aab6509a6b56edf969ebb9e47499c6f7ee022342bd2401e8162",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "2a0378f6d057194f9a1174d786d25a01d2f9e562cb04b023968113f06799f027",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "86f6379e727ee59bb7edc94c726b82ae8eef97c02cf56f4b6e695aa2e3bcd818"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "5ef5a5848ab27213a70cccc394834b37ff29fb1bc89e66f389d37300121d8c50",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "a71272c822fcf4bfde77c17bfbf9be87e43262d8a3fa5827f3a190573ef8cd1a",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "0b601d01906363c598e3396de61f595597ae6f67f5d3c6c740cae0616a9d9f29"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "86f557e209b4a937e1daf43b4b8c072fd59bda7658c849f894a2ce4c9e7ee736",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "7644c0c732d826154de0910f7170e3a30af9fd7a65c49574baa716337813b3a8",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "3ab870a52c282868c66dbdf4e0c038213e25102cabb910b4e4a3f4ebb6a6241e"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "85ed69fae656b6fd59d5ac4cda2736042fe9473d6f147d12a06d5cae92554de0",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "3ae08716fc1c180b490d061b030c434fdf10903de1047cd753a14d4ff4f4acda",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "29280c8cbeba0a6b955cf9902036a6fdb775607f7a2447d87fbd3aa39ffc4111"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "f66409b18b17213e1d54e50fb9f0f582b7bf205abc3135f7f8b0cdb150d0fde8",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "9f357a3c525bda2cfc1658c93f75ec4a923aa1a070854b2013e6358ec7ae4417",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "2b0bedc0a21ddc3dc345dea20cfa79a720e09ba7d71fd25a560d6d48b2ec185e"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "95926de06aa783481b9fe56f800e042de2d9d27364ced0ab1afe31a14bbc516a",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "73748495fb2fb10b017c8fb89ea48bfe32caf276e0a951169e8604b40683a2d9",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "6775d6ca79128f0588fcf0599d3106606b6e220bde35ca01468bdc6d8fe8bb38"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "3f2537db19dbdd959ade05d849df8e232a9ae7669c163392fad08649b2c0c86f",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "133dcd97e2d98b524d0dac9158c7b0e2a00ad098a0c2eaef1f2e7b05c6d782ce",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "c5dfaa75952af3726dddb44618f76ca6577099203c3ce578915382ee0a481ef4"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "29b1e0c02aaa9e77a77326f842a388f353c1b9fe4ae011b9d4a511495b8e243e",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "86dee53b280ab254ce80f1e850aec51dbf60ca8f51788e1c8959f5a2fd28d836",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "6358da49d4458d236e3abdca79159447f451c97aeb99d369eaec310f30413ae2"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "02e4f8be53be81fdce44e1bdaa98dc5cb81fad382733e7ccafa3d579ff1f72b3",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "313e14326ef8482b2bda508f77e4309319c10bd8721276043ae7a66363e79344",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "64e67c90cc884ff112539e3603e56351b853601a000d46b95031d51a49ed13e8"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "a502a730ddf826835f7d373d174f624abb58d6286a7700e3d95d8708cf45f93e",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "dc2963d7439aea6dc6197e8b7504da6254f4c393e1e0c7f465f14496cdc79a11",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "3ab037b721c422109c4cc610183f4a85aaed8e1a08181c85e5d8f5991d61386a"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "373928266e2654ae18c560fc61e022df5bd3a4361a7e0d063889daea4a4fe517",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "561a305485635a7e83f4d5d6677580b7e88bb19bf5df77b84f89a3e5bff2f4f3",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "8cf684a3abcb586f9e170d9fd22213e11e511d78cecb7086727734ac86872834"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "35e089165f6171a80577a6aca05a1f4fcd66222e87564a572e3a11a704ab8a80",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "55b32cc8d7827ddf5713f529bda142b7326f1880674790e17d8d05ed45b933fa",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "d540864f45220dddf111cd36952b106ceb7ab00622c642a2368ea345821f5f26"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "7cbccc0afa8d75f05aeb935ee498f88591f8b268439c12cd5e17c9629c59880c",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "4444c298ebb5363141f47fe1c82520d915567ea463db2fc2538d5ed2b7a22649",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "7eb952217256bd53d780cfa8fc3be68977ddbde03393e049b8265f74dd6b62af"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "148b7011442e3acbc730e6ad8f5c5783a74482054175c8022574d9a2ea72d726",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "bdde3bf0efbb8aa186f84461b5282540ee592acc1f502af5c7983ce04f495d0a",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "ccbf72b8271a1029f1b528d0f1ca3f6429729294c9ffa72ed009d30bad7bcc9e"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "94347d082396621eff466015c3a61f04287a6c8deff380f29e5a934e5aa2e1df",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "fffaa66467bb6e94354c8ec033c7b316fd7e86b00adf495f19a4c3ce725afeef",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "8f19fd365b63ca30a7278424909127378903a5f67e1f60a50b5d70a5220b9919"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "BLOCKED",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "b8080d8cf5b496438e7c18239964859f727ff0c6ccd9398eeb1712c25e020d16",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "850ec1942a46e01f37c6573166e8f16a4df80aa6edbec2dbc2aa51ba9ff402f7",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "c1d83ddfcdb064aee4a208be532ca6c1842bc22631398fe35569cff925358e0f"
+     }
+    ],
+    "search_space_status": "PARTIAL_CANDIDATE_SET",
+    "semantic_fields_sha": "a7dd9a144f9b5e8a99140780786e1d37416c21f203ca2f6f6b2e849d1bb45b3f",
+    "thick_payload_sha": "3afc72adc90486bcb568dbbd9452ac5f90de7abe0c089a40ccda527e8d45e6b7",
+    "thin_payload_sha": "b5adca02e2e460f9d9d89d2053485d19f6cce70e4406c16c8748541ee9543373",
+    "thin_wire_result_digest": "5441d80feef5fc2b2a416e8165059d1f1724289a4807058e6744302d92054f91",
+    "wire_result_digest": "97f79f0c4485dc8e32c9903b805f7839ee00769f92a1d105cc66901cb66afd8a"
+   },
+   "target": "isopentyl acetate"
+  },
+  "isopentyl@poor-man": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": false,
+     "exc": "ValueError",
+     "msg": "ranked route 56275fa760f8a1e510b13f39499b02495b387981784a875ef18e782c097dd806 claims readiness tier PROCESS_SPECIFIED on a THIN_ADVISORY transport -- PROCESS_SPECIFIED is not admissible on an unsigned thin wire (the producer must serialize "
+    }
+   },
+   "request_capability_question_digest": "c028d4aa2e79d3e29f7b7debac5d93f45b4e59747026b0fac6857ad81fddf7da",
+   "request_payload_sha": "da2274501cbddaa1e38712beaaa0eb8a2800532a00ac5c9e6ef2b2dc72540a83",
+   "request_semantic_digest": "3f71762e8cf117cecc084000f7b87ab853b0bc2e87ce0ad69bd9e0f2cecff7f3",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": "c028d4aa2e79d3e29f7b7debac5d93f45b4e59747026b0fac6857ad81fddf7da",
+    "dags": [],
+    "exit_code": 4,
+    "frontier_sha": "8cad68aa0ebcab39e3bd7b1e2859f0e9726bd58630f3b11376a2f080e481416b",
+    "ir_sha": "df1a3e8920860a594154d4c7b614365e531ae06b2ad9ac6edf20d04ccf58ba89",
+    "outcome": "INCOMPLETE",
+    "result_digest": "d42de3d67560a03fd869d5329916ac2576252e097d76a32905c1327a2c0fd148",
+    "routes": [
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "159425ce6ca422bf7539f2a28bf28c83dbfde4e6e966865353d4e2eca3a2a271",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "8de558030a733f0ec396f4bc52e20d6ac898af75ec747bb3c02453f1c78f333b",
+      "fit_status": "UNCONSTRAINED",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "18c432ef3d277207f0bc9170cbcfddb88ae0cdf74ce6d6c72c83441632c654d9"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "BLOCKED",
+        "material": "UNKNOWN",
+        "measurement": "BLOCKED",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "FIT",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "a0e23c2be0581853760b2595a4a0c6616dac3ca14f570a2167e34cf9791f8622",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "d5bd43aaeff0cc0ec9ecd3db749b86360a63c9152f93336b6c8b4e50d9915502",
+      "fit_status": "UNCONSTRAINED",
+      "readiness_tier": "PROCESS_SPECIFIED",
+      "route_digest": "56275fa760f8a1e510b13f39499b02495b387981784a875ef18e782c097dd806"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "905bcaefc700866b413688e421f1e8f8913503b739411fdc27aecf286cc4234f",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "1b2afecf7e90c53d9d7d2460b4c17bc3614a197a63f2397c7fef3de85d36f4ae",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "84ffbf450dc3b8a4fa8bfcb259d41b1ff49d690f10d80ca0d848fd11f71b8375"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "af675a77c5bd5e9572648028ae7a4cdb920e5c78970dc4529ba0099df27c6213",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "515f4a0e01ca9e1426d0cc120dc83b643a5a417a953f8e9cec2b8a5d45134988",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "dca8adb158554c484a1eb23adbd480a3620f7cf51e12dd93db0af612596b7343"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "e8c4c957bf37bda3af8d90217bf7cd146045e8af8145f3f1d68efb32cae01c40",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "3917fe01b6f02d287ae1d8abf981a3213133e7ee80afc6146c09b6a46ead1909",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "733216bfc9f4c19c52e8a2faa95206313ec890080d711fd7bba4a6a2e4812d7f"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "1f73b426a1b325cdc7c3071f3507663e677d53666f5f89f4e8695c5b991f7db9",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "df7e7bc9635e22d6e4b31a93d586223ed9d9700b4d74e695ff11cd7e069a8686",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "1e1449f6e646022886ac2fb745cb19e2f042f1ea9629e6bea4bea9c93c7df331"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "bc5c9d52a5c194926ded5df027e340f08a7414e02bce685ac389110ff98c3c85",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "6c865c10f8625e7769f3c1de0235ec60a2c19bacf607b7adc4e166a29b3baa0c",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "064e8ac8727925e26f8ffe8b16dc2e86043f2b2615cbd3c0d32f9f8ad42116fc"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "729ed2122a9fda5e3163003dcc40fa2ca3af4582b84f8acab33671fa9b6122bc",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "44714ce87056ebe6c767271cb2b8eb73d8dc289e2d8ebbef3630c6a4c8c02fa3",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "27af2c28b9e213930ccfe8a8e9a0f97aa8127df90f10df19e5c4ad753ac7fc74"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "5a006683d2d9fdd491c852c2f84fa439bc519c7ea5668b1c1485a06a41ce4314",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "8d49540a502b0112c9fa141aa8cccb161cc83716d026da178ee37452e6ecd995",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "8b3eeba819ee307e1b50f627bc161d4f6cbf4ccbf8a12165aa24bf93f5b6b753"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "3b9efe48ce930f2d05bfdb2552f92a5dd33b433531923bb70347568c060e21fd",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "fcaa648d07433f697fab9df675d9e45efe001ccb1e844b90450bdf000c231ce2",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "970d144bf054904be75b72060e31072db1e460dfd5241103d74c7f70871adc58"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "755e4453c0273283c472fe4aa426c2d75bf8cbdb66a9119d15c4ebaddbc4e398",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "8acbe51e5b879a2e86480a0b9078f3e5259e34994273ec1158e393695353b45a",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "9f5bd13f8bcbd3c1c5dbb88be1faac61bf18da5c133e6c54a2377f910553c20b"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "7d5a4eb9821202f0bd0b6e81cc16b0f374492357f519c6d9e4ad0f2e0663f089",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "4fc63da9d1a7d1d8c6519d5140916b42c9e3c6d6d187918c0ae67fd1fa837141",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "86f6379e727ee59bb7edc94c726b82ae8eef97c02cf56f4b6e695aa2e3bcd818"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "5c81addf1aad67edaa5af968bdea5573d8a7b14fd23e5c9adaa893dcb5f7fefa",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "8e5d22ffe35f861fddc797910999f32c070dc1cd52fd455e3ec9d22f121d2aa0",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "0b601d01906363c598e3396de61f595597ae6f67f5d3c6c740cae0616a9d9f29"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "431d224260c2b52e07981ecb73d39b125c19a2efbb7586da1320f366a635dfe5",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "9f3ca41279f2d52850396b1cffdb0c25791223b5fd47c244eeef1dd2ae7d7ffa",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "3ab870a52c282868c66dbdf4e0c038213e25102cabb910b4e4a3f4ebb6a6241e"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "041bba2faa3c3d5a62db31476e2427baa233cd41ed27d7aeeabf195e61cbf5c8",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "251ca2048ea757710cc1be9c9d56c960895ebce9ab81f8c8041e5b4c1b43207b",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "29280c8cbeba0a6b955cf9902036a6fdb775607f7a2447d87fbd3aa39ffc4111"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "ef845d7bf23fdcf694878fd21c1d4719447043ec0504c87c9bed670d6e0b9d2b",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "5956aec1ad0361bec8b2441d63fe0fb156cb217a9a8ce3408880e416387f34e6",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "2b0bedc0a21ddc3dc345dea20cfa79a720e09ba7d71fd25a560d6d48b2ec185e"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "1c54955dfa4501c1a730fe187c130acf349db39035e3ec18eaede268f0f5dd05",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "4bb2daaacf34354c198ab8a0565a4bc9cf6a930b66b4908f317eb33acd6d811d",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "6775d6ca79128f0588fcf0599d3106606b6e220bde35ca01468bdc6d8fe8bb38"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "fe47ae811cfb5f91f45c35860e216d75bf419df02e7fea160ce0849d7c214804",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "ff12525dbf970bfa1bdf796eed6cf96410b26d1375788105cf3b21af307e78a9",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "c5dfaa75952af3726dddb44618f76ca6577099203c3ce578915382ee0a481ef4"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "7b240992a95fc980d873027d462b4779d5b3921b30da6869128b18063e8260be",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "087e57cc82c394e8075dd7090fe98a1ed13531cde344e228a4a061e601ee8767",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "6358da49d4458d236e3abdca79159447f451c97aeb99d369eaec310f30413ae2"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "a730c2ed617e7749feca4c838f08c9e7ed55142a27a71f3f72a55f46ede06138",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "59a7770860c778669ef4f86d81b11e4ce32ef391b9328532fe3b8c95a2ec022b",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "64e67c90cc884ff112539e3603e56351b853601a000d46b95031d51a49ed13e8"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "ac603bdf6a18a812721f4c843ab7a9bd7492b6ad40da9aa9e531e19aef5a40e6",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "977ec0cf1610b8b77d73710ebdd489eee5bc98aa760a04e932ac354474d24b98",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "3ab037b721c422109c4cc610183f4a85aaed8e1a08181c85e5d8f5991d61386a"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "895fa54912dc107406d3897659a1c5581ca832238664263f7071d20786f910b4",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "db3a405cbb246093b06a68991e66eb6ef765ff11768280dcfa0111d00f873b46",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "8cf684a3abcb586f9e170d9fd22213e11e511d78cecb7086727734ac86872834"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "79ea6ca19aeb3d72ea39352308ba6217bdadcb061b46d5c861b9e025ae7792d5",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "c7015852887983bd73537b60dddf11fc700f6c71e1bc235bb18957c9d74905db",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "d540864f45220dddf111cd36952b106ceb7ab00622c642a2368ea345821f5f26"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "585c97b41e3946fb7403db579eb38ec8cdd08ab89d1b37e1110d26d8638778b2",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "53882503d1cc7a58d246fc82e21ace984b6b274aa1f8acc059adeca1101e204d",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "7eb952217256bd53d780cfa8fc3be68977ddbde03393e049b8265f74dd6b62af"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "e077c5ea34858918d8d9b39f197866860e8f1968f66985931b45d0063ae2d265",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "165cb2dd9a39db6f3f49a34e662ec93c50eefe486a36fe226d48793a83797a21",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "ccbf72b8271a1029f1b528d0f1ca3f6429729294c9ffa72ed009d30bad7bcc9e"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "1849844d59534574eb85633e8c52c62982c79d00a1ab30d9308710156501a345",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "014c05c81290870eadeb25a810e26596ae39d7ead514ffd294141a17f5f01538",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "8f19fd365b63ca30a7278424909127378903a5f67e1f60a50b5d70a5220b9919"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "BLOCKED"
+       },
+       "digest": "76acc0800c77c864be73ed1c6678ca29de0227f8dc845a8b3e41add4f0cd86ee",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "15c47e19a6a437bde13f1bfff1685000a40cb6275c8bd7b240297d5ca6b82f90",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "c1d83ddfcdb064aee4a208be532ca6c1842bc22631398fe35569cff925358e0f"
+     }
+    ],
+    "search_space_status": "PARTIAL_CANDIDATE_SET",
+    "semantic_fields_sha": "2f04ebbbe1a5e9a43058f8f9172821bdf9359fa8290ceabe1245626c2d81864f",
+    "thick_payload_sha": "450ae68408590d159486cbc76b5331342fde995feb4da2bd34eeec4af34eb08e",
+    "thin_payload_sha": "c56aae32fb78fc1555d69d7f29dbe1bcec097b131ad8ac6af5304e4f23da92e1",
+    "thin_wire_result_digest": "3a426efbdba9a81e290fca5f35878bdfe2f6397181dc58d869e29c91a9ec1cfe",
+    "wire_result_digest": "dbc413599163609a3ea8a166494f278a1b75c4216405b78fb5987b51bc1d3a48"
+   },
+   "target": "isopentyl acetate"
+  },
+  "isopentyl@research-lab": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": false,
+     "exc": "ValueError",
+     "msg": "ranked route 56275fa760f8a1e510b13f39499b02495b387981784a875ef18e782c097dd806 claims readiness tier PROCESS_SPECIFIED on a THIN_ADVISORY transport -- PROCESS_SPECIFIED is not admissible on an unsigned thin wire (the producer must serialize "
+    }
+   },
+   "request_capability_question_digest": "213e0d9f95881020d9dff5fc91cb2dd86999f9e8d9e55cb24ebe6258a53636f3",
+   "request_payload_sha": "b2a12f954a455609906cd82220f6131ec20e6ed70e4ca005f7a189d4f22270d4",
+   "request_semantic_digest": "3f71762e8cf117cecc084000f7b87ab853b0bc2e87ce0ad69bd9e0f2cecff7f3",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": "213e0d9f95881020d9dff5fc91cb2dd86999f9e8d9e55cb24ebe6258a53636f3",
+    "dags": [],
+    "exit_code": 4,
+    "frontier_sha": "8cad68aa0ebcab39e3bd7b1e2859f0e9726bd58630f3b11376a2f080e481416b",
+    "ir_sha": "df1a3e8920860a594154d4c7b614365e531ae06b2ad9ac6edf20d04ccf58ba89",
+    "outcome": "INCOMPLETE",
+    "result_digest": "547f2656560d467fc7a4155a1178734ae12b40ef30e2da14c61f09289b439202",
+    "routes": [
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "f9137c72dd07dd3d2ea0626f3aa25b1257cef49f9164e928a31bb0ca26bd708a",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "71754740e851537c23572c183f21ec0e38af2fb7434e7c681fccc48aae2a872d",
+      "fit_status": "UNCONSTRAINED",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "18c432ef3d277207f0bc9170cbcfddb88ae0cdf74ce6d6c72c83441632c654d9"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "FIT",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "277f75b2dddffb10f957cfa0f4526af3eda4a98e4e020f44b6f216beab585072",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "d9972b9ef390c1984610d44e5bb39a8686cbd03a6f5b07ab465b2c0373b90715",
+      "fit_status": "UNCONSTRAINED",
+      "readiness_tier": "PROCESS_SPECIFIED",
+      "route_digest": "56275fa760f8a1e510b13f39499b02495b387981784a875ef18e782c097dd806"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "d2eb8d16b7a0636212830071d50d088869086ab07b328019c08042af4fa4701d",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "71f04b78788037eaaff1c08a64603dfa5c8a9753252ddfa65840c5a27e317034",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "84ffbf450dc3b8a4fa8bfcb259d41b1ff49d690f10d80ca0d848fd11f71b8375"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "8579519065c5699fdaa2ed7168527fce1b917773efc8f0295ebb3ee06c0add56",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "ac58bb0472bc97b3146194dccdde65dee764fb61c541bd84e69f641636300af4",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "dca8adb158554c484a1eb23adbd480a3620f7cf51e12dd93db0af612596b7343"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "846045aaa13b09cfb1b4c875c6d502d3b8d867d719bdadd4f4925a7a7700fb89",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "02354764139bdf8dac5eaea40c32618299cf2d64163a7185f2779c84b14d5666",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "733216bfc9f4c19c52e8a2faa95206313ec890080d711fd7bba4a6a2e4812d7f"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "3e5fe17df036429af234fc6cff581b2d3d5aee15807204959ae2cc913bf67ce0",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "e5cf786b0c98b83906d7c7099ae8c2747ec694168d4a72f74e3d6f8705439288",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "1e1449f6e646022886ac2fb745cb19e2f042f1ea9629e6bea4bea9c93c7df331"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "07c5921d7b98f4dbfcc87aef5da85ecbea5606eab146fbbd84b07ff76c186775",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "8548266edec93c9ea526fe4f7ca149430c4853e16088b7ca4fdca0a5e523611c",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "064e8ac8727925e26f8ffe8b16dc2e86043f2b2615cbd3c0d32f9f8ad42116fc"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "0b36bb48512b397c1c4fd2b5fedb86875f818e474870286f2a9de737830ef7e3",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "1b23b9217032721a8842221d8b4fe8ee9f80d52fee82744e6df3b5febef57b05",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "27af2c28b9e213930ccfe8a8e9a0f97aa8127df90f10df19e5c4ad753ac7fc74"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "59117f4dd59d0d5ec106e3812551d28324ca488428cfc354278f21e502e66411",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "bd310e19a2b495ecb39a68ea6a37f6a9c213aa1b9aad8870f467e0b7ca7a55f6",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "8b3eeba819ee307e1b50f627bc161d4f6cbf4ccbf8a12165aa24bf93f5b6b753"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "777b272410a53b4409fd3c7f180543b73cd8abea32690ba663c7f9ecea082264",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "ac13d68ce8130b31f95919d69a6c8db188c9592f71c6d77ec3124601907aa17d",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "970d144bf054904be75b72060e31072db1e460dfd5241103d74c7f70871adc58"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "572527eb01ae52625c9cba3263daf598ca4659de1af1698ea37b946aa145c218",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "b2dbb964dea4d286e9c0f9384e24c222ef28689bde99176a7490e5d71a1cbc84",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "9f5bd13f8bcbd3c1c5dbb88be1faac61bf18da5c133e6c54a2377f910553c20b"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "40d652eca8fd57f2c8a2eac6039bfdb7a5c8f110dd03b2f335ac8701e70491c0",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "5b3add79a643da6f45970a4ba44a5aa0f7e69af2c81f8db0f84e3da1656a1de7",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "86f6379e727ee59bb7edc94c726b82ae8eef97c02cf56f4b6e695aa2e3bcd818"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "c95fe31e817afbbd27f5f9f348754bc83a1b7af4b24336dd26905b0e0c8ea01c",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "c910a3a5705fc3e42989eed63bca7154dd9167e84acbdb418f1924c2348b8331",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "0b601d01906363c598e3396de61f595597ae6f67f5d3c6c740cae0616a9d9f29"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "f5a042cd645f1a5358ed7d93fac359ed3c61132aef9e6ae5e393ad885a2a67d1",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "2494d46a8e817b268a633a3fa12701cd5dabb9dc6349fe2800e26eb78e7d6729",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "3ab870a52c282868c66dbdf4e0c038213e25102cabb910b4e4a3f4ebb6a6241e"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "5ff5b8ac788ffd4907f854c2ef8cbff9a678b0cfbe5475a18fbf6114c19941a4",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "e0259190a21593828a88e345a2372382cf6198ebb36709cf6c7b3c96cccabadc",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "29280c8cbeba0a6b955cf9902036a6fdb775607f7a2447d87fbd3aa39ffc4111"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "a14474f3c88b21e75955f7ab23df6f9caef2ea48d46237f69998fa4b7a8297a2",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "fcc1f90b994a07ad39876a195ae883fefe769abadc9078976a9cd74ddde22dcd",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "2b0bedc0a21ddc3dc345dea20cfa79a720e09ba7d71fd25a560d6d48b2ec185e"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "8bc0160b9cba9238fad975fc97a97778d119b252bebf7bef27ce75be548f5d8e",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "944abf2ddee376cd4ea1a8fcfcd85e9f32308a472bb23b0ba43d929bbc36adfd",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "6775d6ca79128f0588fcf0599d3106606b6e220bde35ca01468bdc6d8fe8bb38"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "c048e02ca5a86c0a97df518fae31c90def98854abf2a6a580b1d1db3c166a665",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "fd06bdbfa91dbf1f71da6129e100bd5e906b03f344141907a4879f6d105f4ed9",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "c5dfaa75952af3726dddb44618f76ca6577099203c3ce578915382ee0a481ef4"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "ea71668a75d8d7fe27c9cc4c767b4fc423b3d4184a25d19cc2a1ba1c5d29f448",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "4a5d6ea526e603046a85482fe1fae3356ac8ebab44eeac99caf5d3e2acc9137e",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "6358da49d4458d236e3abdca79159447f451c97aeb99d369eaec310f30413ae2"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "cb2ed9531aa6b964716646a7ab3b4f78ddb484b5fb310c613bc0a9ed5155c1fd",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "21bf377b5f6f185dbabd2bd2298bd80d78124479f12ccd5476dde219c6e6a364",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "64e67c90cc884ff112539e3603e56351b853601a000d46b95031d51a49ed13e8"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "ac4b79767c141b5fd1c977f55ace0244a3e68af3ca022f81416d6b6bfb3d4217",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "c499a1e205b84e0af355981d587bb3438002b71ec1b14038a037124fde7340d6",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "3ab037b721c422109c4cc610183f4a85aaed8e1a08181c85e5d8f5991d61386a"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "d6278efecb216c91876293fa6fb00df110111c01a7cc108f4625fd0a8e57c007",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "435c86001efc2857790a6258938c1414ddf8564073baa4baf3db4b7b1908517c",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "8cf684a3abcb586f9e170d9fd22213e11e511d78cecb7086727734ac86872834"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "7d8dd16b1177f19a7bffc4387d6adf8860c73d19511847f680b2a1c0683e52d8",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "42d745f96297db740af3601cd98d7f0c6c43416d84d9a95a9bf3f0a646aa52ac",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "d540864f45220dddf111cd36952b106ceb7ab00622c642a2368ea345821f5f26"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "2bf416d1f7c3f36c192b13b7d68e6c2381ab33eca011da161c1e0ad1ce121aac",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "7f39fb9b85ef4ccc145ba6b3037f385333c43ac44b86ed7f1636fe78742adb49",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "7eb952217256bd53d780cfa8fc3be68977ddbde03393e049b8265f74dd6b62af"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "c009fae7131034f8b840f3e78b49c234c6f4495a7fb05514aa5f3d3e3a3f03d8",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "2ec52460c8e43c112d161e6e5d4f79697b2df910f3330ebbbdf0bee140337661",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "ccbf72b8271a1029f1b528d0f1ca3f6429729294c9ffa72ed009d30bad7bcc9e"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "88b389491101619a41e443ab98380c85cfcfac9c9c026a4627b9a7ab38019165",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "c2a3feb137236e167f6ae21341db539bf6c2f3118d7a11d8d5d688795f104c6f",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "8f19fd365b63ca30a7278424909127378903a5f67e1f60a50b5d70a5220b9919"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "77105bb8e09ed080d0477c2721ef6175c0f713f59edddf4cdb2f34678bfd9451",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "791837d0b5fc652d9ee56f299ee225d91dad3cc715d05e4a2bacf5d5ebab6504",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "c1d83ddfcdb064aee4a208be532ca6c1842bc22631398fe35569cff925358e0f"
+     }
+    ],
+    "search_space_status": "PARTIAL_CANDIDATE_SET",
+    "semantic_fields_sha": "4b92039b4e13252bd0c972f1e8fcc9b2272fca166d768fe0cc5de64d84ad9d67",
+    "thick_payload_sha": "21a793f42ad6efb0273e2661fc28e072193da791f59209fbd2b157dd5133cc03",
+    "thin_payload_sha": "5278f47cb95317a4db2928afa7e287fb700e0f6e4ef15969c0cbccf9284cb90c",
+    "thin_wire_result_digest": "792b0ee88ac5045607fc7021b98e46b63641a78f09df995c8a7349bf3637013a",
+    "wire_result_digest": "84b38ecf88254fbea8c341b90a4b56dc601ad1ebd546fef32f0ffbf96ce4c597"
+   },
+   "target": "isopentyl acetate"
+  },
+  "isopentyl_dag": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": true,
+     "round_trip_identical": true
+    }
+   },
+   "request_capability_question_digest": null,
+   "request_payload_sha": "cce9a841025e29434bf2dd2beb70b42d810883002e51d0a51a4113647ea9d5d1",
+   "request_semantic_digest": "ac92428adc19323c4eeae7999faabe125667cf15e48705bb9b8961ef4007830a",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": null,
+    "dags": [],
+    "exit_code": 4,
+    "frontier_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "ir_sha": "438819d8eb9549cc4e0e3bc5c04d0546766e4759db2b9f93edfb3e0a8f64b476",
+    "outcome": "INCOMPLETE",
+    "result_digest": "6cffb82f453c481f8ac57643f4c03cfd12fe422b3462d7e76fdc38fe83130f65",
+    "routes": [],
+    "search_space_status": "PARTIAL_CANDIDATE_SET",
+    "semantic_fields_sha": "be8d86beae4a90ecfdbe530ccdd85d0354f18d12071a2adacd97831de7bef6fe",
+    "thick_payload_sha": "288541e9050b4bb2f6fabc6cebfb4eeab0d5665d8872f1a224196e6518e1a814",
+    "thin_payload_sha": "7d1433f01162d6b47704413349eda121e43156f7b31ba17f49dacd7510b2024c",
+    "thin_wire_result_digest": "f01e3ea4a659f9dca765eac7c5b187c92a0514ce4141a98b44c3aa1eb9151451",
+    "wire_result_digest": "8ced1d081344e1f4c8ac9dcec35644e7a723e92154113882c9b10f7dc7303fb3"
+   },
+   "target": "isopentyl acetate"
+  },
+  "isopentyl_dag@poor-man": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": true,
+     "round_trip_identical": true
+    }
+   },
+   "request_capability_question_digest": "ff804f2d86f33feeb1b1da02a87e0eb60220b42413b9c8cb4ba6566002476d66",
+   "request_payload_sha": "6e6d2f0c8b1f83c9f23000aa45af8616e31014a9814282098530981cae482076",
+   "request_semantic_digest": "ac92428adc19323c4eeae7999faabe125667cf15e48705bb9b8961ef4007830a",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": "ff804f2d86f33feeb1b1da02a87e0eb60220b42413b9c8cb4ba6566002476d66",
+    "dags": [],
+    "exit_code": 5,
+    "frontier_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "ir_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+    "outcome": "REFUSED",
+    "result_digest": "3f77e316254a01df3e34c6fdce310dd6eb3b5dbc64c21dc365196e567af124da",
+    "routes": [],
+    "search_space_status": null,
+    "semantic_fields_sha": "962b231709382c6e8f11a2802ceea253fc4dbfdd0f107aabda21ac9f869b3288",
+    "thick_payload_sha": "a394c6ba3747335ec7b78585a5d3b35cdd070cc9366eedb1014dd0156f4c98d1",
+    "thin_payload_sha": "0bc6bff134c77a754fa46a35ec9c6253ed43db8e3ceb701e0e16042e67765789",
+    "thin_wire_result_digest": "dd68f186410ed8593aae7c50195e91ef4433f631e849255cd26fec3390dffe42",
+    "wire_result_digest": "23f8995a497c2db167148027fa90ba2378922505fefb5530680fff3097920e53"
+   },
+   "target": "isopentyl acetate"
+  },
+  "isopentyl_dag_quick": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": true,
+     "round_trip_identical": true
+    }
+   },
+   "request_capability_question_digest": null,
+   "request_payload_sha": "1d3f0ea07991416d8dbae08b741e0085c6805245c0fdc10667753d28af63cbfe",
+   "request_semantic_digest": "12d411cd6612824bb66c9273b87fe36439321421086d64a0522105b31c6e42ba",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": null,
+    "dags": [
+     {
+      "dossier_sha": "e97b62e4ce18f44f5abd776a707d03d2af8c46df72460b7f4e251713ae836340",
+      "fit_status": "UNKNOWN"
+     },
+     {
+      "dossier_sha": "4ff8bddbbff5c98fe1e0e32eab8e184108a2fd0e28ec8394d49cd6a29aad00cc",
+      "fit_status": "UNKNOWN"
+     },
+     {
+      "dossier_sha": "c6a68c859f807053741ea7f75a1f3a3a0e3c47dffdcea0b5d7822421b861e61e",
+      "fit_status": "UNKNOWN"
+     },
+     {
+      "dossier_sha": "aa4188288649072c8e0518530f1e0ab2e81277b93475f817d9f2a2a7ddbfea57",
+      "fit_status": "UNKNOWN"
+     },
+     {
+      "dossier_sha": "a09c12c3a8fbf67fe1163a67ca73850cb122a046bf3ce75ddec25f913da1bca8",
+      "fit_status": "UNKNOWN"
+     },
+     {
+      "dossier_sha": "5a0def8a7322b5c30298bafc6c551cad115d18cbad18224f18485bc9d3252445",
+      "fit_status": "UNKNOWN"
+     },
+     {
+      "dossier_sha": "14b382fb457422d7024251e8ce900dcc61ff0b718850b21ae463b549b2db4f64",
+      "fit_status": "UNKNOWN"
+     },
+     {
+      "dossier_sha": "bf990e1157e7d56fa534d3b994e7e92ea7ffa6a0f424b5800037abf0bac65c9a",
+      "fit_status": "UNKNOWN"
+     },
+     {
+      "dossier_sha": "76597d8d6f40367a3a3a80b1ec10ddd5744675d4ec010f4823f20897cf34be85",
+      "fit_status": "UNKNOWN"
+     },
+     {
+      "dossier_sha": "98d962fbed550bba11bd90520ef2a5d02a0587a0631c259e6f0335122e4f79f8",
+      "fit_status": "UNKNOWN"
+     },
+     {
+      "dossier_sha": "e53b209312962bf98c2fd262e8eb63d8540bc04f15d286d5e14b4c07f816ba50",
+      "fit_status": "UNKNOWN"
+     },
+     {
+      "dossier_sha": "bca29cc55f0a2afbdc0dbfda397b2772803e2fda4ad9e9e27dc970ca3a9b071e",
+      "fit_status": "UNKNOWN"
+     },
+     {
+      "dossier_sha": "311b9c2e33bf4294db448bc445bcdddb7bb11e63cff813954cd32b7665b42d53",
+      "fit_status": "UNKNOWN"
+     },
+     {
+      "dossier_sha": "1445b4b0600617bda9a85b0a88fd0399432f95db32b6be449676ea44a2c0b5ff",
+      "fit_status": "UNKNOWN"
+     },
+     {
+      "dossier_sha": "3c73cd93e8745feb8bf187e40a88d91a01e8438c4f31791669a6655ba474c48f",
+      "fit_status": "UNKNOWN"
+     },
+     {
+      "dossier_sha": "7316a23b3efb0cb14956cac7327dfa2063e0b996d9dd04721dbdabe1389a2842",
+      "fit_status": "UNKNOWN"
+     }
+    ],
+    "exit_code": 4,
+    "frontier_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "ir_sha": "a73a99a1dcbe8403c98b02f2e276d71b472bfc70defa809fc159a2b94ca7b897",
+    "outcome": "INCOMPLETE",
+    "result_digest": "9a0805085f94bf2b73afdd450dc0ac965cdbac72b31bdeb17d34420d697036bf",
+    "routes": [],
+    "search_space_status": "PARTIAL_CANDIDATE_SET",
+    "semantic_fields_sha": "c664ef4ca562467070b8240f8f93df697de6816967f8849cb84100db6dc2dc07",
+    "thick_payload_sha": "eb744d5386ae00a88b68297b9a69114f653bfd02ba3c3f3ff9e33ca16fe67a6f",
+    "thin_payload_sha": "e045d30bc65afdca69fa3298af62cae3b65d3bedbdece1734809fe27306f73a4",
+    "thin_wire_result_digest": "113af30d5474e018454918b3c800750ba1f181f5c7da0dd1b012921b0eb65e34",
+    "wire_result_digest": "5a3bed9c56c26445b9c4673f07342e311f6555a6599261b5db9c7b89f05462df"
+   },
+   "target": "isopentyl acetate"
+  },
+  "methyl_acetate": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": true,
+     "round_trip_identical": true
+    }
+   },
+   "request_capability_question_digest": null,
+   "request_payload_sha": "9f5cce4d90f7a748ed9386e63e44fc0a57ac3dcee9b9ae0c308646a45a2ec3ed",
+   "request_semantic_digest": "ee06310140551e3a8c570c55a9ddda9afe905d2c69b1f25f900dd4c9931b0d92",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": null,
+    "dags": [],
+    "exit_code": 0,
+    "frontier_sha": "623f6d727883586ebd51d8b692c4fd9f3062fa16d338b056450a4a0a89b6271a",
+    "ir_sha": "bf2adbc816c42dd90f1477b424d038829e06bf7fecefd5dda935978a8645f8b0",
+    "outcome": "ROUTES_FOUND",
+    "result_digest": "1e471791cc1d0e7d6123dcf6b4fea63ebc738ae642e348fda3c3341de01b7c3e",
+    "routes": [
+     {
+      "capability": null,
+      "dossier_sha": "144435b4c6c319f69fdbda3d1a51f9dab39f3eb2d0e2d78a674ec8300f3ef146",
+      "fit_status": "UNCONSTRAINED",
+      "readiness_tier": "REACTION_VOUCHED",
+      "route_digest": "1421b62b5244f3e89bd5104ebd6b0c0ba1fc9e61164ec422c24d22bd0133419d"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "88c523c4673e0ec1b004c83ce98f364456df9e2c0d1b0fd20d3387e0264568b7",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "f7c119782ddee0ca89a262072b8974112de9f3df74bcad875e0130fd84d66217"
+     }
+    ],
+    "search_space_status": "COMPLETE_CANDIDATE_SET",
+    "semantic_fields_sha": "fb4bfc757d495d2e1a135aa559fd76ca29bc527ba97b3cd69e3da977693da3f0",
+    "thick_payload_sha": "1469b73be5ff4c363758df29fb1e36feb9c5f18627d2b47920d44e84f4f77be8",
+    "thin_payload_sha": "5ecdd608988ed3f3fc6672a1891ca902995815a47a9c8860307a9f5691f63e81",
+    "thin_wire_result_digest": "1c1c7eaffe9a451a31a178dba8fe7c066ac067e04bbf4cde3c8da173a7829ae8",
+    "wire_result_digest": "e289dba3491addd05898bf21e60f65e641f9303ae00e99f096e5d26e9a2e1f77"
+   },
+   "target": "smiles:CC(=O)OC"
+  },
+  "methyl_acetate@poor-man": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": true,
+     "round_trip_identical": true
+    }
+   },
+   "request_capability_question_digest": "aa97328c44e9d6d3b3cd4c450034575de1fcc108fb3d40881431825cfa19c307",
+   "request_payload_sha": "656ed3fe98c708b346109e1dc7eea61f3da9bf5f4bc13cb1e466baa01f3f7350",
+   "request_semantic_digest": "ee06310140551e3a8c570c55a9ddda9afe905d2c69b1f25f900dd4c9931b0d92",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": "aa97328c44e9d6d3b3cd4c450034575de1fcc108fb3d40881431825cfa19c307",
+    "dags": [],
+    "exit_code": 0,
+    "frontier_sha": "623f6d727883586ebd51d8b692c4fd9f3062fa16d338b056450a4a0a89b6271a",
+    "ir_sha": "bf2adbc816c42dd90f1477b424d038829e06bf7fecefd5dda935978a8645f8b0",
+    "outcome": "ROUTES_FOUND",
+    "result_digest": "a3958e4da60ef36046601924bd484aab38a565d6da244651b5a28387abaabae4",
+    "routes": [
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "ef9e7dad05e090036d2bac9d5b1d6c29248eff6f34094720d2ad439def52f554",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "a60a6357274b1b8977dc7fc6a8a88f344bee76867fae1a55ac36cf9f72bf83f3",
+      "fit_status": "UNCONSTRAINED",
+      "readiness_tier": "REACTION_VOUCHED",
+      "route_digest": "1421b62b5244f3e89bd5104ebd6b0c0ba1fc9e61164ec422c24d22bd0133419d"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "BLOCKED",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "cbaff0928233345170853c967a5d4ca9c31d809bd1f6b6d349041d1a0c122c27",
+       "overall": "BLOCKED"
+      },
+      "dossier_sha": "735a701885a5478aa291a255542618c4e614311aed4458694ac60b840df7a0fa",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "f7c119782ddee0ca89a262072b8974112de9f3df74bcad875e0130fd84d66217"
+     }
+    ],
+    "search_space_status": "COMPLETE_CANDIDATE_SET",
+    "semantic_fields_sha": "114bdf74c3076e7fe1803b38e86b84a97fc0d27070953831b91197fa580d807a",
+    "thick_payload_sha": "71b68fdac3a9dff417130202a788376d7085840a946235e807087eb95808f6ae",
+    "thin_payload_sha": "a4237aca9045ecdfeac4bd7c954c6d61599ea485f783086e6bd0f89605f0c400",
+    "thin_wire_result_digest": "6b2750b8186adeb8bce3c03963f7796355511229762b49ad497ce55b47c757e5",
+    "wire_result_digest": "38cb92e13a32140353bb8bd38b9ba894a0c05294935d7505d2653670e8245da5"
+   },
+   "target": "smiles:CC(=O)OC"
+  },
+  "methyl_acetate@research-lab": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": true,
+     "round_trip_identical": true
+    }
+   },
+   "request_capability_question_digest": "98cd975b91a3e364e743a816f31c661394adda244a97ed0b17c31bd8110d6bef",
+   "request_payload_sha": "c877626ab739b870c36524485daa50879104cac48129d2799f8fb1719b594269",
+   "request_semantic_digest": "ee06310140551e3a8c570c55a9ddda9afe905d2c69b1f25f900dd4c9931b0d92",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": "98cd975b91a3e364e743a816f31c661394adda244a97ed0b17c31bd8110d6bef",
+    "dags": [],
+    "exit_code": 0,
+    "frontier_sha": "623f6d727883586ebd51d8b692c4fd9f3062fa16d338b056450a4a0a89b6271a",
+    "ir_sha": "bf2adbc816c42dd90f1477b424d038829e06bf7fecefd5dda935978a8645f8b0",
+    "outcome": "ROUTES_FOUND",
+    "result_digest": "b8e302f09a05c2a1efb8bd3909579dfe006a05305fc6b1440c76930b574fa1d9",
+    "routes": [
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "8120a7bfae4bd7bd6ec4eaa688699b339d4b5f5366555d3b5cc478973b6095c3",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "9a7084e51ae7a73b251841ef2f4f107f1cecaf3bf53f31ae81eb5acc4494f4d3",
+      "fit_status": "UNCONSTRAINED",
+      "readiness_tier": "REACTION_VOUCHED",
+      "route_digest": "1421b62b5244f3e89bd5104ebd6b0c0ba1fc9e61164ec422c24d22bd0133419d"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "78c6d8d3a5f2742c46e426169b97abeb2a9716cbe1ce015f3382e192155897c0",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "b204675c6c49308378e6a3c7f8f35565673eb2c72b4dd99a52e719095b798579",
+      "fit_status": "UNKNOWN",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "f7c119782ddee0ca89a262072b8974112de9f3df74bcad875e0130fd84d66217"
+     }
+    ],
+    "search_space_status": "COMPLETE_CANDIDATE_SET",
+    "semantic_fields_sha": "b71f92901f62a886fe91e03a92d1b1c8cace9c72d9020a38ad404f62639a9930",
+    "thick_payload_sha": "8b09fb9f342a8e823d63c3ce4266cc7832626c76d13cfee837fbf41533eede43",
+    "thin_payload_sha": "7f114666a8fb03c298372f6b8d126615fc861257f680ccc37aafdb9c603d28ef",
+    "thin_wire_result_digest": "63690c6f99f260a55f3be07dc693cf80cdc54645e17a2cb9c2c62cfbdbaf9a9a",
+    "wire_result_digest": "f02cee2e6ba7f3dae397284e603079cded850364ec514fb46bc8504cc784ca1a"
+   },
+   "target": "smiles:CC(=O)OC"
+  },
+  "methyl_acetate_dag": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": true,
+     "round_trip_identical": true
+    }
+   },
+   "request_capability_question_digest": null,
+   "request_payload_sha": "180149309a3911461424c88c744cc6bdbae7a30046003b46b95f5b51640048d8",
+   "request_semantic_digest": "99c7f64ba2b9194028faf494dd0c62fb55fd446fd6b4785b6a2d2f978e7ddbe9",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": null,
+    "dags": [
+     {
+      "dossier_sha": "f645a6892473fe353427668ebd885d7e83aeddf4fa3738021ee162a0fc48be41",
+      "fit_status": "UNKNOWN"
+     },
+     {
+      "dossier_sha": "e69e1acf3941813cef212d1396636bc60ed88da7a99265e2159ba67d96d62a4e",
+      "fit_status": "UNKNOWN"
+     },
+     {
+      "dossier_sha": "57a4c61522f576c05bcb01782f4ec53d45e94d3dcf1ca6427556806df970cf91",
+      "fit_status": "UNKNOWN"
+     },
+     {
+      "dossier_sha": "828633508887c23547a9dd2b2c5c498bcd71ab9be52b2f293b8e7b245c579201",
+      "fit_status": "UNKNOWN"
+     }
+    ],
+    "exit_code": 4,
+    "frontier_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "ir_sha": "343f8246ed6c8d1b4be3f4f3bc2086025568a7e1fbdb9c430b7a3eb1d9f267f5",
+    "outcome": "INCOMPLETE",
+    "result_digest": "2b22f1d60e75a4da27ff8e7906a38f24e2734aef50a8145c2116b7c55587e45f",
+    "routes": [],
+    "search_space_status": "PARTIAL_CANDIDATE_SET",
+    "semantic_fields_sha": "fd2befd198f5429f6c6091840dcedd5ea0af84c463adb970d52298da271b07e1",
+    "thick_payload_sha": "cea339deadbfcce75d8aed59d91ccaf1a792d781954da0f7443bfbcd5f1d25a2",
+    "thin_payload_sha": "6ca7c8cbc9e3a77232a4c7304e7be1e5c2a138de9813f8f8a6a96371fb0ea0cd",
+    "thin_wire_result_digest": "7101d847c0b6de06a735176d1f99dc0f548c5fed9e5af52a6d051792d0fe2202",
+    "wire_result_digest": "190c470d14b4917c426530560281aaf7c185cd879f2540f754a419c27db03acc"
+   },
+   "target": "smiles:CC(=O)OC"
+  },
+  "methyl_salicylate": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": true,
+     "round_trip_identical": true
+    }
+   },
+   "request_capability_question_digest": null,
+   "request_payload_sha": "5fe665700d8bcc1520a5e599862b714939752dcc5c43bd79380ad97712885d09",
+   "request_semantic_digest": "df75fd3f2c14a4aa290684b6c93ddea815921fd5a38ed9dfb664160442363ebd",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": null,
+    "dags": [],
+    "exit_code": 4,
+    "frontier_sha": "b3fea6530db85b3cdccee8641959bff481a198afaa77dacc3abb477e0330ad7b",
+    "ir_sha": "6df57c2f88e26281b42ded92144d9d6590034d687a15e44d1fb4a16081986703",
+    "outcome": "INCOMPLETE",
+    "result_digest": "d9f9d83bc97e84604aab2095e7ca530e06506064dca5a9299421f6b08a0bef77",
+    "routes": [
+     {
+      "capability": null,
+      "dossier_sha": "a15ba01349a291388a059b1791b6fc4c4d81ea8602af781d67b053250503f344",
+      "fit_status": "UNCONSTRAINED",
+      "readiness_tier": "CONDITIONS_SUPPORTED",
+      "route_digest": "be777a5ac2863cbb3fccba0820acadba17ee11a798eb4a8e964585b34803bad0"
+     }
+    ],
+    "search_space_status": "PARTIAL_CANDIDATE_SET",
+    "semantic_fields_sha": "ac7e9c5a01f8edfb4e4e3338b8962cc1f22a1468ee97863194df7e61f17228e1",
+    "thick_payload_sha": "fadadcc8fed6a6ff6581416578c1f92b7053276e863cfd15e48a1670a279a0e4",
+    "thin_payload_sha": "1303bfd2d9a5188850a9d42855c9397745246ea6abde23839bd77589a8299f8e",
+    "thin_wire_result_digest": "a03753c5ae4501260938ca243d9ed7626177046c9f557d3d36895aec1fb5575b",
+    "wire_result_digest": "c6b1a06da6d1d6f7ee7dde6361ce118cf68fb18049b180ae2106acdd6ebf8ba1"
+   },
+   "target": "methyl salicylate"
+  },
+  "paracetamol": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": true,
+     "round_trip_identical": true
+    }
+   },
+   "request_capability_question_digest": null,
+   "request_payload_sha": "2f236a2bcb05e4948c3b2c9a9c92c49151a4a361646e99122f4f37d0641a96d7",
+   "request_semantic_digest": "aa4b386b2f1e6d6d9f6d4a530a59fb15a7cbe29e8acb2f87342691bc2f0290d5",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": null,
+    "dags": [],
+    "exit_code": 4,
+    "frontier_sha": "05d6dfb237593c8392e9e2a19624b06c01a00ec06eaad20723f457cfaf1adc6b",
+    "ir_sha": "e0c33421ae632ca90e4c267d05dbe110de71ad9c2e0362065c32ad56969451e3",
+    "outcome": "INCOMPLETE",
+    "result_digest": "65083dc956d6fca2b36136afc4381874d241cd89a733de93bde1af22153eb1fd",
+    "routes": [
+     {
+      "capability": null,
+      "dossier_sha": "307e3d97ef63234826de990f5183e864afe53c6b8a55e7f47553758be3ca7af2",
+      "fit_status": "UNCONSTRAINED",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "fe7e7768d3a830fb45a892597ad4b2ee324cf7006a3592b1ff022b38697b57a3"
+     },
+     {
+      "capability": null,
+      "dossier_sha": "cc757fa020e74e7b7172d22bebabb8d76a74b9e4d5faf679a29ab33e286b95ca",
+      "fit_status": "UNCONSTRAINED",
+      "readiness_tier": "REACTION_VOUCHED",
+      "route_digest": "cc87b2854f472f5e1c5bdc96f5ea4801e94ab73326f73095a2f4af496f732306"
+     }
+    ],
+    "search_space_status": "PARTIAL_CANDIDATE_SET",
+    "semantic_fields_sha": "683a2ba8593de7e7b49b024f270d595d584e56a2caa7d6beea72614cc0d47687",
+    "thick_payload_sha": "e3b7816d74311220194683f3705b76f2a1afc931a0e8f90c4c1534a79a81b4b9",
+    "thin_payload_sha": "49c7ffdbec695705a952d9d4451ba4e764750f3cc21ef0a0f2230e9acc785781",
+    "thin_wire_result_digest": "6552936b9552b45f2284ea50caacb3d2aa134eb2669f508ad7689259e4edb67e",
+    "wire_result_digest": "8809b4c52f4c9667199c8467b04c0c5be7d30ea6c9a1432a4cac96fe526d3f7f"
+   },
+   "target": "smiles:CC(=O)Nc1ccc(O)cc1"
+  },
+  "paracetamol@research-lab": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": true,
+     "round_trip_identical": true
+    }
+   },
+   "request_capability_question_digest": "5ce4360718d40f80802fe0da1f94bccced0495b60fc8f3def26d67265e235664",
+   "request_payload_sha": "a7201e31ecc151acdfba109334fca5ff78f7ced650254875f9e6f60631a76c97",
+   "request_semantic_digest": "aa4b386b2f1e6d6d9f6d4a530a59fb15a7cbe29e8acb2f87342691bc2f0290d5",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": "5ce4360718d40f80802fe0da1f94bccced0495b60fc8f3def26d67265e235664",
+    "dags": [],
+    "exit_code": 4,
+    "frontier_sha": "05d6dfb237593c8392e9e2a19624b06c01a00ec06eaad20723f457cfaf1adc6b",
+    "ir_sha": "e0c33421ae632ca90e4c267d05dbe110de71ad9c2e0362065c32ad56969451e3",
+    "outcome": "INCOMPLETE",
+    "result_digest": "995d29fc903a665973ae3f287bd14f9463691444c66894b86647704b7d5ad4d1",
+    "routes": [
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "UNKNOWN",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "9e91a69516c2a90f04ed539be540302a503cdb9dca2b5974f973e3782d21a3f5",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "711dcdd9f3b0551bba67e73fa625a300f2944186e1c2a0417e6cf936351faeff",
+      "fit_status": "UNCONSTRAINED",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "route_digest": "fe7e7768d3a830fb45a892597ad4b2ee324cf7006a3592b1ff022b38697b57a3"
+     },
+     {
+      "capability": {
+       "axes": {
+        "attention_care": "NOT_APPLICABLE",
+        "containment": "FIT",
+        "equipment": "UNKNOWN",
+        "material": "UNKNOWN",
+        "measurement": "UNKNOWN",
+        "monetary": "UNKNOWN",
+        "physical": "UNKNOWN",
+        "process": "UNKNOWN",
+        "procurement": "NOT_APPLICABLE",
+        "ventilation": "NOT_APPLICABLE",
+        "waste": "UNKNOWN"
+       },
+       "digest": "bfb3d4f7787f8e8e6a0f25b5e917aca4176acd1bcab5e9e0523adab80cd50855",
+       "overall": "UNKNOWN"
+      },
+      "dossier_sha": "7dfbd4b3bfe499204faf2062f0d37a068591bb68ca2871a065ccf78234e2718b",
+      "fit_status": "UNCONSTRAINED",
+      "readiness_tier": "REACTION_VOUCHED",
+      "route_digest": "cc87b2854f472f5e1c5bdc96f5ea4801e94ab73326f73095a2f4af496f732306"
+     }
+    ],
+    "search_space_status": "PARTIAL_CANDIDATE_SET",
+    "semantic_fields_sha": "1789f70eff2d84bf404e217ed327c5cb6b44b97aa11b1592218c1eae3d669d76",
+    "thick_payload_sha": "165899dc386ff3396391af74978816698d03bd5b23cafcc09df9e04d773a82f1",
+    "thin_payload_sha": "5ef2fa285bd70c3aac87c9b925b1e65a3d289e6fe33528c457d2acf569856634",
+    "thin_wire_result_digest": "15a6651820ece6c03df81152161bb5f97473135b1ca267f79bd645c7768eb007",
+    "wire_result_digest": "aa8d74e12a18800a5a3a074c20ac2758b081731c5611323edb51d1e692f3d6fc"
+   },
+   "target": "smiles:CC(=O)Nc1ccc(O)cc1"
+  },
+  "paracetamol_incomplete": {
+   "builder": "recompile",
+   "load": {
+    "pinned_va_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thick": {
+     "accepted": true,
+     "round_trip_identical": true
+    },
+    "plain_thin": {
+     "accepted": true,
+     "round_trip_identical": true
+    }
+   },
+   "request_capability_question_digest": null,
+   "request_payload_sha": "1a95c6dbb870b5f46d99fe31f92b98c5e1f86a6252bd26467de7cfecf4fe06f0",
+   "request_semantic_digest": "a850de80111fa4c0a4f9ffa363aa6377e8fe571242c58b2e96ddebd7499d4734",
+   "response": {
+    "admissible_route_digests": [],
+    "capability_question_digest": null,
+    "dags": [],
+    "exit_code": 4,
+    "frontier_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "ir_sha": "e4d6016b2633d60792b9db11f902dceda00ca8af5f56744f3209de4362dcba24",
+    "outcome": "INCOMPLETE",
+    "result_digest": "55f225799646f75fabfd13b90b47944ddb9b829ae716536d10acf2bb0fffdc83",
+    "routes": [],
+    "search_space_status": "INCOMPLETE_NO_ROUTE_OBSERVED",
+    "semantic_fields_sha": "9b4e28b920756ae83efd220b02f305767ac265f02e64576ab64c487e734a803c",
+    "thick_payload_sha": "6281797342d31fd821f967ff215f0080fe73f4f48ca0a97bc7f007e38852933c",
+    "thin_payload_sha": "06a880e8c6b40817c270f6bf486c09824afcbf15a1636c26bd99b24fa4a8c785",
+    "thin_wire_result_digest": "1722031b0167c157e3650b2149e8f841116d910c9cbb2103e7d26569cf655a35",
+    "wire_result_digest": "0f3d4e3a68aeb2dcb0fa580456e0acb6f03ebae0eb871094d9361592f3c57856"
+   },
+   "target": "paracetamol"
+  }
+ },
+ "timings": {
+  "aspirin": {
+   "compile_s": 1.8,
+   "load_s": 0.5
+  },
+  "aspirin@poor-man": {
+   "compile_s": 0.44,
+   "load_s": 0.74
+  },
+  "bromine": {
+   "compile_s": 0.01,
+   "load_s": 0.01
+  },
+  "bromine_smiles": {
+   "compile_s": 0.02,
+   "load_s": 0.03
+  },
+  "decompile_paracetamol": {
+   "compile_s": 0.0,
+   "load_s": 0.0
+  },
+  "diels_alder_control": {
+   "compile_s": 0.15,
+   "load_s": 0.13
+  },
+  "invalid_name": {
+   "compile_s": 0.01,
+   "load_s": 0.01
+  },
+  "isopentyl": {
+   "compile_s": 69.33,
+   "load_s": 12.8
+  },
+  "isopentyl@custom-fit-bench": {
+   "compile_s": 59.88,
+   "load_s": 25.99
+  },
+  "isopentyl@poor-man": {
+   "compile_s": 59.66,
+   "load_s": 18.48
+  },
+  "isopentyl@research-lab": {
+   "compile_s": 52.33,
+   "load_s": 17.91
+  },
+  "isopentyl_dag": {
+   "compile_s": 59.29,
+   "load_s": 0.07
+  },
+  "isopentyl_dag@poor-man": {
+   "compile_s": 0.03,
+   "load_s": 0.05
+  },
+  "isopentyl_dag_quick": {
+   "compile_s": 14.62,
+   "load_s": 7.53
+  },
+  "methyl_acetate": {
+   "compile_s": 0.16,
+   "load_s": 0.26
+  },
+  "methyl_acetate@poor-man": {
+   "compile_s": 0.22,
+   "load_s": 0.43
+  },
+  "methyl_acetate@research-lab": {
+   "compile_s": 0.22,
+   "load_s": 0.42
+  },
+  "methyl_acetate_dag": {
+   "compile_s": 0.76,
+   "load_s": 0.75
+  },
+  "methyl_salicylate": {
+   "compile_s": 0.13,
+   "load_s": 0.18
+  },
+  "paracetamol": {
+   "compile_s": 1.14,
+   "load_s": 0.48
+  },
+  "paracetamol@research-lab": {
+   "compile_s": 0.39,
+   "load_s": 0.69
+  },
+  "paracetamol_incomplete": {
+   "compile_s": 0.02,
+   "load_s": 0.03
+  }
+ }
+}

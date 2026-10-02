@@ -362,15 +362,19 @@ class TestCanonicalStructureKeying:
 
 class TestRoundVMaterialFields:
     def test_schemas_are_current_and_older_ids_refused(self):
-        """component v1alpha2 (Round V D8); stock-material v1alpha3 (Round V X-high D18: +phase_evidence). Every older
-        id is refused -- none was ever released on a wire, so there is nothing to migrate."""
+        """component v1alpha3 (0.9.5 S7: identity_key = the resonance-canonical structure key); stock-material v1alpha4
+        (0.9.5 S9: no sourced kind on a stock state/phase claim). Every older id is refused -- pre-release alphas are
+        not migrated (S14)."""
         from smartchem.experiment.stock import MATERIAL_COMPONENT_SCHEMA
 
-        assert STOCK_MATERIAL_SCHEMA.endswith("stock-material-v1alpha3")
-        assert MATERIAL_COMPONENT_SCHEMA.endswith("material-component-v1alpha2")
-        with pytest.raises(ValueError, match="schema_version"):
-            MaterialComponent("smartchem.experiment/material-component-v1alpha1", "x", "active", 0.0, 1.0)
-        for stale in ("smartchem.experiment/stock-material-v1alpha1", "smartchem.experiment/stock-material-v1alpha2"):
+        assert STOCK_MATERIAL_SCHEMA.endswith("stock-material-v1alpha4")
+        assert MATERIAL_COMPONENT_SCHEMA.endswith("material-component-v1alpha3")
+        for stale_c in ("smartchem.experiment/material-component-v1alpha1",
+                        "smartchem.experiment/material-component-v1alpha2"):
+            with pytest.raises(ValueError, match="schema_version"):
+                MaterialComponent(stale_c, "x", "active", 0.0, 1.0)
+        for stale in ("smartchem.experiment/stock-material-v1alpha1", "smartchem.experiment/stock-material-v1alpha2",
+                      "smartchem.experiment/stock-material-v1alpha3"):
             with pytest.raises(ValueError, match="schema_version"):
                 StockMaterial(stale, "m", "m", (MaterialComponent.unknown_fraction("x", "active"),), Phase.LIQUID, "p")
 
@@ -423,10 +427,10 @@ class TestPhaseEvidence:
         return StockMaterial(STOCK_MATERIAL_SCHEMA, "m", "m", (MaterialComponent.known("a", "active", 0, 1),),
                              phase, "src", **kw)
 
-    def test_schema_is_v1alpha3(self):
-        assert STOCK_MATERIAL_SCHEMA == "smartchem.experiment/stock-material-v1alpha3"
+    def test_schema_is_v1alpha4(self):
+        assert STOCK_MATERIAL_SCHEMA == "smartchem.experiment/stock-material-v1alpha4"
         with pytest.raises(ValueError, match="schema_version"):
-            StockMaterial("smartchem.experiment/stock-material-v1alpha2", "m", "m",
+            StockMaterial("smartchem.experiment/stock-material-v1alpha3", "m", "m",
                           (MaterialComponent.known("a", "active", 0, 1),), Phase.LIQUID, "src")
 
     def test_default_phase_evidence_is_unknown_and_certifies_nothing(self):

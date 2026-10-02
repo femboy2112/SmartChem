@@ -162,10 +162,14 @@ def test_tampered_serialized_profile_fails_closed_on_deserialize():
         request_from_payload(payload)
 
 
-def test_a_pre_0_7_payload_without_a_profile_defaults_to_legacy():
+def test_a_request_payload_without_a_profile_is_refused():
+    # 0.9.5 (Wave C8 F7): the pre-0.7 generations whose missing field the old migration law interpreted are no longer
+    # decodable at all, so a missing algebra_profile on an accepted generation is a DELETED key -- refused, never a
+    # silent default (the key is required on the current and the v0.8 generation alike).
     payload = request_to_payload(_req("legacy-capped-v1"))
-    del payload["algebra_profile"]  # simulate a pre-0.7 serialized request
-    assert request_from_payload(payload).algebra_profile == "legacy-capped-v1"
+    del payload["algebra_profile"]
+    with pytest.raises(ValueError, match="algebra_profile"):
+        request_from_payload(payload)
 
 
 # -- SS5: the FROZEN missing-field migration law survives a (simulated) default promotion --------------------------
@@ -175,9 +179,10 @@ def test_missing_field_stays_legacy_even_if_the_route_build_default_is_promoted(
     import smartchem.service as svc
     monkeypatch.setattr(svc, "DEFAULT_ROUTE_ALGEBRA_PROFILE", "certified-route-v07")  # simulate the promotion
     payload = request_to_payload(_req("legacy-capped-v1"))
-    del payload["algebra_profile"]  # a pre-0.7 serialized request
-    # the missing field follows LEGACY_MISSING_ALGEBRA_PROFILE, NOT the (now promoted) build default.
-    assert request_from_payload(payload).algebra_profile == "legacy-capped-v1"
+    del payload["algebra_profile"]
+    # the law this pins (a missing field NEVER follows the promotable build default) now holds by refusal (0.9.5 C8 F7)
+    with pytest.raises(ValueError, match="algebra_profile"):
+        request_from_payload(payload)
 
 
 # -- SS3: certified-decompile-v07 is a LIVE algebra on an empty reagent pool (not "did not raise with water") -------

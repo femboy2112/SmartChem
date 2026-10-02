@@ -41,7 +41,8 @@ class PlanStatus(str, Enum):
     * ``INPUT_KIND_AMBIGUOUS`` -- more than one input-kind reading resolves to a materially-distinct identity
       (``CO`` = SMILES methanol OR formula carbon monoxide); the front door REFUSES to pick and asks for an
       explicit kind rather than silently launching structural planning (P0-A).
-    * ``INVALID_INPUT`` -- the input could not be resolved to any identity.
+    * ``INVALID_INPUT`` -- the input could not be resolved to any identity, or a helper-reagent string the
+      structural plan would read is input-kind ambiguous (0.9.5 A12: the front door guesses for no string it reads).
     """
 
     STRUCTURAL_PLANNING = "STRUCTURAL_PLANNING"
@@ -113,14 +114,22 @@ def plan(target_input: str, input_kind: "InputKind | str" = InputKind.AUTO,
     ``helper_reagents`` (0.7 Round III) threads the human reagent pool into the STRUCTURAL recompile so the canonical
     front door can express it: ``None`` -> the builder's water DEFAULT; a tuple -> an explicit pool; ``()`` -> an
     explicit EMPTY pool (no invented water), runnable only under an algebra with a reagentless-capable provider.
-    Formula decomposition has no reagent pool, so it ignores this argument.
+    Formula decomposition has no reagent pool, so it ignores this argument.  0.9.5 (A12, Wave C6 F7): a pool string
+    is read like the target -- a bare AUTO string with materially-distinct readings (``CO``: SMILES methanol OR
+    formula carbon monoxide) is refused as ``INVALID_INPUT`` naming it, before any search; ``smiles:CO`` or a
+    registered name is a decision and proceeds.
 
     ``capability_profile`` (0.9 Round III, D12a) declares a bench preset name (``"research-lab"``/``"poor-man"``) the
     STRUCTURAL plan projects every ranked route through -- ``None`` asks NO capability question and assumes NO bench.
     Formula decomposition has no route to project, so it ignores this argument.
     """
     from .compilation_ir import CompilationOperation
-    from .identity_parse import IdentityParseError, detect_auto_ambiguity, resolve_identity
+    from .identity_parse import (
+        IdentityParseError,
+        detect_auto_ambiguity,
+        detect_target_file_ambiguity,
+        resolve_identity,
+    )
     from .service import build_decompile_request, build_recompile_request, run_compilation
 
     kind = input_kind if isinstance(input_kind, InputKind) else InputKind(input_kind)
@@ -129,13 +138,19 @@ def plan(target_input: str, input_kind: "InputKind | str" = InputKind.AUTO,
     # materially-distinct input-kind readings -- 'CO' is methanol (SMILES) AND carbon monoxide (formula).
     # An explicit kind (a flag, or an inline 'smiles:'/'formula:' prefix) is a DECISION, so detect_auto_ambiguity
     # returns None for it and planning proceeds; only a genuinely ambiguous bare AUTO input is refused here.
+    # 0.9.5 A14 (Wave D F4): a TARGET_FILE's contents are resolved on that same AUTO path, so an unprefixed string
+    # inside the file gets the same refusal -- 'plan CO' refused while a file holding 'CO' planned methanol.  The
+    # ambiguity names the file's inner string; a 'smiles:'/'formula:' prefix in the file is the decision, as ever.
+    ambiguity = None
     if kind is InputKind.AUTO:
         ambiguity = detect_auto_ambiguity(target_input)
-        if ambiguity is not None:
-            return PlanResult(
-                target_input, kind, PlanStatus.INPUT_KIND_AMBIGUOUS, None, None, False, None, None,
-                ambiguity=ambiguity,
-            )
+    elif kind is InputKind.TARGET_FILE:
+        ambiguity = detect_target_file_ambiguity(target_input)
+    if ambiguity is not None:
+        return PlanResult(
+            target_input, kind, PlanStatus.INPUT_KIND_AMBIGUOUS, None, None, False, None, None,
+            ambiguity=ambiguity,
+        )
 
     try:
         resolved = resolve_identity(target_input, kind)
@@ -153,6 +168,13 @@ def plan(target_input: str, input_kind: "InputKind | str" = InputKind.AUTO,
         # 0.9 Round III (D12a): the capability profile flows into the STRUCTURAL recompile exactly as the algebra
         # profile does -- `plan TARGET --capability-profile poor-man` projects every planned route through that bench.
         # Formula decomposition (below) has no route to project, so it ignores the profile.
+        # 0.9.5 (A12, Wave C6 F7): the human front door never guesses between readings for ANY string it reads --
+        # a helper reagent is refused exactly like the target ('plan CO' refused while '--reagents CO' ran methanol).
+        for reagent in helper_reagents or ():
+            reagent_ambiguity = detect_auto_ambiguity(reagent)
+            if reagent_ambiguity is not None:
+                return PlanResult(target_input, kind, PlanStatus.INVALID_INPUT, None,
+                                  _reagent_ambiguity_reason(reagent, reagent_ambiguity), False, None, None)
         request = build_recompile_request(target_input, input_kind=builder_kind, algebra_profile=algebra_profile,
                                            helper_reagents=helper_reagents, capability_profile=capability_profile)
         response = run_compilation(request)
@@ -176,6 +198,13 @@ def plan(target_input: str, input_kind: "InputKind | str" = InputKind.AUTO,
         target_input, kind, PlanStatus.FORMULA_DECOMPOSITION, resolved, None, False,
         CompilationOperation.DECOMPILE, response,
     )
+
+
+def _reagent_ambiguity_reason(reagent: str, ambiguity: "object") -> str:
+    """The refusal text for an input-kind ambiguous helper reagent: every reading, and the explicit forms to use."""
+    readings = " | ".join(f"{kind.value} -> {ident.receipt.normalized}" for kind, ident in ambiguity.interpretations)
+    return (f"helper reagent {reagent!r} is input-kind ambiguous ({readings}); the plan front door will not choose -- "
+            f"write smiles:{reagent} or formula:{reagent}, or a registered name")
 
 
 def _candidate_names(resolved: "object") -> tuple[str, ...]:
@@ -277,8 +306,14 @@ def render_plan_human(result: PlanResult) -> str:
             lines.append(
                 f"    - as {kind.value:8} -> {ident.receipt.normalized} ({ident.receipt.identity_layer} layer)"
             )
-        lines.append("  the front door will NOT choose; re-run with an explicit kind (e.g. "
-                     f"smiles:{result.target_input} or formula:{result.target_input})")
+        # the ambiguous string itself: the paste for AUTO, the file's contents for TARGET_FILE (A14 F4)
+        inner = result.ambiguity.target_input
+        if result.input_kind is InputKind.TARGET_FILE:
+            lines.append("  the front door will NOT choose; prefix the file's contents with an explicit kind (e.g. "
+                         f"smiles:{inner} or formula:{inner})")
+        else:
+            lines.append("  the front door will NOT choose; re-run with an explicit kind (e.g. "
+                         f"smiles:{inner} or formula:{inner})")
         return "\n".join(lines)
     if result.resolved is None:
         lines.append(f"  INVALID INPUT: {result.invalid_reason}")

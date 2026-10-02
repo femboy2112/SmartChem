@@ -431,20 +431,29 @@ class TestObjectStructure:
         with pytest.raises(ValueError, match="connected species"):
             Molecule(("H", "H"), frozenset())
 
-    def test_large_molecule_refuses_rather_than_lies(self):
+    def test_large_molecule_refuses_rather_than_lies(self, monkeypatch):
         # Since #25 (individualisation), a symmetric RING no longer refuses -- its dihedral
-        # symmetry is tiny and false-twin pruning kills the hydrogen blow-up. The case the
-        # budget still exists for is a genuinely all-symmetric graph refinement AND
-        # individualisation cannot cheaply crack: the complete graph K_9 (nine mutually
-        # bonded atoms -- structurally valid, chemically absurd), whose vertices are all true
-        # twins the false-twin prune deliberately does not touch, so the search-tree leaves
-        # blow past the ceiling and it refuses loudly rather than grinding forever or lying.
+        # symmetry is tiny and false-twin pruning kills the hydrogen blow-up. The witness was then
+        # the complete graph K_9, whose true-twin vertices blew past the leaf ceiling. Since
+        # 0.9.5 S16 automorphism pruning cracks K_9 too, and this test failed on fbf1287
+        # (`pytest.raises(NotImplementedError, match="individualisation exceeded")` did not
+        # raise). The law stands -- past the bound the canonicaliser refuses loudly rather than
+        # grinding or lying -- so put K_9 past an S16 ceiling (search nodes lowered to 2) and hold
+        # the refusal to the S16 text. The cache is emptied around it: an earlier test may hold K_9.
+        import smartchem.category as category
+
+        monkeypatch.setattr(category, "_MAX_INDIVIDUALISATION_NODES", 2)
+        Molecule.canonical.cache_clear()
         k9 = Molecule(
             tuple("C" * 9),
             frozenset(Bond(i, j) for i in range(9) for j in range(i + 1, 9)),
         )
-        with pytest.raises(NotImplementedError, match="individualisation exceeded"):
-            k9.canonical()
+        try:
+            with pytest.raises(category.CanonicalBoundExceeded,
+                               match="individualisation exceeded 2 search nodes"):
+                k9.canonical()
+        finally:
+            Molecule.canonical.cache_clear()
 
     def test_reach_is_set_by_composition_not_by_atom_count(self):
         """

@@ -38,6 +38,7 @@ inline ``name:``/``smiles:`` prefix), extended only additively: ``inchi:``/``for
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 
@@ -49,8 +50,10 @@ __all__ = [
     "ParseReceipt",
     "ResolvedIdentity",
     "IdentityParseError",
+    "IdentityOutOfBounds",
     "InputKindAmbiguity",
     "detect_auto_ambiguity",
+    "detect_target_file_ambiguity",
     "resolve_identity",
     "resolve_target",
     "resolve_target_with_features",
@@ -112,6 +115,18 @@ class IdentityParseError(ValueError):
     A :class:`ValueError` subclass so existing ``except ValueError`` call sites (the CLI's ``exit 2`` mapping) keep
     catching it, while a service that wants the *concise domain error, not a traceback* (section 14.2) can catch
     this exact type.
+    """
+
+
+class IdentityOutOfBounds(IdentityParseError):
+    """The string parses, but its graph is too symmetric to canonicalise within the canonicaliser's leaf / node
+    ceilings (``smartchem.category.CanonicalBoundExceeded``, 0.9.5 S16) -- so no identity was established.
+
+    Typed as an :class:`IdentityParseError` on purpose: every front door already classifies "the identity could not
+    be resolved" one way -- ``plan`` -> ``INVALID_INPUT``, ``recompile`` / ``run_compilation`` -> ``INVALID_INPUT``
+    (exit 2), the load-time re-derivation -> a refusal -- and that is exactly the state this leaves the input in.
+    Before S16 the same input either hung the parser or escaped as a bare ``NotImplementedError`` (exit 70, an
+    "internal error" for what is a bound, not a bug).  The message names the bound, so nobody mistakes it for a typo.
     """
 
 
@@ -229,10 +244,27 @@ def _inchi_layer_int(value: str, text: str) -> int:
             f"InChI {text!r} has a per-component charge/proton layer ({value!r}); this parser resolves a single "
             "species -- supply one component"
         )
+    # 0.9.5 S17 (C6-F8): an optional sign and ASCII digits, nothing else.  ``int()`` alone is far too forgiving for
+    # an identity layer -- it read '+1_0' as +10 (PEP 515 digit grouping), and would take spaces and any Unicode
+    # decimal digit too.  InChI writes none of those, so none of them is a charge.
+    if _INCHI_SIGNED_INT.fullmatch(value) is None:
+        raise IdentityParseError(f"could not parse the InChI charge/proton layer {value!r} in {text!r}")
     try:
         return int(value)
-    except ValueError:
+    except ValueError:  # the int-string digit limit: a 4,300-digit charge is not a charge either
         raise IdentityParseError(f"could not parse the InChI charge/proton layer {value!r} in {text!r}") from None
+
+
+# 0.9.5 S17 (C6-F8) -- the InChI tokens this reader will stand behind.  The version token is '1S' (standard InChI) or
+# '1' (non-standard); 'garbage' and '2S' used to be waved through unread.  The formula layer is an ASCII Hill formula
+# (element symbol, optional ASCII count, repeated): a '.', a middle dot, whitespace or a non-ASCII digit is either a
+# multi-component species or not InChI at all -- Formula.parse treats ' \t.·' as separators, which is how
+# 'InChI=1S/CuO4S·H2O' slipped past the ASCII-dot multi-component refusal as one species.
+_INCHI_VERSIONS = frozenset({"1S", "1"})
+# Linear, not a ReDoS: every repetition must START on an uppercase letter the previous one cannot consume, so a string
+# splits one way only and each backtrack step fails in O(1).  (No possessive quantifier: Python 3.10 has none.)
+_INCHI_HILL_FORMULA = re.compile(r"(?:[A-Z][a-z]?[0-9]*)+", re.ASCII)
+_INCHI_SIGNED_INT = re.compile(r"[+-]?[0-9]+", re.ASCII)
 
 
 def _inchi_formula_layer(text: str) -> "tuple[object, tuple, tuple[str, ...]]":
@@ -258,21 +290,47 @@ def _inchi_formula_layer(text: str) -> "tuple[object, tuple, tuple[str, ...]]":
         raise IdentityParseError(
             f"malformed InChI {text!r}: expected 'InChI=<version>/<formula>[/...layers]'"
         )
+    if parts[0] not in _INCHI_VERSIONS:
+        raise IdentityParseError(
+            f"InChI {text!r} has version token {parts[0]!r}; this reader knows '1S' (standard) and '1' (non-standard)"
+        )
     formula_token = parts[1]
     if "." in formula_token:
         raise IdentityParseError(
             f"InChI {text!r} names a multi-component species (a '.' in the formula layer); this parser resolves a "
             "single species -- supply one component"
         )
+    if _INCHI_HILL_FORMULA.fullmatch(formula_token) is None:
+        raise IdentityParseError(
+            f"InChI {text!r} has formula layer {formula_token!r}, which is not one ASCII Hill formula (a middle dot or "
+            "whitespace separates components; counts are ASCII digits); this parser resolves a single species"
+        )
     layers = [p for p in parts[2:] if p]
     layer_tags = {p[0] for p in layers}
+    # 0.9.5 A14 (Wave D, InChI P3): a /f (fixed-H) or /r (reconnected) sublayer restarts the layer sequence -- its own
+    # /q and /p describe THAT sublayer's species, not the main layer's.  This reader has one flat layer list, so a /q
+    # after a /f or /r was consumed as the MAIN-layer charge ('InChI=1/CH4/f/q+1' read as CH4 +1).  Standard InChI
+    # (1S) never carries either sublayer; rather than learn to read them, the reader says it does not.
+    sublayers = sorted({"f", "r"} & layer_tags)
+    if sublayers:
+        raise IdentityParseError(
+            f"InChI {text!r} carries a {' and '.join('/' + t for t in sublayers)} sublayer; this reader does not read "
+            "the fixed-H / reconnected sublayers (standard InChI, 1S, never carries them) -- supply the standard InChI"
+        )
+    for tag in ("q", "p"):
+        # standard InChI writes each charge layer at most once; the old reader SUMMED repeats ('/q+1/q+1' -> +2)
+        if sum(1 for p in layers if p[0] == tag) > 1:
+            raise IdentityParseError(
+                f"InChI {text!r} repeats the /{tag} layer; a charge layer is written once, and this reader will not "
+                "add two of them up"
+            )
 
     # CONSUME the charge layers: /q (net charge) and /p (proton balance; each proton is an H+).
     q_charge = sum(_inchi_layer_int(p[1:], text) for p in layers if p[0] == "q")
     p_protons = sum(_inchi_layer_int(p[1:], text) for p in layers if p[0] == "p")
     try:
         counts = dict(Formula.parse(formula_token).counts)
-    except DecompilerError as exc:
+    except (DecompilerError, ValueError) as exc:   # ValueError: a count past the int-string digit limit (S17)
         raise IdentityParseError(f"could not parse the InChI formula layer {formula_token!r}: {exc}") from exc
     if p_protons:
         counts["H"] = counts.get("H", 0) + p_protons
@@ -370,6 +428,21 @@ def resolve_identity(target_input: str, input_kind: "InputKind | str" = InputKin
     Raises :class:`IdentityParseError` on an unresolvable/ambiguous string or a form this offline parser cannot
     honour -- never a raw traceback and never a silent mis-parse.
     """
+    try:
+        return _resolve_identity(target_input, input_kind)
+    except RecursionError:
+        # 0.9.5 S17 (C6-F1c / C8-F4): a front-door walk that recursed past the interpreter's limit on a deeply nested
+        # input is a bound on the INPUT, not a bug in the caller -- typed invalid input (exit 2), never an exit-70
+        # "internal error".  `from None`: nobody needs a thousand identical frames to learn the string was too deep.
+        raise IdentityParseError(
+            f"{target_input[:80]!r}{'...' if len(target_input) > 80 else ''} nests too deeply for the identity "
+            "parser (the interpreter's recursion limit was reached); no identity was established"
+        ) from None
+
+
+def _resolve_identity(target_input: str, input_kind: "InputKind | str") -> ResolvedIdentity:
+    """The body of :func:`resolve_identity` (which adds only the RecursionError -> typed refusal fold)."""
+    from .category import CanonicalBoundExceeded
     from .decompiler import Formula
     from .smiles import SmilesError, parse_smiles_features
     from .structure import structure_by_name
@@ -437,6 +510,13 @@ def resolve_identity(target_input: str, input_kind: "InputKind | str" = InputKin
 
     try:
         molecule, features = parse_smiles_features(payload)
+    except CanonicalBoundExceeded as exc:
+        # S16: parsed, but no canonical identity within the canonicaliser's bounds -> typed, never exit 70.  Not the
+        # AUTO formula fallthrough below: the string IS SMILES, and reading it as a formula would change the question.
+        raise IdentityOutOfBounds(
+            f"{target_input!r} parses as SMILES, but its structure is too symmetric to canonicalise within the "
+            f"canonicaliser's bounds ({exc}); the compiler refuses to assign it an identity rather than guess one"
+        ) from exc
     except SmilesError as exc:
         # AUTO fallthrough: name declined, SMILES declined -> LAST, try the tolerant formula grammar.  This
         # is additive and strictly last, so it can never STEAL a string a registered name or SMILES already
@@ -545,8 +625,29 @@ def detect_auto_ambiguity(target_input: str) -> "InputKindAmbiguity | None":
     return InputKindAmbiguity(target_input, tuple(interpretations))
 
 
-def _resolve_target_file(target_input: str) -> ResolvedIdentity:
-    """Read a TARGET_FILE and resolve its contents as an inner target, preserving the inner receipt + a file note."""
+def detect_target_file_ambiguity(target_input: str) -> "InputKindAmbiguity | None":
+    """The input-kind ambiguity of a TARGET_FILE's contents, or ``None`` (0.9.5 A14, Wave D F4).
+
+    A TARGET_FILE's contents are resolved on the AUTO path, so an unprefixed ``CO`` in a file is exactly the bare
+    paste ``plan CO`` refuses -- and the file used to launch methanol planning anyway.  This reads the file the way
+    :func:`_resolve_target_file` does and asks :func:`detect_auto_ambiguity` about its contents, so the front door
+    refuses the same string wherever it was written.  A prefixed file (``smiles:CO``) is a decision and returns
+    ``None``.  An unreadable file also returns ``None``: resolution then raises its own typed refusal, and this
+    detector does not duplicate that verdict.
+    """
+    if not isinstance(target_input, str):
+        return None
+    try:
+        contents = _read_target_file(target_input)
+    except IdentityParseError:
+        return None
+    return detect_auto_ambiguity(contents)
+
+
+def _read_target_file(target_input: str) -> str:
+    """A TARGET_FILE's stripped contents, or a typed :class:`IdentityParseError` (missing, too large, unreadable,
+    empty).  Shared by :func:`_resolve_target_file` and :func:`detect_target_file_ambiguity`, so the reading the
+    ambiguity check inspects is the reading resolution uses."""
     import os
 
     if not os.path.isfile(target_input):
@@ -563,6 +664,14 @@ def _resolve_target_file(target_input: str) -> ResolvedIdentity:
         raise IdentityParseError(f"could not read target file {target_input!r}: {exc}") from exc
     if not contents:
         raise IdentityParseError(f"target file {target_input!r} is empty")
+    return contents
+
+
+def _resolve_target_file(target_input: str) -> ResolvedIdentity:
+    """Read a TARGET_FILE and resolve its contents as an inner target, preserving the inner receipt + a file note."""
+    import os
+
+    contents = _read_target_file(target_input)
     # resolve the contents on the AUTO path (which honours name:/smiles:/inchi:/formula: prefixes + a bare InChI=).
     inner = resolve_identity(contents, InputKind.AUTO)
     note = f"read target from file {os.path.basename(target_input)!r}"

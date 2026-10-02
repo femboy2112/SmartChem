@@ -70,8 +70,11 @@ source implementation digest `680fc1479a53d37656e56a98ade1be0944cdc7a731082a86b5
   cannot be forged); verification work is budgeted in deterministic units.
 - **Negative control / mutant:** `experiments/v0_9_5_canonical_differential.py`; the baseline tamper matrix;
   `tests/test_v0_9_5_loader_laws.py`, `tests/test_v0_9_5_loader_hardening.py`.
-- **Release corpus evidence:** canonical differential (CI 3570/3570); `tests/test_v1_0_compatibility.py` (a
-  consistent rewrite of what the search FOUND is refused except by re-execution/HMAC).
+- **Release corpus evidence:** canonical differential (verdict PASS); a consistent rewrite of what the bounded
+  search FOUND loads only as `ADVISORY` keyless and is refused under re-execution/HMAC —
+  `tests/test_v0_9_5_loader_laws.py::test_s11_a_consistent_no_route_rewrite_is_the_disclosed_advisory_boundary`
+  (+ `smartchem/transport_ledger.py`); `tests/test_v1_0_compatibility.py` establishes the companion
+  version-boundary fact (a 0.9.5 result cannot be re-executed-equal under 1.0rc1).
 - **Known boundary:** thin transport is advisory by contract; a keyless consumer must treat the search output as
   advisory (COMPATIBILITY §4).
 - **Status: MET.**
@@ -183,6 +186,42 @@ unchanged source, carried by the version-transition proof.
 - [x] documented compatibility/deprecation policy (COMPATIBILITY §10)
 
 ---
+
+## Fresh hostile review (Phase 14)
+
+Three focused reviewers, read-only except the packaging consumer (sandboxed). Every finding is dispositioned; no
+finding is a 1.0 blocker.
+
+- **Reviewer A — semantic drift (principal-context fork):** **NO UNEXPLAINED SEMANTIC DRIFT.** The only production
+  change `83d33fd`→`release/1.0.0` is `smartchem/__init__.py`'s `__version__` string; the CLI goldens moved only
+  `tool_version`/`result_digest`; `test_cli.py` only the banner; everything else is additive tooling/tests/docs.
+  Re-confirmed the two version-independence gates (public-contract + version-transition) report NO DRIFT.
+- **Reviewer B — packaging/consumer (fresh, sandboxed build+install):** **CLEAN** — no blockers, no functional
+  defects. Independently built from `60a5b05` (wheel `smartchem-1.0.0rc1-py3-none-any.whl`
+  sha256 `a635825a44cab045e1d2901288d564a2758e899f687c119f4d89eb363103188d`), clean-installed on 3.10/3.12/3.13:
+  no source-tree leakage, both `--version` forms correct, all verbs run, package data present, accurate metadata,
+  no cruft shipped, `uv pip check` clean. Three COSMETIC observations, all **POST-1.0 NONBLOCKER**: (C1) the
+  `compile` deprecation notice cites an internal, unshipped doc section — informative-not-contractual per
+  COMPATIBILITY §2.2; (C2) no Author/Keywords in METADATA — optional, author email deliberately not injected into
+  published metadata; (C3) `Requires-Python >=3.10` open-ended vs the declared 3.13 tested ceiling — standard
+  practice (lower bound vs tested ceiling, the ceiling is declared in prose).
+- **Reviewer C — contract lawyer (fresh, read-only):** documents unusually well-backed; **2 findings, both
+  POST-1.0 nonblockers, no hard Class-3 defect**; all five named boundaries correctly worded; implementation digest
+  matches this doc's header exactly; "no unexplained xfails" verified true.
+  - **Finding 2.1 (FIXED):** Law 5's "consistent rewrite" sub-point was mis-cited to `test_v1_0_compatibility.py`
+    (which tests the version-boundary refusal, not a rewrite). Re-cited to
+    `tests/test_v0_9_5_loader_laws.py::test_s11_a_consistent_no_route_rewrite_is_the_disclosed_advisory_boundary`;
+    the compat test is now cited only for the version-boundary fact. (This edit.)
+  - **Finding 1.1 (POST-1.0 NONBLOCKER):** the `ROUTES_FOUND`→exit-5 sub-case *(b)* — no process box, every ranked
+    candidate hard-`EXCLUDED` (`service.py:3013-3019`) — has no CONTRACT-layer test; sub-case *(a)* (process box) is
+    tested (`tests/test_process_service.py`). The prose (COMPATIBILITY §2.1) is CORRECT; the behavior is implemented
+    and guarded by the `exit_code` property plus the construction-time coherence check; sub-case *(b)* is
+    near-unreachable with the shipped catalog (its routes carry undeclared conditions → `UNKNOWN`, not `EXCLUDED`).
+    A hand-built `CompilationResponse` forcing it risks a fragile/vacuous test, which is not worth landing in an RC
+    round — deferred as a post-1.0 test-coverage item; the prose needs no change.
+  - A sub-cosmetic note on `test_version_binding_is_live_on_route_bearing_cases` (docstring stronger than its
+    assertion) was addressed by tightening the assertion to enforce the docstring (every IR-bearing case carries the
+    live version). (This edit.)
 
 ## Not a 1.0 blocker (program §12 — declared, not reopened)
 

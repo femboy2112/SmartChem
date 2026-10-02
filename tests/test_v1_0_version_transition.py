@@ -38,12 +38,18 @@ def test_semantic_content_is_unmoved_by_the_version_bump():
 
 
 def test_version_binding_is_live_on_route_bearing_cases():
-    """The gate cannot be passed by a tree that simply dropped the version binding: every case that has a
-    compilation IR must carry the LIVE package version in tool_version, and every response a 64-hex result_digest."""
+    """The gate cannot be passed by a tree that simply dropped the version binding: EVERY case that has a
+    compilation IR must carry the LIVE package version in tool_version, and every non-refused response a 64-hex
+    result_digest. The golden's `tool_version_carries_live` flag defines the IR-bearing set version-independently
+    (it is `tool_version == __version__`, true for an IR case at any version), so this asserts completeness, not
+    merely existence."""
+    golden = _golden()["cases"]
     live = fingerprint_invariant()["cases"]
-    carrying = [cid for cid, rec in live.items() if rec.get("tool_version_carries_live")]
-    assert carrying, "no case carried the live package version in tool_version -- the binding is broken"
-    for cid, rec in live.items():
-        if "refused" in rec:
-            continue
-        assert rec["has_result_digest"], f"{cid}: response is missing a 64-hex result_digest"
+    ir_bearing = [cid for cid, g in golden.items() if g.get("tool_version_carries_live")]
+    assert ir_bearing, "golden records no IR-bearing case -- the fixture is broken"
+    for cid in ir_bearing:
+        assert live[cid].get("tool_version_carries_live"), (
+            f"{cid}: an IR-bearing case stopped carrying the live package version in tool_version")
+    for cid, g in golden.items():
+        if "refused" not in g:
+            assert live[cid]["has_result_digest"], f"{cid}: response is missing a 64-hex result_digest"

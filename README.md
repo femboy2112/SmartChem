@@ -303,17 +303,23 @@ pytest -q
 python -m smartchem.bench
 ```
 
-Current committed-baseline suite result (0.9.5a1) — the OOM-safe full run via `scripts/run_suite.sh`, measured
-with the optional RDKit backend **absent** (its tests `importorskip`-skip) and PySCF 2.14.0 **present** in the dev
-venv (its integration tests ran):
+Current suite result (0.9.5a1, tip `d8146c7`) — the OOM-safe full run via `scripts/run_suite.sh` on hosted CI
+(run `36944326427`, jobs `test (3.10)` and `test (3.12)`, the optional RDKit and PySCF backends **absent**), plus
+the PySCF smoke job with PySCF 2.14.0 **present**:
 
 ```text
-7505 passed, 46 skipped, 0 xfailed  (7551 collected, 0 failed, 0 errors)
+test (3.10), test (3.12):  7464 passed, 84 skipped, 0 xfailed  (7548 collected, 0 failed, 0 errors)
+PySCF smoke (-m "not slow"): 7505 passed, 33 skipped, 14 deselected  (7552 collected)
 ```
 
-There are **no xfails**: the last strict xfail (parallel interchange) was discharged by PR #79. The 46 skips are
-32 RDKit-gated checks plus 14 behind the explicit slow-test gate (`--runslow`); skips are never represented as
-passed. When the development-only RDKit oracle is present the seven RDKit-gated CIP checks additionally run, and
+There are **no xfails**: the last strict xfail (parallel interchange) was discharged by PR #79. Every environment
+skips 32 RDKit-gated checks and leaves out the 14 tests behind the explicit slow-test gate (skipped without
+`--runslow`, deselected by the smoke job's marker). Without PySCF, its 36 integration tests also skip, and
+`test_eris_reuse.py`'s 5 tests are reported as one module-level skip (hence 7548 collected, not 7552). One test reads
+payloads present only on the maintainer's box and skips elsewhere. Skips are never represented as passed. The
+release record's *Suite environments* table reconciles every count, including the dev venv's (7505 passed, 46
+skipped, 7551 collected on `b16749e`, with PySCF present).
+When the development-only RDKit oracle is present the seven RDKit-gated CIP checks additionally run, and
 when the optional PySCF stack is present the real-wavefunction integration tests additionally run. On this box
 the monolithic `pytest` run is OOM-killed, so `scripts/run_suite.sh` (short-lived batched processes) is the
 maintained full-suite runner. An earlier process-accessibility audit receipt records a historical PySCF-absent

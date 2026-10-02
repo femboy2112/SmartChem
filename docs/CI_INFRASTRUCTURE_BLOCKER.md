@@ -1,67 +1,55 @@
-# Hosted CI is blocked by an ACCOUNT/BILLING condition (not by this repository)
+# Hosted CI billing outage (2026-09-28 to 2026-10-01): RESOLVED, kept as the incident record
 
-Status as of 0.9.5 (2026-09-29). Classification: **ACCOUNT / BILLING. Not repository-configurable.**
+**Status (2026-10-01): RESOLVED.** Hosted runners allocate again. The current CI evidence for 0.9.5 lives in the
+release record ([`V0_9_5_ADVERSARIAL_RC_RELEASE_2026-10-01.md`](research/V0_9_5_ADVERSARIAL_RC_RELEASE_2026-10-01.md),
+row "Hosted CI"). This file keeps the record of the outage, the workflow changes written while it lasted, and what
+the first live run found. (The file keeps its name so existing links still resolve.)
 
-## The exact blocker
+## The outage
 
-GitHub's own check-run annotation, on every job of every run since run `36490673856` (tip `78554a2`):
+From run `36490673856` (tip `78554a2`), every job of every run carried GitHub's check-run annotation:
 
 > The job was not started because recent account payments have failed or your spending limit needs to be
 > increased. Please check the 'Billing & plans' section in your settings
 
-Evidence (latest observed run `36536300449`):
+On every affected job, `runner_id` was `0` and `steps` was empty: nothing executed, so those runs were neither green
+nor a code failure. The last dead run was `36621668530`, on `main` at `d26f0eb` (the 0.9 merge, 2026-09-29; jobs
+`109588320460`, `109588320776`, `109588320815`). Corroboration at the time: the repository was private on a free plan, and the branch-protection API
+answered HTTP 403 `Upgrade to GitHub Pro or make this repository public`. No workflow edit could change that. The
+condition cleared on the account side: the repository is still private, and on 2026-10-01 the branch-protection API
+still answers that 403, so `main` has no protection rule.
 
-| field | value |
-|---|---|
-| jobs | `109301026867`, `109301026905`, `109301026748` |
-| `runner_id` | `0` (no runner was ever assigned) |
-| `steps` | `0` (nothing executed) |
-| first affected run | `36490673856` on `78554a2`; every later tip is the same |
+## Workflow changes written during the outage, now executed on hosted runners
 
-Secondary corroboration: the repository is **private on a free plan**, and the branch-protection API answers
-HTTP 403 `Upgrade to GitHub Pro or make this repository public`. Together these say the account's hosted-runner
-entitlement, not any workflow file, is what stops jobs from starting.
+These were written and checked locally while no runner existed:
 
-## Why nothing in the repository can fix it
+- the `test` job runs `scripts/run_suite.sh` (OOM-safe batches) instead of monolithic `pytest`;
+- `timeout-minutes` on every job (was the 360-minute default on `test`);
+- `runs-on: ubuntu-24.04` pinned (was `ubuntu-latest`);
+- the `wheel-install-matrix` job builds the reproducible wheel/sdist (`scripts/build_release.py`) and runs
+  `experiments/v0_9_5_install_matrix.py` on 3.10, 3.11, 3.12 and 3.13.
 
-Jobs die at allocation, before a single workflow line runs. The workflow has no self-hosted runner label, no
-`if:` gate, no secret or permission dependency that could cause a not-started job; the only workflow in the repo
-is `.github/workflows/ci.yml`. Editing YAML, re-running, or pinning actions cannot change a billing decision.
+Run `36922045140` (2026-10-01, tip `31316ea`) was the first since the outage to get runners, and it executed all of
+them. The `pyscf-smoke` job still runs a different population (monolithic `pytest -m "not slow"` with PySCF
+installed) from the `test` job's batched suite without PySCF.
 
-## What restores it (account side only)
+## What the first live run found
 
-1. Resolve the failed payment / raise the Actions spending limit under Settings -> Billing & plans; or
-2. make the repository public (hosted minutes for public repos are not metered); or
-3. register a self-hosted runner and point `runs-on` at it (a repository change, but it needs a machine the
-   owner provides).
+Run `36922045140`: six of seven jobs passed; `test (3.10)` failed. In batch 31, 78 tests failed, every one of them
+`tests/test_transport_ledger.py::test_every_non_advisory_ledger_entry_refuses_its_keyless_forgery` raising
+`AttributeError: 'code' object has no attribute 'co_qualname'`. `code.co_qualname` exists only from Python 3.11, and
+the test's own-law lock used it to name the raising frame. This was a test-harness incompatibility, with no production
+code involved, and it was invisible locally because the local gates ran on 3.12. Fixed in `d8146c7`: frames are matched
+by code-object identity against the code each ledger-named check resolves to.
 
-Then re-run CI and treat the first green run as the *first* evidence for the workflow changes below.
+The run also showed a diagnosability gap: `run_suite.sh` printed only the path of the failed batch's log, and that
+path vanished with the runner. Since `d8146c7`, a failed batch prints a bounded excerpt (first traceback, distinct
+exception lines with counts, short summary). The `test` job also writes its logs to `$RUNNER_TEMP/smartchem-suite`
+and uploads them as an artifact on failure.
 
-## Workflow changes made in 0.9.5 -- UNVERIFIED on hosted runners
+## The local gates
 
-No hosted runner has allocated, so these were written and reviewed locally only. They are labelled in a YAML
-comment at the top of `jobs:`:
-
-- `test` job runs `scripts/run_suite.sh` (OOM-safe batches) instead of monolithic `pytest`, which is OOM-killed on
-  a ~7 GB box (a standard private-repo runner is also ~7 GB; that equivalence is *conjectured*, not measured).
-- `timeout-minutes` on every job (was the 360-minute default on `test`).
-- `runs-on: ubuntu-24.04` pinned (was `ubuntu-latest`, a moving target).
-- New `wheel-install-matrix` job: builds the reproducible wheel/sdist (`scripts/build_release.py`) and runs
-  `experiments/v0_9_5_install_matrix.py` on the job's Python.
-
-Known difference even when runners return: the `pyscf-smoke` job runs `pytest -m "not slow"` with PySCF
-installed, a different population than the committed baseline receipt.
-
-## The local release matrix that substitutes
-
-Until a runner exists, the release gate is local and receipt-based:
-
-| gate | how | where the receipt lives |
-|---|---|---|
-| full suite, OOM-safe | `scripts/run_suite.sh` (fresh pytest per batch, junit tally, RDKit absent) | the release/audit record under `docs/research/` for the round that ran it (0.9: `V0_9_CAPABILITY_COMPILER_RELEASE_2026-09-28.md`, the Round V audit) |
-| clean-install matrix | `experiments/v0_9_5_install_matrix.py` against the artifacts of `scripts/build_release.py` | `install_matrix.json` / `.md` written to the caller-given out dir; the summary is quoted in the 0.9.5 release record |
-| mutation gate | `experiments/v0_9_mutation_calibration.py` (+ 0.9.5 successor mutants) | the round's audit record under `docs/research/` |
-| artifact identity | `SHA256SUMS` + `release_manifest.json` from `scripts/build_release.py` | out dir of the build; hashes are quoted in the release record |
-
-This substitution is honest but weaker than hosted CI in one respect: it runs on one machine, one operator, at
-one time; it proves the tip was green when it was run, not that every later push is.
+While runners were down, the full suite, install matrix, mutation gate and artifact hashes all ran locally and were
+recorded in each round's release or audit record under `docs/research/`. Hosted CI now runs the full suite on 3.10 and
+3.12, the install matrix on 3.10–3.13, and the PySCF smoke test. The mutation gate, behaviour freeze, funnels,
+differential and fuzzers are not in CI; they stay local, receipt-based gates.

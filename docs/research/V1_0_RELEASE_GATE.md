@@ -13,8 +13,27 @@ differential, and fuzz receipt therefore targets UNCHANGED source and carries ov
 re-confirms the fast gates fresh at 1.0rc1 and validates the expensive receipts' integrity rather than re-burning
 hours on an unchanged SHA (program §Release engineering; the impact-based validation rule).
 
-Package: `1.0.0rc1` · branch `release/1.0.0` · base `main` @ `83d33fd` (PR #94 merge) ·
-source implementation digest `680fc1479a53d37656e56a98ade1be0944cdc7a731082a86b53b9d5e0047c2b5`.
+Package: **`1.0.0`** (promoted version-only from `1.0.0rc1`) · stable branch `release/1.0.0-stable` · RC accepted
+and merged (PR #95 → `main` `26479ba`) · base `main` @ `83d33fd` (PR #94 merge) · source implementation digest
+`b23213d362ec3ff7972244304f3294b26a9f8b3e50d3454e055932ff46d1ea49` (`1.0.0`; was
+`680fc1479a53d37656e56a98ade1be0944cdc7a731082a86b53b9d5e0047c2b5` at `1.0.0rc1` — the digest binds `__version__`).
+
+## Stable promotion — `1.0.0rc1` → `1.0.0` (version-only, proven)
+
+The external RC review accepted `1.0.0rc1`; PR #95 merged to `main` (`26479ba`, merge tree byte-identical to the
+reviewed head `dd79097`), and the single version source was promoted `1.0.0rc1` → `1.0.0` — the ONLY production
+change. Proof, re-run fresh at `1.0.0`:
+
+| check | result |
+| --- | --- |
+| version-transition differential (`v1_0_version_transition.py --diff`) | **29 expected moves, 0 unexpected** (`1.0.0rc1`→`1.0.0`); determinism control identical |
+| version-independent fingerprint (`--check-golden`) | **NO DRIFT**, no re-freeze (the RC contract *is* the stable contract) |
+| public-contract freeze (`v1_0_public_contract.py --check`) | **NO DRIFT** |
+| CLI goldens regenerated (5 files) | only `tool_version` + `result_digest` moved; schema and invalid-input fixtures unchanged |
+| `--version` banner | `smartchem 1.0.0` |
+| merged-main hosted CI (run `37071540287` @ `26479ba`) | **7/7 jobs GREEN** (test 3.10/3.12, wheel-install 3.10–3.13, PySCF smoke) |
+
+The official `v1.0.0` tag and artifacts are built from the tagged merged-main commit (release record below).
 
 ---
 
@@ -173,11 +192,11 @@ unchanged source, carried by the version-transition proof.
 
 ## Release-engineering checklist (program §Release engineering)
 
-- [x] version metadata and package docs agree (`__version__` = `1.0.0rc1`, dynamic; description corrected)
+- [x] version metadata and package docs agree (`__version__` = `1.0.0`, dynamic; description corrected)
 - [x] README capability claims match current main (current-tense updated; history preserved)
 - [x] ROADMAP points to the finite ladder with the stopping rule explicit
 - [x] stale current-tense comments corrected without falsifying history
-- [x] CI/workflow state green on the actual RC (hosted CI run `37057241041`, 7/7 jobs green — see "hosted CI" above)
+- [x] CI/workflow state green (RC run `37057241041` and merged-main run `37071540287`, both 7/7 jobs green — see "hosted CI" and "Stable promotion" above)
 - [x] supported Python versions tested (3.10–3.13 install matrix, fresh)
 - [x] installed CLI behavior tested from a built wheel/sdist, not editable source (install matrix)
 - [x] schemas versioned with migration notes (COMPATIBILITY §3; public-contract freeze)

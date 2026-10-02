@@ -155,7 +155,7 @@ general multiphysics category.
 
 For the module-by-module map and scientific caveats, see [MANIFEST.md](docs/history/MANIFEST.md).
 
-## Chemical compiler (v1.0.0rc1 — release candidate)
+## Chemical compiler (v1.0.0 — stable release)
 
 A newer line of work turns the chemistry core into a bidirectional *chemical compiler*: a
 **decompiler** that descends a target compound to its elemental buckets as an AND–OR
@@ -254,7 +254,7 @@ route reaction-type-vouched, bounded performance) and an independent hostile rev
 python -m smartchem recompile 'smiles:CC(=O)OCCC(C)C' --capability-profile poor-man --json
 ```
 
-This is the **1.0.0rc1 release candidate.** The chemical-compiler's machine semantics — identity, bounded search
+This is the **stable 1.0.0 release.** The chemical-compiler's machine semantics — identity, bounded search
 completeness, the readiness ladder, capability assessment, the evidence and `StreamDisposition` contract, and verified
 transport — are **frozen** under the stability contract in [COMPATIBILITY.md](COMPATIBILITY.md): from 1.0, new
 chemistry may widen coverage but may not silently change the meaning of an existing verdict word. What the compiler
@@ -311,8 +311,8 @@ pytest -q
 python -m smartchem.bench
 ```
 
-Current suite result (1.0.0rc1, tip `60a5b05`) — the OOM-safe full run via `scripts/run_suite.sh` on hosted CI
-(run `37057241041`, all 7 jobs green: jobs `test (3.10)` and `test (3.12)`, the optional RDKit and PySCF backends
+Current suite result (1.0.0; production tree byte-identical to the merged RC at `main` `26479ba`) — the OOM-safe full run via `scripts/run_suite.sh` on hosted CI
+(run `37071540287`, all 7 jobs green: jobs `test (3.10)` and `test (3.12)`, the optional RDKit and PySCF backends
 **absent**; the four wheel-install-matrix jobs 3.10–3.13 build and install the release artifact and prove it
 byte-identical to source), plus the PySCF smoke job with PySCF 2.14.0 **present**:
 
@@ -369,7 +369,7 @@ as the next release boundary. The normative plan is
 **0.6 human front door -> 0.7 production chemical algebra -> 0.8 real route dossiers -> 0.9 capability compiler ->
 0.9.5 coverage/adversarial RC -> 1.0 stable semantics**.
 
-The finite program is complete through the release candidate:
+The finite program is complete and promoted to the stable 1.0.0 release:
 
 ```text
 0.6 human front door            merged
@@ -377,7 +377,7 @@ The finite program is complete through the release candidate:
 0.8 real route dossiers          merged
 0.9 capability compiler          merged
 0.9.5 coverage/adversarial RC    merged
-1.0.0rc1 stable semantics        current release candidate
+1.0.0 stable semantics           stable release
 ```
 
 The **stopping rule is explicit**: the 1.0 line freezes the public machine semantics
@@ -385,7 +385,7 @@ The **stopping rule is explicit**: the 1.0 line freezes the public machine seman
 is non-release-critical by default — a wider algebra is a post-1.0 MINOR under the compatibility contract, never a
 reason to hold 1.0. 0.9.5 consolidated, bounded verification work, closed the minimum pre-1.0 representation gaps and
 attacked the whole product ([plan](docs/research/V0_9_5_ADVERSARIAL_RC_PLAN_v0.1.md),
-[architecture freeze](docs/research/V0_9_5_ARCHITECTURE_FREEZE.md)); 1.0.0rc1 freezes, packages and proves the release
+[architecture freeze](docs/research/V0_9_5_ARCHITECTURE_FREEZE.md)); 1.0.0 freezes, packages and ships the release
 artifact ([release gate](docs/research/V1_0_RELEASE_GATE.md), [CHANGELOG](CHANGELOG.md)).
 
 

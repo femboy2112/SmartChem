@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "smartchem"
 dynamic = ["version"]
-description = "A compositional layer above quantum chemistry: conserving reaction algebra with pluggable energy oracles"
+description = "A reality-respecting chemical route compiler: bounded search, evidence-gated readiness and capability verdicts, and a verified JSON wire contract, over a conserving reaction algebra with pluggable energy oracles"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -14,6 +14,22 @@ dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
 ]
+# Non-license classifiers only: with the SPDX `license = "MIT"` expression above, a `License ::` trove
+# classifier is deprecated (PEP 639) and setuptools>=77 would reject the duplicate declaration.
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Repository = "https://github.com/femboy2112/SmartChem"
+Changelog = "https://github.com/femboy2112/SmartChem/blob/main/CHANGELOG.md"
+Compatibility = "https://github.com/femboy2112/SmartChem/blob/main/COMPATIBILITY.md"
 
 [project.optional-dependencies]
 dev = [

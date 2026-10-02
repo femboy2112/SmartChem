@@ -5,6 +5,7 @@ retrosynthesis path is covered by the experiment tests, not re-run here.
 """
 from __future__ import annotations
 
+import smartchem
 from smartchem.cli import main
 
 
@@ -21,7 +22,9 @@ class TestUsage:
 
     def test_version_flag(self, capsys):
         assert main(["--version"]) == 0
-        assert capsys.readouterr().out.strip() == "smartchem 0.9.5a1"
+        # the banner IS the package version (cli.py prints f"smartchem {__version__}"); assert that invariant,
+        # not a hard-coded literal that rots on every release bump
+        assert capsys.readouterr().out.strip() == f"smartchem {smartchem.__version__}"
 
     def test_unknown_command_is_error(self, capsys):
         assert main(["frobnicate"]) == 2

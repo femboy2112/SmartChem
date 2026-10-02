@@ -1,0 +1,79 @@
+{
+ "cases": {
+  "aspirin": {
+   "has_result_digest": true,
+   "invariant_sha": "d06da8449c31337db8b8dd17cc912af75cdddaaa676798f652212ee5fa07f22b",
+   "tool_version_carries_live": true
+  },
+  "aspirin@poor-man": {
+   "has_result_digest": true,
+   "invariant_sha": "2aec76497d849cb260d2436690cba2fa0a9e4b8762d03d4d1beea17238afddd0",
+   "tool_version_carries_live": true
+  },
+  "bromine": {
+   "has_result_digest": true,
+   "invariant_sha": "a9dc00f44b6b922edc891b3f57603a6190e0e97837087ab8282f5b491a350d29",
+   "tool_version_carries_live": false
+  },
+  "bromine_smiles": {
+   "has_result_digest": true,
+   "invariant_sha": "312d72dfad095f2fe7ef3c01a7fae46aabb45610e3789687c9aced42c4c61523",
+   "tool_version_carries_live": true
+  },
+  "decompile_paracetamol": {
+   "has_result_digest": true,
+   "invariant_sha": "8af5a8531f1a67f18dd2755376bf0e27265669134b54491bf30f61a7a551d25a",
+   "tool_version_carries_live": true
+  },
+  "diels_alder_control": {
+   "has_result_digest": true,
+   "invariant_sha": "10f8a0ef945c6876864513f78e475a69bbb6c80a0e6ce9fcf157abd5a5f439a6",
+   "tool_version_carries_live": true
+  },
+  "invalid_name": {
+   "has_result_digest": true,
+   "invariant_sha": "9c60b01272972799a183a89e70e0cf8795e9f2d4d18c8d89553045df62df2fa1",
+   "tool_version_carries_live": false
+  },
+  "methyl_acetate": {
+   "has_result_digest": true,
+   "invariant_sha": "19ca83ed68ebbc0655732a352f2af39d725102236101c7442d9e97f3db3f1f3d",
+   "tool_version_carries_live": true
+  },
+  "methyl_acetate@poor-man": {
+   "has_result_digest": true,
+   "invariant_sha": "e2a944603ca5faff1f1cede9511c7911c2bfcea58add6a4b472ba75ea15b5b55",
+   "tool_version_carries_live": true
+  },
+  "methyl_acetate@research-lab": {
+   "has_result_digest": true,
+   "invariant_sha": "2b92095f6947c19aed48258991f4d1f35e606f82dccc07db915c4c2beedaa563",
+   "tool_version_carries_live": true
+  },
+  "methyl_acetate_dag": {
+   "has_result_digest": true,
+   "invariant_sha": "b7176573e7c83c089454e9ff04ed33f079bf761159016097085dd884a88335c6",
+   "tool_version_carries_live": true
+  },
+  "methyl_salicylate": {
+   "has_result_digest": true,
+   "invariant_sha": "914b39dd2d9ad611c9b9e7f3ebfce5e47b8321907ada30652ae4cb88e81f86e8",
+   "tool_version_carries_live": true
+  },
+  "paracetamol": {
+   "has_result_digest": true,
+   "invariant_sha": "afd08b338096c27fe434ceb6cda38028287a06bbd887b8242783cb783d323856",
+   "tool_version_carries_live": true
+  },
+  "paracetamol@research-lab": {
+   "has_result_digest": true,
+   "invariant_sha": "5c8254f0acb24aca62eb8ea3598fa231945630226b930d740a744919b02709a6",
+   "tool_version_carries_live": true
+  },
+  "paracetamol_incomplete": {
+   "has_result_digest": true,
+   "invariant_sha": "f6242687f51ef07ebccad915c8e3795a81fc1eafbe5ecc59176c8555d25d27b8",
+   "tool_version_carries_live": true
+  }
+ }
+}

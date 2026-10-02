@@ -1,0 +1,3957 @@
+{
+ "aspirin": {
+  "exit_code": 4,
+  "request_payload": {
+   "algebra_profile": "certified-route-v07",
+   "capability_profile": null,
+   "capability_profile_origin": "",
+   "constraints": {
+    "max_pressure_atm": null,
+    "max_temperature_k": 350.0,
+    "min_pressure_atm": null,
+    "min_temperature_k": null,
+    "process": {
+     "allowed_agitation": null,
+     "allowed_attention": null,
+     "available_equipment": null,
+     "max_active_minutes": null,
+     "max_step_minutes": null,
+     "max_total_minutes": null,
+     "min_check_interval_minutes": null,
+     "schema_version": "smartchem.constraints/process-bounds-v1alpha1"
+    },
+    "schema_version": "smartchem.constraints/physical-bounds-v1alpha2"
+   },
+   "evidence_provider_selection": {
+    "selection_id": "DEFAULT_OFFLINE"
+   },
+   "helper_reagents": [
+    "acetic acid",
+    "water"
+   ],
+   "identity_policy": {
+    "match_layer": "CONSTITUTION",
+    "policy_id": "DEFAULT"
+   },
+   "input_kind": "AUTO",
+   "normalized_identity": "003f60a452082aff801ca134b949b9175855c68a14c269c168be40426ee7390d",
+   "operation": "RECOMPILE",
+   "origins": [
+    [
+     "algebra_profile",
+     "DEFAULT"
+    ],
+    [
+     "commodities_enabled",
+     "DEFAULT"
+    ],
+    [
+     "constraints",
+     "EXPLICIT"
+    ],
+    [
+     "cut_budget",
+     "DEFAULT"
+    ],
+    [
+     "evidence_provider_selection",
+     "DEFAULT"
+    ],
+    [
+     "helper_reagents",
+     "EXPLICIT"
+    ],
+    [
+     "identity_policy",
+     "DEFAULT"
+    ],
+    [
+     "input_kind",
+     "DEFAULT"
+    ],
+    [
+     "max_depth",
+     "EXPLICIT"
+    ],
+    [
+     "max_routes",
+     "DEFAULT"
+    ],
+    [
+     "output_policy",
+     "DEFAULT"
+    ],
+    [
+     "ranking_policy",
+     "DEFAULT"
+    ],
+    [
+     "stock_materials",
+     "EXPLICIT"
+    ],
+    [
+     "transform_grammar",
+     "DEFAULT"
+    ]
+   ],
+   "output_policy": {
+    "quiet": false,
+    "render_mode": "HUMAN"
+   },
+   "ranking_policy": {
+    "policy_id": "DEFAULT_PRECEDENCE_V1"
+   },
+   "schema_version": "smartchem.service/compilation-request-v1alpha7",
+   "search_bounds": [
+    [
+     "cut_budget",
+     20000
+    ],
+    [
+     "max_depth",
+     1
+    ],
+    [
+     "max_results",
+     100
+    ]
+   ],
+   "stock_materials": [
+    "acetic anhydride",
+    "salicylic acid"
+   ],
+   "target_input": "smiles:CC(=O)Oc1ccccc1C(=O)O",
+   "terminal_policy": {
+    "commodities_enabled": true,
+    "formula_inventory": [],
+    "match_mode": "STRUCTURE"
+   },
+   "transform_grammar": "CAPPED_SCISSION_LINEAR"
+  },
+  "response_payload": {
+   "admissible_route_digests": [],
+   "affordability_frontier": [
+    {
+     "cost_vector": {
+      "access_difficulty": null,
+      "analytical": null,
+      "cash": null,
+      "cash_floor": null,
+      "currency": "",
+      "energy": null,
+      "evidence_tier_rank": null,
+      "fiction_blockers": [],
+      "hard_blockers": [],
+      "labor_time": null,
+      "material_quantity": 2.0,
+      "new_equipment": null,
+      "preprocessing": null,
+      "region": "",
+      "unit": "",
+      "waste_disposal": null
+     },
+     "route_digest": "acdf2dffc9284d8df5d194d46b1409519dbf4af091e67c5c91de500ad902fa9d",
+     "schema_version": "smartchem.experiment/affordability-frontier-entry-v1alpha3"
+    }
+   ],
+   "capability_question_digest": null,
+   "compilation_ir": {
+    "candidates": [
+     {
+      "candidate_digest": "6f5a68e95cff09afa52e33304a91dc5f461553236ae717fc6c931c8215b1bf7c",
+      "candidate_kind": "ROUTE",
+      "equation": "step 1: C4H6O3 + C7H6O3 -> C9H8O4 + C2H4O2",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+     },
+     {
+      "candidate_digest": "acdf2dffc9284d8df5d194d46b1409519dbf4af091e67c5c91de500ad902fa9d",
+      "candidate_kind": "ROUTE",
+      "equation": "step 1: C2H4O2 + C7H6O3 -> C9H8O4 + H2O",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+     }
+    ],
+    "diagnostics": [
+     "search incomplete within bounds: PARTIAL_DEPTH_LIMIT"
+    ],
+    "identity_losses": [],
+    "operation": "RECOMPILE",
+    "request_digest": "132cb19d741880ef076795b74219b646ae422b04415e58718ff97d94f1dd3bb3",
+    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha8",
+    "search_receipt": {
+     "candidate_enumeration_complete": false,
+     "candidate_limit": null,
+     "candidates_emitted": 6,
+     "candidates_rejected_by_reason": [
+      [
+       "duplicate",
+       4
+      ]
+     ],
+     "cut_budget": 20000,
+     "cut_budget_scope": "PER_NODE",
+     "cut_enumeration_complete": true,
+     "max_depth": 1,
+     "nodes_visited": 1,
+     "result_limit": 100,
+     "result_limit_saturated": false,
+     "results_returned": 2,
+     "schema_version": "smartchem.compilation-ir/search-receipt-view-v1alpha1",
+     "search_kind": "LINEAR_ROUTE",
+     "standard_status": "INCOMPLETE_DEPTH_LIMIT",
+     "status": "PARTIAL_DEPTH_LIMIT",
+     "stop_reason": "INCOMPLETE_DEPTH_LIMIT",
+     "target_identity_digest": "003f60a452082aff801ca134b949b9175855c68a14c269c168be40426ee7390d",
+     "terminal_policy_digest": "fabdd2ce4d75b0ce68c016880a229317c04950835e12f072d928404db69fed73",
+     "transform_registry_digest": "c36eb03e0d1916def44024cbe66d1a3939f8023dc29501f4f8ddda8e7748222c",
+     "transforms_considered": 47
+    },
+    "search_status": "PARTIAL_DEPTH_LIMIT",
+    "standard_status": "INCOMPLETE_DEPTH_LIMIT",
+    "structural_candidates": [],
+    "target": {
+     "canonical_repr": "C9H8O4",
+     "identity_digest": "003f60a452082aff801ca134b949b9175855c68a14c269c168be40426ee7390d",
+     "layer": "STRUCTURE",
+     "schema_version": "smartchem.compilation-ir/chemical-identity-v1alpha1"
+    },
+    "terminal_policy_digest": "fabdd2ce4d75b0ce68c016880a229317c04950835e12f072d928404db69fed73",
+    "tool_version": "0.9.5a1",
+    "transform_registry_digest": "c36eb03e0d1916def44024cbe66d1a3939f8023dc29501f4f8ddda8e7748222c"
+   },
+   "diagnostics": [
+    "search incomplete within bounds: PARTIAL_DEPTH_LIMIT",
+    "section-11 constraint APPLIED (T<=350 K): the routes are ranked against the bench -- 0 FIT, 0 EXCLUDED (outside a hard bound), 2 UNKNOWN-fit (a constrained dimension the route leaves undeclared -- never a silent pass); see ranked_route_dossiers"
+   ],
+   "exit_code": 4,
+   "outcome": "INCOMPLETE",
+   "parse_receipt_summary": "IDENTITY RESOLVED [AUTO->SMILES] via SMILES_PARSER: C9H8O4 (CONSTITUTION layer); an explicit 'smiles:' interpretation was requested",
+   "process_selection_status": "NOT_REQUESTED",
+   "producer_signature": null,
+   "provider_snapshots": [],
+   "ranked_dag_dossiers": [],
+   "ranked_route_dossiers": [
+    {
+     "capability_assessment": null,
+     "composability_verdict": "SINGLE_STEP",
+     "equation": "step 1: C4H6O3 + C7H6O3 -> C9H8O4 + C2H4O2",
+     "equilibrium_verdict": "UNKNOWN",
+     "exclusions": [],
+     "feasibility_verdict": "UNKNOWN",
+     "fit_status": "UNKNOWN",
+     "gaps": [
+      "step 1: temperature undeclared, but the bench caps at 350.0 K"
+     ],
+     "kinetics_verdict": "UNKNOWN",
+     "process_requirements": [
+      {
+       "active_minutes": null,
+       "agitation": "MANUAL",
+       "attention": "PERIODIC",
+       "check_interval_minutes": null,
+       "elapsed_minutes": null,
+       "equipment": [
+        "125-mL Erlenmeyer flask",
+        "150 mL beaker",
+        "Buchner funnel",
+        "dropper",
+        "glass rod",
+        "ice bath",
+        "steam bath"
+       ],
+       "max_pressure_atm": 1.0,
+       "min_active_minutes": null,
+       "min_elapsed_minutes": 10.0,
+       "min_pressure_atm": null,
+       "peak_temperature_k": 373.15,
+       "provenance": "whole-process record, SOURCED from LibreTexts 'Experiment 1: Synthesis of Aspirin' (CC BY-NC-SA 4.0). Re-verified by fetching the page and grepping each quote from raw HTML (item 3). min_elapsed 10 min is the SOURCED heating LOWER BOUND ('for at least 10 minutes'); the whole-step CEILING is untimed -> UNKNOWN (a floor can only EXCLUDE). agitation=MANUAL ('swirl the flask gently'). Equipment nouns each directly quoted. workup_included=True: the source describes a genuinely PREPARATIVE isolation (Buchner vacuum filtration -> recrystallise -> air dry -> weigh -> melting point -> percent yield), UNLIKE the qualitative methyl-salicylate prep -- so this record CAN produce a FITS. attention PERIODIC and peak 373.15 K ('steam bath') are the same interpretive/derivational convention the three existing records use, not new fabricated values. max_pressure ambient (open apparatus); min_pressure UNKNOWN (the vacuum filtration is unquantified -- Round V X-high D14). SINGLE-SOURCED. NOTE: the source uses a 1:3.3 salicylic-acid:anhydride molar excess (normal for this prep); the composition-only _sig is unaffected, but a future quantity-weighted demo must read the real ratio, not 1:1.",
+       "source": null,
+       "workup_included": true
+      }
+     ],
+     "readiness": {
+      "per_step": [
+       {
+        "conditions": "SATISFIED",
+        "formal_candidate": "SATISFIED",
+        "open_obligations": [
+         "reaction_type: not recognized by the production oracle"
+        ],
+        "process": "SATISFIED",
+        "provenance": [
+         "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+         "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)"
+        ],
+        "reaction_class_name": null,
+        "reaction_type": "UNSATISFIED",
+        "workup_isolation": "SATISFIED"
+       }
+      ],
+      "route_open_obligations": [
+       "reaction_type: not recognized by the production oracle"
+      ]
+     },
+     "readiness_tier": "FORMAL_CANDIDATE",
+     "replay_payload": [
+      {
+       "envelope": {
+        "applied_field": "",
+        "catalysts": [],
+        "duration": null,
+        "medium": "steam bath; acetylation of salicylic acid with acetic anhydride (acid-catalyzed)",
+        "pressure": null,
+        "procedure": {
+         "analytical_verification": {
+          "justification": "",
+          "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+          "status": "PRESENT",
+          "value": {
+           "kind": "str",
+           "value": "weigh; melting point (lit mp 135 C); percent yield; ferric-chloride purity test"
+          }
+         },
+         "drying": {
+          "justification": "",
+          "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+          "status": "PRESENT",
+          "value": {
+           "kind": "str",
+           "value": "air dry the collected crystals"
+          }
+         },
+         "evidence_scope": "",
+         "operations": [
+          {
+           "agitation": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "swirl gently until the salicylic acid dissolves"
+            }
+           },
+           "apparatus": [
+            "125-mL Erlenmeyer flask"
+           ],
+           "duration": null,
+           "endpoint": null,
+           "kind": "ADD",
+           "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+           "material_uses": [
+            {
+             "evidence_source": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+             "formulation": "conc.",
+             "identity": {
+              "atoms": [
+               "H",
+               "H",
+               "O",
+               "O",
+               "O",
+               "O",
+               "S"
+              ],
+              "bonds": [
+               [
+                0,
+                2,
+                1
+               ],
+               [
+                1,
+                3,
+                1
+               ],
+               [
+                2,
+                6,
+                1
+               ],
+               [
+                3,
+                6,
+                1
+               ],
+               [
+                4,
+                6,
+                2
+               ],
+               [
+                5,
+                6,
+                2
+               ]
+              ],
+              "charge": 0,
+              "state": ""
+             },
+             "name": "sulfuric acid",
+             "phase": {
+              "evidence": "AUTHOR_INFERRED",
+              "note": "'5 drops of conc. H2SO4' -- a drop count; the page never states the phase",
+              "phase": "LIQUID"
+             },
+             "quantity": null,
+             "role": "CATALYST",
+             "specification": {
+              "class": "smartchem.material_spec.MaterialSpecification",
+              "fields": [
+               [
+                "composition",
+                {
+                 "type": "none"
+                }
+               ],
+               [
+                "states",
+                {
+                 "items": [],
+                 "type": "tuple"
+                }
+               ],
+               [
+                "unresolved_terms",
+                {
+                 "items": [
+                  {
+                   "type": "str",
+                   "value": "conc."
+                  }
+                 ],
+                 "type": "tuple"
+                }
+               ]
+              ],
+              "type": "dataclass"
+             }
+            }
+           ],
+           "materials": [
+            "salicylic acid",
+            "acetic anhydride",
+            "sulfuric acid"
+           ],
+           "ordinal": 1,
+           "pressure": null,
+           "quantity": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "2.0 g salicylic acid + 5 mL acetic anhydride + 5 drops conc. H2SO4"
+            }
+           },
+           "rate": null,
+           "role": "REACTION",
+           "temperature": null
+          },
+          {
+           "agitation": null,
+           "apparatus": [
+            "steam bath"
+           ],
+           "duration": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "at least 10 minutes"
+            }
+           },
+           "endpoint": null,
+           "kind": "HOLD",
+           "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+           "material_uses": [],
+           "materials": [],
+           "ordinal": 2,
+           "pressure": null,
+           "quantity": null,
+           "rate": null,
+           "role": "REACTION",
+           "temperature": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "steam bath, gentle heating"
+            }
+           }
+          },
+          {
+           "agitation": null,
+           "apparatus": [
+            "glass rod",
+            "ice bath"
+           ],
+           "duration": null,
+           "endpoint": null,
+           "kind": "COOL",
+           "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+           "material_uses": [],
+           "materials": [],
+           "ordinal": 3,
+           "pressure": null,
+           "quantity": null,
+           "rate": null,
+           "role": "OTHER",
+           "temperature": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "cool to room temperature, scratch with a glass rod, then ice bath until crystallization completes"
+            }
+           }
+          },
+          {
+           "agitation": null,
+           "apparatus": [
+            "Buchner funnel"
+           ],
+           "duration": null,
+           "endpoint": null,
+           "kind": "FILTER",
+           "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+           "material_uses": [],
+           "materials": [
+            "water"
+           ],
+           "ordinal": 4,
+           "pressure": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "vacuum filter"
+            }
+           },
+           "quantity": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "add 50 mL water"
+            }
+           },
+           "rate": null,
+           "role": "OTHER",
+           "temperature": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "cool in an ice bath"
+            }
+           }
+          },
+          {
+           "agitation": null,
+           "apparatus": [],
+           "duration": null,
+           "endpoint": null,
+           "kind": "ADD",
+           "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+           "material_uses": [
+            {
+             "evidence_source": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+             "formulation": null,
+             "identity": {
+              "atoms": [
+               "H",
+               "H",
+               "O"
+              ],
+              "bonds": [
+               [
+                0,
+                2,
+                1
+               ],
+               [
+                1,
+                2,
+                1
+               ]
+              ],
+              "charge": 0,
+              "state": ""
+             },
+             "name": "cold water",
+             "phase": null,
+             "quantity": null,
+             "role": "RINSE",
+             "specification": null
+            }
+           ],
+           "materials": [
+            "cold water"
+           ],
+           "ordinal": 5,
+           "pressure": null,
+           "quantity": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "rinse the crystals several times with 5 mL portions of cold water"
+            }
+           },
+           "rate": null,
+           "role": "WASH",
+           "temperature": null
+          },
+          {
+           "agitation": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "Stir the crude solid"
+            }
+           },
+           "apparatus": [
+            "150-mL beaker"
+           ],
+           "duration": null,
+           "endpoint": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "stir until gas evolution stops"
+            }
+           },
+           "kind": "ADD",
+           "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+           "material_uses": [
+            {
+             "evidence_source": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+             "formulation": "saturated aqueous",
+             "identity": null,
+             "name": "sodium bicarbonate",
+             "phase": {
+              "evidence": "SOURCE_QUOTED",
+              "note": "page: 'a saturated aqueous sodium bicarbonate solution'",
+              "phase": "AQUEOUS_SOLUTION"
+             },
+             "quantity": {
+              "schema_version": "smartchem.experiment/stock-quantity-v1alpha1",
+              "unit": "mL",
+              "value": "25"
+             },
+             "role": "NEUTRALIZE",
+             "specification": {
+              "class": "smartchem.material_spec.MaterialSpecification",
+              "fields": [
+               [
+                "composition",
+                {
+                 "type": "none"
+                }
+               ],
+               [
+                "states",
+                {
+                 "items": [
+                  {
+                   "class": "smartchem.material_spec.StateClaim",
+                   "fields": [
+                    [
+                     "state",
+                     {
+                      "class": "smartchem.material_spec.SaturationState",
+                      "type": "enum",
+                      "value": {
+                       "type": "str",
+                       "value": "SATURATED"
+                      }
+                     }
+                    ],
+                    [
+                     "evidence",
+                     {
+                      "class": "smartchem.material_spec.EvidenceKind",
+                      "type": "enum",
+                      "value": {
+                       "type": "str",
+                       "value": "SOURCE_QUOTED"
+                      }
+                     }
+                    ],
+                    [
+                     "note",
+                     {
+                      "type": "str",
+                      "value": "source: 'a saturated aqueous sodium bicarbonate solution'"
+                     }
+                    ]
+                   ],
+                   "type": "dataclass"
+                  },
+                  {
+                   "class": "smartchem.material_spec.StateClaim",
+                   "fields": [
+                    [
+                     "state",
+                     {
+                      "class": "smartchem.material_spec.DilutionState",
+                      "type": "enum",
+                      "value": {
+                       "type": "str",
+                       "value": "SOLUTION"
+                      }
+                     }
+                    ],
+                    [
+                     "evidence",
+                     {
+                      "class": "smartchem.material_spec.EvidenceKind",
+                      "type": "enum",
+                      "value": {
+                       "type": "str",
+                       "value": "SOURCE_QUOTED"
+                      }
+                     }
+                    ],
+                    [
+                     "note",
+                     {
+                      "type": "str",
+                      "value": "source: 'a saturated aqueous sodium bicarbonate solution'"
+                     }
+                    ]
+                   ],
+                   "type": "dataclass"
+                  }
+                 ],
+                 "type": "tuple"
+                }
+               ],
+               [
+                "unresolved_terms",
+                {
+                 "items": [],
+                 "type": "tuple"
+                }
+               ]
+              ],
+              "type": "dataclass"
+             }
+            }
+           ],
+           "materials": [
+            "sodium bicarbonate"
+           ],
+           "ordinal": 6,
+           "pressure": null,
+           "quantity": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "25 mL of a saturated aqueous sodium bicarbonate solution in a 150 mL beaker"
+            }
+           },
+           "rate": null,
+           "role": "OTHER",
+           "temperature": null
+          },
+          {
+           "agitation": null,
+           "apparatus": [
+            "Buchner funnel"
+           ],
+           "duration": null,
+           "endpoint": null,
+           "kind": "FILTER",
+           "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+           "material_uses": [],
+           "materials": [],
+           "ordinal": 7,
+           "pressure": null,
+           "quantity": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "Filter the solution through a Buchner funnel to remove any insoluble impurities"
+            }
+           },
+           "rate": null,
+           "role": "OTHER",
+           "temperature": null
+          },
+          {
+           "agitation": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "with stirring"
+            }
+           },
+           "apparatus": [],
+           "duration": null,
+           "endpoint": null,
+           "kind": "ADD",
+           "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+           "material_uses": [
+            {
+             "evidence_source": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+             "formulation": "conc.",
+             "identity": {
+              "atoms": [
+               "Cl",
+               "H"
+              ],
+              "bonds": [
+               [
+                0,
+                1,
+                1
+               ]
+              ],
+              "charge": 0,
+              "state": ""
+             },
+             "name": "hydrochloric acid",
+             "phase": {
+              "evidence": "AUTHOR_INFERRED",
+              "note": "'conc. HCl' -- hydrochloric acid is by definition aqueous HCl, the author's (dictionary) reading; the page states no phase for the draw",
+              "phase": "AQUEOUS_SOLUTION"
+             },
+             "quantity": null,
+             "role": "NEUTRALIZE",
+             "specification": {
+              "class": "smartchem.material_spec.MaterialSpecification",
+              "fields": [
+               [
+                "composition",
+                {
+                 "type": "none"
+                }
+               ],
+               [
+                "states",
+                {
+                 "items": [],
+                 "type": "tuple"
+                }
+               ],
+               [
+                "unresolved_terms",
+                {
+                 "items": [
+                  {
+                   "type": "str",
+                   "value": "conc."
+                  }
+                 ],
+                 "type": "tuple"
+                }
+               ]
+              ],
+              "type": "dataclass"
+             }
+            },
+            {
+             "evidence_source": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+             "formulation": null,
+             "identity": {
+              "atoms": [
+               "H",
+               "H",
+               "O"
+              ],
+              "bonds": [
+               [
+                0,
+                2,
+                1
+               ],
+               [
+                1,
+                2,
+                1
+               ]
+              ],
+              "charge": 0,
+              "state": ""
+             },
+             "name": "water",
+             "phase": null,
+             "quantity": {
+              "schema_version": "smartchem.experiment/stock-quantity-v1alpha1",
+              "unit": "mL",
+              "value": "10"
+             },
+             "role": "SOLVENT",
+             "specification": null
+            }
+           ],
+           "materials": [
+            "hydrochloric acid",
+            "water"
+           ],
+           "ordinal": 8,
+           "pressure": null,
+           "quantity": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "into an ice cold HCl solution (ca 3.5 mL of conc. HCl in 10 mL of water)"
+            }
+           },
+           "rate": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "pour the filtrate a small amount at a time"
+            }
+           },
+           "role": "OTHER",
+           "temperature": null
+          },
+          {
+           "agitation": null,
+           "apparatus": [
+            "Buchner funnel"
+           ],
+           "duration": null,
+           "endpoint": null,
+           "kind": "FILTER",
+           "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+           "material_uses": [
+            {
+             "evidence_source": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+             "formulation": null,
+             "identity": {
+              "atoms": [
+               "H",
+               "H",
+               "O"
+              ],
+              "bonds": [
+               [
+                0,
+                2,
+                1
+               ],
+               [
+                1,
+                2,
+                1
+               ]
+              ],
+              "charge": 0,
+              "state": ""
+             },
+             "name": "cold water",
+             "phase": null,
+             "quantity": {
+              "schema_version": "smartchem.experiment/stock-quantity-v1alpha1",
+              "unit": "mL",
+              "value": "5"
+             },
+             "role": "RINSE",
+             "specification": null
+            },
+            {
+             "evidence_source": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+             "formulation": null,
+             "identity": {
+              "atoms": [
+               "H",
+               "H",
+               "O"
+              ],
+              "bonds": [
+               [
+                0,
+                2,
+                1
+               ],
+               [
+                1,
+                2,
+                1
+               ]
+              ],
+              "charge": 0,
+              "state": ""
+             },
+             "name": "cold water",
+             "phase": null,
+             "quantity": {
+              "schema_version": "smartchem.experiment/stock-quantity-v1alpha1",
+              "unit": "mL",
+              "value": "5"
+             },
+             "role": "RINSE",
+             "specification": null
+            },
+            {
+             "evidence_source": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+             "formulation": null,
+             "identity": {
+              "atoms": [
+               "H",
+               "H",
+               "O"
+              ],
+              "bonds": [
+               [
+                0,
+                2,
+                1
+               ],
+               [
+                1,
+                2,
+                1
+               ]
+              ],
+              "charge": 0,
+              "state": ""
+             },
+             "name": "cold water",
+             "phase": null,
+             "quantity": {
+              "schema_version": "smartchem.experiment/stock-quantity-v1alpha1",
+              "unit": "mL",
+              "value": "5"
+             },
+             "role": "RINSE",
+             "specification": null
+            }
+           ],
+           "materials": [
+            "cold water"
+           ],
+           "ordinal": 9,
+           "pressure": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "Filter the solid by suction"
+            }
+           },
+           "quantity": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "wash the crystals 3X with 5 mL of cold water each"
+            }
+           },
+           "rate": null,
+           "role": "OTHER",
+           "temperature": null
+          },
+          {
+           "agitation": null,
+           "apparatus": [],
+           "duration": null,
+           "endpoint": null,
+           "kind": "HEAT",
+           "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+           "material_uses": [
+            {
+             "evidence_source": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+             "formulation": null,
+             "identity": {
+              "atoms": [
+               "C",
+               "C",
+               "C",
+               "C",
+               "H",
+               "H",
+               "H",
+               "H",
+               "H",
+               "H",
+               "H",
+               "H",
+               "O",
+               "O"
+              ],
+              "bonds": [
+               [
+                0,
+                2,
+                1
+               ],
+               [
+                0,
+                4,
+                1
+               ],
+               [
+                0,
+                5,
+                1
+               ],
+               [
+                0,
+                6,
+                1
+               ],
+               [
+                1,
+                3,
+                1
+               ],
+               [
+                1,
+                7,
+                1
+               ],
+               [
+                1,
+                8,
+                1
+               ],
+               [
+                1,
+                9,
+                1
+               ],
+               [
+                2,
+                10,
+                1
+               ],
+               [
+                2,
+                11,
+                1
+               ],
+               [
+                2,
+                12,
+                1
+               ],
+               [
+                3,
+                12,
+                1
+               ],
+               [
+                3,
+                13,
+                2
+               ]
+              ],
+              "charge": 0,
+              "state": ""
+             },
+             "name": "ethyl acetate",
+             "phase": {
+              "evidence": "AUTHOR_INFERRED",
+              "note": "'hot ethyl acetate' -- the page never states the phase",
+              "phase": "LIQUID"
+             },
+             "quantity": null,
+             "role": "SOLVENT",
+             "specification": null
+            }
+           ],
+           "materials": [
+            "ethyl acetate"
+           ],
+           "ordinal": 10,
+           "pressure": null,
+           "quantity": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "dissolve in a minimum (2-3 mL) of hot ethyl acetate"
+            }
+           },
+           "rate": null,
+           "role": "RECRYSTALLIZATION",
+           "temperature": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "hot"
+            }
+           }
+          },
+          {
+           "agitation": null,
+           "apparatus": [
+            "ice bath"
+           ],
+           "duration": null,
+           "endpoint": null,
+           "kind": "COOL",
+           "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+           "material_uses": [],
+           "materials": [],
+           "ordinal": 11,
+           "pressure": null,
+           "quantity": null,
+           "rate": null,
+           "role": "RECRYSTALLIZATION",
+           "temperature": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "cool to room temperature, then in an ice bath"
+            }
+           }
+          },
+          {
+           "agitation": null,
+           "apparatus": [
+            "Buchner funnel"
+           ],
+           "duration": null,
+           "endpoint": null,
+           "kind": "FILTER",
+           "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+           "material_uses": [
+            {
+             "evidence_source": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+             "formulation": null,
+             "identity": null,
+             "name": "petroleum ether",
+             "phase": {
+              "evidence": "AUTHOR_INFERRED",
+              "note": "'cold petroleum ether' -- the page never states the phase",
+              "phase": "LIQUID"
+             },
+             "quantity": null,
+             "role": "RINSE",
+             "specification": null
+            }
+           ],
+           "materials": [
+            "petroleum ether"
+           ],
+           "ordinal": 12,
+           "pressure": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "collect by vacuum filtration"
+            }
+           },
+           "quantity": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "rinse with a few mL cold petroleum ether"
+            }
+           },
+           "rate": null,
+           "role": "RECRYSTALLIZATION",
+           "temperature": null
+          },
+          {
+           "agitation": null,
+           "apparatus": [],
+           "duration": null,
+           "endpoint": null,
+           "kind": "DRY",
+           "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+           "material_uses": [],
+           "materials": [],
+           "ordinal": 13,
+           "pressure": null,
+           "quantity": {
+            "justification": "",
+            "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+            "status": "PRESENT",
+            "value": {
+             "kind": "str",
+             "value": "air dry the crystals"
+            }
+           },
+           "rate": null,
+           "role": "OTHER",
+           "temperature": null
+          },
+          {
+           "agitation": null,
+           "apparatus": [
+            "analytical balance",
+            "melting point apparatus"
+           ],
+           "duration": null,
+           "endpoint": null,
+           "kind": "VERIFY",
+           "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+           "material_uses": [],
+           "materials": [],
+           "ordinal": 14,
+           "pressure": null,
+           "quantity": null,
+           "rate": null,
+           "role": "OTHER",
+           "temperature": null
+          },
+          {
+           "agitation": null,
+           "apparatus": [],
+           "duration": null,
+           "endpoint": null,
+           "kind": "VERIFY",
+           "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+           "material_uses": [],
+           "materials": [
+            "ferric chloride"
+           ],
+           "ordinal": 15,
+           "pressure": null,
+           "quantity": null,
+           "rate": null,
+           "role": "OTHER",
+           "temperature": null
+          }
+         ],
+         "purification": {
+          "justification": "",
+          "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+          "status": "PRESENT",
+          "value": {
+           "kind": "str",
+           "value": "recrystallize from hot ethyl acetate (after a bicarbonate/HCl reprecipitation)"
+          }
+         },
+         "quench": {
+          "justification": "worked up by dilution, ice-bath crystallization and filtration; the sourced procedure specifies no separate reaction quench",
+          "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+          "status": "EXPLICIT_NOT_APPLICABLE",
+          "value": {
+           "kind": "null"
+          }
+         },
+         "reaction_scope": "acetylation: salicylic acid + acetic anhydride -> acetylsalicylic acid + acetic acid",
+         "scale": {
+          "justification": "",
+          "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+          "status": "PRESENT",
+          "value": {
+           "kind": "str",
+           "value": "2.0 g (0.015 mol) salicylic acid; 5 mL (0.05 mol) acetic anhydride; 5 drops conc. H2SO4 (anhydride:acid ~ 3.3:1)"
+          }
+         },
+         "separation": {
+          "justification": "the solid product is isolated by filtration; the sourced procedure uses no liquid-liquid partition",
+          "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+          "status": "EXPLICIT_NOT_APPLICABLE",
+          "value": {
+           "kind": "null"
+          }
+         },
+         "source": {
+          "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+          "review": "ACCEPTED"
+         },
+         "stream_dispositions": [],
+         "unresolved_omissions": [],
+         "wash": {
+          "justification": "",
+          "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+          "status": "PRESENT",
+          "value": {
+           "kind": "str",
+           "value": "cold-water rinses of the crystals; cold petroleum-ether rinse after recrystallization"
+          }
+         },
+         "workup_isolation": {
+          "justification": "",
+          "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+          "status": "PRESENT",
+          "value": {
+           "kind": "str",
+           "value": "dilute with water, vacuum (Buchner) filtration, cold-water rinse, air dry"
+          }
+         }
+        },
+        "process": {
+         "active_minutes": null,
+         "agitation": "MANUAL",
+         "attention": "PERIODIC",
+         "check_interval_minutes": null,
+         "elapsed_minutes": null,
+         "equipment": [
+          "125-mL Erlenmeyer flask",
+          "150 mL beaker",
+          "Buchner funnel",
+          "dropper",
+          "glass rod",
+          "ice bath",
+          "steam bath"
+         ],
+         "max_pressure_atm": 1.0,
+         "min_active_minutes": null,
+         "min_elapsed_minutes": 10.0,
+         "min_pressure_atm": null,
+         "peak_temperature_k": 373.15,
+         "provenance": "whole-process record, SOURCED from LibreTexts 'Experiment 1: Synthesis of Aspirin' (CC BY-NC-SA 4.0). Re-verified by fetching the page and grepping each quote from raw HTML (item 3). min_elapsed 10 min is the SOURCED heating LOWER BOUND ('for at least 10 minutes'); the whole-step CEILING is untimed -> UNKNOWN (a floor can only EXCLUDE). agitation=MANUAL ('swirl the flask gently'). Equipment nouns each directly quoted. workup_included=True: the source describes a genuinely PREPARATIVE isolation (Buchner vacuum filtration -> recrystallise -> air dry -> weigh -> melting point -> percent yield), UNLIKE the qualitative methyl-salicylate prep -- so this record CAN produce a FITS. attention PERIODIC and peak 373.15 K ('steam bath') are the same interpretive/derivational convention the three existing records use, not new fabricated values. max_pressure ambient (open apparatus); min_pressure UNKNOWN (the vacuum filtration is unquantified -- Round V X-high D14). SINGLE-SOURCED. NOTE: the source uses a 1:3.3 salicylic-acid:anhydride molar excess (normal for this prep); the composition-only _sig is unaffected, but a future quantity-weighted demo must read the real ratio, not 1:1.",
+         "source": null,
+         "workup_included": true
+        },
+        "provenance": "assembly direction: acetylation of salicylic acid with acetic anhydride -> acetylsalicylic acid (aspirin) + acetic acid; LibreTexts 'Experiment 1: Synthesis of Aspirin' (Chickos/Garin/D'Souza, University of Missouri-St. Louis, CC BY-NC-SA 4.0)",
+        "source": {
+         "locator": "https://chem.libretexts.org/Ancillary_Materials/Laboratory_Experiments/Wet_Lab_Experiments/Organic_Chemistry_Labs/Experiments/1:__Synthesis_of_Aspirin_(Experiment)",
+         "review": "ACCEPTED"
+        },
+        "status": "EXPERIMENTAL",
+        "temperature": null
+       },
+       "products": [
+        {
+         "atoms": [
+          "C",
+          "C",
+          "C",
+          "C",
+          "C",
+          "C",
+          "C",
+          "C",
+          "C",
+          "H",
+          "H",
+          "H",
+          "H",
+          "H",
+          "H",
+          "H",
+          "H",
+          "O",
+          "O",
+          "O",
+          "O"
+         ],
+         "bonds": [
+          [
+           0,
+           2,
+           2
+          ],
+          [
+           0,
+           6,
+           1
+          ],
+          [
+           0,
+           7,
+           1
+          ],
+          [
+           1,
+           8,
+           1
+          ],
+          [
+           1,
+           9,
+           1
+          ],
+          [
+           1,
+           10,
+           1
+          ],
+          [
+           1,
+           11,
+           1
+          ],
+          [
+           2,
+           3,
+           1
+          ],
+          [
+           2,
+           12,
+           1
+          ],
+          [
+           3,
+           4,
+           2
+          ],
+          [
+           3,
+           13,
+           1
+          ],
+          [
+           4,
+           5,
+           1
+          ],
+          [
+           4,
+           14,
+           1
+          ],
+          [
+           5,
+           6,
+           2
+          ],
+          [
+           5,
+           15,
+           1
+          ],
+          [
+           6,
+           17,
+           1
+          ],
+          [
+           7,
+           18,
+           1
+          ],
+          [
+           7,
+           19,
+           2
+          ],
+          [
+           8,
+           17,
+           1
+          ],
+          [
+           8,
+           20,
+           2
+          ],
+          [
+           16,
+           18,
+           1
+          ]
+         ],
+         "charge": 0,
+         "state": ""
+        },
+        {
+         "atoms": [
+          "C",
+          "C",
+          "H",
+          "H",
+          "H",
+          "H",
+          "O",
+          "O"
+         ],
+         "bonds": [
+          [
+           0,
+           1,
+           1
+          ],
+          [
+           0,
+           2,
+           1
+          ],
+          [
+           0,
+           3,
+           1
+          ],
+          [
+           0,
+           4,
+           1
+          ],
+          [
+           1,
+           6,
+           1
+          ],
+          [
+           1,
+           7,
+           2
+          ],
+          [
+           5,
+           6,
+           1
+          ]
+         ],
+         "charge": 0,
+         "state": ""
+        }
+       ],
+       "reactants": [
+        {
+         "atoms": [
+          "C",
+          "C",
+          "C",
+          "C",
+          "H",
+          "H",
+          "H",
+          "H",
+          "H",
+          "H",
+          "O",
+          "O",
+          "O"
+         ],
+         "bonds": [
+          [
+           0,
+           2,
+           1
+          ],
+          [
+           0,
+           4,
+           1
+          ],
+          [
+           0,
+           5,
+           1
+          ],
+          [
+           0,
+           6,
+           1
+          ],
+          [
+           1,
+           3,
+           1
+          ],
+          [
+           1,
+           7,
+           1
+          ],
+          [
+           1,
+           8,
+           1
+          ],
+          [
+           1,
+           9,
+           1
+          ],
+          [
+           2,
+           10,
+           1
+          ],
+          [
+           2,
+           11,
+           2
+          ],
+          [
+           3,
+           10,
+           1
+          ],
+          [
+           3,
+           12,
+           2
+          ]
+         ],
+         "charge": 0,
+         "state": ""
+        },
+        {
+         "atoms": [
+          "C",
+          "C",
+          "C",
+          "C",
+          "C",
+          "C",
+          "C",
+          "H",
+          "H",
+          "H",
+          "H",
+          "H",
+          "H",
+          "O",
+          "O",
+          "O"
+         ],
+         "bonds": [
+          [
+           0,
+           1,
+           2
+          ],
+          [
+           0,
+           5,
+           1
+          ],
+          [
+           0,
+           6,
+           1
+          ],
+          [
+           1,
+           2,
+           1
+          ],
+          [
+           1,
+           7,
+           1
+          ],
+          [
+           2,
+           3,
+           2
+          ],
+          [
+           2,
+           8,
+           1
+          ],
+          [
+           3,
+           4,
+           1
+          ],
+          [
+           3,
+           9,
+           1
+          ],
+          [
+           4,
+           5,
+           2
+          ],
+          [
+           4,
+           10,
+           1
+          ],
+          [
+           5,
+           13,
+           1
+          ],
+          [
+           6,
+           14,
+           1
+          ],
+          [
+           6,
+           15,
+           2
+          ],
+          [
+           11,
+           13,
+           1
+          ],
+          [
+           12,
+           14,
+           1
+          ]
+         ],
+         "charge": 0,
+         "state": ""
+        }
+       ],
+       "reaction_center": {
+        "broken": [
+         [
+          "C",
+          "O",
+          1
+         ],
+         [
+          "C",
+          "O",
+          1
+         ]
+        ],
+        "formed": [
+         [
+          "C",
+          "O",
+          1
+         ],
+         [
+          "C",
+          "O",
+          1
+         ]
+        ],
+        "n_components": 1,
+        "schema_version": "smartchem/reaction-center-v1"
+       },
+       "reagents": [],
+       "schema_version": "smartchem.experiment/step-v1",
+       "target": {
+        "atoms": [
+         "C",
+         "C",
+         "C",
+         "C",
+         "C",
+         "C",
+         "C",
+         "C",
+         "C",
+         "H",
+         "H",
+         "H",
+         "H",
+         "H",
+         "H",
+         "H",
+         "H",
+         "O",
+         "O",
+         "O",
+         "O"
+        ],
+        "bonds": [
+         [
+          0,
+          2,
+          2
+         ],
+         [
+          0,
+          6,
+          1
+         ],
+         [
+          0,
+          7,
+          1
+         ],
+         [
+          1,
+          8,
+          1
+         ],
+         [
+          1,
+          9,
+          1
+         ],
+         [
+          1,
+          10,
+          1
+         ],
+         [
+          1,
+          11,
+          1
+         ],
+         [
+          2,
+          3,
+          1
+         ],
+         [
+          2,
+          12,
+          1
+         ],
+         [
+          3,
+          4,
+          2
+         ],
+         [
+          3,
+          13,
+          1
+         ],
+         [
+          4,
+          5,
+          1
+         ],
+         [
+          4,
+          14,
+          1
+         ],
+         [
+          5,
+          6,
+          2
+         ],
+         [
+          5,
+          15,
+          1
+         ],
+         [
+          6,
+          17,
+          1
+         ],
+         [
+          7,
+          18,
+          1
+         ],
+         [
+          7,
+          19,
+          2
+         ],
+         [
+          8,
+          17,
+          1
+         ],
+         [
+          8,
+          20,
+          2
+         ],
+         [
+          16,
+          18,
+          1
+         ]
+        ],
+        "charge": 0,
+        "state": ""
+       }
+      }
+     ],
+     "route_digest": "6f5a68e95cff09afa52e33304a91dc5f461553236ae717fc6c931c8215b1bf7c",
+     "schema_version": "smartchem.service/ranked-route-summary-v1alpha6",
+     "selectivity_verdict": "UNKNOWN"
+    },
+    {
+     "capability_assessment": null,
+     "composability_verdict": "SINGLE_STEP",
+     "equation": "step 1: C2H4O2 + C7H6O3 -> C9H8O4 + H2O",
+     "equilibrium_verdict": "UNKNOWN",
+     "exclusions": [],
+     "feasibility_verdict": "UNKNOWN",
+     "fit_status": "UNKNOWN",
+     "gaps": [
+      "step 1: temperature undeclared, but the bench caps at 350.0 K"
+     ],
+     "kinetics_verdict": "UNKNOWN",
+     "process_requirements": [
+      null
+     ],
+     "readiness": {
+      "per_step": [
+       {
+        "conditions": "UNKNOWN",
+        "formal_candidate": "SATISFIED",
+        "open_obligations": [
+         "conditions: no declared condition envelope (unknown)",
+         "process: no declared procedure evidence (unknown)",
+         "workup_isolation: no declared procedure evidence (unknown)"
+        ],
+        "process": "UNKNOWN",
+        "provenance": [],
+        "reaction_class_name": "acyl condensation (esterification/amidation)",
+        "reaction_type": "SATISFIED",
+        "workup_isolation": "UNKNOWN"
+       }
+      ],
+      "route_open_obligations": [
+       "conditions: no declared condition envelope (unknown)",
+       "process: no declared procedure evidence (unknown)",
+       "workup_isolation: no declared procedure evidence (unknown)"
+      ]
+     },
+     "readiness_tier": "REACTION_VOUCHED",
+     "replay_payload": [
+      {
+       "envelope": {
+        "applied_field": "",
+        "catalysts": [],
+        "duration": null,
+        "medium": "",
+        "pressure": null,
+        "procedure": null,
+        "process": null,
+        "provenance": "",
+        "source": null,
+        "status": "UNSUPPORTED",
+        "temperature": null
+       },
+       "products": [
+        {
+         "atoms": [
+          "C",
+          "C",
+          "C",
+          "C",
+          "C",
+          "C",
+          "C",
+          "C",
+          "C",
+          "H",
+          "H",
+          "H",
+          "H",
+          "H",
+          "H",
+          "H",
+          "H",
+          "O",
+          "O",
+          "O",
+          "O"
+         ],
+         "bonds": [
+          [
+           0,
+           2,
+           2
+          ],
+          [
+           0,
+           6,
+           1
+          ],
+          [
+           0,
+           7,
+           1
+          ],
+          [
+           1,
+           8,
+           1
+          ],
+          [
+           1,
+           9,
+           1
+          ],
+          [
+           1,
+           10,
+           1
+          ],
+          [
+           1,
+           11,
+           1
+          ],
+          [
+           2,
+           3,
+           1
+          ],
+          [
+           2,
+           12,
+           1
+          ],
+          [
+           3,
+           4,
+           2
+          ],
+          [
+           3,
+           13,
+           1
+          ],
+          [
+           4,
+           5,
+           1
+          ],
+          [
+           4,
+           14,
+           1
+          ],
+          [
+           5,
+           6,
+           2
+          ],
+          [
+           5,
+           15,
+           1
+          ],
+          [
+           6,
+           17,
+           1
+          ],
+          [
+           7,
+           18,
+           1
+          ],
+          [
+           7,
+           19,
+           2
+          ],
+          [
+           8,
+           17,
+           1
+          ],
+          [
+           8,
+           20,
+           2
+          ],
+          [
+           16,
+           18,
+           1
+          ]
+         ],
+         "charge": 0,
+         "state": ""
+        },
+        {
+         "atoms": [
+          "H",
+          "H",
+          "O"
+         ],
+         "bonds": [
+          [
+           0,
+           2,
+           1
+          ],
+          [
+           1,
+           2,
+           1
+          ]
+         ],
+         "charge": 0,
+         "state": ""
+        }
+       ],
+       "reactants": [
+        {
+         "atoms": [
+          "C",
+          "C",
+          "H",
+          "H",
+          "H",
+          "H",
+          "O",
+          "O"
+         ],
+         "bonds": [
+          [
+           0,
+           1,
+           1
+          ],
+          [
+           0,
+           2,
+           1
+          ],
+          [
+           0,
+           3,
+           1
+          ],
+          [
+           0,
+           4,
+           1
+          ],
+          [
+           1,
+           6,
+           1
+          ],
+          [
+           1,
+           7,
+           2
+          ],
+          [
+           5,
+           6,
+           1
+          ]
+         ],
+         "charge": 0,
+         "state": ""
+        },
+        {
+         "atoms": [
+          "C",
+          "C",
+          "C",
+          "C",
+          "C",
+          "C",
+          "C",
+          "H",
+          "H",
+          "H",
+          "H",
+          "H",
+          "H",
+          "O",
+          "O",
+          "O"
+         ],
+         "bonds": [
+          [
+           0,
+           1,
+           2
+          ],
+          [
+           0,
+           5,
+           1
+          ],
+          [
+           0,
+           6,
+           1
+          ],
+          [
+           1,
+           2,
+           1
+          ],
+          [
+           1,
+           7,
+           1
+          ],
+          [
+           2,
+           3,
+           2
+          ],
+          [
+           2,
+           8,
+           1
+          ],
+          [
+           3,
+           4,
+           1
+          ],
+          [
+           3,
+           9,
+           1
+          ],
+          [
+           4,
+           5,
+           2
+          ],
+          [
+           4,
+           10,
+           1
+          ],
+          [
+           5,
+           13,
+           1
+          ],
+          [
+           6,
+           14,
+           1
+          ],
+          [
+           6,
+           15,
+           2
+          ],
+          [
+           11,
+           13,
+           1
+          ],
+          [
+           12,
+           14,
+           1
+          ]
+         ],
+         "charge": 0,
+         "state": ""
+        }
+       ],
+       "reaction_center": {
+        "broken": [
+         [
+          "C",
+          "O",
+          1
+         ],
+         [
+          "H",
+          "O",
+          1
+         ]
+        ],
+        "formed": [
+         [
+          "C",
+          "O",
+          1
+         ],
+         [
+          "H",
+          "O",
+          1
+         ]
+        ],
+        "n_components": 1,
+        "schema_version": "smartchem/reaction-center-v1"
+       },
+       "reagents": [],
+       "schema_version": "smartchem.experiment/step-v1",
+       "target": {
+        "atoms": [
+         "C",
+         "C",
+         "C",
+         "C",
+         "C",
+         "C",
+         "C",
+         "C",
+         "C",
+         "H",
+         "H",
+         "H",
+         "H",
+         "H",
+         "H",
+         "H",
+         "H",
+         "O",
+         "O",
+         "O",
+         "O"
+        ],
+        "bonds": [
+         [
+          0,
+          2,
+          2
+         ],
+         [
+          0,
+          6,
+          1
+         ],
+         [
+          0,
+          7,
+          1
+         ],
+         [
+          1,
+          8,
+          1
+         ],
+         [
+          1,
+          9,
+          1
+         ],
+         [
+          1,
+          10,
+          1
+         ],
+         [
+          1,
+          11,
+          1
+         ],
+         [
+          2,
+          3,
+          1
+         ],
+         [
+          2,
+          12,
+          1
+         ],
+         [
+          3,
+          4,
+          2
+         ],
+         [
+          3,
+          13,
+          1
+         ],
+         [
+          4,
+          5,
+          1
+         ],
+         [
+          4,
+          14,
+          1
+         ],
+         [
+          5,
+          6,
+          2
+         ],
+         [
+          5,
+          15,
+          1
+         ],
+         [
+          6,
+          17,
+          1
+         ],
+         [
+          7,
+          18,
+          1
+         ],
+         [
+          7,
+          19,
+          2
+         ],
+         [
+          8,
+          17,
+          1
+         ],
+         [
+          8,
+          20,
+          2
+         ],
+         [
+          16,
+          18,
+          1
+         ]
+        ],
+        "charge": 0,
+        "state": ""
+       }
+      }
+     ],
+     "route_digest": "acdf2dffc9284d8df5d194d46b1409519dbf4af091e67c5c91de500ad902fa9d",
+     "schema_version": "smartchem.service/ranked-route-summary-v1alpha6",
+     "selectivity_verdict": "UNKNOWN"
+    }
+   ],
+   "request": {
+    "algebra_profile": "certified-route-v07",
+    "capability_profile": null,
+    "capability_profile_origin": "",
+    "constraints": {
+     "max_pressure_atm": null,
+     "max_temperature_k": 350.0,
+     "min_pressure_atm": null,
+     "min_temperature_k": null,
+     "process": {
+      "allowed_agitation": null,
+      "allowed_attention": null,
+      "available_equipment": null,
+      "max_active_minutes": null,
+      "max_step_minutes": null,
+      "max_total_minutes": null,
+      "min_check_interval_minutes": null,
+      "schema_version": "smartchem.constraints/process-bounds-v1alpha1"
+     },
+     "schema_version": "smartchem.constraints/physical-bounds-v1alpha2"
+    },
+    "evidence_provider_selection": {
+     "selection_id": "DEFAULT_OFFLINE"
+    },
+    "helper_reagents": [
+     "acetic acid",
+     "water"
+    ],
+    "identity_policy": {
+     "match_layer": "CONSTITUTION",
+     "policy_id": "DEFAULT"
+    },
+    "input_kind": "AUTO",
+    "normalized_identity": "003f60a452082aff801ca134b949b9175855c68a14c269c168be40426ee7390d",
+    "operation": "RECOMPILE",
+    "origins": [
+     [
+      "algebra_profile",
+      "DEFAULT"
+     ],
+     [
+      "commodities_enabled",
+      "DEFAULT"
+     ],
+     [
+      "constraints",
+      "EXPLICIT"
+     ],
+     [
+      "cut_budget",
+      "DEFAULT"
+     ],
+     [
+      "evidence_provider_selection",
+      "DEFAULT"
+     ],
+     [
+      "helper_reagents",
+      "EXPLICIT"
+     ],
+     [
+      "identity_policy",
+      "DEFAULT"
+     ],
+     [
+      "input_kind",
+      "DEFAULT"
+     ],
+     [
+      "max_depth",
+      "EXPLICIT"
+     ],
+     [
+      "max_routes",
+      "DEFAULT"
+     ],
+     [
+      "output_policy",
+      "DEFAULT"
+     ],
+     [
+      "ranking_policy",
+      "DEFAULT"
+     ],
+     [
+      "stock_materials",
+      "EXPLICIT"
+     ],
+     [
+      "transform_grammar",
+      "DEFAULT"
+     ]
+    ],
+    "output_policy": {
+     "quiet": false,
+     "render_mode": "HUMAN"
+    },
+    "ranking_policy": {
+     "policy_id": "DEFAULT_PRECEDENCE_V1"
+    },
+    "schema_version": "smartchem.service/compilation-request-v1alpha7",
+    "search_bounds": [
+     [
+      "cut_budget",
+      20000
+     ],
+     [
+      "max_depth",
+      1
+     ],
+     [
+      "max_results",
+      100
+     ]
+    ],
+    "stock_materials": [
+     "acetic anhydride",
+     "salicylic acid"
+    ],
+    "target_input": "smiles:CC(=O)Oc1ccccc1C(=O)O",
+    "terminal_policy": {
+     "commodities_enabled": true,
+     "formula_inventory": [],
+     "match_mode": "STRUCTURE"
+    },
+    "transform_grammar": "CAPPED_SCISSION_LINEAR"
+   },
+   "result_digest": "dc1ab1f0b8d9267a11fc94e488705b904ffbed0f77e4943779dc7f154f9443b1",
+   "schema_version": "smartchem.service/compilation-response-v1alpha18",
+   "search_space_status": "PARTIAL_CANDIDATE_SET",
+   "standard_status": "INCOMPLETE_DEPTH_LIMIT",
+   "transport_mode": "CANONICAL_VERIFIED"
+  }
+ },
+ "methyl_acetate": {
+  "exit_code": 0,
+  "request_payload": {
+   "algebra_profile": "certified-route-v07",
+   "capability_profile": null,
+   "capability_profile_origin": "",
+   "constraints": {
+    "max_pressure_atm": null,
+    "max_temperature_k": null,
+    "min_pressure_atm": null,
+    "min_temperature_k": null,
+    "process": {
+     "allowed_agitation": null,
+     "allowed_attention": null,
+     "available_equipment": null,
+     "max_active_minutes": null,
+     "max_step_minutes": null,
+     "max_total_minutes": null,
+     "min_check_interval_minutes": null,
+     "schema_version": "smartchem.constraints/process-bounds-v1alpha1"
+    },
+    "schema_version": "smartchem.constraints/physical-bounds-v1alpha2"
+   },
+   "evidence_provider_selection": {
+    "selection_id": "DEFAULT_OFFLINE"
+   },
+   "helper_reagents": [
+    "water"
+   ],
+   "identity_policy": {
+    "match_layer": "CONSTITUTION",
+    "policy_id": "DEFAULT"
+   },
+   "input_kind": "AUTO",
+   "normalized_identity": "b5bbe1a6bee288a001613c95471af29940af13e13707732c0e5e77326554af66",
+   "operation": "RECOMPILE",
+   "origins": [
+    [
+     "algebra_profile",
+     "DEFAULT"
+    ],
+    [
+     "commodities_enabled",
+     "DEFAULT"
+    ],
+    [
+     "constraints",
+     "DEFAULT"
+    ],
+    [
+     "cut_budget",
+     "DEFAULT"
+    ],
+    [
+     "evidence_provider_selection",
+     "DEFAULT"
+    ],
+    [
+     "helper_reagents",
+     "DEFAULT"
+    ],
+    [
+     "identity_policy",
+     "DEFAULT"
+    ],
+    [
+     "input_kind",
+     "DEFAULT"
+    ],
+    [
+     "max_depth",
+     "EXPLICIT"
+    ],
+    [
+     "max_routes",
+     "DEFAULT"
+    ],
+    [
+     "output_policy",
+     "DEFAULT"
+    ],
+    [
+     "ranking_policy",
+     "DEFAULT"
+    ],
+    [
+     "stock_materials",
+     "DEFAULT"
+    ],
+    [
+     "transform_grammar",
+     "DEFAULT"
+    ]
+   ],
+   "output_policy": {
+    "quiet": false,
+    "render_mode": "HUMAN"
+   },
+   "ranking_policy": {
+    "policy_id": "DEFAULT_PRECEDENCE_V1"
+   },
+   "schema_version": "smartchem.service/compilation-request-v1alpha7",
+   "search_bounds": [
+    [
+     "cut_budget",
+     20000
+    ],
+    [
+     "max_depth",
+     2
+    ],
+    [
+     "max_results",
+     100
+    ]
+   ],
+   "stock_materials": [],
+   "target_input": "smiles:CC(=O)OC",
+   "terminal_policy": {
+    "commodities_enabled": true,
+    "formula_inventory": [],
+    "match_mode": "STRUCTURE"
+   },
+   "transform_grammar": "CAPPED_SCISSION_LINEAR"
+  },
+  "response_payload": {
+   "admissible_route_digests": [],
+   "affordability_frontier": [
+    {
+     "cost_vector": {
+      "access_difficulty": 2,
+      "analytical": null,
+      "cash": null,
+      "cash_floor": 0.045307388,
+      "currency": "USD",
+      "energy": null,
+      "evidence_tier_rank": null,
+      "fiction_blockers": [],
+      "hard_blockers": [],
+      "labor_time": null,
+      "material_quantity": 2.0,
+      "new_equipment": null,
+      "preprocessing": null,
+      "region": "",
+      "unit": "mol product",
+      "waste_disposal": null
+     },
+     "route_digest": "1421b62b5244f3e89bd5104ebd6b0c0ba1fc9e61164ec422c24d22bd0133419d",
+     "schema_version": "smartchem.experiment/affordability-frontier-entry-v1alpha3"
+    }
+   ],
+   "capability_question_digest": null,
+   "compilation_ir": {
+    "candidates": [
+     {
+      "candidate_digest": "1421b62b5244f3e89bd5104ebd6b0c0ba1fc9e61164ec422c24d22bd0133419d",
+      "candidate_kind": "ROUTE",
+      "equation": "step 1: CH4O + C2H4O2 -> C3H6O2 + H2O",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+     },
+     {
+      "candidate_digest": "f7c119782ddee0ca89a262072b8974112de9f3df74bcad875e0130fd84d66217",
+      "candidate_kind": "ROUTE",
+      "equation": "step 1: CH2O2 + CH4O -> C2H4O2 + H2O ; step 2: CH4O + C2H4O2 -> C3H6O2 + H2O",
+      "readiness_tier": "FORMAL_CANDIDATE",
+      "schema_version": "smartchem.compilation-ir/candidate-summary-v1alpha1"
+     }
+    ],
+    "diagnostics": [],
+    "identity_losses": [],
+    "operation": "RECOMPILE",
+    "request_digest": "f49e3c83d2254d37b84f608edececd27253160b36ab701f2b70e81d3fa1a7dbb",
+    "schema_version": "smartchem.compilation-ir/chemical-compilation-ir-v1alpha8",
+    "search_receipt": {
+     "candidate_enumeration_complete": true,
+     "candidate_limit": null,
+     "candidates_emitted": 12,
+     "candidates_rejected_by_reason": [
+      [
+       "duplicate",
+       10
+      ]
+     ],
+     "cut_budget": 20000,
+     "cut_budget_scope": "PER_NODE",
+     "cut_enumeration_complete": true,
+     "max_depth": 2,
+     "nodes_visited": 3,
+     "result_limit": 100,
+     "result_limit_saturated": false,
+     "results_returned": 2,
+     "schema_version": "smartchem.compilation-ir/search-receipt-view-v1alpha1",
+     "search_kind": "LINEAR_ROUTE",
+     "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
+     "status": "COMPLETE_WITHIN_BOUNDS",
+     "stop_reason": "",
+     "target_identity_digest": "b5bbe1a6bee288a001613c95471af29940af13e13707732c0e5e77326554af66",
+     "terminal_policy_digest": "ac70e46919635314587b2f65ea25dbc304941755ae5d4a26972244c9a06d133d",
+     "transform_registry_digest": "c36eb03e0d1916def44024cbe66d1a3939f8023dc29501f4f8ddda8e7748222c",
+     "transforms_considered": 28
+    },
+    "search_status": "COMPLETE_WITHIN_BOUNDS",
+    "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
+    "structural_candidates": [],
+    "target": {
+     "canonical_repr": "C3H6O2",
+     "identity_digest": "b5bbe1a6bee288a001613c95471af29940af13e13707732c0e5e77326554af66",
+     "layer": "STRUCTURE",
+     "schema_version": "smartchem.compilation-ir/chemical-identity-v1alpha1"
+    },
+    "terminal_policy_digest": "ac70e46919635314587b2f65ea25dbc304941755ae5d4a26972244c9a06d133d",
+    "tool_version": "0.9.5a1",
+    "transform_registry_digest": "c36eb03e0d1916def44024cbe66d1a3939f8023dc29501f4f8ddda8e7748222c"
+   },
+   "diagnostics": [],
+   "exit_code": 0,
+   "outcome": "ROUTES_FOUND",
+   "parse_receipt_summary": "IDENTITY RESOLVED [AUTO->SMILES] via SMILES_PARSER: C3H6O2 (CONSTITUTION layer); an explicit 'smiles:' interpretation was requested",
+   "process_selection_status": "NOT_REQUESTED",
+   "producer_signature": null,
+   "provider_snapshots": [],
+   "ranked_dag_dossiers": [],
+   "ranked_route_dossiers": [
+    {
+     "capability_assessment": null,
+     "composability_verdict": "SINGLE_STEP",
+     "equation": "step 1: CH4O + C2H4O2 -> C3H6O2 + H2O",
+     "equilibrium_verdict": "UNKNOWN",
+     "exclusions": [],
+     "feasibility_verdict": "UNKNOWN",
+     "fit_status": "UNCONSTRAINED",
+     "gaps": [],
+     "kinetics_verdict": "UNKNOWN",
+     "process_requirements": [
+      null
+     ],
+     "readiness": {
+      "per_step": [
+       {
+        "conditions": "UNKNOWN",
+        "formal_candidate": "SATISFIED",
+        "open_obligations": [
+         "conditions: no declared condition envelope (unknown)",
+         "process: no declared procedure evidence (unknown)",
+         "workup_isolation: no declared procedure evidence (unknown)"
+        ],
+        "process": "UNKNOWN",
+        "provenance": [],
+        "reaction_class_name": "acyl condensation (esterification/amidation)",
+        "reaction_type": "SATISFIED",
+        "workup_isolation": "UNKNOWN"
+       }
+      ],
+      "route_open_obligations": [
+       "conditions: no declared condition envelope (unknown)",
+       "process: no declared procedure evidence (unknown)",
+       "workup_isolation: no declared procedure evidence (unknown)"
+      ]
+     },
+     "readiness_tier": "REACTION_VOUCHED",
+     "replay_payload": [
+      {
+       "envelope": {
+        "applied_field": "",
+        "catalysts": [],
+        "duration": null,
+        "medium": "",
+        "pressure": null,
+        "procedure": null,
+        "process": null,
+        "provenance": "",
+        "source": null,
+        "status": "UNSUPPORTED",
+        "temperature": null
+       },
+       "products": [
+        {
+         "atoms": [
+          "C",
+          "C",
+          "C",
+          "H",
+          "H",
+          "H",
+          "H",
+          "H",
+          "H",
+          "O",
+          "O"
+         ],
+         "bonds": [
+          [
+           0,
+           1,
+           1
+          ],
+          [
+           0,
+           3,
+           1
+          ],
+          [
+           0,
+           4,
+           1
+          ],
+          [
+           0,
+           5,
+           1
+          ],
+          [
+           1,
+           9,
+           1
+          ],
+          [
+           1,
+           10,
+           2
+          ],
+          [
+           2,
+           6,
+           1
+          ],
+          [
+           2,
+           7,
+           1
+          ],
+          [
+           2,
+           8,
+           1
+          ],
+          [
+           2,
+           9,
+           1
+          ]
+         ],
+         "charge": 0,
+         "state": ""
+        },
+        {
+         "atoms": [
+          "H",
+          "H",
+          "O"
+         ],
+         "bonds": [
+          [
+           0,
+           2,
+           1
+          ],
+          [
+           1,
+           2,
+           1
+          ]
+         ],
+         "charge": 0,
+         "state": ""
+        }
+       ],
+       "reactants": [
+        {
+         "atoms": [
+          "C",
+          "H",
+          "H",
+          "H",
+          "H",
+          "O"
+         ],
+         "bonds": [
+          [
+           0,
+           1,
+           1
+          ],
+          [
+           0,
+           2,
+           1
+          ],
+          [
+           0,
+           3,
+           1
+          ],
+          [
+           0,
+           5,
+           1
+          ],
+          [
+           4,
+           5,
+           1
+          ]
+         ],
+         "charge": 0,
+         "state": ""
+        },
+        {
+         "atoms": [
+          "C",
+          "C",
+          "H",
+          "H",
+          "H",
+          "H",
+          "O",
+          "O"
+         ],
+         "bonds": [
+          [
+           0,
+           1,
+           1
+          ],
+          [
+           0,
+           2,
+           1
+          ],
+          [
+           0,
+           3,
+           1
+          ],
+          [
+           0,
+           4,
+           1
+          ],
+          [
+           1,
+           6,
+           1
+          ],
+          [
+           1,
+           7,
+           2
+          ],
+          [
+           5,
+           6,
+           1
+          ]
+         ],
+         "charge": 0,
+         "state": ""
+        }
+       ],
+       "reaction_center": {
+        "broken": [
+         [
+          "C",
+          "O",
+          1
+         ],
+         [
+          "H",
+          "O",
+          1
+         ]
+        ],
+        "formed": [
+         [
+          "C",
+          "O",
+          1
+         ],
+         [
+          "H",
+          "O",
+          1
+         ]
+        ],
+        "n_components": 1,
+        "schema_version": "smartchem/reaction-center-v1"
+       },
+       "reagents": [],
+       "schema_version": "smartchem.experiment/step-v1",
+       "target": {
+        "atoms": [
+         "C",
+         "C",
+         "C",
+         "H",
+         "H",
+         "H",
+         "H",
+         "H",
+         "H",
+         "O",
+         "O"
+        ],
+        "bonds": [
+         [
+          0,
+          1,
+          1
+         ],
+         [
+          0,
+          3,
+          1
+         ],
+         [
+          0,
+          4,
+          1
+         ],
+         [
+          0,
+          5,
+          1
+         ],
+         [
+          1,
+          9,
+          1
+         ],
+         [
+          1,
+          10,
+          2
+         ],
+         [
+          2,
+          6,
+          1
+         ],
+         [
+          2,
+          7,
+          1
+         ],
+         [
+          2,
+          8,
+          1
+         ],
+         [
+          2,
+          9,
+          1
+         ]
+        ],
+        "charge": 0,
+        "state": ""
+       }
+      }
+     ],
+     "route_digest": "1421b62b5244f3e89bd5104ebd6b0c0ba1fc9e61164ec422c24d22bd0133419d",
+     "schema_version": "smartchem.service/ranked-route-summary-v1alpha6",
+     "selectivity_verdict": "UNKNOWN"
+    },
+    {
+     "capability_assessment": null,
+     "composability_verdict": "UNKNOWN",
+     "equation": "step 1: CH2O2 + CH4O -> C2H4O2 + H2O ; step 2: CH4O + C2H4O2 -> C3H6O2 + H2O",
+     "equilibrium_verdict": "UNKNOWN",
+     "exclusions": [],
+     "feasibility_verdict": "UNKNOWN",
+     "fit_status": "UNKNOWN",
+     "gaps": [
+      "composability gap: UNKNOWN: no sourced stability data for C2H4O2; survival across the transition cannot be judged (inject its sourced thresholds to close this gap)"
+     ],
+     "kinetics_verdict": "UNKNOWN",
+     "process_requirements": [
+      null,
+      null
+     ],
+     "readiness": {
+      "per_step": [
+       {
+        "conditions": "UNKNOWN",
+        "formal_candidate": "SATISFIED",
+        "open_obligations": [
+         "conditions: no declared condition envelope (unknown)",
+         "process: no declared procedure evidence (unknown)",
+         "workup_isolation: no declared procedure evidence (unknown)"
+        ],
+        "process": "UNKNOWN",
+        "provenance": [],
+        "reaction_class_name": "acyl condensation (esterification/amidation)",
+        "reaction_type": "SATISFIED",
+        "workup_isolation": "UNKNOWN"
+       },
+       {
+        "conditions": "UNKNOWN",
+        "formal_candidate": "SATISFIED",
+        "open_obligations": [
+         "conditions: no declared condition envelope (unknown)",
+         "process: no declared procedure evidence (unknown)",
+         "reaction_type: not recognized by the production oracle",
+         "workup_isolation: no declared procedure evidence (unknown)"
+        ],
+        "process": "UNKNOWN",
+        "provenance": [],
+        "reaction_class_name": null,
+        "reaction_type": "UNSATISFIED",
+        "workup_isolation": "UNKNOWN"
+       }
+      ],
+      "route_open_obligations": [
+       "conditions: no declared condition envelope (unknown)",
+       "process: no declared procedure evidence (unknown)",
+       "reaction_type: not recognized by the production oracle",
+       "workup_isolation: no declared procedure evidence (unknown)"
+      ]
+     },
+     "readiness_tier": "FORMAL_CANDIDATE",
+     "replay_payload": [
+      {
+       "envelope": {
+        "applied_field": "",
+        "catalysts": [],
+        "duration": null,
+        "medium": "",
+        "pressure": null,
+        "procedure": null,
+        "process": null,
+        "provenance": "",
+        "source": null,
+        "status": "UNSUPPORTED",
+        "temperature": null
+       },
+       "products": [
+        {
+         "atoms": [
+          "C",
+          "C",
+          "H",
+          "H",
+          "H",
+          "H",
+          "O",
+          "O"
+         ],
+         "bonds": [
+          [
+           0,
+           2,
+           1
+          ],
+          [
+           0,
+           3,
+           1
+          ],
+          [
+           0,
+           4,
+           1
+          ],
+          [
+           0,
+           6,
+           1
+          ],
+          [
+           1,
+           5,
+           1
+          ],
+          [
+           1,
+           6,
+           1
+          ],
+          [
+           1,
+           7,
+           2
+          ]
+         ],
+         "charge": 0,
+         "state": ""
+        },
+        {
+         "atoms": [
+          "H",
+          "H",
+          "O"
+         ],
+         "bonds": [
+          [
+           0,
+           2,
+           1
+          ],
+          [
+           1,
+           2,
+           1
+          ]
+         ],
+         "charge": 0,
+         "state": ""
+        }
+       ],
+       "reactants": [
+        {
+         "atoms": [
+          "C",
+          "H",
+          "H",
+          "O",
+          "O"
+         ],
+         "bonds": [
+          [
+           0,
+           1,
+           1
+          ],
+          [
+           0,
+           3,
+           1
+          ],
+          [
+           0,
+           4,
+           2
+          ],
+          [
+           2,
+           3,
+           1
+          ]
+         ],
+         "charge": 0,
+         "state": ""
+        },
+        {
+         "atoms": [
+          "C",
+          "H",
+          "H",
+          "H",
+          "H",
+          "O"
+         ],
+         "bonds": [
+          [
+           0,
+           1,
+           1
+          ],
+          [
+           0,
+           2,
+           1
+          ],
+          [
+           0,
+           3,
+           1
+          ],
+          [
+           0,
+           5,
+           1
+          ],
+          [
+           4,
+           5,
+           1
+          ]
+         ],
+         "charge": 0,
+         "state": ""
+        }
+       ],
+       "reaction_center": {
+        "broken": [
+         [
+          "C",
+          "O",
+          1
+         ],
+         [
+          "H",
+          "O",
+          1
+         ]
+        ],
+        "formed": [
+         [
+          "C",
+          "O",
+          1
+         ],
+         [
+          "H",
+          "O",
+          1
+         ]
+        ],
+        "n_components": 1,
+        "schema_version": "smartchem/reaction-center-v1"
+       },
+       "reagents": [],
+       "schema_version": "smartchem.experiment/step-v1",
+       "target": {
+        "atoms": [
+         "C",
+         "C",
+         "H",
+         "H",
+         "H",
+         "H",
+         "O",
+         "O"
+        ],
+        "bonds": [
+         [
+          0,
+          2,
+          1
+         ],
+         [
+          0,
+          3,
+          1
+         ],
+         [
+          0,
+          4,
+          1
+         ],
+         [
+          0,
+          6,
+          1
+         ],
+         [
+          1,
+          5,
+          1
+         ],
+         [
+          1,
+          6,
+          1
+         ],
+         [
+          1,
+          7,
+          2
+         ]
+        ],
+        "charge": 0,
+        "state": ""
+       }
+      },
+      {
+       "envelope": {
+        "applied_field": "",
+        "catalysts": [],
+        "duration": null,
+        "medium": "",
+        "pressure": null,
+        "procedure": null,
+        "process": null,
+        "provenance": "",
+        "source": null,
+        "status": "UNSUPPORTED",
+        "temperature": null
+       },
+       "products": [
+        {
+         "atoms": [
+          "C",
+          "C",
+          "C",
+          "H",
+          "H",
+          "H",
+          "H",
+          "H",
+          "H",
+          "O",
+          "O"
+         ],
+         "bonds": [
+          [
+           0,
+           1,
+           1
+          ],
+          [
+           0,
+           3,
+           1
+          ],
+          [
+           0,
+           4,
+           1
+          ],
+          [
+           0,
+           5,
+           1
+          ],
+          [
+           1,
+           9,
+           1
+          ],
+          [
+           1,
+           10,
+           2
+          ],
+          [
+           2,
+           6,
+           1
+          ],
+          [
+           2,
+           7,
+           1
+          ],
+          [
+           2,
+           8,
+           1
+          ],
+          [
+           2,
+           9,
+           1
+          ]
+         ],
+         "charge": 0,
+         "state": ""
+        },
+        {
+         "atoms": [
+          "H",
+          "H",
+          "O"
+         ],
+         "bonds": [
+          [
+           0,
+           2,
+           1
+          ],
+          [
+           1,
+           2,
+           1
+          ]
+         ],
+         "charge": 0,
+         "state": ""
+        }
+       ],
+       "reactants": [
+        {
+         "atoms": [
+          "C",
+          "H",
+          "H",
+          "H",
+          "H",
+          "O"
+         ],
+         "bonds": [
+          [
+           0,
+           1,
+           1
+          ],
+          [
+           0,
+           2,
+           1
+          ],
+          [
+           0,
+           3,
+           1
+          ],
+          [
+           0,
+           5,
+           1
+          ],
+          [
+           4,
+           5,
+           1
+          ]
+         ],
+         "charge": 0,
+         "state": ""
+        },
+        {
+         "atoms": [
+          "C",
+          "C",
+          "H",
+          "H",
+          "H",
+          "H",
+          "O",
+          "O"
+         ],
+         "bonds": [
+          [
+           0,
+           2,
+           1
+          ],
+          [
+           0,
+           3,
+           1
+          ],
+          [
+           0,
+           4,
+           1
+          ],
+          [
+           0,
+           6,
+           1
+          ],
+          [
+           1,
+           5,
+           1
+          ],
+          [
+           1,
+           6,
+           1
+          ],
+          [
+           1,
+           7,
+           2
+          ]
+         ],
+         "charge": 0,
+         "state": ""
+        }
+       ],
+       "reaction_center": {
+        "broken": [
+         [
+          "C",
+          "H",
+          1
+         ],
+         [
+          "C",
+          "O",
+          1
+         ]
+        ],
+        "formed": [
+         [
+          "C",
+          "C",
+          1
+         ],
+         [
+          "H",
+          "O",
+          1
+         ]
+        ],
+        "n_components": 1,
+        "schema_version": "smartchem/reaction-center-v1"
+       },
+       "reagents": [],
+       "schema_version": "smartchem.experiment/step-v1",
+       "target": {
+        "atoms": [
+         "C",
+         "C",
+         "C",
+         "H",
+         "H",
+         "H",
+         "H",
+         "H",
+         "H",
+         "O",
+         "O"
+        ],
+        "bonds": [
+         [
+          0,
+          1,
+          1
+         ],
+         [
+          0,
+          3,
+          1
+         ],
+         [
+          0,
+          4,
+          1
+         ],
+         [
+          0,
+          5,
+          1
+         ],
+         [
+          1,
+          9,
+          1
+         ],
+         [
+          1,
+          10,
+          2
+         ],
+         [
+          2,
+          6,
+          1
+         ],
+         [
+          2,
+          7,
+          1
+         ],
+         [
+          2,
+          8,
+          1
+         ],
+         [
+          2,
+          9,
+          1
+         ]
+        ],
+        "charge": 0,
+        "state": ""
+       }
+      }
+     ],
+     "route_digest": "f7c119782ddee0ca89a262072b8974112de9f3df74bcad875e0130fd84d66217",
+     "schema_version": "smartchem.service/ranked-route-summary-v1alpha6",
+     "selectivity_verdict": "UNKNOWN"
+    }
+   ],
+   "request": {
+    "algebra_profile": "certified-route-v07",
+    "capability_profile": null,
+    "capability_profile_origin": "",
+    "constraints": {
+     "max_pressure_atm": null,
+     "max_temperature_k": null,
+     "min_pressure_atm": null,
+     "min_temperature_k": null,
+     "process": {
+      "allowed_agitation": null,
+      "allowed_attention": null,
+      "available_equipment": null,
+      "max_active_minutes": null,
+      "max_step_minutes": null,
+      "max_total_minutes": null,
+      "min_check_interval_minutes": null,
+      "schema_version": "smartchem.constraints/process-bounds-v1alpha1"
+     },
+     "schema_version": "smartchem.constraints/physical-bounds-v1alpha2"
+    },
+    "evidence_provider_selection": {
+     "selection_id": "DEFAULT_OFFLINE"
+    },
+    "helper_reagents": [
+     "water"
+    ],
+    "identity_policy": {
+     "match_layer": "CONSTITUTION",
+     "policy_id": "DEFAULT"
+    },
+    "input_kind": "AUTO",
+    "normalized_identity": "b5bbe1a6bee288a001613c95471af29940af13e13707732c0e5e77326554af66",
+    "operation": "RECOMPILE",
+    "origins": [
+     [
+      "algebra_profile",
+      "DEFAULT"
+     ],
+     [
+      "commodities_enabled",
+      "DEFAULT"
+     ],
+     [
+      "constraints",
+      "DEFAULT"
+     ],
+     [
+      "cut_budget",
+      "DEFAULT"
+     ],
+     [
+      "evidence_provider_selection",
+      "DEFAULT"
+     ],
+     [
+      "helper_reagents",
+      "DEFAULT"
+     ],
+     [
+      "identity_policy",
+      "DEFAULT"
+     ],
+     [
+      "input_kind",
+      "DEFAULT"
+     ],
+     [
+      "max_depth",
+      "EXPLICIT"
+     ],
+     [
+      "max_routes",
+      "DEFAULT"
+     ],
+     [
+      "output_policy",
+      "DEFAULT"
+     ],
+     [
+      "ranking_policy",
+      "DEFAULT"
+     ],
+     [
+      "stock_materials",
+      "DEFAULT"
+     ],
+     [
+      "transform_grammar",
+      "DEFAULT"
+     ]
+    ],
+    "output_policy": {
+     "quiet": false,
+     "render_mode": "HUMAN"
+    },
+    "ranking_policy": {
+     "policy_id": "DEFAULT_PRECEDENCE_V1"
+    },
+    "schema_version": "smartchem.service/compilation-request-v1alpha7",
+    "search_bounds": [
+     [
+      "cut_budget",
+      20000
+     ],
+     [
+      "max_depth",
+      2
+     ],
+     [
+      "max_results",
+      100
+     ]
+    ],
+    "stock_materials": [],
+    "target_input": "smiles:CC(=O)OC",
+    "terminal_policy": {
+     "commodities_enabled": true,
+     "formula_inventory": [],
+     "match_mode": "STRUCTURE"
+    },
+    "transform_grammar": "CAPPED_SCISSION_LINEAR"
+   },
+   "result_digest": "e289dba3491addd05898bf21e60f65e641f9303ae00e99f096e5d26e9a2e1f77",
+   "schema_version": "smartchem.service/compilation-response-v1alpha18",
+   "search_space_status": "COMPLETE_CANDIDATE_SET",
+   "standard_status": "COMPLETE_WITHIN_DECLARED_SPACE",
+   "transport_mode": "CANONICAL_VERIFIED"
+  }
+ }
+}

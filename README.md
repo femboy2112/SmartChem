@@ -155,7 +155,7 @@ general multiphysics category.
 
 For the module-by-module map and scientific caveats, see [MANIFEST.md](docs/history/MANIFEST.md).
 
-## Chemical compiler (v0.9.5a1 — an alpha in progress)
+## Chemical compiler (v1.0.0rc1 — release candidate)
 
 A newer line of work turns the chemistry core into a bidirectional *chemical compiler*: a
 **decompiler** that descends a target compound to its elemental buckets as an AND–OR
@@ -254,7 +254,15 @@ route reaction-type-vouched, bounded performance) and an independent hostile rev
 python -m smartchem recompile 'smiles:CC(=O)OCCC(C)C' --capability-profile poor-man --json
 ```
 
-This is an **alpha under active construction, not a finished release.** The v0.5.0a1 base standard remains
+This is the **1.0.0rc1 release candidate.** The chemical-compiler's machine semantics — identity, bounded search
+completeness, the readiness ladder, capability assessment, the evidence and `StreamDisposition` contract, and verified
+transport — are **frozen** under the stability contract in [COMPATIBILITY.md](COMPATIBILITY.md): from 1.0, new
+chemistry may widen coverage but may not silently change the meaning of an existing verdict word. What the compiler
+can and cannot claim is deliberately bounded — a bounded search is complete only *within its declared grammar*;
+`FORMAL_CANDIDATE` is never a validated bench procedure; `CAPABILITY_FIT` is a profile-fit claim, **never a safety
+certificate**; a formula is a composition, never a constitution; canonical transport ships re-derivable evidence while
+thin transport is advisory by contract. The chemistry itself remains intentionally incomplete, and `UNKNOWN` /
+unsupported is a valid answer. The v0.5.0a1 base standard remains
 inherited: the normative contract is
 [CHEMICAL_COMPILER_STANDARD_v0.5.0a1.md](CHEMICAL_COMPILER_STANDARD_v0.5.0a1.md) and
 [UPTAKE_MANIFEST_v0.5.0a1.md](UPTAKE_MANIFEST_v0.5.0a1.md) is an honest, per-requirement ledger of exactly what
@@ -360,14 +368,27 @@ as the next release boundary. The normative plan is
 **0.6 human front door -> 0.7 production chemical algebra -> 0.8 real route dossiers -> 0.9 capability compiler ->
 0.9.5 coverage/adversarial RC -> 1.0 stable semantics**.
 
-0.6, 0.7, 0.8 and 0.9 are merged; the live round is the **0.9.5 adversarial release candidate**
-([plan](docs/research/V0_9_5_ADVERSARIAL_RC_PLAN_v0.1.md), [architecture freeze](docs/research/V0_9_5_ARCHITECTURE_FREEZE.md)):
-consolidate, bound verification work, close the minimum pre-1.0 representation gaps, attack the whole product, and
-freeze the public semantics ([COMPATIBILITY.md](COMPATIBILITY.md)). New reaction-family expansion stays
-non-release-critical by default.
+The finite program is complete through the release candidate:
+
+```text
+0.6 human front door            merged
+0.7 production chemical algebra  merged
+0.8 real route dossiers          merged
+0.9 capability compiler          merged
+0.9.5 coverage/adversarial RC    merged
+1.0.0rc1 stable semantics        current release candidate
+```
+
+The **stopping rule is explicit**: the 1.0 line freezes the public machine semantics
+([COMPATIBILITY.md](COMPATIBILITY.md)) and does not add chemistry for its own sake. New reaction-family expansion
+is non-release-critical by default — a wider algebra is a post-1.0 MINOR under the compatibility contract, never a
+reason to hold 1.0. 0.9.5 consolidated, bounded verification work, closed the minimum pre-1.0 representation gaps and
+attacked the whole product ([plan](docs/research/V0_9_5_ADVERSARIAL_RC_PLAN_v0.1.md),
+[architecture freeze](docs/research/V0_9_5_ARCHITECTURE_FREEZE.md)); 1.0.0rc1 freezes, packages and proves the release
+artifact ([release gate](docs/research/V1_0_RELEASE_GATE.md), [CHANGELOG](CHANGELOG.md)).
 
 
-> **The live chemical-compiler (v0.9.5a1) work queue is pinned in [`ROADMAP.md`](ROADMAP.md)** — done ledger, ranked
+> **The chemical-compiler work ledger is pinned in [`ROADMAP.md`](ROADMAP.md)** — done ledger, ranked
 > next-steps (S/M/L), what's deliberately not being built, and tracked debt, ground-truthed against the source and
 > re-stamped each round. The narrative below is the longer-horizon Physical-IR / cross-domain program.
 

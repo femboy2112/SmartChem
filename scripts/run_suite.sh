@@ -22,6 +22,10 @@
 #   scripts/run_suite.sh tests/test_routes.py  # only the named files
 #   CHUNK_SIZE=6 scripts/run_suite.sh          # smaller batches (tighter memory)
 #   PY=/path/to/python scripts/run_suite.sh    # override the interpreter
+#   LOGDIR=/some/new/dir scripts/run_suite.sh  # keep logs + xml there (default: a fresh mktemp dir)
+#
+# A failed batch prints a bounded excerpt of its log (the first failure's traceback and pytest's
+# short summary) as it happens, so an ephemeral CI runner's console still says why.
 #
 # EXIT CODE: 0 iff every batch collected and passed (no failures, no errors).
 set -u
@@ -57,12 +61,14 @@ is_heavy() {
   return 1
 }
 
-# Build the file list: explicit args, else every test file, sorted for determinism.
+# Build the file list: explicit args, else every test file, sorted for determinism -- in the C
+# collation, so batch N holds the same files on every machine (a hosted runner sorts in C; an
+# en_US box otherwise reorders test_cli.py / test_cli_err.py and friends).
 declare -a ALL=()
 if [ "$#" -gt 0 ]; then
   ALL=("$@")
 else
-  while IFS= read -r f; do ALL+=("$f"); done < <(ls tests/test_*.py 2>/dev/null | sort)
+  while IFS= read -r f; do ALL+=("$f"); done < <(ls tests/test_*.py 2>/dev/null | LC_ALL=C sort)
 fi
 if [ "${#ALL[@]}" -eq 0 ]; then
   echo "no test files found" >&2
@@ -75,7 +81,16 @@ for f in "${ALL[@]}"; do
   if is_heavy "$f"; then HEAVY_PRESENT+=("$f"); else LIGHT+=("$f"); fi
 done
 
-LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/smartchem_suite.XXXXXX")"
+if [ -n "${LOGDIR:-}" ]; then
+  mkdir -p "$LOGDIR" || { echo "cannot create LOGDIR $LOGDIR" >&2; exit 2; }
+  # The aggregate tallies every batch_*.xml in LOGDIR, so a previous run's files would be counted.
+  if compgen -G "$LOGDIR/batch_*" >/dev/null; then
+    echo "LOGDIR $LOGDIR already holds batch logs; pass an empty or new directory" >&2
+    exit 2
+  fi
+else
+  LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/smartchem_suite.XXXXXX")"
+fi
 echo "OOM-safe suite runner"
 echo "  interpreter : $PY"
 echo "  files       : ${#ALL[@]} (${#HEAVY_PRESENT[@]} heavy solo, ${#LIGHT[@]} chunked @ $CHUNK_SIZE)"
@@ -84,6 +99,21 @@ echo
 
 batch=0
 fail_batches=0
+
+show_failure() {
+  # A bounded excerpt of a failed batch's log: the first failure's traceback, the distinct exception
+  # lines with their counts, then pytest's short summary; a log with none of these (a crash, an OOM
+  # kill) gets its tail.
+  local log="$1" excerpt
+  excerpt="$(awk '/^=+ short test summary info =+$/ {exit}
+                  /^=+ (FAILURES|ERRORS) =+$/ {p = 1}
+                  p {print; if (++n >= 80) exit}' "$log")"
+  excerpt+=$'\n'"$(grep -E '^E ' "$log" | sort | uniq -c | sort -rn | head -n 10)"
+  excerpt+=$'\n'"$(awk '/^=+ short test summary info =+$/ {p = 1} p' "$log" | head -n 40)"
+  [ -n "${excerpt//[[:space:]]/}" ] || excerpt="$(tail -n 40 "$log")"
+  printf '%s\n' "$excerpt" | sed 's/^/    | /'
+  echo "    full log: $log"
+}
 
 run_batch() {
   # $1 = human label, rest = files
@@ -103,6 +133,7 @@ run_batch() {
     echo "ok    ${tail_line:-(no tests)}"
   else
     echo "FAIL  (rc=$rc) -> $log"
+    show_failure "$log"
     fail_batches=$((fail_batches + 1))
   fi
 }

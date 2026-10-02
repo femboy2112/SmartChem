@@ -7,6 +7,7 @@ from __future__ import annotations
 import copy
 import dataclasses as dc
 import importlib
+import inspect
 import re
 
 import pytest
@@ -545,15 +546,30 @@ _OWN_LAW = {
 _ALL_CHECKS = frozenset(c for entries in TRANSPORT_LEDGER.values() for e in entries.values() for c in e.checks)
 
 
+def _check_code(check: str):
+    """The code object a ledger-named check's frames run (decorators unwrapped)."""
+    return inspect.unwrap(_resolve(check)).__code__
+
+
 def _refused_in(exc):
-    """The DEEPEST frame of ``exc``'s traceback that is a ledger-named check (``"module:qualname"``), or None."""
+    """The DEEPEST frame of ``exc``'s traceback that runs a ledger-named check (``"module:qualname"``), or None. A frame
+    is matched by the IDENTITY of its code object against the code each name resolves to now, not by spelling the frame's
+    name: ``code.co_qualname`` exists only from Python 3.11, and 3.10 is a supported interpreter."""
+    by_code = {_check_code(check): check for check in _ALL_CHECKS}
     hit, tb = None, exc.__traceback__
     while tb is not None:
-        frame = tb.tb_frame
-        name = f"{frame.f_globals.get('__name__')}:{frame.f_code.co_qualname}"
-        hit = name if name in _ALL_CHECKS else hit
+        hit = by_code.get(tb.tb_frame.f_code, hit)
         tb = tb.tb_next
     return hit
+
+
+def test_each_ledger_check_runs_its_own_code():
+    """``_refused_in`` tells checks apart by code object, so no two names may share one (a decorator without
+    ``functools.wraps`` would hand every check it wraps the same code), and each name's code is the named function."""
+    codes = {check: _check_code(check) for check in _ALL_CHECKS}
+    assert len(set(codes.values())) == len(codes), "two ledger checks run one code object"
+    for check, code in codes.items():
+        assert code.co_name == check.rpartition(".")[2].rpartition(":")[2], f"{check} resolves to {code.co_name}"
 
 
 def test_every_forgery_names_its_own_law():

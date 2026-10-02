@@ -6,12 +6,8 @@ on:
   pull_request:
   workflow_dispatch:
 
-# 0.9.5 NOTE -- UNVERIFIED ON HOSTED RUNNERS.  No hosted runner has allocated since run
-# 36490673856 (GitHub annotation: "The job was not started because recent account payments have
-# failed or your spending limit needs to be increased"; see docs/CI_INFRASTRUCTURE_BLOCKER.md).
-# The 0.9.5 corrections below (scripts/run_suite.sh, timeout-minutes, ubuntu-24.04 pin, the
-# wheel-install-matrix job) were written and checked LOCALLY only; treat them as untested
-# YAML until a runner exists.
+# Hosted runners allocate again: run 36922045140 (2026-10-01) executed every job below. The
+# earlier billing outage, when no runner started, is recorded in docs/CI_INFRASTRUCTURE_BLOCKER.md.
 jobs:
   test:
     runs-on: ubuntu-24.04
@@ -41,18 +37,27 @@ jobs:
       # Tests needing real quantum-chemistry calls are gated behind --runslow and are NOT
       # run here: PySCF is not installed on this runner, and a test that would be skipped
       # anyway should say so rather than appear to pass.
-      # 0.9.5 (UNVERIFIED on hosted runners): the monolithic `pytest` is OOM-killed on a ~7 GB
-      # box (it accumulates memory across 290 files), so run the OOM-safe batched runner: heavy
-      # files solo, a fresh pytest process per batch, exit 0 iff every batch passed.
+      # The monolithic `pytest` is OOM-killed on a ~7 GB box (it accumulates memory across 290
+      # files), so run the OOM-safe batched runner: heavy files solo, a fresh pytest process per
+      # batch, exit 0 iff every batch passed. A failed batch prints a bounded excerpt of its log;
+      # the full logs and junit xml go to LOGDIR, uploaded below when the job fails.
       - name: Test
-        run: PY="$(command -v python)" scripts/run_suite.sh
+        run: LOGDIR="$RUNNER_TEMP/smartchem-suite" PY="$(command -v python)" scripts/run_suite.sh
+
+      - name: Upload suite logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: suite-logs-py${{ matrix.python-version }}
+          path: ${{ runner.temp }}/smartchem-suite
+          if-no-files-found: ignore
 
       # The benchmark is informational on the core install (no optional QC backends
       # available here), but it must not crash, and its coverage line must stay honest.
       - name: Benchmark (baseline oracles only)
         run: python -m smartchem.bench --split test --quiet
 
-  # 0.9.5 (UNVERIFIED on hosted runners): build the wheel + sdist from a clean source export
+  # Build the wheel + sdist from a clean source export
   # of HEAD and prove the INSTALLED artifact behaves byte-for-byte like the source tree
   # (console scripts, package data, implementation digest) for this job's Python.
   wheel-install-matrix:

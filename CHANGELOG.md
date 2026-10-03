@@ -9,6 +9,22 @@ This file summarises the finite chemical-compiler release arc. The exhaustive pe
 
 ---
 
+## [1.0.0] — 2026-10-02
+
+**Stable promotion from `1.0.0rc1`. No compiler-semantic change.** The chemical-compiler semantics — identity,
+bounded search completeness, the readiness ladder, capability projection, the evidence / `StreamDisposition` contract,
+and verified transport — are exactly those frozen and proven in `1.0.0rc1` (below). This release moves only the
+package/release identity that is permitted to move: `smartchem.__version__` (`1.0.0rc1` → `1.0.0`), the `tool_version`
+and `result_digest` fields it binds, the implementation digest, the `--version` banner, and the artifact
+filenames/hashes.
+
+The promotion is proven, not asserted. The version-transition differential
+(`experiments/v1_0_version_transition.py --diff`) reports **29 expected moves and 0 unexpected**; the
+version-independent fingerprint (`--check-golden`) and the public contract (`v1_0_public_contract.py --check`) both
+report **NO DRIFT** with no re-freeze — the RC contract *is* the stable contract — and the regenerated CLI goldens
+moved only `tool_version` and `result_digest`. Full evidence remains the RC gate:
+[`docs/research/V1_0_RELEASE_GATE.md`](docs/research/V1_0_RELEASE_GATE.md).
+
 ## [1.0.0rc1] — 2026-10-02
 
 The first release candidate for **SmartChem 1.0** — the finite chemical-compiler program, frozen, packaged, and proven
@@ -94,4 +110,5 @@ Verification work is **budgeted in deterministic units** (`VerificationBudget`);
 - clean-install matrix exercised across Python **3.10 / 3.11 / 3.12 / 3.13**, wheel and sdist, with no source tree on
   `sys.path`.
 
+[1.0.0]: https://github.com/femboy2112/SmartChem/releases/tag/v1.0.0
 [1.0.0rc1]: https://github.com/femboy2112/SmartChem/tree/release/1.0.0

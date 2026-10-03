@@ -83,7 +83,7 @@ As of 2026-09-26, the chemistry compiler has a finite 1.0 program:
 The version ladder is **0.6 Human Chemical Front Door -> 0.7 Production Chemical Algebra -> 0.8 Real Route Dossiers
 -> 0.9 Capability Compiler -> 0.9.5 Coverage/Adversarial RC -> 1.0 Stable Chemical Compiler**.
 
-**Ladder status (2026-10-02):** the finite program is MERGED through the release candidate:
+**Ladder status (2026-10-02):** the finite program is MERGED and promoted to the stable 1.0.0 release:
 
 ```text
 0.6 Human Chemical Front Door    merged
@@ -91,7 +91,7 @@ The version ladder is **0.6 Human Chemical Front Door -> 0.7 Production Chemical
 0.8 Real Route Dossiers           merged
 0.9 Capability Compiler           merged  (PR #93 -> main d26f0eb)
 0.9.5 Coverage/Adversarial RC     merged  (PR #94 -> main 83d33fd)
-1.0.0rc1 Stable Chemical Compiler current release candidate  (branch release/1.0.0)
+1.0.0 Stable Chemical Compiler    stable release  (PR #95 merged -> main 26479ba)
 ```
 
 0.9.5 merged on 2026-10-02 (merge commit `83d33fd`); the 1.0 release round then branched `release/1.0.0` off that
@@ -99,8 +99,8 @@ main, bumped the single version source to `1.0.0rc1`, froze the public contract 
 the version transition moves only tool-version-bound fields, and packaged a reproducible, cross-version-installed
 release candidate — recorded in [the 1.0 release gate](docs/research/V1_0_RELEASE_GATE.md) and
 [CHANGELOG.md](CHANGELOG.md). **The stopping rule holds: 1.0 freezes the public machine semantics
-([COMPATIBILITY.md](COMPATIBILITY.md)) and adds NO new chemistry.** `1.0.0rc1` goes to external review as a PR that is
-NOT merged, tagged, or published by automation. Each dated paragraph below is its own round's record, not the current
+([COMPATIBILITY.md](COMPATIBILITY.md)) and adds NO new chemistry.** `1.0.0rc1` was accepted in external review, merged (PR #95 -> `main` `26479ba`), and promoted version-only to the
+stable **`1.0.0`** release (the transition moves only tool-version-bound fields; 0 unexpected, no contract drift). Each dated paragraph below is its own round's record, not the current
 state.
 
 This projection does **not** erase the historical round ledger below. It changes the stopping rule: future release work

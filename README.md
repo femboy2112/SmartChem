@@ -1,34 +1,92 @@
+<div align="center">
+
 # SmartChem
+
+**A reality-respecting chemical route compiler.**
+
+Bounded search, evidence-gated readiness and capability, and verified JSON
+transport — built on the premise that a loud `UNKNOWN` beats a plausible,
+unearned answer.
 
 [![CI](https://github.com/femboy2112/SmartChem/actions/workflows/ci.yml/badge.svg)](https://github.com/femboy2112/SmartChem/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/femboy2112/SmartChem)](https://github.com/femboy2112/SmartChem/releases/latest)
-![Python](https://img.shields.io/badge/python-3.10--3.13-blue)
+[![Python](https://img.shields.io/badge/python-3.10--3.13-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-SmartChem is a research compiler for reality-respecting simulation programs.
+</div>
 
-A scientist may start with chemistry, an incomplete physical model, or cross-domain language
-such as “black holes in water,” “a human as an environmentally affected isotope,” or “an
-Ising magnet as a lattice gas.” SmartChem's intended job is to collaborate on the meaning,
-make every consequential choice explicit, construct only a physically scoped executable
-plan, and return results with their evidence, omissions, casualties, and approval history
-attached.
+> **Current release: [v1.0.0 — Stable Chemical Compiler](https://github.com/femboy2112/SmartChem/releases/tag/v1.0.0)**
+> (2026-10-03). Python 3.10–3.13, MIT. Distributed as **GitHub source + a release
+> wheel/sdist** (with `SHA256SUMS` and a reproducibility manifest) — it is **not**
+> published to PyPI. See the [changelog](CHANGELOG.md) and [install](#install) below.
 
-The general language does not exist yet. The repository contains a rigorous compiler/runtime
-seam, a chemistry core, nine deliberately narrow executors that test the design, and a
+> **Research software, not a laboratory authority.** A formally admitted route is a
+> *compiler candidate, not a bench procedure*; `CAPABILITY_FIT` is a model-relative fit
+> verdict, *not a safety certification*. See [safety & epistemic scope](#safety--epistemic-scope).
+
+---
+
+## Why SmartChem
+
+Most tools that reason about chemistry optimize for an answer. SmartChem optimizes for an
+**honest** one. Its core promise is epistemic: it must never *vouch* for something it
+cannot support, because a confident wrong answer is worse than an admitted gap.
+
+So the compiler keeps verdicts separate and earns each one:
+
+- a bounded search tells you whether it **exhausted its declared space** or stopped at a
+  budget — an incomplete search never looks complete, and an empty one never looks like a
+  proof of absence;
+- a route is a `FORMAL_CANDIDATE` until evidence lifts it up a **derived readiness ladder**;
+  missing operations are shown, not hidden;
+- a declared bench profile is **applied** to ranking — each route reads as *fitting*,
+  *excluded*, or *unknown-fit*, and an unmodeled demand reads `UNKNOWN`, never a silent pass;
+- chemical identity is never equated with purity, grade, phase, or price; every price is
+  dated and sourced or it is `UNKNOWN`;
+- derived, estimated, and unsupported claims wear distinct labels.
+
+The standing standard is simple: **a loud refusal is acceptable; a plausible, unearned
+answer is not.**
+
+## What it does
+
+SmartChem turns the chemistry core into a bidirectional **chemical compiler**:
+
+- **Decompiler** — descends a target compound to its elemental buckets as an AND–OR
+  hypergraph (conservation- and valence-respecting *accounting*, not a mechanism claim).
+- **Recompiler** — reads that descent back into candidate synthesis routes, ranked by
+  sourced evidence and terminated on real commodity buckets, not pretending every reagent
+  is elemental.
+
+Both directions share one typed `ChemicalCompilationIR` and one honesty contract. Around
+that core:
+
+- **A tolerant human front door** — paste ordinary notation (`CuSO₄·5H₂O`, `C2H6O`, a
+  SMILES) and `smartchem plan` reports the strongest identity layer it can perceive, and
+  exposes ambiguity instead of guessing. A formula is a *composition, not a constitution*.
+- **A typed route algebra** — an ordinary request searches a certified multi-family route
+  algebra (capped-scission + admitted Diels–Alder families). Widening chemistry is a typed,
+  content-bound, auditable operation — a chemistry-bearing change moves the request digest;
+  a prose edit does not.
+- **A capability compiler** — `--capability-profile research-lab|poor-man` projects each
+  ranked route through a declared bench, axis by axis (material, equipment, physical,
+  process, containment, ventilation, measurement, waste, procurement, attention, monetary).
+- **Verified transport** — `load_response(payload, VerificationPolicy)` re-derives or binds
+  every verdict-bearing field from the carried evidence and returns an out-of-band
+  `VerificationReceipt`; verification is budgeted, and exhaustion is a refusal, never a
+  skipped check.
+- **An evidence auditor** — `smartchem.evidence` points SmartChem's own discipline (*a check
+  derived from its own subject checks nothing*) at another project's numerical probes,
+  auditing the contract around them and either certifying or refusing.
+
+Beneath the chemical compiler sits the original research seam: a rigorous compiler/runtime
+boundary, a chemistry core, nine deliberately narrow executors that test the design, and a
 separate finite typed open-diagram syntax with independently verified ideal-resistor DC and
 positive-frequency passive-RLC interpretations.
 
-## SmartChem 1.0
-
-- **Stable release:** `1.0.0`, MIT licensed.
-- **Python:** 3.10–3.13.
-- **Download:** the [`v1.0.0` release](https://github.com/femboy2112/SmartChem/releases/tag/v1.0.0) — wheel + sdist with `SHA256SUMS` and a reproducibility manifest.
-- **PyPI:** not published yet; install from the release or a clone (below).
-
 ## Install
 
-SmartChem is not on PyPI yet. Install the released wheel directly from GitHub:
+SmartChem is not on PyPI. Install the released wheel directly from GitHub:
 
 ```bash
 pip install https://github.com/femboy2112/SmartChem/releases/download/v1.0.0/smartchem-1.0.0-py3-none-any.whl
@@ -43,7 +101,7 @@ python -m venv .venv && . .venv/bin/activate
 pip install -e '.[dev]'
 ```
 
-The core needs only `numpy` and `scipy`; the PySCF quantum-chemistry backend is an optional
+The core needs only `numpy` and `scipy`. The PySCF quantum-chemistry backend is an optional
 `qc` extra (`pip install -e '.[dev,qc]'`).
 
 ## Quickstart
@@ -58,24 +116,31 @@ python -m smartchem plan 'smiles:CO'
 python -m smartchem recompile 'smiles:CC(=O)OCCC(C)C' --capability-profile poor-man --json
 ```
 
-Exit codes are meaningful: `0` success, `5` a complete search with no admitted route, `4`
-incomplete, `2` invalid input, `70` internal error.
+Exit codes are meaningful: `0` success · `5` a complete search with no admitted route · `4`
+incomplete · `2` invalid input · `70` internal error.
 
-## Safety / epistemic scope
+```bash
+# A Unicode hydrate paste → composition + retained component boundary:
+python -m smartchem plan 'CuSO₄·5H₂O'
+
+# A certified Diels–Alder route with an explicit (empty) helper-reagent pool:
+python -m smartchem recompile --smiles 'C1CC=CCC1' --have 'C=CC=C' 'C=C' --no-helper-reagents
+```
+
+## Safety & epistemic scope
 
 SmartChem is **research software**, not a laboratory authority.
 
 - A formally admitted route is a **compiler candidate, not a bench procedure.**
 - `CAPABILITY_FIT` is a model-relative fit verdict, **not a safety certification.**
-- Completeness is **bounded** — completeness over the *admitted* search space, not a claim
-  about all of chemistry.
+- Completeness is **bounded** — over the *admitted* search space, not all of chemistry.
 - `UNKNOWN` is intentional: the compiler withholds a verdict rather than fabricate one.
 - There is **no universal-synthesis promise**; coverage is deliberately narrow and explicit.
 
 See [COMPATIBILITY.md](COMPATIBILITY.md) for the full scope of what the compiler does and
 does not guarantee.
 
-## Non-negotiable contract
+## The non-negotiable contract
 
 SmartChem follows four rules:
 
@@ -84,17 +149,21 @@ SmartChem follows four rules:
 2. **Output is frozen before optimization.** Observable membership, support, resolution,
    precision, coverage, uncertainty, diagnostics, provenance, and retained artifacts may not
    be reduced without explicit scientist approval.
-3. **Efficiency is mandatory inside that boundary.** The compiler should use the cheapest
-   identity- or contract-preserving execution it can establish. If resources are insufficient,
-   it checkpoints, proposes a disclosed alternative contract, or refuses; it does not return
-   a smaller success.
-4. **Meaning belongs to the scientist.** The compiler may derive, check, search, propose, and
-   expose unknowns. It may not silently choose scientific meaning or promote a metaphor,
-   finite check, converged calculation, or synthetic recovery into physical validation.
+3. **Efficiency is mandatory inside that boundary.** The compiler uses the cheapest
+   identity- or contract-preserving execution it can establish; if resources are
+   insufficient it checkpoints, proposes a disclosed alternative contract, or refuses — it
+   does not return a smaller success.
+4. **Meaning belongs to the scientist.** The compiler may derive, check, search, propose,
+   and expose unknowns; it may not silently choose scientific meaning or promote a metaphor,
+   finite check, or synthetic recovery into physical validation.
 
-The full policy is in [DIRECTION_AUDIT_2026-07-27.md](docs/history/DIRECTION_AUDIT_2026-07-27.md).
+The full policy is in
+[DIRECTION_AUDIT_2026-07-27.md](docs/history/DIRECTION_AUDIT_2026-07-27.md).
 
-## The executable seam
+## How it works
+
+The executable seam runs an incomplete source down to a typed outcome, binding scientist
+approval to the exact plan digest:
 
 ```text
 incomplete source
@@ -109,333 +178,41 @@ incomplete source
     → typed outputs + certificate
 ```
 
-Plans bind the shipped compiler/runtime implementation and the calculation identity. Run
-journals have exclusive path ownership, persist atomically, and quarantine artifacts from
-non-complete runs. The runtime registry is closed and reviewed: no third-party executor can
-inherit authority by registration. A pre-backend execution-admission snapshot is rechecked
-after in-process backend callbacks and before certification, so a callback cannot silently
-rewrite the approved plan, resolved subject, output contract, calculation identity, or
-compiler identity and still complete.
+The runtime registry is closed and reviewed: no third-party executor inherits authority by
+registration, and a pre-backend admission snapshot is rechecked after in-process callbacks
+and before certification — so a callback cannot silently rewrite the approved plan, subject,
+output contract, or compiler identity and still complete. `ClaimKind` and `EvidenceStatus`
+stay independent: an analogue can have established algebra without becoming literal; a
+literal target can remain unsupported.
 
-`ClaimKind` and `EvidenceStatus` are independent. An analogue can have established algebra
-without becoming literal; a literal target can remain unsupported.
-
-## Current executors
+### The nine executors
 
 | Executor | What it establishes | Hard boundary |
 |---|---|---|
-| Reaction energy | Conserving closed endpoint-energy execution with exact output inventory and a verified spectator-residue transform under the runtime-owned separable model. | Public oracle coverage remains narrow; spectator cancellation is not licensed for interacting, solvated, field-coupled, or open models. |
+| Reaction energy | Conserving closed endpoint-energy execution with exact output inventory and a verified spectator-residue transform under the runtime-owned separable model. | Public oracle coverage is narrow; spectator cancellation is not licensed for interacting, solvated, field-coupled, or open models. |
 | Shallow-water horizon v1 | Branch-specific `U ± sqrt(g h)` characteristics and sample-bracketed crossings on a typed prescribed profile. | `ANALOGUE/STRUCTURAL_TOY`; not a continuous background solution, measured flume, scattering calculation, or literal black hole. |
 | Water finite-section preflight v2 | Manufactured discharge/head, `kh`, Bond-number, sign/orientation, uncertainty, and adjacent-sample compatibility gates. | Does not establish steady regularity, a continuous transcritical solution, or experimental validation. |
-| Continuous steady-water control | Manufactured subcritical, supercritical, and isolated regular-transcritical backgrounds; bounded cell-centred energy-root reconstruction on 32/64/128 meshes; binary64 roundings of a separate 60-digit Decimal reference evaluation; retained balance residuals, both refinement-pair rates, both critical compatibility conditions, metadata-only uncertainty, and an exact finite-v2 comparison. | `ANALOGUE/STRUCTURAL_TOY`; not a finite-volume/general stationary solver, continuum theorem, propagated uncertainty analysis, measured flume, dispersive/scattering result, or literal gravity. |
+| Continuous steady-water control | Manufactured sub/super/transcritical backgrounds; bounded cell-centred energy-root reconstruction on 32/64/128 meshes; binary64 roundings of a 60-digit Decimal reference; retained residuals, both refinement rates, both compatibility conditions, and an exact finite-v2 comparison. | `ANALOGUE/STRUCTURAL_TOY`; not a general stationary solver, continuum theorem, propagated-uncertainty analysis, measured flume, dispersive/scattering result, or literal gravity. |
 | Human-isotope D2a | A complete typed interpretation and proof that one hypothetical median-lethality endpoint is compatible with distinct survival families. | `EXPERIMENTAL_PROXY/STRUCTURAL_TOY/UNVALIDATED`; no LD50-to-rate conversion, human prediction, toxicology calibration, or experimentation authority. |
-| Synthetic survival D2b-S | TRAIN-only fixed-family conditional-binomial recovery on content-addressed independent synthetic cohorts, with uncertainty diagnostics and locked HOLDOUT scoring. | Same-generator implementation evidence only; no human/animal evidence, biological validation, causality, or transfer authority. |
+| Synthetic survival D2b-S | TRAIN-only fixed-family conditional-binomial recovery on content-addressed synthetic cohorts, with uncertainty diagnostics and locked HOLDOUT scoring. | Same-generator implementation evidence only; no human/animal evidence, biological validation, causality, or transfer authority. |
 | Finite C3 Ising↔lattice gas | All eight states, `ε=4J`, `μ=2h−4J`, `H_I=H_LG+3(h−J)`, and the formal partition identity, checked with exact integers and a separate direct verifier. | `ANALOGUE/ESTABLISHED/CERTIFIED` for that finite algebra only; no material identity, dynamics, thermodynamic limit, or arbitrary-graph transfer. |
-| Finite resistive DC E1 | Exact rational passive boundary relation plus one topology-generic sparse-MNA drive, explicit model-to-edge binding, complete node/branch/source output, and a production-independent direct verifier. | `LITERAL/VALIDATED_WITHIN_REGIME/CERTIFIED` only for finite positive ideal resistors and the declared drive/reference; no device, AC/RLC, thermal, safety, nonlinear, distributed, or port-Hamiltonian claim. |
-| Positive-frequency passive RLC E2 | Exact `Q(i)` boundary relation, exact driven-rank preflight, one normalized sparse complex-MNA path, complete phasor/power/diagnostic output, explicit model-to-edge binding, and a production-independent direct verifier. | `LITERAL/VALIDATED_WITHIN_REGIME/CERTIFIED` only for the declared finite ideal mathematical networks at one positive frequency; exact lossless singular resonance is refused without regularization. No device, transient, nonlinear/active, tolerance, safety, distributed, or port-Hamiltonian claim. |
+| Finite resistive DC E1 | Exact rational passive boundary relation, one topology-generic sparse-MNA drive, explicit model-to-edge binding, complete node/branch/source output, and a production-independent verifier. | `LITERAL/VALIDATED_WITHIN_REGIME/CERTIFIED` only for finite positive ideal resistors and the declared drive/reference; no device, AC/RLC, thermal, safety, nonlinear, or distributed claim. |
+| Positive-frequency passive RLC E2 | Exact `Q(i)` boundary relation, exact driven-rank preflight, one normalized sparse complex-MNA path, complete phasor/power/diagnostic output, and a production-independent verifier. | `LITERAL/VALIDATED_WITHIN_REGIME/CERTIFIED` only for declared finite ideal networks at one positive frequency; exact lossless singular resonance is refused without regularization. No device, transient, nonlinear, tolerance, safety, or distributed claim. |
 
-The Ising/lattice-gas control is intentionally important: it proves that SmartChem can carry
-an exact cross-domain map without confusing exact mathematics with literal physical identity.
-Every one of the eight microstates remains output; no grouped summary replaces them.
+The Ising/lattice-gas control is deliberately load-bearing: it proves SmartChem can carry an
+exact cross-domain map without confusing exact mathematics with literal physical identity.
+Every one of the eight microstates stays output; no grouped summary replaces them.
 
-## Cross-domain and cross-scale language
+A metaphor is accepted as an **under-specified program, not as truth.** The current
+portfolio deliberately spans three cases — a regime-bounded structural analogue
+(water/black-hole), an underidentified cross-scale experimental proxy (human/isotope), and
+an exact finite map between distinct referents (Ising/lattice-gas). For the module-by-module
+map and scientific caveats, see [docs/history/MANIFEST.md](docs/history/MANIFEST.md).
 
-A metaphor is accepted as an under-specified program, not as truth. Shepherding separates:
+## The 1.0 release program
 
-- source theory and target phenomenon;
-- target scale and scientist-selected granularity;
-- structures intended to transfer;
-- preserved, modified, discarded, and unknown axioms;
-- target assembly and its evidence;
-- calibration, validation, falsifiers, and requested outputs.
-
-Where transport or assembly is not established, SmartChem may construct a typed experimental
-hypothesis with explicit missing evidence. It must not enter the certified lane or lose its
-experimental status merely because it runs successfully.
-
-The current portfolio deliberately spans three cases:
-
-- water/black-hole language: a regime-bounded structural analogue;
-- human/isotope language: an underidentified cross-scale experimental proxy;
-- Ising/lattice-gas language: an exact finite map between distinct referents.
-
-Next controls under consideration include traffic kinematic waves, port-Hamiltonian
-cross-substrate composition, groundwater/electrical potential, and SIR/reaction-network
-mappings. These are research candidates, not an exhaustive menu generated by the language.
-
-## Auditing an external project's probes
-
-`smartchem.evidence` is a decoupled sibling of the compiler: it points SmartChem's own
-discipline — *a check derived from its own subject checks nothing* — at another project's
-numerical probes, auditing the contract around them (teeth, provenance independence, source
-locks, scope, tier boundary) and either certifying or refusing. It reuses `contracts.py`
-primitives but never enters the closed executor registry and never raises a declared
-evidence status; every certificate prints a hygiene-not-physics banner.
-
-The integration is decoupled by design. A consumer emits a JSON manifest conforming to
-`smartchem/evidence/manifest.schema.json` and runs
-
-    smartchem-verify-probes --example > my-probes.json   # a certifying template to edit
-    smartchem-verify-probes my-probes.json               # audit it
-    # equivalently: python -m smartchem.evidence my-probes.json
-
-importing nothing else from SmartChem — and the subpackage itself imports only the standard
-library, so the auditor never pulls in the numeric stack (`import smartchem` stays light;
-numpy loads only when a numeric domain is actually used). Exit code `0` = every manifest
-certified, `1` = at least one refused, `2` = a manifest could not be loaded. See
-`smartchem/evidence/README.md` for the manifest format and
-`docs/history/FINEMAN_VERIFICATION_BRIDGE_2026-08-06.md` for the full bridge rationale.
-
-## Chemistry core
-
-The older core remains useful and actively tested:
-
-- structured `Molecule`, multiset `Config`, and conserving sequential `Reaction`;
-- exact stoichiometric completion/checking over integer kernels;
-- declared oracle domains and typed refusal diagnosis;
-- pluggable heuristic, persistent-cache, photon, and PySCF oracle layers;
-- pathway search, Store-based finite surveys, geometry/harmonic tooling, and benchmark
-  infrastructure.
-
-Reactions form a category under sequential composition. The object product is commutative,
-but reaction histories do not yet form a true parallel symmetric monoidal product:
-`scheduled_product` is a deterministic left-first schedule. The old `tensor` compatibility
-name now emits a deprecation warning because it is not a parallel tensor.
-
-`smartchem.open_diagram` remains a separate topology-only layer: ordered typed boundaries,
-two-terminal component slots, exact endpoint ownership, total boundary gluing, true
-disjoint-union tensor, identities, and braids. A budgeted exact observer compares successful
-finite presentations modulo internal naming and refuses explicitly above its candidate
-budget. `smartchem.resistive_dc_schema`, `smartchem.circuit`, and
-`smartchem.resistive_dc` add one narrow positive ideal-resistor DC semantics beside it.
-`smartchem.rlc_ac_schema`, `smartchem.rlc_ac_circuit`, `smartchem.rlc_ac`, and
-`smartchem.rlc_ac_verifier` add a separate positive-frequency passive-RLC semantics with
-exact singular preflight. Topology itself still does not imply either set of equations.
-This is not a `PhysicalIR` migration, general AC system, device model, or proof of a
-general multiphysics category.
-
-For the module-by-module map and scientific caveats, see [MANIFEST.md](docs/history/MANIFEST.md).
-
-## Chemical compiler (v1.0.0 — stable release)
-
-A newer line of work turns the chemistry core into a bidirectional *chemical compiler*: a
-**decompiler** that descends a target compound to its elemental buckets as an AND–OR
-hypergraph (conservation- and valence-respecting — formal accounting, not a physical
-mechanism claim), and a **recompiler** that reads that descent back into candidate synthesis
-routes, ranked by sourced evidence and terminated on real commodity buckets rather than
-pretending every reagent is elemental. Both directions share one typed
-`ChemicalCompilationIR` and one honesty contract:
-
-- a bounded search returns a **SearchReceipt** that says whether it *exhausted its declared
-  space* or stopped at a budget/depth/result cap; an incomplete search never looks complete,
-  and an empty incomplete search never looks like a proof of absence;
-- terminal outcomes speak the standard's fixed vocabulary (§8.2), including a receipt-bearing
-  refusal path — a charged or malformed request returns a `RefusalReceipt` carrying a
-  `REFUSED_*` status, not a bare exception;
-- a candidate is a `FORMAL_CANDIDATE`, never a validated bench procedure; missing operations
-  are shown, not hidden;
-- a declared bench constraint (§11 temperature/pressure) is part of the request identity **and
-  applied** to route ranking: each route is reported as fitting, excluded, or — when it leaves
-  a constrained dimension undeclared — *unknown-fit*, which is a gap, never a silent pass;
-- chemical identity is never equated with purity, concentration, grade, phase, availability,
-  or price; every price is dated and sourced or it is `UNKNOWN`;
-- derived, estimated, and unsupported claims are labelled distinctly — a loud refusal beats a
-  plausible, unearned answer.
-
-The CIP namer now handles bounded neutral aryl/heteroaryl ligands using exact mancude-ring
-averaging, localized and exocyclic ring unsaturation, supported aromatic-fused systems, Rule-1a-distinct ring pairs,
-and acyclic Rule-3 E/Z priorities. Its Rule-1a/2/3 traversals use a FIFO paired-node queue. Ring-on-centre Rules 4/5,
-isotope-on-Rule-1a-tied rings, and unsupported conjugated/charged ring systems still defer. Declared
-duration intervals require `min`, including on replay. An earlier source reconnaissance round (~R30) recovered
-Br₂ dissociation data and a dated Cl₂ procurement offer; their model and procurement limits remain
-explicit in the [roadmap](ROADMAP.md).
-
-### v0.6 — the human chemical front door
-
-The **v0.6 Human Chemical Front Door** adds one tolerant entrance for ordinary chemical notation copied from
-a source such as Wikipedia. A lossless syntax layer (`FormulaExpr`) sits *before* the atom-count `Formula`,
-preserving hydrate/adduct boundaries and the original spelling; the single identity authority
-(`identity_parse.resolve_identity`) resolves composition, and the `smartchem plan` verb reports the strongest
-identity layer perceived, exposes ambiguity instead of guessing a structure, and routes to the existing
-compiler primitives. A formula is a **composition, not a constitution** — `formula → structure` is a relation,
-not a function — so a bare formula never launches structural synthesis, and a materially-ambiguous paste is
-reported rather than silently resolved:
-
-```bash
-python -m smartchem plan 'CuSO₄·5H₂O'      # Unicode hydrate → composition + retained component boundary
-python -m smartchem plan 'C2H6O'           # composition known; registry-known candidates (NOT exhaustive)
-python -m smartchem plan 'CO'              # INPUT-KIND AMBIGUOUS: methanol (SMILES) or carbon monoxide (formula)
-python -m smartchem plan 'smiles:CO'       # an explicit kind is a decision → structural planning (methanol)
-```
-
-### v0.7 — the production chemical algebra
-
-The **v0.7 Production Chemical Algebra** makes chemistry generation a real, typed *compiler algebra* rather than a
-capped-scission-only default plus a parallel recognition catalogue. An ordinary `recompile`/`plan` request — with no
-special flag — now searches the **certified multi-family route algebra** (`certified-route-v07`: capped-scission +
-the eight admitted Diels–Alder families), and the exact algebra is preserved through request, search, completeness
-receipt, IR, serialization and response. Widening the chemistry is a typed, auditable operation:
-
-- a request selects a **content-bound** algebra profile whose identity binds the declarative rewrite rules, the
-  load-bearing guards, the supported uses, and the reagent capability — so a chemistry-bearing change moves the
-  digest while a prose edit does not; the exact profile is bound into the request digest, receipts and IR, and a
-  search under one algebra cannot be packaged or loaded as another;
-- `--algebra legacy-capped-v1` reproduces the pre-0.7 capped-scission-only behaviour exactly; every serialized request
-  names its algebra (since 0.9.5 a payload missing the field is refused, never defaulted);
-- `--no-helper-reagents` declares an explicit empty reagent pool (no invented water) for the reagentless families.
-
-```bash
-python -m smartchem recompile --smiles 'C1CC=CCC1' --have 'C=CC=C' 'C=C' --no-helper-reagents   # certified DA route
-python -m smartchem recompile --smiles 'C1CC=CCC1' --algebra legacy-capped-v1                    # old capped behaviour
-```
-
-The default promotion rode a measured gate — a full default-promotion blast radius (no legacy route lost, every new
-route reaction-type-vouched, bounded performance) and an independent hostile review — recorded in its
-[release decision record](docs/research/V0_7_PRODUCTION_CHEMICAL_ALGEBRA_RELEASE_2026-09-27.md).
-
-### v0.8 – 0.9.5 — route dossiers, the capability compiler, verified loading
-
-- **Route dossiers (0.8):** every candidate carries a *derived* readiness ladder (`FORMAL_CANDIDATE` <
-  `REACTION_VOUCHED` < `CONDITIONS_SUPPORTED` < `PROCESS_SPECIFIED`, weakest link wins); `PROCESS_SPECIFIED` needs a
-  structurally complete, *sourced* procedure on the step.
-- **Capability compiler (0.9):** `--capability-profile research-lab|poor-man` projects each ranked route through a
-  declared bench, axis by axis (material, equipment, physical, process, containment, ventilation, measurement, waste,
-  procurement, attention, monetary). A real demand on an unmodeled or unevidenced capacity reads `UNKNOWN`, never a
-  pass; `CAPABILITY_FIT` requires `PROCESS_SPECIFIED` and is a profile-fit claim, **not a safety certificate**. The
-  profile never enters the search identity. 0.9.5 added the one evidence type that can discharge a waste obligation
-  (`StreamDisposition`, source-quoted and bound to one stream); no current corpus page states a disposal, so no
-  production route reaches `CAPABILITY_FIT` today — a synthetic witness proves the verdict is reachable.
-- **Verified loading (0.9.5):** `load_response(payload, VerificationPolicy)` re-derives or binds every verdict-bearing
-  field from the carried evidence and returns the response with an out-of-band `VerificationReceipt` stating what the
-  load established; verification work is budgeted in deterministic units and exhaustion is a refusal, never a skipped
-  check. The contract is [COMPATIBILITY.md](COMPATIBILITY.md); the stage map is
-  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-```bash
-python -m smartchem recompile 'smiles:CC(=O)OCCC(C)C' --capability-profile poor-man --json
-```
-
-This is the **stable 1.0.0 release.** The chemical-compiler's machine semantics — identity, bounded search
-completeness, the readiness ladder, capability assessment, the evidence and `StreamDisposition` contract, and verified
-transport — are **frozen** under the stability contract in [COMPATIBILITY.md](COMPATIBILITY.md): from 1.0, new
-chemistry may widen coverage but may not silently change the meaning of an existing verdict word. What the compiler
-can and cannot claim is deliberately bounded — a bounded search is complete only *within its declared grammar*;
-`FORMAL_CANDIDATE` is never a validated bench procedure; `CAPABILITY_FIT` is a profile-fit claim, **never a safety
-certificate**; a formula is a composition, never a constitution; canonical transport ships re-derivable evidence while
-thin transport is advisory by contract. The chemistry itself remains intentionally incomplete, and `UNKNOWN` /
-unsupported is a valid answer. The v0.5.0a1 base standard remains
-inherited: the normative contract is
-[CHEMICAL_COMPILER_STANDARD_v0.5.0a1.md](CHEMICAL_COMPILER_STANDARD_v0.5.0a1.md) and
-[UPTAKE_MANIFEST_v0.5.0a1.md](UPTAKE_MANIFEST_v0.5.0a1.md) is an honest, per-requirement ledger of exactly what
-is implemented-and-verified versus still open. The **finite 1.0 release program** (0.6 → 0.7 → 0.8 → 0.9 →
-0.9.5 → 1.0) now governs new work — see
-[CHEMICAL_COMPILER_1_0_PROGRAM_v0.1.md](docs/research/CHEMICAL_COMPILER_1_0_PROGRAM_v0.1.md) — and the v0.6
-front door specifically is governed by its decision record,
-[V0_6_HUMAN_CHEMICAL_FRONT_DOOR_IMPLEMENTATION_2026-09-26.md](docs/research/V0_6_HUMAN_CHEMICAL_FRONT_DOOR_IMPLEMENTATION_2026-09-26.md).
-[AUDIT_CHEMICAL_COMPILER_2026-09-01.md](docs/history/AUDIT_CHEMICAL_COMPILER_2026-09-01.md) records the earlier
-evidence and rationale.
-
-## Reproduce
-
-### Process limits for synthesis candidates
-
-Operator time and apparatus can be constrained alongside the existing material buckets:
-
-```bash
-python -m smartchem recompile 'smiles:CC(=O)OC' --max-depth 2 \
-  --process-profile quick --max-active-minutes 30
-
-python -m smartchem recompile 'smiles:CC(=O)OC' --max-depth 2 \
-  --process-profile low-touch --max-temp 333.15 --min-check-interval 90 --json
-```
-
-`quick` and `low-touch` are editable operator preferences. Flags also constrain total elapsed time,
-per-step time, attention, agitation, and exact equipment identifiers. Whole-step requirements must explicitly
-include workup; combined heat/pressure limits also require whole-process extrema. Missing process evidence
-remains `UNKNOWN`. The current chemistry catalog has no whole-process annotations, so these examples find
-formal candidates but admit none (exit 5 after a complete search, 4 if incomplete).
-
-The response keeps structural candidates and diagnostics while exposing `process_selection_status` and
-`admissible_route_digests`. Only fitting routes enter process-constrained recommendations. `FITS` compares
-declared requirements with selected limits; readiness remains `FORMAL_CANDIDATE`. `compile` and `synthesize`
-accept the same flags. See the [audit and process contract](AUDIT_PROCESS_ACCESSIBILITY_2026-09-05.md) for
-presets, protocol migration, tests, and the remaining chemistry-evidence work.
-
-### Test commands
-
-```bash
-python -m venv .venv
-. .venv/bin/activate
-pip install -e '.[dev]'
-
-pytest -q
-python -m smartchem.bench
-```
-
-Current suite result (1.0.0): the production tree is compiler-semantically and
-version-independent-fingerprint identical to the reviewed RC at `main` `26479ba` — only the
-declared version-bound identity moved (the `__version__` bump and its version-bound CLI
-goldens). The stable release re-ran the full hosted CI at `8345bbb` (run `37083985662`, all 7
-jobs green): jobs `test (3.10)` and `test (3.12)` run the OOM-safe suite via
-`scripts/run_suite.sh` with the optional RDKit and PySCF backends **absent**; the four
-wheel-install-matrix jobs 3.10–3.13 build and install the release artifact and prove it
-byte-identical to source; and the PySCF smoke job runs with PySCF 2.14.0 **present**. The
-reviewed-RC run `37071540287` recorded:
-
-```text
-test (3.10), test (3.12):  7482 passed, 84 skipped, 0 xfailed  (7566 collected, 0 failed, 0 errors)
-PySCF smoke (-m "not slow"): 7523 passed, 33 skipped, 14 deselected
-```
-
-There are **no xfails**: the last strict xfail (parallel interchange) was discharged by PR #79. Every environment
-skips 32 RDKit-gated checks and leaves out the 14 tests behind the explicit slow-test gate (skipped without
-`--runslow`, deselected by the smoke job's marker). Without PySCF, its 36 integration tests also skip, and
-`test_eris_reuse.py`'s 5 tests are reported as one module-level skip (hence 7548 collected, not 7552). One test reads
-payloads present only on the maintainer's box and skips elsewhere. Skips are never represented as passed. The
-release record's *Suite environments* table reconciles every count, including the dev venv's (7505 passed, 46
-skipped, 7551 collected on `b16749e`, with PySCF present).
-When the development-only RDKit oracle is present the seven RDKit-gated CIP checks additionally run, and
-when the optional PySCF stack is present the real-wavefunction integration tests additionally run. On this box
-the monolithic `pytest` run is OOM-killed, so `scripts/run_suite.sh` (short-lived batched processes) is the
-maintained full-suite runner. An earlier process-accessibility audit receipt records a historical PySCF-absent
-run (4014 passed / 51 skipped / 1 xfailed, 2026-09-05).
-The [validation receipt](experiments/validation/process-accessibility-2026-09-05/receipt.json) records the
-audit environment, complete file partition, raw outputs, and baseline comparison.
-Run selected real-wavefunction integration coverage with:
-
-```bash
-pytest -q --runslow
-```
-
-Every cited compiled run has a committed deterministic harness and durable receipt:
-
-- [runtime-registry migration](experiments/RESULTS_runtime_registry_migration.md)
-- [H2 compiled vertical](experiments/RESULTS_compiled_h2_vertical.md)
-- [water-wave structural vertical](experiments/RESULTS_compiled_water_wave_vertical.md)
-- [water finite-section preflight](experiments/RESULTS_compiled_water_wave_validation.md)
-- [continuous steady-water control](experiments/RESULTS_compiled_water_wave_continuous.md)
-- [human-isotope identifiability](experiments/RESULTS_compiled_human_isotope_vertical.md)
-- [synthetic survival recovery](experiments/RESULTS_compiled_human_survival_recovery.md)
-- [verified Class-A reaction residue](experiments/RESULTS_compiled_class_a_optimizer.md)
-- [exact finite Ising/lattice-gas map](experiments/RESULTS_compiled_ising_lattice_gas_vertical.md)
-- [independently verified resistive-DC bridge](experiments/RESULTS_compiled_resistive_dc.md)
-- [independently verified positive-frequency passive-RLC bridge](experiments/RESULTS_compiled_rlc_ac.md)
-- [bounded StructureIR adapter migration](experiments/RESULTS_structure_ir_adapter.md)
-
-Raw journals are write-once local run artifacts. Receipts retain the relevant identities,
-outcomes, scientific scope, evidence status, omissions, casualties, and negative claims.
-
-## Roadmap
-
-### Chemical Compiler 1.0 release program
-
-The chemistry compiler now has a finite release program instead of treating each newly discovered scientific frontier
-as the next release boundary. The normative plan is
-[`docs/research/CHEMICAL_COMPILER_1_0_PROGRAM_v0.1.md`](docs/research/CHEMICAL_COMPILER_1_0_PROGRAM_v0.1.md):
-**0.6 human front door -> 0.7 production chemical algebra -> 0.8 real route dossiers -> 0.9 capability compiler ->
-0.9.5 coverage/adversarial RC -> 1.0 stable semantics**.
-
-The finite program is complete and promoted to the stable 1.0.0 release:
+The chemistry compiler reached 1.0 through a **finite** release program, rather than
+treating each newly discovered frontier as the next release boundary:
 
 ```text
 0.6 human front door            merged
@@ -446,80 +223,105 @@ The finite program is complete and promoted to the stable 1.0.0 release:
 1.0.0 stable semantics           stable release
 ```
 
-The **stopping rule is explicit**: the 1.0 line freezes the public machine semantics
-([COMPATIBILITY.md](COMPATIBILITY.md)) and does not add chemistry for its own sake. New reaction-family expansion
-is non-release-critical by default — a wider algebra is a post-1.0 MINOR under the compatibility contract, never a
-reason to hold 1.0. 0.9.5 consolidated, bounded verification work, closed the minimum pre-1.0 representation gaps and
-attacked the whole product ([plan](docs/research/V0_9_5_ADVERSARIAL_RC_PLAN_v0.1.md),
-[architecture freeze](docs/research/V0_9_5_ARCHITECTURE_FREEZE.md)); 1.0.0 freezes, packages and ships the release
-artifact ([release gate](docs/research/V1_0_RELEASE_GATE.md), [CHANGELOG](CHANGELOG.md)).
+The **stopping rule is explicit**: the 1.0 line freezes the public machine semantics —
+identity, bounded-search completeness, the readiness ladder, capability assessment, the
+evidence and `StreamDisposition` contract, and verified transport — under the stability
+contract in [COMPATIBILITY.md](COMPATIBILITY.md). From 1.0, new chemistry may *widen*
+coverage but may **not** silently change the meaning of an existing verdict word. A wider
+reaction-family algebra is a post-1.0 MINOR, never a reason to hold the release.
 
+The normative plan is
+[CHEMICAL_COMPILER_1_0_PROGRAM_v0.1.md](docs/research/CHEMICAL_COMPILER_1_0_PROGRAM_v0.1.md);
+the ranked next-steps, deliberate non-goals, and tracked debt live in
+[ROADMAP.md](ROADMAP.md).
 
-> **The chemical-compiler work ledger is pinned in [`ROADMAP.md`](ROADMAP.md)** — done ledger, ranked
-> next-steps (S/M/L), what's deliberately not being built, and tracked debt, ground-truthed against the source and
-> re-stamped each round. The narrative below is the longer-horizon Physical-IR / cross-domain program.
+## Status & verification
 
-The current short-term seam is hardened: `PhysicalIR` owns member/reference/evidence
-integrity, transforms bind the approved model and contracts, all nine executors own their
-model/transform inventory before a calculation or journal, and resolved runners cannot be
-used as an alternate authoritative dispatch path. The manufactured continuous-water
-midterm, finite open-diagram S0, independently verified resistive-DC E1, and
-positive-frequency passive-RLC E2 are complete. The bounded `StructureIR` migration is
-also complete: successful S0 canonical observations have a versioned quotient value,
-raw-presentation/model alignment remains in a separate witness, every new plan records
-`OBSERVED`, `REFUSED`, or `NOT_APPLICABLE`, and execution rederives the attachment before
-any journal or engine call.
+The 1.0.0 production tree is **compiler-semantically and version-independent-fingerprint
+identical** to the reviewed release candidate — only the declared version-bound identity
+moved (the `__version__` bump and its version-bound CLI goldens). The stable release re-ran
+the full hosted CI at `8345bbb`
+([run `37083985662`](https://github.com/femboy2112/SmartChem/actions/runs/37083985662), all
+7 jobs green):
 
-Best next work:
+- `test (3.10)` and `test (3.12)` run the OOM-safe suite via `scripts/run_suite.sh` with the
+  optional RDKit and PySCF backends **absent**;
+- four wheel-install-matrix jobs (3.10–3.13) build and install the release artifact and prove
+  it byte-identical to source;
+- a PySCF smoke job runs with PySCF 2.14.0 **present**.
 
-1. add exact identity/composition/tensor to E2's complex boundary relations and test
-   black-box preservation; unlike DC, AC does not yet expose a semantic functor;
-2. introduce a circuit-local decorated `ModelIR` only with explicit presentation
-   permutation witnesses—undecorated topology cannot infer parameter transport;
-3. keep port-Hamiltonian semantics later until dynamic state and an effort/flow power
-   pairing are explicit and verified;
-4. extend water only after the stationary manufactured rung: bounded dispersive branches
-   first, then measured regime-matched evidence before any promotion beyond `STRUCTURAL_TOY`;
-5. build the traffic kinematic-wave vertical as the next regime-valid analogue;
-6. add persistent reuse/shared-intermediate/lossless-storage planner slices only where full
-   output equivalence is established;
-7. design the empirical survival rung around independent data authority, external validation,
-   censoring/competing-risk semantics, and calibrated uncertainty—without assuming access to
-   human data or authority for experimentation.
+The reviewed-RC run `37071540287` recorded the baseline counts:
 
-Long term: a domain-extensible Physical IR, open-process semantics, model-chain planner,
-general validity/refinement runtime, and finally a conversational language that exposes rather
-than impersonates those transitions.
+```text
+test (3.10), test (3.12):   7482 passed, 84 skipped, 0 xfailed   (7566 collected, 0 failed)
+PySCF smoke (-m "not slow"): 7523 passed, 33 skipped, 14 deselected
+```
 
-The compact continuation sheet is [ROADMAP_2026-07-27.md](docs/history/ROADMAP_2026-07-27.md).
+There are **no xfails** — the last strict xfail (parallel interchange) was discharged by
+PR #79. Skips are environment-honest and never reported as passed: RDKit-gated CIP checks
+run only when the dev-only RDKit oracle is present, and the PySCF integration tests run only
+when that stack is present. On a memory-constrained box the monolithic `pytest` run is
+OOM-killed, so `scripts/run_suite.sh` (short-lived batched processes) is the maintained
+full-suite runner. The official artifacts rebuild exactly via
+`scripts/build_release.py --ref v1.0.0`.
 
-## Research record
+Reproduce locally:
 
-- [DIRECTION_AUDIT_2026-07-27.md](docs/history/DIRECTION_AUDIT_2026-07-27.md) — governing scientific,
-  efficiency, shepherding, and cross-domain language audit.
-- [AUDIT_2026-07-20.md](docs/history/AUDIT_2026-07-20.md) — detailed earlier scientific/multiphysics audit.
-- [THE_COMPILER.md](THE_COMPILER.md) — derived-menu, typed-ledger, termination, and compiler
-  construction record.
-- [experiments/README.md](experiments/README.md) — reproducible probes and compiled harnesses.
-- [CAMPAIGN_HANDOFF_2026-07-27.md](docs/history/CAMPAIGN_HANDOFF_2026-07-27.md) — five-cycle state,
-  calculations, commits, and next work.
-- [RESEARCH_ROUND_2026-07-27.md](docs/history/RESEARCH_ROUND_2026-07-27.md) — this build/research
-  round's target, falsifiers, calculation ledger, and claim state.
-- [RESEARCH_ROUND_OPEN_SYNTAX_2026-07-27.md](docs/history/RESEARCH_ROUND_OPEN_SYNTAX_2026-07-27.md)
-  — selective S0 port, generated-law evidence, rejected remote E1, and compact-resume cut.
-- [RESEARCH_ROUND_RESISTIVE_DC_2026-07-27.md](docs/history/RESEARCH_ROUND_RESISTIVE_DC_2026-07-27.md)
-  — independently verified E1 implementation, hostile repairs, calculation receipt, and
-  compact-resume cut.
-- [RESEARCH_ROUND_RLC_AC_2026-07-28.md](docs/history/RESEARCH_ROUND_RLC_AC_2026-07-28.md)
-  — independently verified E2 implementation, exact singular refusal, calculation ledger,
-  decomposed roadmap, and compact-resume cut.
-- [RESEARCH_ROUND_STRUCTURE_IR_2026-07-28.md](docs/history/RESEARCH_ROUND_STRUCTURE_IR_2026-07-28.md)
-  — bounded quotient adapter, plan-identity migration, category audit, and next semantic rung.
-- [CATEGORY_BACKBONE_ROADMAP_2026-07-27.md](docs/history/CATEGORY_BACKBONE_ROADMAP_2026-07-27.md) —
-  the staged open-diagram/domain-algebra architecture and its dominance boundary.
-- [ROADMAP_CHEMICAL_DECOMPILER_2026-08-30.md](docs/history/ROADMAP_CHEMICAL_DECOMPILER_2026-08-30.md) —
-  proposal (M-4): the chemical decompiler / elemental-descent hypergraph, its formal-not-physical
-  frame, termination/budget walls, reuse map, and B0–B4 build ladder.
+```bash
+pip install -e '.[dev]'
+scripts/run_suite.sh          # OOM-safe full suite
+python -m smartchem.bench
+pytest -q --runslow           # add real-wavefunction integration coverage
+```
 
-The standing standard is simple: a loud refusal is acceptable; a plausible, unearned answer
-is not.
+Every cited compiled run has a committed deterministic harness and a durable receipt under
+[`experiments/`](experiments/README.md); raw journals are write-once local artifacts, and
+receipts retain the identities, outcomes, scope, evidence status, omissions, and negative
+claims.
+
+## Documentation
+
+**Start here** · this README → [COMPATIBILITY.md](COMPATIBILITY.md) (what it guarantees) →
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (the stage map).
+
+| User-facing | Engineering / release | Research record |
+|---|---|---|
+| [COMPATIBILITY](COMPATIBILITY.md) | [CHANGELOG](CHANGELOG.md) | [THE_COMPILER](THE_COMPILER.md) |
+| [CONTRIBUTING](CONTRIBUTING.md) | [ROADMAP](ROADMAP.md) | [THE_ORBITAL](THE_ORBITAL.md) |
+| [SECURITY](SECURITY.md) | [ARCHITECTURE](docs/ARCHITECTURE.md) | [THE_DIFFERENCE](THE_DIFFERENCE.md) |
+| [CODE_OF_CONDUCT](CODE_OF_CONDUCT.md) | [CHEMICAL_COMPILER_STANDARD v0.5.0a1](CHEMICAL_COMPILER_STANDARD_v0.5.0a1.md) | [experiments](experiments/README.md) |
+| [CITATION](CITATION.cff) | [UPTAKE_MANIFEST v0.5.0a1](UPTAKE_MANIFEST_v0.5.0a1.md) | [docs/history](docs/history) · [docs/research](docs/research) |
+
+The `v0.5.0a1` base standard remains the inherited normative contract; `UPTAKE_MANIFEST` is
+an honest, per-requirement ledger of exactly what is implemented-and-verified versus still
+open.
+
+## Repository layout
+
+```
+smartchem/            the compiler: identity/parse, decompiler/recompiler, route algebra,
+                      search, capability/, evidence/, observation/, oracle/ layers, plus the
+                      chemistry core (Molecule/Config/Reaction) and the nine executors
+smartchem/evidence/   decoupled probe auditor (stdlib-only; smartchem-verify-probes)
+docs/                 architecture, history/ (audits, manifests), research/ (round records)
+experiments/          reproducible probes, compiled harnesses, and durable receipts
+tests/                the test suite (run via scripts/run_suite.sh on constrained boxes)
+scripts/              build_release.py, run_suite.sh, and release tooling
+```
+
+## Contributing
+
+Issues and PRs are welcome. Before a substantive change, read
+[CONTRIBUTING.md](CONTRIBUTING.md) and [COMPATIBILITY.md](COMPATIBILITY.md): changes to
+stable 1.x semantics require compatibility adjudication, new chemistry must widen coverage
+without redefining a verdict word, and chemistry-bearing claims need evidence and sourcing.
+Please run the [full suite](#status--verification) locally. Security and
+scientific-correctness reports go through [SECURITY.md](SECURITY.md).
+
+## Support
+
+If SmartChem is useful to you, you can [**buy me a coffee ☕**](https://ko-fi.com/leah2112).
+
+## License
+
+SmartChem is released under the [MIT License](LICENSE).

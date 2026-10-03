@@ -1,5 +1,10 @@
 # SmartChem
 
+[![CI](https://github.com/femboy2112/SmartChem/actions/workflows/ci.yml/badge.svg)](https://github.com/femboy2112/SmartChem/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/femboy2112/SmartChem)](https://github.com/femboy2112/SmartChem/releases/latest)
+![Python](https://img.shields.io/badge/python-3.10--3.13-blue)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 SmartChem is a research compiler for reality-respecting simulation programs.
 
 A scientist may start with chemistry, an incomplete physical model, or cross-domain language

@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use SmartChem in your research, please cite it as below."
+title: SmartChem
+abstract: >-
+  A reality-respecting chemical route compiler with bounded search,
+  evidence-gated readiness and capability verdicts, and verified JSON transport.
+type: software
+authors:
+  - name: "femboy2112"
+version: 1.0.0
+date-released: "2026-10-03"
+license: MIT
+repository-code: "https://github.com/femboy2112/SmartChem"
+url: "https://github.com/femboy2112/SmartChem"
+keywords:
+  - chemistry
+  - cheminformatics
+  - compiler
+  - scientific-computing
+  - category-theory

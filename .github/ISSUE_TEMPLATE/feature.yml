@@ -1,0 +1,31 @@
+name: Feature request
+description: Suggest new coverage or a new capability.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        New chemistry that *widens coverage* is in scope. Note that SmartChem 1.x has a
+        frozen public contract: a request that would redefine an existing verdict word or
+        a stable schema is a 2.0 conversation, not a 1.x change. See CONTRIBUTING.md.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case
+      description: What can you not do today, and why does it matter?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should SmartChem do? Be concrete about inputs and expected verdicts.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Contract impact
+      description: Does this widen coverage only, or would it change an existing verdict/schema? (Best guess is fine.)
+    validations:
+      required: false

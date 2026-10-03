@@ -14,6 +14,62 @@ seam, a chemistry core, nine deliberately narrow executors that test the design,
 separate finite typed open-diagram syntax with independently verified ideal-resistor DC and
 positive-frequency passive-RLC interpretations.
 
+## SmartChem 1.0
+
+- **Stable release:** `1.0.0`, MIT licensed.
+- **Python:** 3.10–3.13.
+- **Download:** the [`v1.0.0` release](https://github.com/femboy2112/SmartChem/releases/tag/v1.0.0) — wheel + sdist with `SHA256SUMS` and a reproducibility manifest.
+- **PyPI:** not published yet; install from the release or a clone (below).
+
+## Install
+
+SmartChem is not on PyPI yet. Install the released wheel directly from GitHub:
+
+```bash
+pip install https://github.com/femboy2112/SmartChem/releases/download/v1.0.0/smartchem-1.0.0-py3-none-any.whl
+```
+
+Or from a clone (editable, with the dev extras):
+
+```bash
+git clone https://github.com/femboy2112/SmartChem.git
+cd SmartChem
+python -m venv .venv && . .venv/bin/activate
+pip install -e '.[dev]'
+```
+
+The core needs only `numpy` and `scipy`; the PySCF quantum-chemistry backend is an optional
+`qc` extra (`pip install -e '.[dev,qc]'`).
+
+## Quickstart
+
+```bash
+smartchem --version                       # smartchem 1.0.0
+
+# Resolve an identity and plan from a name / formula / SMILES:
+python -m smartchem plan 'smiles:CO'
+
+# Compile a synthesis route and emit the stable JSON response:
+python -m smartchem recompile 'smiles:CC(=O)OCCC(C)C' --capability-profile poor-man --json
+```
+
+Exit codes are meaningful: `0` success, `5` a complete search with no admitted route, `4`
+incomplete, `2` invalid input, `70` internal error.
+
+## Safety / epistemic scope
+
+SmartChem is **research software**, not a laboratory authority.
+
+- A formally admitted route is a **compiler candidate, not a bench procedure.**
+- `CAPABILITY_FIT` is a model-relative fit verdict, **not a safety certification.**
+- Completeness is **bounded** — completeness over the *admitted* search space, not a claim
+  about all of chemistry.
+- `UNKNOWN` is intentional: the compiler withholds a verdict rather than fabricate one.
+- There is **no universal-synthesis promise**; coverage is deliberately narrow and explicit.
+
+See [COMPATIBILITY.md](COMPATIBILITY.md) for the full scope of what the compiler does and
+does not guarantee.
+
 ## Non-negotiable contract
 
 SmartChem follows four rules:
@@ -311,10 +367,15 @@ pytest -q
 python -m smartchem.bench
 ```
 
-Current suite result (1.0.0; production tree byte-identical to the merged RC at `main` `26479ba`) — the OOM-safe full run via `scripts/run_suite.sh` on hosted CI
-(run `37071540287`, all 7 jobs green: jobs `test (3.10)` and `test (3.12)`, the optional RDKit and PySCF backends
-**absent**; the four wheel-install-matrix jobs 3.10–3.13 build and install the release artifact and prove it
-byte-identical to source), plus the PySCF smoke job with PySCF 2.14.0 **present**:
+Current suite result (1.0.0): the production tree is compiler-semantically and
+version-independent-fingerprint identical to the reviewed RC at `main` `26479ba` — only the
+declared version-bound identity moved (the `__version__` bump and its version-bound CLI
+goldens). The stable release re-ran the full hosted CI at `8345bbb` (run `37083985662`, all 7
+jobs green): jobs `test (3.10)` and `test (3.12)` run the OOM-safe suite via
+`scripts/run_suite.sh` with the optional RDKit and PySCF backends **absent**; the four
+wheel-install-matrix jobs 3.10–3.13 build and install the release artifact and prove it
+byte-identical to source; and the PySCF smoke job runs with PySCF 2.14.0 **present**. The
+reviewed-RC run `37071540287` recorded:
 
 ```text
 test (3.10), test (3.12):  7482 passed, 84 skipped, 0 xfailed  (7566 collected, 0 failed, 0 errors)

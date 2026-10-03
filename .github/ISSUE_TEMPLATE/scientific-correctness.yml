@@ -1,0 +1,54 @@
+name: Scientific correctness / overclaim
+description: SmartChem said something it cannot support — a wrong or over-strong verdict.
+labels: ["scientific-correctness"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        SmartChem's core promise is that it never vouches for what it cannot support.
+        A failure of that promise is high priority. These reports are explicitly welcome:
+        **identity hallucination, false vouch, false completeness, false readiness,
+        false `CAPABILITY_FIT`, and provenance/source mismatch.**
+  - type: dropdown
+    id: category
+    attributes:
+      label: Kind of overclaim
+      options:
+        - Identity hallucination (reported identity ≠ the input)
+        - False vouch (admitted/VOUCHED without support)
+        - False capability FIT (reported runnable under a profile it cannot satisfy)
+        - False completeness (claimed the admitted space was exhausted when it was not)
+        - False readiness (claimed bench-ready when it is not)
+        - Provenance / source mismatch (cited number or fact ≠ its stated source)
+        - Other / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and input
+      description: The exact invocation (include `--json` output if relevant).
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: claimed-vs-correct
+    attributes:
+      label: What it claimed vs. what is correct
+      description: Quote the verdict/value SmartChem produced, and state the correct chemistry/result.
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Supporting source
+      description: The reference (paper, database, measurement) that establishes the correct answer, if you have one.
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: SmartChem version
+      placeholder: smartchem 1.0.0
+    validations:
+      required: true

@@ -1,0 +1,7 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability (private)
+    url: https://github.com/femboy2112/SmartChem/security/advisories/new
+    about: >-
+      Software security vulnerabilities must be reported privately through GitHub
+      Security Advisories, never as a public issue. See SECURITY.md.

@@ -14,3 +14,17 @@ venv/
 experiments/*.json
 experiments/*.json.lock
 experiments/.probe_cache.json
+
+# Local secrets / credentials — never commit these.
+.env
+.env.*
+!.env.example
+# OS / editor junk.
+.DS_Store
+*.swp
+.idea/
+# Coverage output produced locally.
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml

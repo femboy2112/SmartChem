@@ -6,6 +6,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Least-privilege default token: nothing here writes to the repository through GITHUB_TOKEN.
+# (The upload-artifact step below writes to the Actions artifact store, not the git contents API.)
+# A job that ever needs more should widen permissions at the job level, not here.
+permissions:
+  contents: read
+
 # Hosted runners allocate again: run 36922045140 (2026-10-01) executed every job below. The
 # earlier billing outage, when no runner started, is recorded in docs/CI_INFRASTRUCTURE_BLOCKER.md.
 jobs:
@@ -18,9 +24,9 @@ jobs:
         python-version: ["3.10", "3.12"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -46,7 +52,7 @@ jobs:
 
       - name: Upload suite logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: suite-logs-py${{ matrix.python-version }}
           path: ${{ runner.temp }}/smartchem-suite
@@ -70,9 +76,9 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -97,9 +103,9 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
 

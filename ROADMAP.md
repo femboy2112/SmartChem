@@ -83,15 +83,15 @@ As of 2026-09-26, the chemistry compiler has a finite 1.0 program:
 The version ladder is **0.6 Human Chemical Front Door -> 0.7 Production Chemical Algebra -> 0.8 Real Route Dossiers
 -> 0.9 Capability Compiler -> 0.9.5 Coverage/Adversarial RC -> 1.0 Stable Chemical Compiler**.
 
-**Ladder status (2026-10-02):** the finite program is MERGED and promoted to the stable 1.0.0 release:
+**Ladder status (2026-10-03):** the finite program is MERGED and **RELEASED** as stable `1.0.0`:
 
 ```text
 0.6 Human Chemical Front Door    merged
 0.7 Production Chemical Algebra   merged
 0.8 Real Route Dossiers           merged
-0.9 Capability Compiler           merged  (PR #93 -> main d26f0eb)
-0.9.5 Coverage/Adversarial RC     merged  (PR #94 -> main 83d33fd)
-1.0.0 Stable Chemical Compiler    stable release  (PR #95 merged -> main 26479ba)
+0.9 Capability Compiler           merged    (PR #93 -> main d26f0eb)
+0.9.5 Coverage/Adversarial RC     merged    (PR #94 -> main 83d33fd)
+1.0.0 Stable Chemical Compiler    RELEASED  (PR #96 merged -> main 8345bbb; tag v1.0.0)
 ```
 
 0.9.5 merged on 2026-10-02 (merge commit `83d33fd`); the 1.0 release round then branched `release/1.0.0` off that
@@ -99,9 +99,22 @@ main, bumped the single version source to `1.0.0rc1`, froze the public contract 
 the version transition moves only tool-version-bound fields, and packaged a reproducible, cross-version-installed
 release candidate — recorded in [the 1.0 release gate](docs/research/V1_0_RELEASE_GATE.md) and
 [CHANGELOG.md](CHANGELOG.md). **The stopping rule holds: 1.0 freezes the public machine semantics
-([COMPATIBILITY.md](COMPATIBILITY.md)) and adds NO new chemistry.** `1.0.0rc1` was accepted in external review, merged (PR #95 -> `main` `26479ba`), and promoted version-only to the
-stable **`1.0.0`** release (the transition moves only tool-version-bound fields; 0 unexpected, no contract drift). Each dated paragraph below is its own round's record, not the current
-state.
+([COMPATIBILITY.md](COMPATIBILITY.md)) and adds NO new chemistry.** `1.0.0rc1` was accepted in external review and
+merged (PR #95 -> `main` `26479ba`), then promoted **version-only** to stable **`1.0.0`**: the
+`release/1.0.0-stable` branch bumped `smartchem.__version__` `1.0.0rc1` -> `1.0.0` (only tool-version-bound fields
+moved — 0 unexpected, both no-drift gates held), merged via **PR #96 -> `main` `8345bbb`** (tree byte-identical to the
+reviewed branch), hosted CI 7/7 green on the merged SHA, then tagged **`v1.0.0`** (annotated, at `8345bbb`) with a
+[GitHub release](https://github.com/femboy2112/SmartChem/releases/tag/v1.0.0) carrying reproducible artifacts built
+from the tag (wheel `a565baf…`, sdist `3b33739…`, generator `setuptools (84.0.0)`, byte-identical across two builds).
+Not published to PyPI. **SmartChem 1.0.0 is RELEASED.** Each dated paragraph below is its own round's record, not the
+current state.
+
+**Post-1.0 frontier (recorded, NOT implemented in the release round).** Nothing below is started; it is the honest
+next-work surface, each item still frozen behind the 1.0 stopping rule and the compatibility contract: new reaction
+families / wider transform coverage (a post-1.0 MINOR, never a reason to hold 1.0); the zero-production-`CAPABILITY_FIT`
+frontier (representability proven only synthetically); source temperature interpolation / domain modeling; synonym
+support; perfect CIP; broader QC tiers. Opening any of these is a FUTURE release round that must name its own gate and
+funnel denominator — it is not 1.0 work and must not be smuggled into a point release as "quality".
 
 This projection does **not** erase the historical round ledger below. It changes the stopping rule: future release work
 must name the 1.0 gate and funnel denominator it advances. The 0.6 round's implementation plan was

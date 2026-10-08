@@ -153,3 +153,26 @@ def test_renderers_are_deterministic_and_escape_untrusted_labels():
     assert '\\\"' in render_dot(altered)
     assert "&quot;" in render_mermaid(altered)
     assert "#93;" in render_mermaid(altered)
+
+
+def test_demo_runs_real_formula_search_and_marks_partial(capsys):
+    from scripts.graph_projection_demo import main
+    assert main(["formula", "H2O", "--format", "dot"]) == 0
+    output = capsys.readouterr()
+    assert "digraph SmartChem" in output.out
+    assert "COMPLETE_WITHIN_BOUNDS" in output.out
+    assert "status=COMPLETE_WITHIN_BOUNDS" in output.err
+
+    assert main(["formula", "C3H6O", "--max-edges", "1", "--format", "json"]) == 4
+    output = capsys.readouterr()
+    assert json.loads(output.out)["search_status"] != "COMPLETE_WITHIN_BOUNDS"
+    assert "receipt=" in output.err
+
+
+def test_demo_runs_genuine_certified_dag_fixture(capsys):
+    from scripts.graph_projection_demo import main
+    assert main(["convergent-fixture", "--format", "mermaid"]) == 0
+    output = capsys.readouterr()
+    assert "flowchart LR" in output.out
+    assert "search: UNATTESTED" in output.out
+    assert "source=SYNTHESIS_DAG" in output.err

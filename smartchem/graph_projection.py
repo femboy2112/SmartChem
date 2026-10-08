@@ -97,7 +97,8 @@ class ChemicalGraphProjection:
     def __post_init__(self) -> None:
         if self.schema_version != GRAPH_PROJECTION_SCHEMA:
             raise GraphProjectionError("unsupported graph projection schema")
-        if self.source_kind not in ("FORMULA_DECOMPOSITION", "SYNTHESIS_ROUTE", "SYNTHESIS_DAG"):
+        if self.source_kind not in ("FORMULA_DECOMPOSITION", "SYNTHESIS_ROUTE", "SYNTHESIS_DAG",
+                                     "SYNTHESIS_ROUTE_ENSEMBLE", "SYNTHESIS_DAG_ENSEMBLE"):
             raise GraphProjectionError("unknown graph source kind")
         if not self.source_digest or not self.search_status:
             raise GraphProjectionError("source digest/status must be present")
@@ -319,6 +320,114 @@ def project_synthesis(route, *, search_result=None, max_nodes: int = 20_000,
          "Species nodes are identity classes, NOT allocated material lots or measured stream quantities.",
          "No readiness, yield, hazard safety, or bench-capability verdict was inferred here.",
          "Step occurrence IDs are distinct even when two steps have identical content."),
+        max_nodes, max_arcs,
+    )
+
+
+def project_synthesis_ensemble(search_result, *, max_nodes: int = 20_000,
+                               max_arcs: int = 40_000) -> ChemicalGraphProjection:
+    """Project the FULL returned candidate ensemble (routes or DAGs) as ONE AND-OR hypergraph.
+
+    Accepts a ``RouteSearchResult`` or ``DAGSearchResult``.  Species identity nodes merge by
+    resonance constitution across candidates, so a shared precursor appears exactly once;
+    reaction hyperedges merge by CONTENT digest and each carries the set of candidate indices
+    that use it (attribute ``candidates``) plus every (candidate:position) occurrence
+    (``occurrences``).  Alternative reactions producing the same species are therefore visible
+    OR-branches, multi-precursor reactions are AND-dependencies, and every individual candidate
+    boundary is exactly recoverable from the membership attribute -- no candidate is flattened
+    into another.  This is the content-merged OR view; :func:`project_synthesis` remains the
+    occurrence-distinct single-candidate view.  Search completeness is the receipt's: a partial
+    search omits candidates that are simply not present here.
+    """
+    from .decompiler import Formula
+    from .experiment.routes import DAGSearchResult, RouteSearchResult
+    from .smiles import resonance_identity
+
+    if type(search_result) is RouteSearchResult:
+        kind, members = "SYNTHESIS_ROUTE_ENSEMBLE", search_result.routes
+    elif type(search_result) is DAGSearchResult:
+        kind, members = "SYNTHESIS_DAG_ENSEMBLE", search_result.dags
+    else:
+        raise TypeError("expected RouteSearchResult or DAGSearchResult")
+
+    def key(mol) -> str:
+        return resonance_identity(mol)
+
+    receipt = search_result.receipt
+    target_key = receipt.target_identity_digest
+    target_id = _id("s", target_key)
+
+    if not members:
+        # An exhaustive-but-empty search is a real result, not a crash: show the lone target.
+        node = GraphNode(target_id, "species", f"target [{target_id[-8:]}]",
+                         _attrs(identity_layer="CONSTITUTION", structure_identity=target_key,
+                                boundary="external_input_species", candidates=""))
+        note = ("The search returned no candidates within its bounds; "
+                f"target_in_terminal_stock={getattr(search_result, 'target_in_terminal_stock', False)}.",)
+        return _finish(kind, search_result.digest, target_id, receipt.status.value,
+                       receipt.digest, {target_id: node}, [], note, max_nodes, max_arcs)
+
+    mols: dict[str, object] = {}
+    reactions: dict[str, dict] = {}  # reaction_id -> {step, members:set[int], occ:list[(int,int)]}
+    for cand_index, candidate in enumerate(members):
+        for step_index, step in enumerate(candidate.steps):
+            for mol in (*step.reactants, *step.products, step.target):
+                mols.setdefault(key(mol), mol)
+            rid = _id("r", step.digest)
+            entry = reactions.setdefault(rid, {"step": step, "members": set(), "occ": []})
+            entry["members"].add(cand_index)
+            entry["occ"].append((cand_index, step_index))
+
+    produced = {key(m) for e in reactions.values() for m in e["step"].products}
+    consumed = {key(m) for e in reactions.values() for m in e["step"].reactants}
+    species_members: dict[str, set] = {k: set() for k in mols}
+    for e in reactions.values():
+        for m in (*e["step"].reactants, *e["step"].products):
+            species_members[key(m)] |= e["members"]
+
+    nodes: dict[str, GraphNode] = {}
+    arcs_by_port: dict[tuple, GraphArc] = {}
+    for mol_key, mol in mols.items():
+        ident = _id("s", mol_key)
+        formula = repr(Formula.of(mol.formula, mol.charge))
+        boundary = ("target" if mol_key == target_key else
+                    "intermediate_species" if mol_key in produced and mol_key in consumed else
+                    "external_input_species" if mol_key not in produced else
+                    "output_species")
+        nodes[ident] = GraphNode(
+            ident, "species", f"{formula} [{ident[-8:]}]",
+            _attrs(identity_layer="CONSTITUTION", structure_identity=mol_key,
+                   formula=formula, boundary=boundary,
+                   candidates=",".join(str(i) for i in sorted(species_members[mol_key]))),
+        )
+    for rid, e in reactions.items():
+        step = e["step"]
+        nodes[rid] = GraphNode(
+            rid, "reaction", step.equation(),
+            _attrs(step_digest=step.digest, evidence_status="NOT_ASSESSED",
+                   condition_envelope_declared=step.envelope.is_declared,
+                   candidates=",".join(str(i) for i in sorted(e["members"])),
+                   occurrences=",".join(f"{c}:{s}" for c, s in sorted(e["occ"])),
+                   candidate_count=len(e["members"])),
+        )
+        for mol_key, count in Counter(key(m) for m in step.reactants).items():
+            arc = GraphArc(_id("s", mol_key), rid, "consumes", count)
+            arcs_by_port[(arc.source, arc.target, arc.role)] = arc
+        for mol_key, count in Counter(key(m) for m in step.products).items():
+            arc = GraphArc(rid, _id("s", mol_key), "produces", count)
+            arcs_by_port[(arc.source, arc.target, arc.role)] = arc
+
+    return _finish(
+        kind, search_result.digest, target_id, receipt.status.value, receipt.digest,
+        nodes, list(arcs_by_port.values()),
+        (f"Ensemble of {len(members)} returned candidate(s): shared species are one identity node; "
+         "reactions merge by content and carry candidate membership.",
+         "Alternative reactions producing one species are OR-branches; multi-precursor reactions "
+         "are AND-dependencies.",
+         "Each candidate's exact boundary is recoverable from the per-node 'candidates' attribute; "
+         "no candidate is flattened into another.",
+         "Search completeness is the receipt's, NOT the display's: a partial search omits candidates "
+         "that are simply absent here."),
         max_nodes, max_arcs,
     )
 

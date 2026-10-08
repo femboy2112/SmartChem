@@ -19,6 +19,7 @@ from smartchem.graph_projection import (
     GraphProjectionError,
     project_decomposition,
     project_synthesis,
+    project_synthesis_ensemble,
     render_dot,
     render_mermaid,
 )
@@ -278,3 +279,60 @@ def test_constitutional_isomers_are_distinct_species_nodes():
     assert len({n.id for n in species}) == 2  # two distinct identity nodes, not collapsed
     assert len({dict(n.attributes)["formula"] for n in species}) == 1  # same printed formula
     assert len({dict(n.attributes)["structure_identity"] for n in species}) == 2  # distinct identity
+
+
+def test_route_ensemble_merges_shared_identity_and_preserves_every_candidate_boundary():
+    routes = search_routes(_PARA, reagents=(_WATER, _ACOH, _ANH), available=(_AMP,), max_depth=3)
+    assert len(routes.routes) >= 2
+    ensemble = project_synthesis_ensemble(routes)
+    assert ensemble.source_kind == "SYNTHESIS_ROUTE_ENSEMBLE"
+    assert ensemble.receipt_digest == routes.receipt.digest
+    reactions = _reaction_nodes(ensemble)
+    # Each candidate's exact reaction-digest set is recoverable from membership -- no flattening.
+    for i, route in enumerate(routes.routes):
+        want = {step.digest for step in route.steps}
+        got = {dict(n.attributes)["step_digest"] for n in reactions
+               if str(i) in dict(n.attributes)["candidates"].split(",")}
+        assert got == want
+    # Shared identity genuinely merges: fewer species than the sum of per-candidate species.
+    per_candidate = sum(len(_species_nodes(project_synthesis(r))) for r in routes.routes)
+    assert len(_species_nodes(ensemble)) < per_candidate
+    # At least one reaction is genuinely shared across candidates (membership > 1).
+    assert any(int(dict(n.attributes)["candidate_count"]) > 1 for n in reactions)
+    assert ensemble.digest == project_synthesis_ensemble(routes).digest
+
+
+def test_ensemble_surfaces_or_alternative_producers():
+    routes = search_routes(_PARA, reagents=(_WATER, _ACOH, _ANH), available=(_AMP,), max_depth=3)
+    ensemble = project_synthesis_ensemble(routes)
+    producers: dict[str, set] = {}
+    for arc in ensemble.arcs:
+        if arc.role == "produces":
+            producers.setdefault(arc.target, set()).add(arc.source)
+    # A real OR branch: at least one species is made by more than one distinct reaction.
+    assert any(len(sources) > 1 for sources in producers.values())
+
+
+def test_dag_ensemble_preserves_convergent_boundaries_and_partial_status():
+    dags = search_dags(_ETAC, reagents=_DAG_REAGENTS, available=(), max_depth=2)
+    assert len(dags.dags) > 1
+    ensemble = project_synthesis_ensemble(dags)
+    assert ensemble.source_kind == "SYNTHESIS_DAG_ENSEMBLE"
+    # Partial search status is carried onto the ensemble, never silently upgraded.
+    assert ensemble.search_status == dags.receipt.status.value
+    reactions = _reaction_nodes(ensemble)
+    for i, dag in enumerate(dags.dags):
+        want = {step.digest for step in dag.steps}
+        got = {dict(n.attributes)["step_digest"] for n in reactions
+               if str(i) in dict(n.attributes)["candidates"].split(",")}
+        assert got == want
+
+
+def test_empty_ensemble_shows_target_without_crashing_or_inventing_reactions():
+    stocked = search_routes(_PARA, reagents=(_WATER,), available=(_PARA,), max_depth=1)
+    assert not stocked.routes and stocked.target_in_terminal_stock
+    ensemble = project_synthesis_ensemble(stocked)
+    assert len(_reaction_nodes(ensemble)) == 0
+    assert ensemble.arcs == ()
+    assert len(_species_nodes(ensemble)) == 1
+    assert any("no candidates" in note.lower() for note in ensemble.notes)

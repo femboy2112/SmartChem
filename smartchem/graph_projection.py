@@ -331,7 +331,9 @@ def render_dot(graph: ChemicalGraphProjection) -> str:
     def quote(value: str) -> str:
         return json.dumps(value, ensure_ascii=False)
 
-    lines = ["digraph SmartChem {", "  rankdir=LR;"]
+    heading = f"SmartChem {graph.source_kind} | search: {graph.search_status} | source: {graph.source_digest[:12]}"
+    lines = ["digraph SmartChem {", "  rankdir=LR;",
+             f"  graph [label={quote(heading)},labelloc=t];"]
     for node in graph.nodes:
         shape = "box" if node.kind == "species" else "ellipse"
         lines.append(f"  {quote(node.id)} [shape={shape},label={quote(node.label)}];")
@@ -355,7 +357,11 @@ def render_mermaid(graph: ChemicalGraphProjection) -> str:
         return (escaped.replace("[", "#91;").replace("]", "#93;")
                 .replace("|", "#124;").replace("\n", " "))
 
-    lines = ["flowchart LR"]
+    heading = safe(
+        f"SmartChem {graph.source_kind} | search: {graph.search_status} | "
+        f"source: {graph.source_digest[:12]}"
+    )
+    lines = ["flowchart LR", f'  subgraph graph_status["{heading}"]']
     for node in graph.nodes:
         label = safe(node.label)
         if node.kind == "reaction":
@@ -367,4 +373,5 @@ def render_mermaid(graph: ChemicalGraphProjection) -> str:
             lines.append(f"  {mid(arc.source)} --> {mid(arc.target)}")
         else:
             lines.append(f"  {mid(arc.source)} -->|{arc.multiplicity}| {mid(arc.target)}")
+    lines.append("  end")
     return "\n".join(lines) + "\n"

@@ -100,7 +100,7 @@ def test_convergent_synthesis_has_distinct_branches_and_one_join():
     assert graph.source_kind == "SYNTHESIS_DAG"
     assert len(_reaction_nodes(graph)) == 3
     assert len(_species_nodes(graph)) == 5
-    assert len(graph.arcs) == 8
+    assert len(graph.arcs) == 7
     assert sum(arc.multiplicity for arc in graph.arcs if arc.role == "produces") == 4
     assert len({n.id for n in graph.nodes}) == len(graph.nodes)
     assert graph.digest == project_synthesis(dag).digest
@@ -121,11 +121,18 @@ def test_wrong_result_kind_and_projection_limits_fail_closed():
 def test_forger_cannot_invent_or_dangle_an_incidence_arc():
     graph = project_decomposition(search_decomposition("H2O"))
     with pytest.raises(GraphProjectionError, match="endpoint"):
-        replace(graph, arcs=graph.arcs + (GraphArc("unknown", graph.target_id, "produces", 1),))
+        replace(graph, arcs=tuple(sorted(
+            graph.arcs + (GraphArc("unknown", graph.target_id, "produces", 1),),
+            key=lambda a: a.key())))
     with pytest.raises(GraphProjectionError, match="species -> reaction"):
         source, target = graph.target_id, graph.target_id
         replace(graph, arcs=tuple(sorted(
             graph.arcs + (GraphArc(source, target, "consumes", 1),), key=lambda a: a.key())))
+    with pytest.raises(GraphProjectionError, match="duplicate incidence"):
+        sample = graph.arcs[0]
+        duplicate = GraphArc(sample.source, sample.target, sample.role,
+                             sample.multiplicity + 1)
+        replace(graph, arcs=tuple(sorted(graph.arcs + (duplicate,), key=lambda a: a.key())))
     with pytest.raises(GraphProjectionError, match="unique sorted"):
         replace(graph, nodes=graph.nodes + (graph.nodes[-1],))
     with pytest.raises(GraphProjectionError, match="attribute keys"):

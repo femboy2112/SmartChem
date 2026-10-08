@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "frozen_at_version": "0.9.5a1",
+    "frozen_at_version": "1.0.0",
     "note": "Executable 1.0 public-contract freeze. _meta is provenance, never compared. The package version is deliberately absent: a version bump must not move this surface."
   },
   "cli_verbs": {
@@ -12,6 +12,7 @@
     ],
     "present_noncontract": [
       "audit",
+      "graph",
       "synthesize"
     ]
   },

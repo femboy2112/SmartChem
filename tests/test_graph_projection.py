@@ -4,6 +4,8 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import replace
 import json
+import shutil
+import xml.dom.minidom as minidom
 
 import pytest
 
@@ -21,7 +23,9 @@ from smartchem.graph_projection import (
     project_synthesis,
     project_synthesis_ensemble,
     render_dot,
+    render_html,
     render_mermaid,
+    render_svg,
 )
 
 
@@ -336,3 +340,73 @@ def test_empty_ensemble_shows_target_without_crashing_or_inventing_reactions():
     assert ensemble.arcs == ()
     assert len(_species_nodes(ensemble)) == 1
     assert any("no candidates" in note.lower() for note in ensemble.notes)
+
+
+def test_layered_layout_places_every_node_deterministically():
+    from smartchem.graph_projection import _layered_layout
+    graph = project_decomposition(search_decomposition("C6H12O6", inventory=("C3H6O3", "H2O", "CO2")))
+    pos = _layered_layout(graph)
+    assert set(pos) == {n.id for n in graph.nodes}  # every node placed, none stranded
+    assert pos == _layered_layout(graph)  # deterministic
+    # the target compound is a source (column 0): nothing in a decomposition produces it
+    assert pos[graph.target_id][0] == 0
+    # columns and rows are non-negative integers
+    assert all(isinstance(c, int) and isinstance(r, int) and c >= 0 and r >= 0 for c, r in pos.values())
+
+
+@pytest.mark.skipif(shutil.which("dot") is None, reason="optional Graphviz 'dot' backend absent")
+def test_render_svg_is_well_formed_xml_from_real_output():
+    graph = project_decomposition(search_decomposition("C3H6O", inventory=("H2O", "CO2", "CH4")))
+    svg = render_svg(graph)
+    minidom.parseString(svg)  # raises on malformed XML
+    assert "<svg" in svg and "</svg>" in svg
+
+
+def test_render_svg_fails_closed_when_backend_absent(monkeypatch):
+    # render_svg does `import shutil; shutil.which("dot")`, so patching the module is enough.
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    graph = project_decomposition(search_decomposition("H2O"))
+    with pytest.raises(GraphProjectionError, match="Graphviz"):
+        render_svg(graph)
+
+
+def test_html_explorer_is_self_contained_injection_safe_and_loud_about_limits():
+    routes = search_routes(_PARA, reagents=(_WATER, _ACOH, _ANH), available=(_AMP,), max_depth=3)
+    ensemble = project_synthesis_ensemble(routes)
+    # Inject an adversarial label to prove the data island cannot break out of the <script> block.
+    poisoned = replace(ensemble, nodes=tuple(
+        replace(n, label='</script><img src=x onerror=alert(1)>') if n.id == ensemble.target_id else n
+        for n in ensemble.nodes))
+    page = render_html(poisoned, max_visible_nodes=3)
+    assert page.startswith("<!doctype html>")
+    # fully offline: no external resource FETCHES (the SVG xmlns URI is a namespace id, not a fetch)
+    assert 'src="http' not in page and 'href="http' not in page
+    assert "cdn" not in page.lower() and "googleapis" not in page.lower()
+    assert "fetch(" not in page and "XMLHttpRequest" not in page
+    # the JSON data island carries NO raw script-closer or comment-open (injection closed)
+    island = page.split('type="application/json">', 1)[1].split("</script>", 1)[0]
+    assert "</" not in island and "<!--" not in island
+    # display-completeness is disclosed exactly, never silently clipped
+    assert '"visible_limit":3' in island
+    assert f'"total_nodes":{len(poisoned.nodes)}' in island
+    # search status is carried as text (not color alone)
+    assert poisoned.search_status in page
+
+
+def test_graph_cli_formula_and_synthesis_exit_codes(capsys):
+    from smartchem.graph_cli import main
+    assert main(["formula", "H2O", "--format", "json"]) == 0            # complete -> 0
+    capsys.readouterr()
+    # partial search -> exit 4, never laundered to success
+    assert main(["formula", "C3H6O", "--inventory", "H2O", "CO2", "CH4",
+                 "--max-edges", "2", "--format", "dot"]) == 4
+    out = capsys.readouterr()
+    assert "digraph SmartChem" in out.out
+    assert "search=PARTIAL_RESULT_LIMIT" in out.err
+    # synthesis ensemble over a real route search renders and reports its receipt
+    assert main(["synthesis", "paracetamol", "--reagents", "O", "CC(=O)O", "CC(=O)OC(=O)C",
+                 "--available", "Nc1ccc(O)cc1", "--max-depth", "3", "--ensemble",
+                 "--format", "mermaid"]) == 0
+    out = capsys.readouterr()
+    assert "flowchart LR" in out.out
+    assert "source=SYNTHESIS_ROUTE_ENSEMBLE" in out.err

@@ -484,3 +484,306 @@ def render_mermaid(graph: ChemicalGraphProjection) -> str:
             lines.append(f"  {mid(arc.source)} -->|{arc.multiplicity}| {mid(arc.target)}")
     lines.append("  end")
     return "\n".join(lines) + "\n"
+
+
+def _layered_layout(graph: ChemicalGraphProjection) -> dict[str, tuple[int, int]]:
+    """Deterministic left-to-right layered layout (longest-path from sources, cycle-tolerant).
+
+    No Graphviz dependency: integer (column, row) grid positions, column = longest path from a
+    source node, rows assigned by the already-sorted node order.  Autocatalytic 2-cycles cannot
+    strand the layout -- any node never drained to in-degree 0 is placed in a trailing column.
+    """
+    from collections import deque
+
+    succ: dict[str, list[str]] = {n.id: [] for n in graph.nodes}
+    indeg: dict[str, int] = {n.id: 0 for n in graph.nodes}
+    for arc in graph.arcs:
+        succ[arc.source].append(arc.target)
+        indeg[arc.target] += 1
+    layer = {nid: 0 for nid in indeg}
+    remaining = dict(indeg)
+    queue = deque(sorted(nid for nid, d in indeg.items() if d == 0))
+    seen = set(queue)
+    while queue:
+        nid = queue.popleft()
+        for target in sorted(succ[nid]):
+            layer[target] = max(layer[target], layer[nid] + 1)
+            remaining[target] -= 1
+            if remaining[target] == 0 and target not in seen:
+                seen.add(target)
+                queue.append(target)
+    trailing = max(layer.values(), default=0) + 1
+    for nid in indeg:
+        if nid not in seen:
+            layer[nid] = trailing
+    columns: dict[int, list[str]] = {}
+    for node in graph.nodes:                      # graph.nodes is already id-sorted (see _finish)
+        columns.setdefault(layer[node.id], []).append(node.id)
+    pos: dict[str, tuple[int, int]] = {}
+    for column in sorted(columns):
+        for row, nid in enumerate(columns[column]):
+            pos[nid] = (column, row)
+    return pos
+
+
+def render_svg(graph: ChemicalGraphProjection) -> str:
+    """SVG via the OPTIONAL Graphviz ``dot`` backend; fails loudly (never silently) when absent.
+
+    Graphviz is not a dependency of the chemical core: this import and process launch happen only
+    when SVG is explicitly requested, and a missing ``dot`` steers the caller to the dependency-free
+    dot/mermaid/html formats rather than dropping any chemistry.
+    """
+    import shutil
+    import subprocess
+
+    if type(graph) is not ChemicalGraphProjection:
+        raise TypeError("graph must be a ChemicalGraphProjection")
+    dot_bin = shutil.which("dot")
+    if dot_bin is None:
+        raise GraphProjectionError(
+            "SVG export needs the optional Graphviz 'dot' backend (not found on PATH); the "
+            "dot/mermaid/html formats need no extra dependency and carry the same graph"
+        )
+    proc = subprocess.run([dot_bin, "-Tsvg"], input=render_dot(graph),
+                          capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise GraphProjectionError(
+            f"graphviz dot failed (exit {proc.returncode}): {proc.stderr.strip()[:200]}"
+        )
+    return proc.stdout
+
+
+def _embed_json(payload: dict) -> str:
+    """Serialize for a <script type=application/json> block: the ONLY sequences that can escape a
+    script element are ``</`` and ``<!--``, so neutralize exactly those and nothing else."""
+    blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return blob.replace("</", "<\\/").replace("<!--", "<\\!--")
+
+
+def render_html(graph: ChemicalGraphProjection, *, max_visible_nodes: int | None = None) -> str:
+    """A self-contained, offline, dependency-free HTML explorer for one projection.
+
+    The graph is embedded as a JSON data island and parsed by the page's own vanilla JS (no markup
+    interpolation, no network, no CDN).  The page offers pan/zoom, click-to-inspect, candidate-route
+    highlighting, a per-node layer/attribute view, and a status banner that always states the search
+    AND display completeness -- it NEVER hides nodes without saying how many were omitted, and it
+    never uses color as the only carrier of scientific status (shape + text do that).
+    """
+    if type(graph) is not ChemicalGraphProjection:
+        raise TypeError("graph must be a ChemicalGraphProjection")
+    positions = _layered_layout(graph)
+    total = len(graph.nodes)
+    visible = total if max_visible_nodes is None else max(1, min(total, int(max_visible_nodes)))
+    payload = {
+        "graph": graph.to_payload(),
+        "layout": {nid: list(pos) for nid, pos in positions.items()},
+        "view_digest": graph.digest,
+        "visible_limit": visible,
+        "total_nodes": total,
+    }
+    data = _embed_json(payload)
+    title = html.escape(f"SmartChem {graph.source_kind}")
+    return _HTML_TEMPLATE.replace("__TITLE__", title).replace("__DATA__", data)
+
+
+_HTML_TEMPLATE = r"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+  :root { --bg:#f7f7f9; --fg:#14151a; --panel:#ffffff; --line:#9aa0ab; --muted:#5a6270;
+          --species:#d7e9ff; --reaction:#ffe7c7; --edge:#55606f; --warn:#8a1f1f; --dim:0.12; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14151a; --fg:#e8eaf0; --panel:#1e2027; --line:#4a515e; --muted:#9aa2b1;
+            --species:#1d3a5f; --reaction:#5a3c18; --edge:#9aa2b1; --warn:#ff8a8a; --dim:0.08; } }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+         background:var(--bg); color:var(--fg); }
+  header { padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel); }
+  header h1 { font-size:15px; margin:0 0 4px; }
+  #banner { font-size:12px; color:var(--muted); }
+  #banner b { color:var(--fg); }
+  .warn { color:var(--warn); font-weight:600; }
+  #bar { display:flex; gap:12px; flex-wrap:wrap; align-items:center; padding:8px 16px;
+         border-bottom:1px solid var(--line); background:var(--panel); font-size:12px; }
+  #bar label { color:var(--muted); }
+  select, button { font:inherit; font-size:12px; padding:3px 6px; background:var(--bg);
+                   color:var(--fg); border:1px solid var(--line); border-radius:5px; }
+  button { cursor:pointer; }
+  #wrap { display:flex; height:calc(100vh - 118px); }
+  #canvas { flex:1; overflow:hidden; touch-action:none; cursor:grab; }
+  #canvas.drag { cursor:grabbing; }
+  aside { width:300px; max-width:42vw; border-left:1px solid var(--line); background:var(--panel);
+          padding:12px 14px; overflow:auto; }
+  aside h2 { font-size:13px; margin:0 0 8px; }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:2px 10px; font-size:12px; word-break:break-word; }
+  .kv dt { color:var(--muted); }
+  .legend { font-size:12px; color:var(--muted); margin-top:14px; line-height:1.8; }
+  .legend span.box, .legend span.ell { display:inline-block; width:22px; height:13px; margin-right:6px;
+          border:1px solid var(--line); vertical-align:middle; }
+  .legend span.box { background:var(--species); }
+  .legend span.ell { background:var(--reaction); border-radius:50%; }
+  text { font:11px system-ui,sans-serif; fill:var(--fg); }
+  .node rect { fill:var(--species); stroke:var(--line); }
+  .node ellipse { fill:var(--reaction); stroke:var(--line); }
+  .node.sel rect, .node.sel ellipse { stroke:var(--fg); stroke-width:2.5; }
+  .edge { stroke:var(--edge); fill:none; }
+  .elabel { fill:var(--muted); font-size:10px; }
+  .dim { opacity:var(--dim); }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <div id="banner"></div>
+</header>
+<div id="bar">
+  <label>candidate route: <select id="cand"><option value="">all</option></select></label>
+  <label><input type="checkbox" id="labels" checked> labels</label>
+  <button id="fit">fit</button>
+  <button id="export">export SVG</button>
+  <span id="clip"></span>
+</div>
+<div id="wrap">
+  <div id="canvas"><svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg></div>
+  <aside>
+    <h2>inspector</h2>
+    <div id="inspect">Click a node to inspect its identity, stoichiometry and evidence status.</div>
+    <div class="legend">
+      <div><span class="box"></span>species (identity class)</div>
+      <div><span class="ell"></span>reaction (hyperedge, occurrence)</div>
+      <div>edge number = stoichiometric multiplicity</div>
+      <div>status is carried by text, never color alone.</div>
+    </div>
+  </aside>
+</div>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+"use strict";
+const D = JSON.parse(document.getElementById("data").textContent);
+const G = D.graph, L = D.layout;
+const svg = document.getElementById("svg");
+const NS = "http://www.w3.org/2000/svg";
+const COLW = 220, ROWH = 64, PAD = 40, NW = 168, NH = 34;
+const nodeById = {}; G.nodes.forEach(n => nodeById[n.id] = n);
+
+document.getElementById("title").textContent = G.source_kind + "  ·  view " + D.view_digest.slice(0,12);
+const complete = (G.search_status === "COMPLETE" || G.search_status === "COMPLETE_WITHIN_BOUNDS");
+const banner = document.getElementById("banner");
+banner.innerHTML =
+  "search: <b>" + G.search_status + "</b>" + (complete ? "" : " <span class='warn'>(INCOMPLETE — candidates may be missing)</span>") +
+  " &nbsp;|&nbsp; source " + G.source_digest.slice(0,12) +
+  " &nbsp;|&nbsp; receipt " + (G.receipt_digest ? G.receipt_digest.slice(0,12) : "UNATTESTED") +
+  " &nbsp;|&nbsp; " + G.nodes.length + " nodes / " + G.arcs.length + " arcs";
+
+// Display-completeness: never clip silently. If a viewport limit hides nodes, say how many.
+const limit = D.visible_limit, hidden = D.total_nodes - limit;
+const shown = new Set(G.nodes.slice(0, limit).map(n => n.id));
+document.getElementById("clip").innerHTML = hidden > 0
+  ? "<span class='warn'>displaying " + limit + " of " + D.total_nodes + " nodes (" + hidden + " hidden by viewport limit)</span>"
+  : "displaying all " + D.total_nodes + " nodes";
+
+// candidate dropdown (ensembles): distinct membership indices across reaction nodes
+const cands = new Set();
+G.nodes.forEach(n => { const c = (n.attributes||{}).candidates; if (c) c.split(",").forEach(x => x && cands.add(x)); });
+const sel = document.getElementById("cand");
+[...cands].sort((a,b)=>(+a)-(+b)).forEach(c => { const o=document.createElement("option"); o.value=c; o.textContent="route "+c; sel.appendChild(o); });
+if (cands.size === 0) sel.parentElement.style.display = "none";
+
+function membership(id){ const c=(nodeById[id].attributes||{}).candidates; return c? c.split(",") : null; }
+
+function draw(){
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const showLabels = document.getElementById("labels").checked;
+  const pick = sel.value;
+  const arcLayer = document.createElementNS(NS,"g");
+  const nodeLayer = document.createElementNS(NS,"g");
+  const pos = id => { const p=L[id]||[0,0]; return [PAD + p[0]*COLW, PAD + p[1]*ROWH]; };
+  const inCand = id => { if(!pick) return true; const m=membership(id); return m ? m.includes(pick) : false; };
+  // edges
+  G.arcs.forEach(a => {
+    if (!shown.has(a.source) || !shown.has(a.target)) return;
+    const [sx,sy]=pos(a.source), [tx,ty]=pos(a.target);
+    const path = document.createElementNS(NS,"path");
+    const x1=sx+NW, y1=sy+NH/2, x2=tx, y2=ty+NH/2, mx=(x1+x2)/2;
+    path.setAttribute("d",`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`);
+    path.setAttribute("class","edge");
+    path.setAttribute("marker-end","url(#arrow)");
+    if (!(inCand(a.source)&&inCand(a.target))) path.classList.add("dim");
+    arcLayer.appendChild(path);
+    if (showLabels && a.multiplicity !== 1){
+      const t=document.createElementNS(NS,"text");
+      t.setAttribute("x",mx); t.setAttribute("y",(y1+y2)/2-3); t.setAttribute("class","elabel");
+      t.textContent=a.multiplicity; arcLayer.appendChild(t);
+    }
+  });
+  // nodes
+  let maxX=0,maxY=0;
+  G.nodes.forEach(n => {
+    if (!shown.has(n.id)) return;
+    const [x,y]=pos(n.id); maxX=Math.max(maxX,x+NW); maxY=Math.max(maxY,y+NH);
+    const g=document.createElementNS(NS,"g"); g.setAttribute("class","node"); g.dataset.id=n.id;
+    const sp = n.kind==="species";
+    const shape=document.createElementNS(NS, sp?"rect":"ellipse");
+    if (sp){ shape.setAttribute("x",x); shape.setAttribute("y",y); shape.setAttribute("width",NW); shape.setAttribute("height",NH); shape.setAttribute("rx",5);}
+    else { shape.setAttribute("cx",x+NW/2); shape.setAttribute("cy",y+NH/2); shape.setAttribute("rx",NW/2); shape.setAttribute("ry",NH/2);}
+    g.appendChild(shape);
+    if (showLabels){
+      const t=document.createElementNS(NS,"text");
+      t.setAttribute("x",x+NW/2); t.setAttribute("y",y+NH/2+4); t.setAttribute("text-anchor","middle");
+      let lab=n.label; if(lab.length>26) lab=lab.slice(0,25)+"…";
+      t.textContent=lab; g.appendChild(t);
+    }
+    if (!inCand(n.id)) g.classList.add("dim");
+    g.addEventListener("click", e => { e.stopPropagation(); inspect(n.id); });
+    nodeLayer.appendChild(g);
+  });
+  const defs=document.createElementNS(NS,"defs");
+  defs.innerHTML='<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--edge)"/></marker>';
+  svg.appendChild(defs); svg.appendChild(arcLayer); svg.appendChild(nodeLayer);
+  svg.dataset.w = maxX+PAD; svg.dataset.h = maxY+PAD;
+  fit();
+}
+
+function inspect(id){
+  const n=nodeById[id];
+  document.querySelectorAll(".node.sel").forEach(e=>e.classList.remove("sel"));
+  const g=[...svg.querySelectorAll(".node")].find(e=>e.dataset.id===id); if(g) g.classList.add("sel");
+  let h="<div class='kv'><dt>kind</dt><dd>"+esc(n.kind)+"</dd><dt>label</dt><dd>"+esc(n.label)+"</dd>";
+  const a=n.attributes||{};
+  Object.keys(a).sort().forEach(k => h += "<dt>"+esc(k)+"</dt><dd>"+esc(String(a[k]))+"</dd>");
+  h+="<dt>id</dt><dd>"+esc(id)+"</dd></div>";
+  document.getElementById("inspect").innerHTML=h;
+}
+function esc(s){ return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// pan + zoom via viewBox
+let vb={x:0,y:0,w:1000,h:700};
+function apply(){ svg.setAttribute("viewBox",`${vb.x} ${vb.y} ${vb.w} ${vb.h}`); }
+function fit(){ const w=+svg.dataset.w||1000, h=+svg.dataset.h||700; vb={x:-20,y:-20,w:w+40,h:h+40}; apply(); }
+const canvas=document.getElementById("canvas");
+canvas.addEventListener("wheel", e=>{ e.preventDefault(); const k=e.deltaY<0?0.9:1.1;
+  const r=svg.getBoundingClientRect(); const mx=vb.x+(e.clientX-r.left)/r.width*vb.w, my=vb.y+(e.clientY-r.top)/r.height*vb.h;
+  vb.x=mx-(mx-vb.x)*k; vb.y=my-(my-vb.y)*k; vb.w*=k; vb.h*=k; apply(); }, {passive:false});
+let drag=null;
+canvas.addEventListener("pointerdown", e=>{ drag={x:e.clientX,y:e.clientY}; canvas.classList.add("drag"); });
+window.addEventListener("pointerup", ()=>{ drag=null; canvas.classList.remove("drag"); });
+window.addEventListener("pointermove", e=>{ if(!drag) return; const r=svg.getBoundingClientRect();
+  vb.x-=(e.clientX-drag.x)/r.width*vb.w; vb.y-=(e.clientY-drag.y)/r.height*vb.h; drag={x:e.clientX,y:e.clientY}; apply(); });
+canvas.addEventListener("click", ()=>{ document.querySelectorAll(".node.sel").forEach(e=>e.classList.remove("sel")); });
+
+document.getElementById("fit").addEventListener("click", fit);
+document.getElementById("labels").addEventListener("change", draw);
+sel.addEventListener("change", draw);
+document.getElementById("export").addEventListener("click", ()=>{
+  const clone=svg.cloneNode(true); clone.setAttribute("xmlns",NS);
+  const blob=new Blob([clone.outerHTML],{type:"image/svg+xml"}); const url=URL.createObjectURL(blob);
+  const a=document.createElement("a"); a.href=url; a.download="smartchem_"+D.view_digest.slice(0,12)+".svg"; a.click(); URL.revokeObjectURL(url);
+});
+draw();
+</script>
+</body>
+</html>
+"""

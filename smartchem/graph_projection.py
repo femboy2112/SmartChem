@@ -367,6 +367,13 @@ def project_synthesis_ensemble(search_result, *, max_nodes: int = 20_000,
         return _finish(kind, search_result.digest, target_id, receipt.status.value,
                        receipt.digest, {target_id: node}, [], note, max_nodes, max_arcs)
 
+    # Fail closed exactly as project_synthesis does on the single route: the receipt's target must
+    # be EVERY candidate's final target.  A guard that holds on one layer and not its sibling is the
+    # fallback-layer leak -- a forged/inconsistent receipt must never silently mislabel a precursor
+    # as the target.
+    if any(key(candidate.final_target) != target_key for candidate in members):
+        raise GraphProjectionError("ensemble receipt target disagrees with a candidate's final target")
+
     mols: dict[str, object] = {}
     reactions: dict[str, dict] = {}  # reaction_id -> {step, members:set[int], occ:list[(int,int)]}
     for cand_index, candidate in enumerate(members):
@@ -403,7 +410,10 @@ def project_synthesis_ensemble(search_result, *, max_nodes: int = 20_000,
     for rid, e in reactions.items():
         step = e["step"]
         nodes[rid] = GraphNode(
-            rid, "reaction", step.equation(),
+            # The formula-level equation collides across constitutional isomers (n- vs iso-propanol
+            # esterification print identically); the content-digest suffix keeps distinct reactions
+            # visually distinct in EVERY format, not just in JSON/HTML attributes.
+            rid, "reaction", f"{step.equation()}  [{step.digest[:8]}]",
             _attrs(step_digest=step.digest, evidence_status="NOT_ASSESSED",
                    condition_envelope_declared=step.envelope.is_declared,
                    candidates=",".join(str(i) for i in sorted(e["members"])),
@@ -445,7 +455,11 @@ def render_dot(graph: ChemicalGraphProjection) -> str:
              f"  graph [label={quote(heading)},labelloc=t];"]
     for node in graph.nodes:
         shape = "box" if node.kind == "species" else "ellipse"
-        lines.append(f"  {quote(node.id)} [shape={shape},label={quote(node.label)}];")
+        # Emit the full attribute set as a hover tooltip so the SVG carries the structural identity
+        # (structure_identity / step_digest / candidates) that a formula-level label cannot show --
+        # DOT/SVG then carry no less than JSON, only rendered differently.
+        tip = quote("; ".join(f"{key}={value}" for key, value in node.attributes) or node.kind)
+        lines.append(f"  {quote(node.id)} [shape={shape},label={quote(node.label)},tooltip={tip}];")
     for arc in graph.arcs:
         label = str(arc.multiplicity) if arc.multiplicity != 1 else ""
         lines.append(f"  {quote(arc.source)} -> {quote(arc.target)} [label={quote(label)}];")
@@ -542,7 +556,8 @@ def render_svg(graph: ChemicalGraphProjection) -> str:
     if dot_bin is None:
         raise GraphProjectionError(
             "SVG export needs the optional Graphviz 'dot' backend (not found on PATH); the "
-            "dot/mermaid/html formats need no extra dependency and carry the same graph"
+            "dot/mermaid/html formats need no extra dependency and carry the same topology, "
+            "stoichiometry and identity tags (dot/svg expose full identity on hover)"
         )
     proc = subprocess.run([dot_bin, "-Tsvg"], input=render_dot(graph),
                           capture_output=True, text=True)

@@ -393,6 +393,29 @@ def test_html_explorer_is_self_contained_injection_safe_and_loud_about_limits():
     assert poisoned.search_status in page
 
 
+def test_ensemble_reaction_labels_disambiguate_isomeric_collisions():
+    # The ethyl-acetate DAG ensemble contains reactions that differ only by a constitutional isomer
+    # (n- vs iso-propanol esterification): their formula-level equations are byte-identical. The
+    # rendered label must still distinguish distinct reactions, and DOT must carry the full identity
+    # as a tooltip so dot/svg are not strictly poorer than json. (Evil-Morty F1.)
+    dags = search_dags(_ETAC, reagents=_DAG_REAGENTS, available=(), max_depth=2)
+    ensemble = project_synthesis_ensemble(dags)
+    by_digest = {dict(n.attributes)["step_digest"]: n.label for n in _reaction_nodes(ensemble)}
+    assert len(set(by_digest.values())) == len(by_digest)  # distinct reactions -> distinct labels
+    dot = render_dot(ensemble)
+    assert "tooltip=" in dot and "step_digest=" in dot  # identity recoverable in dot/svg, not only json
+
+
+def test_ensemble_fails_closed_on_forged_receipt_target():
+    # project_synthesis guards receipt<->target; the ensemble must repeat it, or a forged receipt
+    # silently mislabels a precursor as the target. (Evil-Morty F2: fallback-layer guard asymmetry.)
+    routes = search_routes(_PARA, reagents=(_WATER, _ACOH, _ANH), available=(_AMP,), max_depth=3)
+    forged_target = resonance_identity(_ACOH)  # a precursor present in the routes, never the product
+    forged = replace(routes, receipt=replace(routes.receipt, target_identity_digest=forged_target))
+    with pytest.raises(GraphProjectionError, match="target disagrees"):
+        project_synthesis_ensemble(forged)
+
+
 def test_graph_cli_formula_and_synthesis_exit_codes(capsys):
     from smartchem.graph_cli import main
     assert main(["formula", "H2O", "--format", "json"]) == 0            # complete -> 0

@@ -114,6 +114,11 @@ class ChemicalGraphProjection:
         keys = [arc.key() for arc in self.arcs]
         if keys != sorted(set(keys)):
             raise GraphProjectionError("arcs must be distinct and canonically ordered")
+        # One incidence per (source, target, role): multiplicity belongs on that
+        # incidence, not in duplicate parallel records that double-count it.
+        incidence_keys = [(a.source, a.target, a.role) for a in self.arcs]
+        if len(incidence_keys) != len(set(incidence_keys)):
+            raise GraphProjectionError("duplicate incidence between the same ports")
         incidence: dict[str, set[str]] = {
             node.id: set() for node in self.nodes if node.kind == "reaction"
         }

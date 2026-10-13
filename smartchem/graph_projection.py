@@ -181,6 +181,138 @@ def _finish(source_kind: str, source_digest: str, target_id: str,
     )
 
 
+# --- Legibility helpers: human names, conditions, reaction family (all read-only, sound-or-silent) ---
+# A diagram must COMMUNICATE the chemistry without INVENTING it: every helper below either reports a
+# fact the engine already holds (a registered name, a declared condition, a family whose OWN canonical
+# reaction centre matches exactly) or degrades honestly (the bare formula, "unknown", a neutral
+# bond-change description).  None of them promotes a formal candidate into a named/sourced reaction.
+
+def _species_name(mol) -> str:
+    """The registered chemical name of ``mol`` when known, else its bare formula.
+
+    Uses the SAME resolver the route dossier uses (:func:`smartchem.structure.resolve_structure`); an
+    unknown structure degrades to its formula -- a name is never conjured from a formula.
+    """
+    from .decompiler import Formula
+    formula = repr(Formula.of(mol.formula, mol.charge))
+    try:
+        from .structure import resolve_structure
+        named = resolve_structure(mol)
+    except Exception:
+        named = None
+    return named.name if named is not None and getattr(named, "name", "") else formula
+
+
+def _species_detail(mol) -> dict[str, str]:
+    """Extra identity attributes for the inspector: resolved name / IUPAC / CAS where known."""
+    try:
+        from .structure import resolve_structure
+        named = resolve_structure(mol)
+    except Exception:
+        named = None
+    out: dict[str, str] = {}
+    if named is not None:
+        if getattr(named, "name", ""):
+            out["chemical_name"] = named.name
+        if getattr(named, "iupac", ""):
+            out["iupac_name"] = named.iupac
+        if getattr(named, "cas", ""):
+            out["cas_number"] = named.cas
+    return out
+
+
+def _conditions_summary(envelope) -> str:
+    """One-line human conditions, or ``'unknown'`` for an undeclared envelope.
+
+    Honest by construction: an undeclared envelope reports UNKNOWN; it is NEVER rendered as ambient or
+    default conditions (filling that gap with a default is exactly what the brief forbids).
+    """
+    if not getattr(envelope, "is_declared", False):
+        return "unknown"
+    parts = []
+    for attr, prefix in (("temperature", "T="), ("pressure", "P="), ("medium", "medium="),
+                         ("applied_field", "field=")):
+        value = getattr(envelope, attr, None)
+        if value:
+            parts.append(f"{prefix}{value}")
+    catalysts = getattr(envelope, "catalysts", ())
+    if catalysts:
+        parts.append("cat=" + ",".join(str(c) for c in catalysts))
+    return ", ".join(parts) or "declared"
+
+
+_FAMILY_CENTERS: dict | None = None
+
+
+def _witness_label(witness: str, class_label: str) -> str:
+    """A human family name from a provider's witness kind (sibling diene/dienophile isomers of one
+    hetero [4+2] share a name, since their element-pair reaction centre is identical)."""
+    pretty = {
+        "DIELS_ALDER": "Diels–Alder [4+2] cycloaddition",
+        "DIELS_ALDER_ALKYNE": "Diels–Alder [4+2] (alkyne dienophile)",
+        "DIELS_ALDER_AZA": "aza-Diels–Alder [4+2]",
+        "DIELS_ALDER_AZA_DIENE": "aza-Diels–Alder [4+2]",
+        "DIELS_ALDER_OXA": "oxa-Diels–Alder [4+2]",
+        "DIELS_ALDER_OXA_DIENE": "oxa-Diels–Alder [4+2]",
+        "DIELS_ALDER_THIA": "thia-Diels–Alder [4+2]",
+        "DIELS_ALDER_THIA_DIENE": "thia-Diels–Alder [4+2]",
+        "CAPPED_SCISSION": "bond scission (capped)",
+    }
+    return pretty.get(witness) or (class_label or witness).replace("_", " ").replace("-", " ")
+
+
+def _family_centers() -> dict:
+    """A ``(formed, broken) -> family name`` table built from each family's OWN canonical reaction
+    centre (ground truth), so a name is emitted ONLY on an exact centre match -- never guessed from a
+    formula.  Two families that share one element-pair centre (an aza [4+2] and its aza-diene isomer)
+    collapse to the single label they agree on, so no step is ever mislabelled."""
+    global _FAMILY_CENTERS
+    if _FAMILY_CENTERS is None:
+        table: dict[tuple, str] = {}
+        try:  # the one carbocyclic Diels-Alder centre, from the DA module's own derivation
+            from .diels_alder import _DA_CENTER
+            table[(_DA_CENTER.formed, _DA_CENTER.broken)] = _witness_label("DIELS_ALDER", "")
+        except Exception:
+            pass
+        try:  # every hetero [4+2] family that exposes its canonical centre
+            from .algebra_profiles import resolve_algebra_profile
+            for provider in resolve_algebra_profile("certified-route-v07").providers:
+                family = getattr(provider, "family", None)
+                center = getattr(family, "center", None) if family is not None else None
+                if center is None:
+                    continue
+                label = _witness_label(getattr(provider, "witness_kind", ""),
+                                       getattr(family, "class_label", ""))
+                table.setdefault((center.formed, center.broken), label)
+        except Exception:
+            pass
+        _FAMILY_CENTERS = table
+    return _FAMILY_CENTERS
+
+
+def _bond_change_text(center) -> str:
+    """A neutral, sound description of a reaction centre: which bonds form and which break."""
+    if center is None:
+        return ""
+    glyph = {1: "-", 2: "=", 3: "#"}
+
+    def fmt(changes) -> str:
+        counts = Counter((a, b, o) for a, b, o in changes)
+        parts = [f"{n}×{a}{glyph.get(o, '?')}{b}" if n > 1 else f"{a}{glyph.get(o, '?')}{b}"
+                 for (a, b, o), n in sorted(counts.items())]
+        return ", ".join(parts) or "—"
+
+    return f"forms {fmt(center.formed)}; breaks {fmt(center.broken)}"
+
+
+def _reaction_family(center) -> str | None:
+    """The named reaction family for a reaction centre, or ``None`` when no family's own centre matches
+    exactly (the caller then shows the neutral bond-change description instead)."""
+    if center is None:
+        return None
+    return _family_centers().get((center.formed, center.broken))
+
+
 def project_decomposition(value, *, max_nodes: int = 20_000,
                           max_arcs: int = 40_000) -> ChemicalGraphProjection:
     """Project ALL returned formula edges (or a loudly partial graph), including OR alternatives.
@@ -285,19 +417,32 @@ def project_synthesis(route, *, search_result=None, max_nodes: int = 20_000,
                     "intermediate_species" if mol_key in produced and mol_key in consumed else
                     "external_input_species" if mol_key not in produced else
                     "output_species")
+        name = _species_name(mol)
+        # A known name labels the node; an unknown structure keeps formula+identity so two unnamed
+        # isomers of one formula stay visually distinct (never collapsed to the same drawing/label).
+        label = name if name != formula else f"{formula} [{ident[-8:]}]"
         nodes[ident] = GraphNode(
-            ident, "species", f"{formula} [{ident[-8:]}]",
+            ident, "species", label,
             _attrs(identity_layer="CONSTITUTION", structure_identity=mol_key,
-                   formula=formula, boundary=boundary),
+                   formula=formula, boundary=boundary, **_species_detail(mol)),
         )
 
     for index, step in enumerate(route.steps):
         rid = _id("r", f"{index}:{step.digest}")
+        center = getattr(step, "reaction_center", None)
+        family = _reaction_family(center)
+        bond_change = _bond_change_text(center)
+        reagent_names = "; ".join(sorted(_species_name(m) for m in step.reagents)) or "none"
+        byproduct_names = "; ".join(sorted(_species_name(m) for m in step.byproducts)) or "none"
         nodes[rid] = GraphNode(
-            rid, "reaction", f"Step {index + 1}: {step.equation()}",
+            rid, "reaction", f"Step {index + 1}: {family or bond_change or step.equation()}",
             _attrs(step_index=index, step_digest=step.digest,
                    evidence_status="NOT_ASSESSED",
-                   condition_envelope_declared=step.envelope.is_declared),
+                   condition_envelope_declared=step.envelope.is_declared,
+                   reaction_family=family or "", bond_change=bond_change,
+                   equation=step.equation(), reagents=reagent_names,
+                   conditions=_conditions_summary(step.envelope),
+                   byproducts=byproduct_names),
         )
         input_counts = Counter(key(m) for m in step.reactants)
         reagent_counts = Counter(key(m) for m in step.reagents)
@@ -601,6 +746,100 @@ def render_html(graph: ChemicalGraphProjection, *, max_visible_nodes: int | None
     return _HTML_TEMPLATE.replace("__TITLE__", title).replace("__DATA__", data)
 
 
+def render_scheme_html(route, *, search_result=None, depict: bool = True,
+                       route_label: str | None = None) -> str:
+    """Render ONE route/DAG as a drawn, step-by-step reaction SCHEME -- the chemist's reading.
+
+    Where :func:`render_html` draws the full identity hypergraph, this lays the SAME route out as an
+    ordered sequence of reaction steps read top-to-bottom: for each step the drawn precursors (plus any
+    ancillary reagents) react -- under the named reaction family and its declared/UNKNOWN conditions --
+    to the drawn product (plus byproducts), and a precursor made by an earlier step is cross-referenced
+    to it (convergence stays convergent).  2D structures come from the OPTIONAL RDKit depiction backend;
+    when it is absent (the committed baseline) every species degrades to a name/formula box and the
+    scheme is still complete and readable.  It INHERITS the sound projection: search completeness is the
+    receipt's (never the drawing's), membership/target binding are validated, and NO readiness, yield,
+    or hazard claim is produced -- the picture communicates the chemistry, it does not invent it.
+    """
+    from .decompiler import Formula
+    from .experiment.dag import SynthesisDAG
+    from .experiment.step import ExperimentRoute
+    from .smiles import resonance_identity
+
+    if type(route) not in (ExperimentRoute, SynthesisDAG):
+        raise TypeError("expected ExperimentRoute or SynthesisDAG")
+
+    # Inherit the SOUND single-candidate projection: this validates search-result membership and the
+    # receipt<->target binding, and carries the attested status / receipt / view digest.  The scheme is
+    # a second RENDERING of that projection -- never a second search, never a completeness upgrade.
+    projection = project_synthesis(route, search_result=search_result)
+
+    def key(mol) -> str:
+        return resonance_identity(mol)
+
+    def cell(mol) -> dict:
+        formula = repr(Formula.of(mol.formula, mol.charge))
+        svg = None
+        if depict:
+            try:
+                from .depiction import depict_svg
+                svg = depict_svg(mol)
+            except Exception:
+                svg = None
+            if svg and "<script" in svg.lower():   # never inline a scripted SVG, whatever its origin
+                svg = None
+        return {"name": _species_name(mol), "formula": formula, "svg": svg}
+
+    produced_by: dict[str, int] = {}
+    for index, step in enumerate(route.steps):
+        for mol in step.products:
+            produced_by.setdefault(key(mol), index)
+
+    families: set[str] = set()
+    steps_payload = []
+    for index, step in enumerate(route.steps):
+        center = getattr(step, "reaction_center", None)
+        family = _reaction_family(center)
+        if family:
+            families.add(family)
+        precursors = []
+        for mol in step.precursors:
+            entry = cell(mol)
+            source = produced_by.get(key(mol))
+            if source is not None and source < index:
+                entry["from_step"] = source + 1
+            precursors.append(entry)
+        steps_payload.append({
+            "index": index + 1,
+            "family": family or "",
+            "headline": family or _bond_change_text(center) or step.equation(),
+            "bond_change": _bond_change_text(center),
+            "conditions": _conditions_summary(step.envelope),
+            "equation": step.equation(),
+            "precursors": precursors,
+            "reagents": [cell(mol) for mol in step.reagents],
+            "target": cell(step.target),
+            "byproducts": [cell(mol) for mol in step.byproducts],
+        })
+
+    payload = {
+        "target_name": _species_name(route.final_target),
+        "target_formula": repr(Formula.of(route.final_target.formula, route.final_target.charge)),
+        "kind": projection.source_kind,
+        "search_status": projection.search_status,
+        "receipt_digest": projection.receipt_digest,
+        "source_digest": projection.source_digest,
+        "view_digest": projection.digest,
+        "n_steps": len(route.steps),
+        "route_label": route_label or "",
+        "families": sorted(families),
+        "leaf_inputs": [cell(mol) for mol in getattr(route, "leaf_inputs", ())],
+        "steps": steps_payload,
+    }
+    data = _embed_json(payload)
+    title = html.escape(f"SmartChem synthesis scheme · {payload['target_name']}")
+    return _SCHEME_TEMPLATE.replace("__TITLE__", title).replace("__DATA__", data)
+
+
 _HTML_TEMPLATE = r"""<!doctype html>
 <html lang="en">
 <head>
@@ -798,6 +1037,184 @@ document.getElementById("export").addEventListener("click", ()=>{
   const a=document.createElement("a"); a.href=url; a.download="smartchem_"+D.view_digest.slice(0,12)+".svg"; a.click(); URL.revokeObjectURL(url);
 });
 draw();
+</script>
+</body>
+</html>
+"""
+
+
+_SCHEME_TEMPLATE = r"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+  :root { --bg:#f6f7f9; --fg:#14151a; --panel:#ffffff; --line:#c9ced8; --muted:#5a6270;
+          --accent:#1d5fbf; --chip:#eef1f6; --species:#ffffff; --warn:#8a1f1f; --ok:#1f6a3a;
+          --arrow:#39404d; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg:#13141a; --fg:#e8eaf0; --panel:#1c1e25; --line:#3a4150;
+          --muted:#9aa2b1; --accent:#7fb0ff; --chip:#262a33; --species:#1a1c22; --warn:#ff8a8a;
+          --ok:#86e0a6; --arrow:#aab2c0; } }
+  :root[data-theme="dark"] { --bg:#13141a; --fg:#e8eaf0; --panel:#1c1e25; --line:#3a4150;
+          --muted:#9aa2b1; --accent:#7fb0ff; --chip:#262a33; --species:#1a1c22; --warn:#ff8a8a;
+          --ok:#86e0a6; --arrow:#aab2c0; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+         background:var(--bg); color:var(--fg); }
+  header { padding:14px 16px; border-bottom:1px solid var(--line); background:var(--panel); }
+  header h1 { font-size:17px; margin:0 0 6px; }
+  header h1 small { color:var(--muted); font-weight:400; font-size:13px; }
+  #banner { font-size:12px; color:var(--muted); }
+  #banner b { color:var(--fg); } #banner .warn { color:var(--warn); font-weight:600; }
+  #banner .ok { color:var(--ok); font-weight:600; }
+  #fams { margin-top:6px; font-size:12px; color:var(--muted); }
+  #fams span { display:inline-block; background:var(--chip); border:1px solid var(--line);
+         border-radius:11px; padding:1px 9px; margin:2px 4px 0 0; color:var(--fg); }
+  main { max-width:1100px; margin:0 auto; padding:16px; }
+  .step { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+          margin:0 0 16px; overflow:hidden; }
+  .step > .head { display:flex; flex-wrap:wrap; align-items:baseline; gap:10px;
+          padding:9px 14px; border-bottom:1px solid var(--line); }
+  .step .num { font-weight:700; background:var(--accent); color:#fff; border-radius:7px;
+          padding:1px 9px; font-size:12px; }
+  .step .fam { font-weight:600; }
+  .step .cond { color:var(--muted); font-size:12px; }
+  .step .bc { color:var(--muted); font-size:11px; margin-left:auto; font-family:ui-monospace,monospace; }
+  .rxn { display:flex; flex-wrap:wrap; align-items:center; gap:10px 8px; padding:14px; }
+  .cell { display:flex; flex-direction:column; align-items:center; text-align:center;
+          min-width:120px; max-width:200px; }
+  .cell .pic { width:168px; height:132px; display:flex; align-items:center; justify-content:center;
+          border:1px solid var(--line); border-radius:8px; background:var(--species); overflow:hidden; }
+  .cell .pic svg { max-width:100%; max-height:100%; }
+  .cell .pic.text { font:600 20px ui-monospace,monospace; color:var(--fg); letter-spacing:.3px; }
+  .cell .nm { margin-top:5px; font-size:13px; font-weight:600; word-break:break-word; }
+  .cell .fo { font-size:11px; color:var(--muted); font-family:ui-monospace,monospace; }
+  .cell .ref { font-size:11px; color:var(--accent); }
+  .plus { font-size:20px; color:var(--muted); font-weight:600; }
+  .arrow { display:flex; flex-direction:column; align-items:center; min-width:150px; flex:1; }
+  .arrow .over { font-size:11px; color:var(--fg); font-weight:600; margin-bottom:2px; text-align:center; }
+  .arrow .line { width:100%; min-width:120px; height:0; border-top:2px solid var(--arrow); position:relative; }
+  .arrow .line:after { content:""; position:absolute; right:-1px; top:-5px; border:5px solid transparent;
+          border-left-color:var(--arrow); }
+  .arrow .under { font-size:11px; color:var(--muted); margin-top:3px; text-align:center; }
+  .arrow .with { font-size:11px; color:var(--muted); margin-bottom:2px; }
+  .arrow .with b { color:var(--fg); font-weight:600; }
+  .inputs { padding:10px 14px; border-top:1px dashed var(--line); font-size:12px; color:var(--muted); }
+  .inputs b { color:var(--fg); }
+  .notes { margin-top:10px; font-size:12px; color:var(--muted); line-height:1.7; }
+  .notes li { margin:2px 0; }
+  .toggle { float:right; }
+  button { font:inherit; font-size:12px; padding:3px 9px; background:var(--bg); color:var(--fg);
+           border:1px solid var(--line); border-radius:6px; cursor:pointer; }
+  @media (max-width:560px){ .cell{min-width:46%;} .cell .pic{width:140px;height:112px;} main{padding:12px 8px;} }
+</style>
+</head>
+<body>
+<header>
+  <button class="toggle" id="theme">light / dark</button>
+  <h1 id="title"></h1>
+  <div id="banner"></div>
+  <div id="fams"></div>
+</header>
+<main id="scheme"></main>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+"use strict";
+const D = JSON.parse(document.getElementById("data").textContent);
+const COMPLETE = {COMPLETE:1, COMPLETE_WITHIN_BOUNDS:1, UNATTESTED:1};
+function el(tag, cls, text){ const e=document.createElement(tag); if(cls) e.className=cls;
+  if(text!=null) e.textContent=text; return e; }
+
+document.getElementById("title").innerHTML = "";
+const h1 = document.getElementById("title");
+h1.appendChild(document.createTextNode(D.target_name + "  "));
+h1.appendChild(el("small", null, D.target_formula + " · " + D.n_steps + " step" + (D.n_steps===1?"":"s")
+  + (D.route_label ? " · " + D.route_label : "")));
+
+const complete = !!COMPLETE[D.search_status];
+const b = document.getElementById("banner");
+b.innerHTML = "search: ";
+const st = el("b", complete?"ok":"warn", D.search_status); b.appendChild(st);
+if(!complete) b.appendChild(el("span","warn"," — INCOMPLETE: alternative routes/precursors may be missing"));
+b.appendChild(document.createTextNode(
+  "  |  source " + D.source_digest.slice(0,12) +
+  "  |  receipt " + (D.receipt_digest ? D.receipt_digest.slice(0,12) : "UNATTESTED") +
+  "  |  view " + D.view_digest.slice(0,12)));
+
+const fams = document.getElementById("fams");
+if(D.families.length){ fams.appendChild(document.createTextNode("reaction families: "));
+  D.families.forEach(f => fams.appendChild(el("span", null, f))); }
+else fams.appendChild(document.createTextNode("reaction families: named family not resolved — steps show their bond-change centre"));
+
+function cell(c){
+  const wrap = el("div","cell");
+  const pic = el("div","pic");
+  if(c.svg){ pic.innerHTML = c.svg; }           // trusted RDKit SVG (server-verified: no <script>)
+  else { pic.classList.add("text"); pic.textContent = c.formula; }
+  wrap.appendChild(pic);
+  const name = (c.name && c.name !== c.formula) ? c.name : c.formula;
+  wrap.appendChild(el("div","nm", name));
+  if(c.name && c.name !== c.formula) wrap.appendChild(el("div","fo", c.formula));
+  if(c.from_step) wrap.appendChild(el("div","ref","(from step " + c.from_step + ")"));
+  return wrap;
+}
+function plus(){ return el("div","plus","+"); }
+
+const root = document.getElementById("scheme");
+D.steps.forEach(s => {
+  const card = el("div","step");
+  const head = el("div","head");
+  head.appendChild(el("span","num","Step " + s.index));
+  head.appendChild(el("span","fam", s.headline));
+  head.appendChild(el("span","cond","conditions: " + s.conditions));
+  if(s.bond_change) head.appendChild(el("span","bc", s.bond_change));
+  card.appendChild(head);
+
+  const rxn = el("div","rxn");
+  s.precursors.forEach((p,i) => { if(i) rxn.appendChild(plus()); rxn.appendChild(cell(p)); });
+
+  const arrow = el("div","arrow");
+  if(s.reagents.length){
+    const w = el("div","with"); w.appendChild(document.createTextNode("with "));
+    s.reagents.forEach((r,i)=>{ if(i) w.appendChild(document.createTextNode(", "));
+      w.appendChild(el("b",null, (r.name&&r.name!==r.formula)?r.name:r.formula)); });
+    arrow.appendChild(w);
+  }
+  if(s.family) arrow.appendChild(el("div","over", s.family));
+  arrow.appendChild(el("div","line"));
+  arrow.appendChild(el("div","under", s.conditions === "unknown" ? "conditions unknown" : s.conditions));
+  rxn.appendChild(arrow);
+
+  rxn.appendChild(cell(s.target));
+  s.byproducts.forEach(bp => { rxn.appendChild(plus()); const c=cell(bp);
+    c.appendChild(el("div","fo","byproduct")); rxn.appendChild(c); });
+  card.appendChild(rxn);
+  root.appendChild(card);
+});
+
+if(D.leaf_inputs.length){
+  const inp = el("div","inputs");
+  inp.appendChild(el("b",null,"Starting materials: "));
+  inp.appendChild(document.createTextNode(
+    D.leaf_inputs.map(c => (c.name&&c.name!==c.formula)?c.name+" ("+c.formula+")":c.formula).join(", ")));
+  root.appendChild(inp);
+}
+const notes = el("ul","notes");
+[ "This is ONE candidate route, drawn in synthesis order; it is not a ranked recommendation and not all alternatives.",
+  "Structures are drawn by the optional RDKit backend; a plain formula box means that species was not drawn (absent backend or a fragment that would not sanitise), never a missing identity.",
+  "A named reaction family is shown only where the step's reaction centre exactly matches that family's own centre; otherwise the neutral bond-change is shown.",
+  "Conditions read UNKNOWN unless the step carries a sourced envelope — no default conditions are filled in.",
+  "No yield, readiness, hazard, or bench-capability verdict is asserted by this drawing."
+].forEach(t => notes.appendChild(el("li", null, t)));
+root.appendChild(notes);
+
+const themeBtn = document.getElementById("theme");
+themeBtn.addEventListener("click", () => {
+  const cur = document.documentElement.getAttribute("data-theme");
+  document.documentElement.setAttribute("data-theme", cur === "dark" ? "light" : "dark");
+});
 </script>
 </body>
 </html>

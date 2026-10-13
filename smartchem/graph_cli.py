@@ -19,6 +19,7 @@ import argparse
 from pathlib import Path
 import sys
 
+from .algebra_profiles import DEFAULT_ROUTE_ALGEBRA_PROFILE, algebra_profile_ids, resolve_algebra_profile
 from .decompiler import search_decomposition
 from .experiment.routes import search_dags, search_routes
 from .graph_projection import (
@@ -29,6 +30,7 @@ from .graph_projection import (
     render_dot,
     render_html,
     render_mermaid,
+    render_scheme_html,
     render_svg,
 )
 
@@ -44,7 +46,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("view", choices=("formula", "synthesis"),
                    help="formula: composition decomposition hypergraph; synthesis: route/DAG graph")
     p.add_argument("target", help="formula string (formula view) or molecule name/SMILES (synthesis)")
-    p.add_argument("--format", choices=("json", "dot", "mermaid", "svg", "html"), default="json")
+    p.add_argument("--format", choices=("json", "dot", "mermaid", "svg", "html", "scheme"),
+                   default="json",
+                   help="scheme: a drawn, step-by-step reaction SCHEME of ONE route (synthesis view)")
     p.add_argument("--output", type=Path, help="write to a file instead of stdout")
     p.add_argument("--max-visible-nodes", type=int, default=None,
                    help="html/display viewport ceiling; omitted nodes are disclosed, never clipped silently")
@@ -65,37 +69,63 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="synthesis: search convergent DAGs instead of linear routes")
     p.add_argument("--ensemble", action="store_true",
                    help="synthesis: project ALL returned candidates as one AND-OR graph (default: the first)")
+    p.add_argument("--algebra", choices=algebra_profile_ids(), default=DEFAULT_ROUTE_ALGEBRA_PROFILE,
+                   help="synthesis: transform-algebra profile (certified-route-v07 carries the named "
+                        "multi-family route algebra incl. Diels-Alder; legacy-capped-v1 is scission-only)")
+    p.add_argument("--route-index", type=int, default=0,
+                   help="scheme: which returned candidate (0-based) to draw as a scheme")
     return p
 
 
 def _project(args):
+    """Return ``(graph, scheme_ctx)``.  ``scheme_ctx`` is ``(route, search, index, total)`` for the
+    drawn scheme of one candidate, else ``None`` (the graph carries the view by itself)."""
     if args.view == "formula":
         result = search_decomposition(
             args.target, inventory=tuple(args.inventory),
             budget=args.budget, max_edges=args.max_edges,
         )
-        return project_decomposition(result)
+        if args.format == "scheme":
+            raise GraphProjectionError("the drawn 'scheme' format applies to the synthesis view only; "
+                                       "formula decomposition is composition accounting, not a reaction scheme")
+        return project_decomposition(result), None
 
     from .cli import _parse_molecule  # the one shared identity parser (lazy: avoids import cycle)
 
     target = _parse_molecule(args.target)
     reagents = tuple(_parse_molecule(s) for s in args.reagents) or (_parse_molecule("smiles:O"),)
     available = tuple(_parse_molecule(s) for s in args.available)
+    registry = resolve_algebra_profile(args.algebra)  # named multi-family algebra selection
     if args.dag:
         search = search_dags(target, reagents=reagents, available=available,
-                             max_depth=args.max_depth, max_dags=args.max_candidates)
+                             max_depth=args.max_depth, max_dags=args.max_candidates, registry=registry)
         members = search.dags
     else:
         search = search_routes(target, reagents=reagents, available=available,
-                               max_depth=args.max_depth, max_routes=args.max_candidates)
+                               max_depth=args.max_depth, max_routes=args.max_candidates, registry=registry)
         members = search.routes
+
+    if args.format == "scheme":
+        if not members:
+            raise GraphProjectionError("no route/DAG to draw as a scheme: the search returned no "
+                                       "candidates within its bounds (nothing is invented to fill the gap)")
+        index = args.route_index
+        if index < 0 or index >= len(members):
+            raise GraphProjectionError(f"--route-index {index} out of range (0..{len(members) - 1})")
+        route = members[index]
+        return project_synthesis(route, search_result=search), (route, search, index, len(members))
+
     if args.ensemble or not members:
         # empty members -> the ensemble projector shows the lone target and invents no reaction.
-        return project_synthesis_ensemble(search)
-    return project_synthesis(members[0], search_result=search)
+        return project_synthesis_ensemble(search), None
+    return project_synthesis(members[0], search_result=search), None
 
 
-def _render(graph, fmt: str, max_visible_nodes) -> str:
+def _render(graph, fmt: str, max_visible_nodes, scheme_ctx) -> str:
+    if fmt == "scheme":
+        route, search, index, total = scheme_ctx
+        return render_scheme_html(route, search_result=search,
+                                  route_label=f"route {index} of {total}")
     if fmt == "json":
         return graph.to_json() + "\n"
     if fmt == "dot":
@@ -110,8 +140,8 @@ def _render(graph, fmt: str, max_visible_nodes) -> str:
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     try:
-        graph = _project(args)
-        rendered = _render(graph, args.format, args.max_visible_nodes)
+        graph, scheme_ctx = _project(args)
+        rendered = _render(graph, args.format, args.max_visible_nodes, scheme_ctx)
     except GraphProjectionError as exc:
         print(f"python -m smartchem graph: refused: {exc}", file=sys.stderr)
         return 5

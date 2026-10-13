@@ -313,6 +313,27 @@ def _reaction_family(center) -> str | None:
     return _family_centers().get((center.formed, center.broken))
 
 
+def _reaction_family_for_step(step) -> str | None:
+    """The named family of a whole STEP: an exact reaction-centre match first (the Diels-Alder zoo,
+    whose generating providers carry a canonical centre), else the reaction-type oracle's
+    CONSERVATION-LOCKED vouch (acyl condensation = esterification/amidation, etherification,
+    N-alkylation, [3,3]-sigmatropic), else ``None``.
+
+    The oracle only returns a class it can PROVE a step is a genuine instance of, so an unvouched step
+    stays unnamed and the caller shows its bond-change instead -- a family name is never invented, and
+    this is strictly MORE sound than the centre-match alone (it surfaces the names the compiler can
+    already defend but the DA-only matcher could not).
+    """
+    family = _reaction_family(getattr(step, "reaction_center", None))
+    if family is not None:
+        return family
+    try:
+        from .experiment.reaction_type_oracle import recognize_reaction_type
+        return recognize_reaction_type(step) or None
+    except Exception:
+        return None
+
+
 def project_decomposition(value, *, max_nodes: int = 20_000,
                           max_arcs: int = 40_000) -> ChemicalGraphProjection:
     """Project ALL returned formula edges (or a loudly partial graph), including OR alternatives.
@@ -430,7 +451,7 @@ def project_synthesis(route, *, search_result=None, max_nodes: int = 20_000,
     for index, step in enumerate(route.steps):
         rid = _id("r", f"{index}:{step.digest}")
         center = getattr(step, "reaction_center", None)
-        family = _reaction_family(center)
+        family = _reaction_family_for_step(step)
         bond_change = _bond_change_text(center)
         reagent_names = "; ".join(sorted(_species_name(m) for m in step.reagents)) or "none"
         byproduct_names = "; ".join(sorted(_species_name(m) for m in step.byproducts)) or "none"
@@ -798,7 +819,7 @@ def render_scheme_html(route, *, search_result=None, depict: bool = True,
     steps_payload = []
     for index, step in enumerate(route.steps):
         center = getattr(step, "reaction_center", None)
-        family = _reaction_family(center)
+        family = _reaction_family_for_step(step)
         if family:
             families.add(family)
         precursors = []

@@ -175,7 +175,11 @@ def test_declared_but_unsourced_envelope_is_conditions_unsatisfied():
     readiness = evaluate_step(step)
     assert step.envelope.is_declared and not step.envelope.is_sourced
     assert readiness.conditions is ObligationStatus.UNSATISFIED
-    assert readiness.tier == FORMAL_CANDIDATE  # esterification is recognized, but that's not this test's point
+    # ISSUE-126 Phase II: this centre-less esterification is now RE-DERIVED + recognized (content-determinism), so
+    # reaction_type is SATISFIED and the tier reaches REACTION_VOUCHED; the unsourced envelope leaves conditions
+    # UNSATISFIED, which stops the ladder there -- the point of this test (it formerly stopped at FORMAL_CANDIDATE
+    # only because the centre-less step was demoted-as-unrecognized, an artifact the re-derivation removes).
+    assert readiness.tier == REACTION_VOUCHED
     assert any("conditions" in o for o in readiness.open_obligations)
 
 

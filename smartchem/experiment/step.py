@@ -90,9 +90,23 @@ class ExperimentStep(Digestible):
       structural transform that computes one (a hand-built step, or a non-scission transform family).  It
       is a NON-identity annotation: declared ``compare=False`` so it does NOT enter the content digest
       (:func:`~smartchem.contracts.canonical_digest` skips non-comparing fields), so two steps that differ
-      only in how the generator discovered them share one digest and one replay identity.  Reaction-TYPE
-      recognizers read it to confirm the reaction centre is a single elementary condensation instead of
-      inferring elementarity from a whole-molecule count (the R56/R57 locality debt this closes).
+      only in how the generator discovered them share one digest and one replay identity.  It is ADVISORY
+      diagnostic metadata -- the graph/scheme layer and the replay round-trip carry it for display.  ISSUE-126
+      Phase II, the precise guarantee (a stored field is forgeable: ``dataclasses.replace``, a fake
+      :meth:`from_transform` transform, and the bare constructor all route through the public constructor):
+
+      * **No caller-supplied annotation can MINT a VOUCH, for ANY of the 17 recognizers.**  Soundness
+        (no-false-vouch) is determined by the molecules alone -- the condensation recognizers RE-DERIVE an
+        elementary single-cut condensation from the molecules, and the pericyclic recognizers gate on their own
+        Layer-A re-derivation (``_reactant_*_disconnects_to``) before the centre is read.  A forged centre on a
+        non-matching step is refused by the molecular re-derivation first, so it can only ever DEMOTE, never
+        upgrade.  This is the invariant that replaces the retired forgeable ``center_trusted`` bit.
+      * **The condensation recognizers (acyl / ether / N-alkylation) -- the #126 forge surface -- are fully
+        CONTENT-DETERMINISTIC:** their verdict is a pure function of the ``reactants``/``products`` multisets and
+        ignores this field entirely.
+      * The pericyclic recognizers still READ this declared centre as a (non-load-bearing) Layer-B/-C
+        confirmation, so a genuine pericyclic step built WITHOUT a readable centre is demoted -- a fail-closed,
+        coverage-only residual (never a false-vouch), tracked for a follow-up that makes them rely on Layer A alone.
     """
 
     schema_version: str
@@ -102,26 +116,12 @@ class ExperimentStep(Digestible):
     reagents: tuple[Molecule, ...]
     envelope: ConditionEnvelope
     reaction_center: "ReactionCenter | None" = field(default=None, compare=False)
-    #: ISSUE-126 center-authority gate.  A ``reaction_center`` may serve as a reaction-TYPE recognizer's
-    #: locality/elementarity WITNESS (justifying a VOUCH) ONLY when the ENGINE derived or authenticated it:
-    #: :meth:`from_transform` sets it (the generator derived the centre from a real transform), and the replay
-    #: deserialization seam (``service._step_from_payload``) sets it (the centre rides the replay subsystem's own
-    #: ``in centres`` authentication under verified admission).  A centre handed to the PUBLIC
-    #: :meth:`assembling` / the bare dataclass constructor defaults to ``False`` -- it is retained as neutral
-    #: diagnostic metadata but is NOT vouch evidence, so a caller cannot forge an elementary centre onto a
-    #: balanced non-elementary fiction to buy a false VOUCH.  ``compare=False``: outside route/step identity and
-    #: every digest (like ``reaction_center`` itself), so this is not a wire/contract change.
-    center_trusted: bool = field(default=False, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.schema_version != STEP_SCHEMA:
             raise StepError(f"schema_version must be exactly {STEP_SCHEMA!r}")
         if self.reaction_center is not None and type(self.reaction_center) is not ReactionCenter:
             raise StepError("reaction_center must be a smartchem.reaction_center.ReactionCenter or None")
-        if type(self.center_trusted) is not bool:
-            raise StepError("center_trusted must be a bool")
-        if self.center_trusted and self.reaction_center is None:
-            raise StepError("center_trusted asserts the reaction_center is vouch evidence, but none is present")
         if type(self.target) is not Molecule:
             raise StepError("target must be a smartchem.category.Molecule")
         for name in ("reactants", "products", "reagents"):
@@ -238,14 +238,13 @@ class ExperimentStep(Digestible):
         reagents: tuple[Molecule, ...] = (),
         envelope: ConditionEnvelope | None = None,
         reaction_center: "ReactionCenter | None" = None,
-        _center_trusted: bool = False,
     ) -> "ExperimentStep":
         """Build a step directly from its multisets (the general, structure-agnostic constructor).
 
-        A caller-supplied ``reaction_center`` is retained but is NOT recognizer vouch evidence (ISSUE-126):
-        ``_center_trusted`` stays ``False`` for the public caller.  It is set True ONLY by the engine's own
-        derivers (:meth:`from_transform`, ``service._step_from_payload``), never through this public surface --
-        the leading underscore marks it engine-internal.
+        A caller-supplied ``reaction_center`` is retained as ADVISORY diagnostic metadata but is NEVER
+        reaction-TYPE recognition evidence (ISSUE-126 Phase II): the oracle re-derives locality from the step's
+        own molecules, so no supplied annotation -- through this constructor, :meth:`from_transform`, or a bare
+        ``dataclasses.replace`` -- can buy a vouch.
         """
         return cls(
             STEP_SCHEMA,
@@ -255,7 +254,6 @@ class ExperimentStep(Digestible):
             tuple(reagents),
             envelope if envelope is not None else ConditionEnvelope.unknown(),
             reaction_center,
-            _center_trusted,
         )
 
     @classmethod
@@ -280,10 +278,11 @@ class ExperimentStep(Digestible):
         for the drafter; it defaults to none and never affects conservation.
 
         If ``transform`` exposes a ``reaction_center()`` (a :class:`~smartchem.structure_descent.CappedScission`
-        does; other transform families need not), its coordinate-free rewrite span is carried onto the step so a
-        reaction-TYPE recognizer can read the actual centre (R58).  It is a non-identity annotation and never
-        affects conservation; a transform without one yields a ``None`` centre (the recognizer falls back to its
-        whole-molecule census).
+        does; other transform families need not), its coordinate-free rewrite span is carried onto the step as
+        ADVISORY metadata (R58).  It is a non-identity annotation and never affects conservation; crucially it is
+        NOT recognition evidence (ISSUE-126 Phase II) -- because ``transform`` is an arbitrary duck-typed object a
+        caller may forge, the oracle never trusts the carried centre, it RE-DERIVES locality from the step's own
+        molecules.  A transform without a centre yields a ``None`` centre (recognition is unaffected either way).
         """
         synth_reactants = tuple(transform.products)
         synth_products = (transform.reactant,) + tuple(transform.reagents)
@@ -295,10 +294,7 @@ class ExperimentStep(Digestible):
             synth_products,
             reagents=reagents,
             envelope=envelope,
-            reaction_center=center,
-            # the ENGINE derived this centre from the real transform's rewrite span, so it IS vouch evidence
-            # (ISSUE-126): a recognizer may read it as the locality witness.  A ``None`` centre stays untrusted.
-            _center_trusted=center is not None,
+            reaction_center=center,  # ADVISORY metadata only; the oracle re-derives, never reads this (ISSUE-126)
         )
 
     @classmethod

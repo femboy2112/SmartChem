@@ -75,7 +75,13 @@ import experiments.poor_man_reaction_type_oracle_probe as p56
 import experiments.poor_man_etherification_recognizer_probe as p57
 import experiments.poor_man_span_local_recognizer_probe as p58
 
-FROZEN_HASH = "88657a404a164b684eebadc0bc1cc332d5f60a7355115fda54964f2e095a265a"
+# ISSUE-126 Phase II UPDATE (hash re-frozen 88657a40 -> 8a73f501).  Recognition now RE-DERIVES elementarity from the
+# molecules (content-determinism), retiring the trusted-centre gate.  ``adversarial_must_demote`` no longer lists
+# ``general_n_ethylation`` -- ``ethanol + ammonia -> ethylamine + water`` is a GENUINE N-alkylation, correctly vouched
+# whether or not it carries a centre, so it is no longer an adversarial "must demote" case (its positive recognition
+# is covered by the R63 N-alkylation probe).  The two real fakes (aryl amination, O-methylation anisole) stay demoted;
+# the homologation control still fails closed (via re-derivation, not centre-absence).  The vouch set is otherwise unchanged.
+FROZEN_HASH = "8a73f5013373bf461c1b920d13632b532c78d874cb289df21cf6cf7714f87f5e"
 
 # R63 SUPERSESSION: the class-specific N-methylation recognizer this probe pinned was REPLACED by a general
 # N-alkylation recognizer that SUBSUMES it (methanol is an alkyl alcohol; a methyl bond is an sp3 C-N bond), so the
@@ -197,9 +203,10 @@ def adversarial_must_demote() -> dict:
         # (reactants, products, target, why it must NOT be vouched as N-methylation)
         "aryl_amination_aniline": (["c1ccc(O)cc1", "N"], ["Nc1ccccc1", "water"], "Nc1ccccc1",
                                    "byte-identical reaction centre to caffeine; no methanol, aryl N unmethylated"),
-        "general_n_ethylation": (["CCO", "N"], ["CCN", "water"], "CCN",
-                                 "a CENTRE-LESS hand step fails closed (a VOUCH requires a readable centre); the "
-                                 "centre-carrying version is now vouched by R63 general N-alkylation -- see the R63 probe"),
+        # ISSUE-126 Phase II: ``ethanol + ammonia -> ethylamine + water`` is a GENUINE N-ethylation and is now
+        # correctly vouched as N-alkylation whether or not it carries a centre (content-determinism) -- it was only
+        # ever in this adversarial set because the retired trusted-centre gate demoted a centre-less step.  It is no
+        # longer adversarial; its positive recognition is covered by the R63 N-alkylation probe's positive controls.
         "o_methylation_anisole": (["c1ccc(O)cc1", "CO"], ["COc1ccccc1", "water"], "COc1ccccc1",
                                   "methanol consumed but no N-methyl amine formed (an aryl ether, not N-methylation)"),
     }
@@ -277,6 +284,10 @@ def positive_control() -> dict:
 #      no readable centre the census cannot see the rearrangement; the fix BLOCKS every centre-less step.
 # --------------------------------------------------------------------------------------------------
 def centre_absent_fails_closed() -> dict:
+    # ISSUE-126 Phase II: this is the carbonyl-MIGRATION homologation FICTION (``N-methylformamide + methanol ->
+    # CNCC=O + water``) -- a FAKE, not a genuine N-alkylation.  It stays DEMOTED because the single-cut re-derivation
+    # cannot disconnect CNCC=O back into the declared precursors (NOT because the centre is absent -- a genuine
+    # centre-less N-alkylation is re-derived and vouched).  So the name is historical; the fact it pins still holds.
     step = _hand_step(["CNC=O", "CO"], ["CNCC=O", "water"], "CNCC=O")
 
     class _R:

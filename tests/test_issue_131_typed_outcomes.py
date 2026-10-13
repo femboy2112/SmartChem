@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from smartchem.smiles import parse_smiles
 from smartchem.conditions import ConditionEnvelope
-from smartchem.structure import structure_by_name
 from smartchem.structure_descent import capped_scissions
 from smartchem.experiment.step import ExperimentStep
 import smartchem.experiment.reaction_type_oracle as oracle
@@ -19,8 +18,6 @@ from smartchem.experiment.reaction_type_oracle import (
     route_reaction_type_blockers, MATCH, ABSTAIN, INTERNAL_RECOGNIZER_ERROR,
 )
 from smartchem.experiment.step import ROUTE_SCHEMA, ExperimentRoute
-
-_WATER = structure_by_name("water").molecule
 
 
 def _derived_match_step():
@@ -34,9 +31,14 @@ def _derived_match_step():
 
 
 def _abstain_step():
-    """A conserving step the oracle genuinely cannot vouch (centre-less acyl shape) -> ABSTAIN, not error."""
-    rs = (parse_smiles("CC(=O)O"), parse_smiles("CO"))
-    ps = (parse_smiles("CC(=O)OC"), _WATER)
+    """A conserving step that matches NO attested reaction class -> ABSTAIN, not error.
+
+    ISSUE-126 Phase II: recognition is now molecule-driven (a centre-less genuine condensation would RE-DERIVE
+    and MATCH), so the abstain fixture must be a genuine non-member of every class.  Ethylene dimerisation
+    ``2 ethylene -> 1-butene`` conserves (C4H8) but expels no water (the condensation censuses never fire) and
+    is not a [4+2] (1-butene admits no retro-Diels-Alder into two ethylenes), so every recognizer abstains."""
+    rs = (parse_smiles("C=C"), parse_smiles("C=C"))
+    ps = (parse_smiles("CCC=C"),)
     return ExperimentStep.assembling(ps[0], rs, ps, reagents=(), envelope=ConditionEnvelope.unknown())
 
 

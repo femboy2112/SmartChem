@@ -88,12 +88,15 @@ def test_a_real_elementary_etherification_is_recognized():
     assert _is_intermolecular_etherification(step) is True
 
 
-def test_a_centreless_etherification_now_fails_closed():
-    # TAMPER-HARDENING-01: a centre-less etherification step (e.g. a serialized replay whose centre was nulled) is
-    # DEMOTED, not census-vouched -- the fail-closed polarity that shuts the fiction tamper channel.
+def test_a_centreless_etherification_is_rederived_and_vouched():
+    # ISSUE-126 Phase II: a centre-less etherification (e.g. a serialized replay whose centre was nulled) is
+    # RE-DERIVED from the molecules and recognized -- recognition reads no forgeable supplied centre, so a genuine
+    # condensation is content-deterministically vouched with or without a centre.  A bundled/aryl/peroxide FICTION
+    # is still demoted (the re-derivation cannot reach it), so centre-absence can never mint a false-vouch -- the
+    # fake tests below pin that direction.
     step = _hand_step(["CO", "CO"], ["COC", "water"], "COC")
     assert step.reaction_center is None
-    assert recognize_reaction_type(step) is None
+    assert recognize_reaction_type(step) is not None
 
 
 def test_the_peroxide_coupling_fake_is_demoted_no_alcohol_consumed():

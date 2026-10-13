@@ -87,12 +87,16 @@ def test_a_real_n_alkylation_is_positively_recognized():
     assert pc["dimethylamine_methanol"]["recognized"] is True  # secondary -> tertiary (bond count +1)
 
 
-def test_centre_absent_step_fails_closed():
-    caf = probe.centre_absent_fails_closed()
+def test_centre_absent_step_is_rederived_content_deterministically():
+    # ISSUE-126 Phase II: a genuine centre-less N-alkylation is RE-DERIVED from the molecules and vouched -- the
+    # hand-built (centre-less) and engine-derived (centre-carrying) twin of the SAME reaction agree (content-
+    # determinism).  Recognition reads no forgeable supplied centre, so centre-absence can never mint a false-vouch.
+    caf = probe.centre_absent_is_rederived()
     assert caf["reaction_center_is_none"] is True
-    assert caf["census_would_pass"] is True     # the non-local census WOULD vouch -- but the centre is required
-    assert caf["demoted"] is True
-    assert caf["route_blocked"] is True
+    assert caf["census_would_pass"] is True     # the non-local census fires -- but elementarity is RE-DERIVED, not trusted
+    assert caf["genuine_centreless_vouched"] is True
+    assert caf["centred_and_centreless_agree"] is True
+    assert caf["route_unblocked"] is True
 
 
 def test_upstream_recognizers_and_probes_unbroken():

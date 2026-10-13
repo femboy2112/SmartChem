@@ -1,44 +1,60 @@
-"""ISSUE #126: a caller-forged ReactionCenter must not be trusted as reaction-TYPE recognition evidence.
+"""ISSUE #126 (Phase II): a caller-forged ReactionCenter must not buy a reaction-TYPE vouch, by ANY public route.
 
-The hole (proven at runtime before the fix): the acyl / ether / N-alkylation recognizers read
-``step.reaction_center`` as their locality/elementarity WITNESS, and
-:meth:`ReactionCenter.is_elementary_condensation` inspects only the centre's OWN declared bonds -- never the
-step's molecules.  So a caller who hand-builds an :class:`ExperimentStep` through the public ``assembling``
-constructor could attach an *elementary* condensation centre to a balanced NON-elementary fiction (a bundled
-double condensation whose true centre is non-elementary) and buy a false VOUCH.
+Phase I introduced a ``center_trusted`` bool gating the oracle's centre read.  A follow-up hostile audit
+(GitHub #126, 2026-10-13) proved that bit forgeable: ``dataclasses.replace`` runs the public constructor, so a
+caller could set ``center_trusted=True`` on a forged centre; and the public ``from_transform`` trusted any
+duck-typed object's ``reaction_center()``.  A stored field is not an authentication boundary.
 
-The fix: a centre justifies a vouch ONLY when the ENGINE derived or authenticated it
-(``ExperimentStep.center_trusted``, set by :meth:`from_transform` and the replay deserialization seam).  A
-caller-supplied centre on a hand-built step is retained as neutral diagnostic metadata but is NOT evidence --
-the recognizers fail closed on it exactly as they do on an absent centre (TAMPER-HARDENING-01).
+Phase II retires the trust bit entirely.  The condensation recognizers (acyl/ether/N-alkylation) -- the #126
+forge surface -- RE-DERIVE their locality/elementarity witness from the step's own molecules (an independent
+single-cut capped scission, :func:`_condensation_rederives`), so for them recognition is a pure function of the
+conserved ``reactants``/``products`` content (CONTENT-DETERMINISTIC), ignoring the forgeable centre entirely.
+The universal guarantee across ALL 17 recognizers: no caller-settable field can MINT a vouch -- the pericyclic
+families gate on their own Layer-A re-derivation, so a forged centre can only ever DEMOTE, never upgrade a
+fiction.  The forge therefore closes under direct construction, ``dataclasses.replace``, AND an arbitrary fake
+transform.  (These tests exercise the condensation families, where full content-determinism holds.)
 
-These are fast (``capped_scissions`` + ``from_transform``), not full-compilation, regressions; the replay
+These are fast (``capped_scissions`` + ``from_transform``) regressions, not full-compilation; the replay
 round-trip of genuine recognized routes is pinned separately in ``test_poor_man_tamper_hardening.py``.
 """
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from smartchem.conditions import ConditionEnvelope
-from smartchem.smiles import parse_smiles
+from smartchem.smiles import parse_smiles, resonance_identity
 from smartchem.structure import structure_by_name
 from smartchem.structure_descent import capped_scissions
 from smartchem.reaction_center import ReactionCenter
-from smartchem.experiment.step import STEP_SCHEMA, ExperimentStep, StepError
+from smartchem.experiment.step import ExperimentStep
 from smartchem.experiment.reaction_type_oracle import recognize_reaction_type
 
 _WATER = structure_by_name("water").molecule
 
-# an elementary ester/acyl condensation centre: {C-O, O-H} formed, {C-O, O-H} broken, ONE connected component.
+# an elementary ester/acyl condensation centre: {C-O, O-H} formed, {C-O, O-H} broken, ONE connected component --
+# exactly what ``is_elementary_condensation`` would have accepted when the centre was trusted.
 _FORGED_ELEMENTARY = ReactionCenter.of(
     (("C", "O", 1), ("H", "O", 1)),
     (("C", "O", 1), ("H", "O", 1)),
     1,
 )
 
+# the bundled DOUBLE condensation (lactide formation): passes the whole-molecule acyl census but is NOT the
+# elementary SINGLE condensation the recognizer is contracted to vouch (it needs TWO cuts).
+_LACTIC = "CC(O)C(=O)O"
+_LACTIDE = "CC1OC(=O)C(C)OC1=O"
+
+_GENUINE = [
+    ("CC(=O)OC", ["CC(=O)O", "CO"], "acyl condensation"),
+    ("COC", ["CO", "CO"], "etherification"),
+    ("CNc1ccccc1", ["Nc1ccccc1", "CO"], "N-alkylation"),
+]
+
 
 def _hand_step(reactant_smiles, product_smiles, target_smiles, center):
-    """A step built through the PUBLIC general constructor with a CALLER-supplied centre (untrusted)."""
+    """A step built through the PUBLIC general constructor with a CALLER-supplied centre (advisory only)."""
     rs = tuple(parse_smiles(s) for s in reactant_smiles)
     ps = tuple(_WATER if s == "water" else parse_smiles(s) for s in product_smiles)
     tg = parse_smiles(target_smiles)
@@ -50,74 +66,87 @@ def _hand_step(reactant_smiles, product_smiles, target_smiles, center):
 def _derived_step(product_smiles, want_products, k=1):
     """A genuine ENGINE-derived step: a capped scission read backwards (centre derived from the transform)."""
     r = parse_smiles(product_smiles)
-    want = sorted(parse_smiles(s).canonical().__repr__() for s in want_products)
+    want = sorted(resonance_identity(parse_smiles(s)) for s in want_products)
     for cs in capped_scissions(r, tuple(parse_smiles("O") for _ in range(k)), max_reactant_cuts=k)[0]:
-        if sorted(p.canonical().__repr__() for p in cs.products) == want:
+        if sorted(resonance_identity(p) for p in cs.products) == want:
             return ExperimentStep.from_transform(cs)
     raise AssertionError(f"no capped scission of {product_smiles} yields {want_products}")
 
 
-# the bundled DOUBLE condensation (lactide formation): passes the whole-molecule acyl census but is NOT the
-# elementary SINGLE condensation the recognizer is contracted to vouch.
-_LACTIC = "CC(O)C(=O)O"
-_LACTIDE = "CC1OC(=O)C(C)OC1=O"
+class _FakeTransform:
+    """An arbitrary duck-typed object satisfying the transform interface -- NO provider provenance whatsoever.
+
+    This is the Phase-II #126 ``from_transform`` attack: a caller who controls a fake transform can mint a step
+    carrying any ``reaction_center()`` they like.  The fix ignores that centre and re-derives from the molecules."""
+
+    def __init__(self, reactant, products, reagents, center):
+        self.reactant = reactant
+        self.products = products
+        self.reagents = reagents
+        self._center = center
+
+    def reaction_center(self):
+        return self._center
 
 
-def test_forged_elementary_center_does_not_vouch_a_bundled_fiction():
-    # THE HOLE: 2 lactic acid -> lactide + 2 water, a non-elementary double condensation, with a forged elementary
-    # acyl centre.  Pre-fix this VOUCHED "acyl condensation"; it must now demote.
-    from smartchem.experiment.feasibility import _is_intermolecular_acyl_condensation
+def test_center_trusted_bit_is_retired_not_renamed():
+    # the forgeable field no longer exists at all -- not a superficial rename (#126 Phase II directive).
     step = _hand_step([_LACTIC, _LACTIC], [_LACTIDE, "water", "water"], _LACTIDE, _FORGED_ELEMENTARY)
-    assert _is_intermolecular_acyl_condensation(step) is True   # the whole-molecule census still fires ...
-    assert step.reaction_center is not None                     # ... the centre is retained as metadata ...
-    assert step.center_trusted is False                         # ... but it is NOT trusted evidence ...
-    assert recognize_reaction_type(step) is None                # ... so no VOUCH (was: acyl condensation).
+    assert not hasattr(step, "center_trusted")
+    with pytest.raises(TypeError):
+        replace(step, center_trusted=True)  # cannot set a field that does not exist
 
 
-def test_a_copied_genuine_center_on_a_hand_built_step_still_does_not_vouch():
-    # even the EXACT centre of a genuine recognized step, copied onto a hand-built twin, confers no vouch: trust is
-    # engine provenance, not the descriptor's content.  (Closes the "copy a real centre" variant of the forge.)
-    for product, want in (("CC(=O)OC", ["CC(=O)O", "CO"]), ("COC", ["CO", "CO"])):
-        genuine = _derived_step(product, want)
-        assert genuine.center_trusted is True
-        assert recognize_reaction_type(genuine) is not None            # genuine engine step vouches
-        twin = ExperimentStep.assembling(genuine.target, genuine.reactants, genuine.products,
-                                         reagents=genuine.reagents, envelope=genuine.envelope,
-                                         reaction_center=genuine.reaction_center)   # same centre, hand-built
-        assert twin.reaction_center == genuine.reaction_center         # identical descriptor ...
-        assert twin.center_trusted is False                            # ... untrusted ...
-        assert recognize_reaction_type(twin) is None                   # ... so no vouch.
+def test_lactide_forge_demoted_through_every_public_construction_route():
+    # THE #126 acceptance gate: the bundled double condensation must NOT vouch an elementary acyl condensation,
+    # by ANY public route a data-only attacker controls.
+    from smartchem.experiment.feasibility import _is_intermolecular_acyl_condensation
+
+    # (a) direct public constructor with a forged elementary centre
+    direct = _hand_step([_LACTIC, _LACTIC], [_LACTIDE, "water", "water"], _LACTIDE, _FORGED_ELEMENTARY)
+    assert _is_intermolecular_acyl_condensation(direct) is True   # the whole-molecule census STILL fires ...
+    assert direct.reaction_center is not None                     # ... the centre is retained as metadata ...
+    assert recognize_reaction_type(direct) is None                # ... but re-derivation demotes it (was: VOUCH).
+
+    # (b) dataclasses.replace forging the elementary centre onto a demoted step
+    replaced = replace(direct, reaction_center=_FORGED_ELEMENTARY)
+    assert recognize_reaction_type(replaced) is None
+
+    # (c) a fake transform whose reverse IS the lactide fiction, minting a trusted-looking centre with no provenance
+    fake = _FakeTransform(parse_smiles(_LACTIDE), (parse_smiles(_LACTIC), parse_smiles(_LACTIC)),
+                          (_WATER, _WATER), _FORGED_ELEMENTARY)
+    assert recognize_reaction_type(ExperimentStep.from_transform(fake)) is None
 
 
-@pytest.mark.parametrize("product,want,label", [
-    ("CC(=O)OC", ["CC(=O)O", "CO"], "acyl condensation"),
-    ("COC", ["CO", "CO"], "etherification"),
-    ("CNc1ccccc1", ["Nc1ccccc1", "CO"], "N-alkylation"),
-])
+@pytest.mark.parametrize("product,want,label", _GENUINE)
+def test_recognition_is_content_deterministic_under_center_mutation(product, want, label):
+    # the core new invariant: recognition is a pure function of the conserved molecules.  Mutating the advisory
+    # reaction_center (to None, to a forged elementary centre, to a wrong-but-valid centre) never changes the verdict.
+    genuine = _derived_step(product, want)
+    base = recognize_reaction_type(genuine)
+    assert base is not None, f"{label} genuine step must vouch"
+    assert recognize_reaction_type(replace(genuine, reaction_center=None)) == base
+    assert recognize_reaction_type(replace(genuine, reaction_center=_FORGED_ELEMENTARY)) == base
+
+
+@pytest.mark.parametrize("product,want,label", _GENUINE)
 def test_genuine_engine_derived_steps_still_vouch(product, want, label):
-    # no false-reject: the three centre-trusting classes still recognize their genuine ENGINE-derived instances.
-    step = _derived_step(product, want)
-    assert step.center_trusted is True
-    vouch = recognize_reaction_type(step)
-    assert vouch is not None, f"{label} genuine step lost its vouch"
+    # no false-reject: the three condensation classes still recognize their genuine ENGINE-derived instances.
+    assert recognize_reaction_type(_derived_step(product, want)) is not None, f"{label} lost its vouch"
 
 
-def test_wrong_molecule_pairing_with_a_borrowed_center_does_not_upgrade():
-    # #126 acceptance: a valid-looking acyl centre attached (untrusted) to a non-acyl pairing must not upgrade type.
-    step = _hand_step(["CO", "CO"], ["COC", "water"], "COC", _FORGED_ELEMENTARY)
-    assert step.center_trusted is False
-    assert recognize_reaction_type(step) is None
+def test_hand_built_genuine_condensation_now_vouches_via_rederivation():
+    # a STRENGTHENING the content-determinism buys: a hand-built genuine esterification with NO centre is now
+    # recognized (the oracle re-derives it from the molecules), where the Phase-I trusted-centre gate demoted it.
+    hand = _hand_step(["CC(=O)O", "CO"], ["CC(=O)OC", "water"], "CC(=O)OC", None)
+    assert hand.reaction_center is None
+    assert recognize_reaction_type(hand) is not None
 
 
-def test_center_trusted_invariants():
-    # the public general constructor leaves a supplied centre untrusted ...
-    assert _hand_step([_LACTIC, _LACTIC], [_LACTIDE, "water", "water"], _LACTIDE,
-                      _FORGED_ELEMENTARY).center_trusted is False
-    # ... from_transform marks an engine-derived centre trusted ...
-    assert _derived_step("CC(=O)OC", ["CC(=O)O", "CO"]).center_trusted is True
-    # ... and a trusted flag with no centre is an incoherent state the certificate refuses.
-    acid, methanol, ester = (parse_smiles(s) for s in ("CC(=O)O", "CO", "CC(=O)OC"))
-    with pytest.raises(StepError):
-        ExperimentStep(STEP_SCHEMA, target=ester, reactants=(acid, methanol), products=(ester, _WATER),
-                       reagents=(), envelope=ConditionEnvelope.unknown(),
-                       reaction_center=None, center_trusted=True)
+def test_reachable_r55_glue_fiction_stays_demoted_regardless_of_center():
+    # the #109 reachable over-generation: isopropanol + ethyl acetate -> isopentyl acetate glues two alkyl fragments
+    # with a new C-C bond and calls the departing atoms water.  The census never fires (no acyl/ether/N formed), so
+    # it is demoted independently of any attached centre -- the re-derivation is not even reached.
+    r55 = _derived_step("CC(C)CCOC(=O)C", ["CC(C)O", "CCOC(=O)C"])
+    assert recognize_reaction_type(r55) is None
+    assert recognize_reaction_type(replace(r55, reaction_center=_FORGED_ELEMENTARY)) is None

@@ -116,6 +116,55 @@ mutation 1/1 — PASS.** Pinned by `tests/test_synthesis_coverage_corpus.py`.
 
 ---
 
+## Round II (the Phase II directive, 2026-10-13) — independent-witness hardening (#126 re-attack)
+
+A follow-up hostile audit (issue #126 comment, `feat/chemical-graph-projections@bb11c48`) proved the Phase-1
+`center_trusted` fix **still forgeable**: `dataclasses.replace(step, center_trusted=True)` runs the public
+constructor, and `ExperimentStep.from_transform` trusts any duck-typed object's `reaction_center()`. A stored bit
+is not an authentication boundary. This round replaces self-asserted trust with an **independent re-derivation**.
+
+### #126 (re-attack) — a stored trust field is forgeable; recognition must re-derive from the molecules · `generated-but-demoted` (false-VOUCH) · FIXED (this round)
+
+- **Reproducers (executed):** the auditor's `replace(untrusted_lactide, center_trusted=True)` and a fake
+  `from_transform` transform, both minting a trusted elementary centre on the `2 lactic acid -> lactide + 2 water`
+  double-condensation fiction. `tests/test_issue_126_forged_center.py` (rewritten) + `scratchpad/probe_126_phase2.py`.
+- **Root cause:** ANY stored field (`center_trusted` bool, `reaction_center` object, or any new token) is settable
+  by a data-only attacker through the public constructor / `replace` / a fake transform, and liftable onto forged
+  molecules. The trust decision cannot live in a stored field. ([[a-verifier-that-cannot-verify-must-fail-closed]])
+- **Fix:** `center_trusted` is **removed entirely** (not renamed). The condensation recognizers (acyl/ether/
+  N-alkylation) now call `_condensation_rederives`, which reruns the generator's OWN single-cut scission
+  (`structure_descent.single_cut_capped_scissions(target, (water,))`, restricted to the target's order-1 C–X bonds)
+  and vouches only if the target disconnects into EXACTLY the two declared precursors with an elementary-condensation
+  centre it computes itself. A bundled fiction needs ≥2 cuts → never re-derivable → demoted, regardless of any
+  attached centre. `reaction_center` is retained as ADVISORY metadata (graph/scheme/replay display) only.
+- **The invariant (the strongest new one this round):** *no caller-settable field can MINT a vouch, for any of the
+  17 recognizers* — soundness is determined by the molecules alone (condensation: single-cut re-derivation;
+  pericyclic: Layer-A retro). The **condensation families are fully CONTENT-DETERMINISTIC** (verdict is a pure
+  function of the reactants/products multisets; `reaction_center` ignored).
+- **Independent adversarial audit (evil-morty, fresh cases):** (B) no-false-vouch **held everywhere** — forged
+  `_DA_CENTER` on a non-DA step, the lactide, and the R55 glue-fiction all demote. It **refuted the over-broad claim
+  (A)** that recognition is content-deterministic for *all* recognizers: the 14 pericyclic recognizers still READ
+  the declared centre (Layer B/C), so a genuine Claisen/DA built with no readable centre is demoted. This is
+  fail-closed-SAFE (the centre can only DEMOTE a genuine step, never mint a false vouch — Layer A gates first), a
+  COVERAGE-only residual. The docstrings were corrected to state the two-tier invariant truthfully (no over-claim).
+- **Follow-up (filed as residual):** make the pericyclic recognizers content-deterministic by relying on their
+  Layer-A re-derivation alone (drop the Layer-B/-C centre read), gated on fuzzing Layer A
+  (`experiments/chem_differential_fuzzer.py`) — evil-morty's residual #1.
+- **Cost (#127 hot-path):** re-derivation is cheap in production — an isopentyl-acetate compile spends 0.04s in 6
+  re-derive calls (focused C–X-bond cutter + content-keyed `_REDERIVE_CACHE`); ~10–30ms cold / <1ms cached per step.
+- **New generator primitive:** `structure_descent.single_cut_capped_scissions(reactant, reagents, candidate_bonds)`
+  — a focused slice of `capped_scissions` (k=1, restricted bonds) reusing the certified `_cap_a_cut`; sound by the
+  same CappedScission certificate, a pure cost pre-filter.
+- **Corpus rebuilt** to the content-determinism model: POSITIVE ×4 (incl. a hand-built centre-less esterification now
+  recovered by re-derivation), NEGATIVE ×4 (lactide forged via the bare ctor / `replace` / fake transform + R55),
+  NULL (census-fires-but-non-elementary bundle abstains), MUTATION (ester target swapped to the isomeric ethyl
+  formate — census fires, re-derivation flips off). **recall 4/4, FALSE-VOUCH 0/4 — PASS.**
+- **Retired mechanism:** the "centre-absent → demote" PIECE-2 / TAMPER-HARDENING-01 behaviour is superseded by
+  re-derivation; recognizer + tamper tests and their committed probes (n-alkylation, n-methylation, tamper-hardening)
+  were updated to content-determinism and their FROZEN_HASHes re-frozen with documented reasons.
+
+---
+
 ## Coverage impact so far
 
 **Families newly generable / recognizable / searchable: none yet** — Phase 1 is truthfulness, not coverage. The

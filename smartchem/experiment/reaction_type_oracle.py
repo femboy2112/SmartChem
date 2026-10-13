@@ -195,27 +195,122 @@ def recognize_reaction_type_outcome(step) -> RecognitionOutcome:
     return RecognitionOutcome(ABSTAIN, None, ())
 
 
-def _vouchable_center(step):
-    """The step's reaction centre, but ONLY when it is TRUSTED engine evidence (ISSUE-126).
+def _declared_center(step):
+    """The step's DECLARED reaction centre (caller- or engine-supplied), or ``None``.
 
-    A recognizer reads the centre as its locality/elementarity WITNESS -- and a caller who hand-builds an
-    :class:`~smartchem.experiment.step.ExperimentStep` through the public ``assembling`` constructor can supply ANY
-    descriptor, including an elementary condensation centre forged onto a balanced NON-elementary fiction (a bundled
-    multi-cut step that forges the whole-molecule census but whose true centre is non-elementary).  The span check
-    :meth:`~smartchem.reaction_center.ReactionCenter.is_elementary_condensation` inspects only the centre's OWN
-    declared bonds, so a forged elementary centre defeats it and buys a false VOUCH.
+    Read ONLY by the pericyclic recognizers (Diels-Alder / sigmatropic / electrocyclic), whose SOUNDNESS rests
+    entirely on their Layer A re-derivation FROM THE MOLECULES (``_reactant_*_disconnects_to`` /
+    ``_reactant_rewrites_to``).  A forged centre can NEVER mint a vouch: Layer A refuses a non-matching step before
+    the centre is read, so the centre is only a Layer-B/-C confirmation on a step Layer A already proved genuine --
+    it can DEMOTE a genuine step (Layer C blocks an absent centre), never UPGRADE a fiction.  The condensation
+    recognizers do NOT read this at all; they re-derive their own locality witness (:func:`_condensation_rederives`),
+    so they are fully content-deterministic.  Net (ISSUE-126 Phase II, a stored centre being forgeable via
+    ``dataclasses.replace`` / a fake ``from_transform`` transform): NO caller-settable field can MINT a vouch for
+    ANY recognizer; the condensation families ignore the centre entirely; the pericyclic families still require a
+    present+matching centre, so a genuine centre-less pericyclic step is demoted -- a fail-closed-safe, coverage-only
+    residual (a follow-up can make them rely on Layer A alone).  ([[a-verifier-that-cannot-verify-must-fail-closed]])"""
+    return getattr(step, "reaction_center", None)
 
-    The gate: a centre justifies a vouch ONLY when ``step.center_trusted`` -- set by the engine's own derivers
-    (:meth:`~smartchem.experiment.step.ExperimentStep.from_transform`, which derived it from a real transform; and the
-    replay deserialization seam, which rides the ``in centres`` re-enumeration authentication).  An untrusted or absent
-    centre returns ``None`` here, so every recognizer fails CLOSED on it -- identical to the pre-existing absent-centre
-    behaviour (TAMPER-HARDENING-01).  An untrusted centre is retained on the step as neutral diagnostic metadata; it is
-    simply never recognition evidence.  ([[a-verifier-that-cannot-verify-must-fail-closed]])
+
+_WATER_CACHE: list = []
+#: Content-keyed memo for the re-derivation (ISSUE-126 Phase II).  Recognition is content-deterministic, so the
+#: verdict depends only on (target identity, the two precursor identities, the nucleophile set); caching it collapses
+#: the repeated recognition of the same step across candidate routes in the ranking hot path (the #127 cost surface)
+#: to one scission enumeration.  Bounded to stay safe in a long-lived process.
+_REDERIVE_CACHE: dict = {}
+_REDERIVE_CACHE_MAX = 65_536
+
+
+def _water():
+    """A cached neutral water molecule, the coproduct the condensation re-derivation expels (lazy -- avoids an
+    import-time dependency on the SMILES parser from this module)."""
+    if not _WATER_CACHE:
+        from ..smiles import parse_smiles
+        _WATER_CACHE.append(parse_smiles("O"))
+    return _WATER_CACHE[0]
+
+
+def _condensation_rederives(step, nucleophiles) -> bool:
+    """INDEPENDENTLY re-derive an elementary dehydrative condensation from the step's OWN molecules (ISSUE-126 PhII).
+
+    The acyl / ether / N-alkylation recognizers need a LOCALITY/elementarity witness: that the step is a SINGLE
+    elementary condensation, not a bundled multi-cut fiction that forges the same whole-molecule census (the lactide
+    ``2 lactic acid -> lactide + 2 water`` double condensation).  R58 read that witness off a ``reaction_center``
+    carried on the step -- but a stored field is forgeable (``dataclasses.replace``, an arbitrary duck-typed
+    ``from_transform`` transform), so it is no longer trusted for ANY vouch.
+
+    This re-derives the witness the way the Diels-Alder families derive their Layer A: it reruns the GENERATOR'S OWN
+    single-cut capped scission on the step's TARGET, consuming one water, and asks whether SOME single cut
+    disconnects the target into EXACTLY the step's two non-water precursors with an elementary-condensation centre
+    onto ``nucleophiles``.  The reverse of one single-cut elementary scission IS, by construction, one genuine
+    elementary condensation; a bundled fiction needs ``>= 2`` cuts and so can NEVER be re-derived here -- it is
+    demoted independently of whatever centre was attached.
+
+    COST (the #127 hot-path surface).  An elementary dehydrative condensation forms an order-1 ``C-X`` bond, so the
+    only cut that can disconnect the target into the precursors is at one of the target's order-1 ``C-X`` bonds --
+    the enumeration is restricted to those (:func:`~smartchem.structure_descent.single_cut_capped_scissions`) rather
+    than every C-H/C-C bond, and the content-deterministic verdict is memoised.  Restricting the bonds cannot miss a
+    genuine condensation (its formed bond is exactly such a bond), so it is a pure pre-filter.
+
+    Sound and FAIL-CLOSED (never a false-vouch).  A target the capper refuses (a charged species / pathological
+    graph), a budget-truncated enumeration, or simply no matching single cut all return ``False`` -- honest coverage
+    loss, never a vouch.  A ``True`` is returned ONLY when the target provably assembles from the two precursors by
+    one elementary condensation, so the witness is exactly the generator's single-cut invariant, now INDEPENDENTLY
+    recomputed from the molecules rather than asserted by a trusted field (the content-determinism invariant).
+    ([[a-whole-set-count-classifier-is-fooled-by-non-locality]] [[a-verifier-that-cannot-verify-must-fail-closed]])
     """
-    center = getattr(step, "reaction_center", None)
-    if center is None or not getattr(step, "center_trusted", False):
-        return None
-    return center
+    from ..smiles import resonance_identity
+    from .feasibility import _is_water
+    non_water_products = [m for m in getattr(step, "products", ()) if not _is_water(m)]
+    non_water_reactants = [m for m in getattr(step, "reactants", ()) if not _is_water(m)]
+    if len(non_water_products) != 1 or len(non_water_reactants) != 2:
+        return False
+    target = non_water_products[0]
+    try:
+        want = tuple(sorted(resonance_identity(r) for r in non_water_reactants))
+        key = (resonance_identity(target), want, tuple(nucleophiles))
+    except (NotImplementedError, TypeError, ValueError):
+        return False  # a species that will not canonicalise -> fail-closed demote
+    cached = _REDERIVE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    result = _rederive_condensation(target, want, nucleophiles)
+    if len(_REDERIVE_CACHE) < _REDERIVE_CACHE_MAX:
+        _REDERIVE_CACHE[key] = result
+    return result
+
+
+def _rederive_condensation(target, want: tuple, nucleophiles) -> bool:
+    """The uncached re-derivation: does ``target`` single-cut-disconnect into the precursor identities ``want`` via
+    one elementary dehydrative condensation onto ``nucleophiles``?  Restricted to the target's order-1 ``C-X`` bonds
+    (the only bonds an elementary condensation can form), then gated by the full :class:`CappedScission` certificate
+    and :meth:`~smartchem.reaction_center.ReactionCenter.is_elementary_condensation`."""
+    from ..structure_descent import single_cut_capped_scissions, ScissionError
+    from ..smiles import resonance_identity
+    nuc = set(nucleophiles)
+    atoms = getattr(target, "atoms", ())
+    candidate = []
+    for b in sorted(getattr(target, "bonds", ())):
+        if getattr(b, "order", None) != 1:
+            continue
+        pair = {atoms[b.i], atoms[b.j]}
+        if "C" in pair and (pair & nuc):  # an order-1 carbon--nucleophile bond: the condensation locus
+            candidate.append(b)
+    if not candidate:
+        return False
+    try:
+        scissions, _complete = single_cut_capped_scissions(target, (_water(),), tuple(candidate))
+    except (ScissionError, NotImplementedError, TypeError, ValueError):
+        return False  # target cannot be single-cut re-derived (e.g. charged) -> fail-closed demote, never vouch
+    for cs in scissions:
+        try:
+            if tuple(sorted(resonance_identity(p) for p in cs.products)) != want:
+                continue
+            if cs.reaction_center().is_elementary_condensation(nucleophiles):
+                return True
+        except Exception:
+            continue  # a pathological scission is skipped; an error can only make the step LESS recognized
+    return False
 
 
 def _acyl_condensation(step) -> bool:
@@ -227,28 +322,23 @@ def _acyl_condensation(step) -> bool:
     than this module's fail-CLOSED type VOUCH; the shared thing is only the detector, which this module leaves
     untouched.
 
-    R58 span-local elementarity.  When the step carries a reaction centre (:attr:`ExperimentStep.reaction_center`,
-    present for every generator-derived step), a VOUCH additionally requires that centre to be a SINGLE, connected,
-    elementary dehydrative condensation onto an ``{O, N, S}`` nucleophile (ester/amide/thioester) --
-    :meth:`~smartchem.reaction_center.ReactionCenter.is_elementary_condensation`.  This turns the borrowed k=1
-    single-cut assumption into a CHECKED structural fact: a bundled multi-cut step that forges the same net acyl
-    signature (48 reachable k=2 examples were measured) forms/breaks extra bonds or splits into >1 component, so it
-    is demoted.
-
-    FAIL-CLOSED on an absent centre (TAMPER-HARDENING-01, extending the R60 gate finding to acyl).  A step that
-    carries NO reaction centre used to fall back to the whole-molecule predicate alone; it no longer does -- it
-    BLOCKS.  The census is non-local (the R48 lesson), and a serialized replay whose ``reaction_center`` was NULLED
-    is exactly a step with no readable centre.  Under the old fallback a tamperer could strip the centre off a fake
-    to buy a census-only vouch; now centre-omission can only DEMOTE (false-UNRECOGNIZED, safe), never false-VOUCH
-    (catastrophic).  A genuine hand-built acyl step loses its vouch too -- accepted coverage loss, the same trade
-    :func:`_n_alkylation` already makes ([[a-whole-set-count-classifier-is-fooled-by-non-locality]])."""
+    ELEMENTARITY by RE-DERIVATION (ISSUE-126 Phase II, replacing the R58 trusted-centre read).  The census is
+    non-local -- it also fires on a bundled multi-cut step that forges the same net acyl signature (48 reachable k=2
+    examples were measured, e.g. the lactide ``2 lactic acid -> lactide + 2 water`` double condensation).  R58
+    excluded those by reading a single-elementary-condensation :class:`~smartchem.reaction_center.ReactionCenter`
+    CARRIED on the step; but a stored centre is forgeable (``dataclasses.replace``, a fake ``from_transform``
+    transform), so a VOUCH now instead requires :func:`_condensation_rederives` to INDEPENDENTLY re-derive the
+    elementary condensation from the molecules -- a single-cut scission of the target disconnecting back into
+    EXACTLY the two precursors onto ``{O, N, S}``.  A bundled fiction needs ``>= 2`` cuts and so is never re-derived,
+    and is demoted regardless of any attached centre.  Content-deterministic: recognition reads only the conserved
+    molecules, so a genuine acyl condensation is vouched whether or not it carries a centre, and no forged annotation
+    buys a vouch ([[a-whole-set-count-classifier-is-fooled-by-non-locality]] [[a-verifier-that-cannot-verify-must-fail-closed]])."""
     from .feasibility import _is_intermolecular_acyl_condensation
     if not _is_intermolecular_acyl_condensation(step):
         return False
-    center = _vouchable_center(step)
-    if center is None:
-        return False  # fail-closed: no readable centre -> the non-local census cannot vouch alone (TAMPER-HARDENING-01)
-    return center.is_elementary_condensation(("O", "N", "S"))
+    # ISSUE-126 Phase II: elementarity/locality is RE-DERIVED from the molecules (an independent single-cut scission),
+    # never read from a forgeable supplied centre -- a bundled double condensation (lactide) is not re-derivable here.
+    return _condensation_rederives(step, ("O", "N", "S"))
 
 
 def _etherification(step) -> bool:
@@ -261,23 +351,20 @@ def _etherification(step) -> bool:
     ester-O with a carbonyl neighbour, not a dialkyl ether -- so ether and ester share a centre signature but the
     census separates them).
 
-    R58 REPLACES the R57 whole-molecule clause (iii) ("no ether among the reactants") with a span-LOCAL check.
-    When the step carries a reaction centre, a VOUCH requires that centre to be a single, connected, elementary
-    dehydrative condensation onto oxygen (:meth:`~smartchem.reaction_center.ReactionCenter.is_elementary_condensation`
-    with ``("O",)``).  Clause (iii) was a non-local blacklist that FALSE-DEMOTED a genuine etherification whose
-    reactant merely CONTAINS an unrelated ether (``methanol + 2-methoxyethanol -> 1,2-dimethoxyethane + water``, a
-    production k=1 miss); the span reads the actual centre, so those 40 reachable steps are RECOVERED while the
-    bundled fakes (which have a non-elementary span) stay demoted.
-
-    FAIL-CLOSED on an absent centre (TAMPER-HARDENING-01).  Like :func:`_acyl_condensation` and
-    :func:`_n_alkylation`, a centre-less step now BLOCKS rather than falling back to the non-local R57 census: a
-    nulled ``reaction_center`` in a serialized replay can therefore only DEMOTE, never buy a census-only vouch --
-    centre-omission is false-UNRECOGNIZED (safe), not false-VOUCH."""
+    ELEMENTARITY by RE-DERIVATION (ISSUE-126 Phase II, replacing the R57 clause (iii) blacklist AND the R58 trusted
+    centre).  Clause (iii) ("no ether among the reactants") was a non-local blacklist that FALSE-DEMOTED a genuine
+    etherification whose reactant merely CONTAINS an unrelated ether (``methanol + 2-methoxyethanol ->
+    1,2-dimethoxyethane + water``, a production k=1 miss).  A VOUCH now requires :func:`_condensation_rederives` to
+    INDEPENDENTLY re-derive a single elementary dehydrative condensation onto oxygen (``("O",)``) from the molecules
+    -- a single-cut scission of the target disconnecting back into exactly the two alcohols.  The spectator ether is
+    irrelevant to the re-derived cut, so those 40 reachable steps are recognized, while a bundled fake (needing
+    ``>= 2`` cuts) is never re-derived and stays demoted -- content-deterministically, reading no forgeable supplied
+    centre (``dataclasses.replace`` / a fake ``from_transform`` transform cannot buy a vouch)."""
     from .feasibility import _ether_shape_and_net_change
-    center = _vouchable_center(step)
-    if center is None:
-        return False  # fail-closed: no readable centre -> the non-local census cannot vouch alone (TAMPER-HARDENING-01)
-    return _ether_shape_and_net_change(step) and center.is_elementary_condensation(("O",))
+    if not _ether_shape_and_net_change(step):
+        return False
+    # ISSUE-126 Phase II: elementarity RE-DERIVED from the molecules, not read from a forgeable supplied centre.
+    return _condensation_rederives(step, ("O",))
 
 
 def _n_alkylation(step) -> bool:
@@ -298,11 +385,11 @@ def _n_alkylation(step) -> bool:
     "non-carbonyl N-H" to name this scope honestly rather than understate it as "amine".
 
     The lock is R60's, widened -- and hardened against two adversary kills the review gate caught (the meta-lesson:
-    run adversaries SEPARATELY from acceptance).  The span check alone
-    (:meth:`~smartchem.reaction_center.ReactionCenter.is_elementary_condensation` with ``("N",)``, the SAME signature
-    methylation used -- element pairs do not change with chain length) does NOT lock: it certifies "one C-N single
-    bond forms displacing one C-O, H migrating N->O", but NOT that the carbon is alkyl nor that the N is a real
-    amine.  The census (:func:`~smartchem.experiment.feasibility._n_alkylation_shape_and_net_change`) supplies both,
+    run adversaries SEPARATELY from acceptance).  The elementary-condensation check alone (now RE-DERIVED from the
+    molecules by :func:`_condensation_rederives` onto ``("N",)``, the SAME signature methylation used -- element pairs
+    do not change with chain length) does NOT lock: it certifies "one C-N single bond forms displacing one C-O, H
+    migrating N->O", but NOT that the carbon is alkyl nor that the N is a real amine.  The census
+    (:func:`~smartchem.experiment.feasibility._n_alkylation_shape_and_net_change`) supplies both,
     with each clause carrying a kill it closes:
     * an ALKYL-carbinol alcohol net-consumed (:func:`~smartchem.experiment.feasibility._alkyl_carbinol_alcohol_count`,
       NOT the looser ``_alcohol_counts``).  KILL 1 (dalembert): ``_alcohol_counts`` is blind to a carbinol carbon's
@@ -319,19 +406,20 @@ def _n_alkylation(step) -> bool:
     Within the elementary shape + this centre, formula conservation then FORCES the (now provably alkyl) carbinol
     carbon onto the (amine-or-azole) nitrogen -- a genuine N-alkylation (the conservation-lock proof).
 
-    FAIL-CLOSED on an absent centre (TAMPER-HARDENING-01, inherited from R60).  This recognizer does NOT fall back to
-    the whole-molecule census when a step carries no reaction centre -- it BLOCKS (as acyl and ether do too).  The
-    census is non-local, and a centre-less homologation forges the net signature: ``N-methylformamide + methanol ->
-    CNCC=O + water`` MIGRATES the carbonyl off the N, unmasking a pre-existing alkyl, so the bond census reads a
-    spurious rise with no alkyl actually transferred.  The span closes exactly this
-    ([[a-whole-set-count-classifier-is-fooled-by-non-locality]]), so a VOUCH REQUIRES a readable, elementary
-    N-centre.  A centre-less step is honest coverage loss (false-UNRECOGNIZED, safe), never a census-only vouch
-    (false-VOUCH, catastrophic) -- the arch's declared-but-unrecognizable-input-must-BLOCK polarity."""
+    ELEMENTARITY by RE-DERIVATION (ISSUE-126 Phase II, replacing the R60/R63 trusted-centre read).  The census is
+    non-local, and a centre-less homologation forges the net signature: ``N-methylformamide + methanol -> CNCC=O +
+    water`` MIGRATES the carbonyl off the N, unmasking a pre-existing alkyl, so the bond census reads a spurious rise
+    with no alkyl actually transferred.  A VOUCH therefore requires :func:`_condensation_rederives` to INDEPENDENTLY
+    re-derive a single elementary condensation onto nitrogen (``("N",)``) from the molecules; a fiction that merely
+    forges the census does NOT disconnect, by one elementary cut, back into the step's declared precursors (if it
+    did, it WOULD be a genuine N-alkylation), so it is never re-derived and stays demoted -- content-deterministically,
+    reading no forgeable supplied centre ([[a-whole-set-count-classifier-is-fooled-by-non-locality]]
+    [[a-verifier-that-cannot-verify-must-fail-closed]])."""
     from .feasibility import _n_alkylation_shape_and_net_change
-    center = _vouchable_center(step)
-    if center is None:
-        return False  # fail-closed: no readable centre -> the non-local census cannot vouch alone (gate finding)
-    return _n_alkylation_shape_and_net_change(step) and center.is_elementary_condensation(("N",))
+    if not _n_alkylation_shape_and_net_change(step):
+        return False
+    # ISSUE-126 Phase II: elementarity RE-DERIVED from the molecules, not read from a forgeable supplied centre.
+    return _condensation_rederives(step, ("N",))
 
 
 def _alkyne_diels_alder(step) -> bool:
@@ -357,7 +445,7 @@ def _alkyne_diels_alder(step) -> bool:
         return False
     if not _reactant_alkyne_da_disconnects_to(products[0], reactants):
         return False  # Layer A: the adduct does not re-derive a guarded alkyne [4+2] retro into these two reactants
-    center = _vouchable_center(step)
+    center = _declared_center(step)
     if center is None:
         return False  # Layer C fail-closed: no readable centre -> the family re-derivation cannot vouch alone
     return center == _ALKYNE_DA_CENTER  # Layer B: the centre is exactly the alkyne-family pericyclic [4+2] signature
@@ -398,7 +486,7 @@ def _diels_alder(step) -> bool:
         return False
     if not _reactant_da_disconnects_to(products[0], reactants):
         return False  # Layer A: the adduct does not re-derive a guarded [4+2] retro into these two reactants
-    center = _vouchable_center(step)
+    center = _declared_center(step)
     if center is None:
         return False  # Layer C fail-closed: no readable centre -> the family re-derivation cannot vouch alone
     return center == _DA_CENTER  # Layer B: the centre is exactly the pericyclic [4+2] signature
@@ -419,7 +507,7 @@ def _hetero_diels_alder(step, family) -> bool:
         return False
     if not _reactant_hetero_da_disconnects_to(family, products[0], reactants):
         return False  # Layer A: the adduct does not re-derive a guarded hetero [4+2] retro into these two reactants
-    center = _vouchable_center(step)
+    center = _declared_center(step)
     if center is None:
         return False  # Layer C fail-closed: no readable centre -> the family re-derivation cannot vouch alone
     return center == family.center  # Layer B: exactly this hetero family's pericyclic [4+2] signature
@@ -528,7 +616,7 @@ def _sigmatropic_rearrangement(step, family) -> bool:
         return False
     if not _reactant_rewrites_to(family, products[0], reactants):
         return False  # Layer A: the product does not re-derive a guarded [3,3] rewrite into the reactant isomer
-    center = _vouchable_center(step)
+    center = _declared_center(step)
     if center is None:
         return False  # Layer C fail-closed: no readable centre -> the re-derivation cannot vouch alone
     return center == family.center  # Layer B: exactly this sigmatropic family's [3,3] centre

@@ -186,6 +186,44 @@ is not an authentication boundary. This round replaces self-asserted trust with 
 
 ---
 
+## Round III — §3 held-out benchmark + #132 pericyclic content-determinism (+ closed-shell hardening)
+
+**§3 — a second, INDEPENDENT recognition instrument** (`experiments/independent_recognition_corpus_s3.py`,
+`tests/test_independent_recognition_corpus_s3.py`). Unlike the baseline corpus (whose positives are the generator's
+own capped scissions), every case is HAND-AUTHORED from named-reaction chemistry and labelled REAL/FICTION/OUTSIDE
+*before* the oracle runs — a generated reaction cannot be its own ground truth. 24 cases across the full outcome
+taxonomy (recognized / correctly-demoted / false-vouch / coverage-gap / pericyclic-residual / mutation-off /
+unrepresentable), positive/negative/null/mutation/holdout per family. **Measured: recall 10/10 on in-whitelist
+positives, FALSE-VOUCH 0** (the #126 content-determinism holds under independent hand-built forge/replace/
+fake-transform attack + both isomer mutations + the R55 reachable glue fiction). Honest FINDINGS (not failures): 4
+coverage gaps surfaced — aldol, hydrogenation (#114), Friedel-Crafts acylation (#110), charged SN2.
+
+**#132 — the 14 pericyclic recognizers are now CONTENT-DETERMINISTIC** (the last forgeable-field dependency retired,
+extending #126 from the 3 condensation families to all 17). Each pericyclic recognizer (8 Diels-Alder + 4 [3,3]
+sigmatropic + 2 electrocyclic) previously vouched on `Layer A` (the family's own guarded re-derivation from the
+molecules) **AND** `Layer B/C` (an exact-equality read of the caller-settable, forgeable `reaction_center`). Layer
+B/C are dropped; the recognizers now rely on the re-derivation ALONE.
+- *Safety argument:* Layer B was an added AND-condition, so dropping it can only turn an ABSTAIN into a MATCH, and
+  only for a step that already passes Layer A — safe iff Layer A is a sound SOLE gate + a clean SEPARATOR.
+- *Evidence* (`experiments/pericyclic_layer_a_fuzz_132.py`, `tests/test_pericyclic_layer_a_fuzz_132.py`): a committed
+  seeded differential fuzz establishes a **14×14 identity matrix** (each genuine centre-less member passes ONLY its
+  own family's Layer A — 0 cross-poach, including the three diene-position families that share a centre with their
+  dienophile siblings and so are separable by Layer A alone), a curated fiction battery (0 of 14 near-misses fire),
+  and a seeded random differential (every Layer-A firing conserves mass+charge). Net: a genuine Diels-Alder/
+  sigmatropic/electrocyclic step hand-built WITHOUT a centre is now recognized (the §3 pericyclic residual is CLOSED).
+- *Adversarial hardening (evil-morty, independent fixtures):* the adversary BROKE the first-cut "Layer A is sound"
+  claim with a **charge-separated / radical false-vouch** — a net-neutral zwitterion adduct (`C1=C[CH-][CH+]CC1`) or
+  an odd-electron radical passed Layer A as a genuine [4+2]/[3,3] (a true false-vouch; re-adding Layer B would NOT
+  have caught it, since a radical graph's centre still equals the family centre). Root cause: guard 2c is one-sided
+  (`degree > neutral_valence`, so it drops over-coordination but not an under-coordinated radical/ion), and the net
+  `charge==0` check misses internal charge separation. **Fix:** a representation-aware `is_closed_shell_neutral`
+  guard (`smartchem/diels_alder.py`) now gates every pericyclic re-derivation AND the condensation re-derivation
+  (`_condensation_rederives`) — a radical/ion/ylide partner is not a reactant of any of these thermal classes. The
+  5 kills are frozen as regression cases; genuine recall is unchanged (identity matrix + §3 10/10 + baseline 4/4).
+  Separation survived the adversary untouched (0 cross-poach across 66+ molecules).
+- *No wire change:* the contract-freeze / xhigh wire suite is green (`reaction_center` is `compare=False`, never
+  serialized; the default compile path emits no pericyclic step, so default semantics are unchanged).
+
 ## Coverage impact so far
 
 **Families newly generable / recognizable / searchable: none yet** — Phase 1 is truthfulness, not coverage. The

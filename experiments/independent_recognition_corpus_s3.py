@@ -145,9 +145,11 @@ def corpus() -> "tuple[Case, ...]":
         # -- pericyclic (Diels-Alder [4+2], all-carbon) -- centre present --
         Case("Diels-Alder: butadiene + ethylene -> cyclohexene (centre carried)", "Diels-Alder [4+2]", REAL, True,
              _da_with_center, W, expect=RECOGNIZED),
-        # -- pericyclic, centre ABSENT: the #132 residual (Layer-C fail-closed blocks a centre-less genuine step) --
-        Case("Diels-Alder: butadiene + ethylene -> cyclohexene (centre-less, hand-built)", "Diels-Alder [4+2]",
-             REAL, True, lambda: _hand(("C=CC=C", "C=C"), ("C1CCC=CC1",), "C1CCC=CC1"), W, expect=RESIDUAL),
+        # -- pericyclic, centre ABSENT: the former #132 residual, now RECOGNIZED content-deterministically (the
+        # pericyclic recognizers re-derive via Layer A alone; no centre is read) --
+        Case("Diels-Alder: butadiene + ethylene -> cyclohexene (centre-less, hand-built; #132 closed)",
+             "Diels-Alder [4+2]", REAL, True,
+             lambda: _hand(("C=CC=C", "C=C"), ("C1CCC=CC1",), "C1CCC=CC1"), W, expect=RECOGNIZED),
 
         # ========================= FICTIONS: mass-balanced but no real reaction (must abstain) ======================
         Case("forged-centre lactide double condensation (direct constructor)", "bundled double condensation",

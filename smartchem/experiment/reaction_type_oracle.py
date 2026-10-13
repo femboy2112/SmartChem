@@ -81,9 +81,9 @@ Boundaries carried as documented debt (R56 acyl + R57 etherification + R63 N-alk
   dihydrothiopyran, the third heteroatom-dienophile family, whose neutral-valence guard-2c bound S:2 is load-bearing
   against a thiocarbenium false-vouch); (9) 1-azadiene DA + (10) 1-oxadiene (inverse-electron-demand) DA + (13)
   1-thiadiene DA -- the DIENE-position hetero families completing the 3x2 heteroatom x {dienophile, diene} matrix,
-  each of which SHARES a reaction centre with its same-heteroatom DIENOPHILE sibling ((C,X,.) is position-invariant),
-  so they are separated by Layer A ALONE (the centre check, Layer B, is necessary but not a separator; Layer A's
-  re-derivation is);
+  each of which shares a formed/broken bond STRUCTURE with its same-heteroatom DIENOPHILE sibling ((C,X,.) is
+  position-invariant), so they are separated by the family RE-DERIVATION ALONE (ISSUE-132: no reaction-centre is read
+  -- each family's guarded retro re-derives only its own regioisomer; fuzz-verified as a clean separator);
   (11) Cope [3,3] + (12) Claisen [3,3] + (14) aza-Claisen [3,3] + (15) thia-Claisen [3,3] sigmatropic isomerizations
   -- the rank-FLAT (1->1) classes, promoting the opt-in :mod:`smartchem.lateral_rewrite` seam (a lateral rewrite has
   no strict-descent decomposition image, so it cannot ride ``search_routes`` auto-discovery -- W1; its consumer is a
@@ -92,27 +92,32 @@ Boundaries carried as documented debt (R56 acyl + R57 etherification + R63 N-alk
   (16) 4-pi electrocyclization (butadiene -> cyclobutene) + (17) 6-pi electrocyclization (hexatriene -> cyclohexadiene)
   -- the THIRD pericyclic archetype, rank-flat ring-open/close isomerizations on the same lateral seam.
   All EIGHT DA classes are locked apart, and the four [3,3] and two electrocyclic classes from each other and from
-  every DA class, by the exact-equality centre check PLUS Layer A (the load-bearing separator wherever centres
-  collide) -- none poaches another's steps (a DA matrix + a lateral/DA matrix pin this).  ARYL amination (the phenol->aniline fake)
+  every DA class, by their per-family guarded RE-DERIVATION alone (ISSUE-132: no centre is read; the re-derivation is
+  the load-bearing separator wherever families share a bond structure) -- none poaches another's steps (the 14x14
+  identity matrix in PERICYCLIC-LAYER-A-FUZZ-132 pins this).  ARYL amination (the phenol->aniline fake)
   and masked-carbonyl donors (hemiaminal/acetal condensations) are excluded; other real condensations
   (Friedel-Crafts, Kolbe-Schmitt) and non-sigmatropic isomerizations (tautomerization) are demoted-as-unrecognized:
   honest coverage loss, NOT false-VOUCH. Each remaining class is a future round behind its own gate.
 * LOCALITY (R57 debt, CLOSED by R58 span reading) -- a whole-molecule census is non-local, so R56/R57 borrowed
   the generator's k=1 single-cut invariant (``max_reactant_cuts = 1``, the production default). R58 distils the
   reaction-centre span the generator already computes (``CappedScission.cut``/``.caps``) into a coordinate-free
-  :class:`~smartchem.reaction_center.ReactionCenter` carried on the step, and both recognizers now CHECK the centre
-  is a single connected elementary condensation (:meth:`ReactionCenter.is_elementary_condensation`) rather than
-  trusting the config. This makes the k=1 assumption a structural FACT (config-robust: 48 reachable k=2 acyl bundles
-  and the k=2 ether bundles that forge the elementary net signature are demoted by their non-elementary spans), and
-  the span-local ether check retires the R57 clause (iii) blacklist -- RECOVERING 40 production-reachable genuine
-  etherifications whose reactant contains an unrelated ether (``methanol + 2-methoxyethanol ->
-  1,2-dimethoxyethane + water``). A step lacking a centre (hand-built / non-scission transform / a serialized replay
-  whose centre was NULLED) is FAIL-CLOSED demoted -- ALL THREE recognizers now BLOCK on an absent centre
-  (TAMPER-HARDENING-01, extending the R60 N-methylation gate finding to acyl + ether); the non-local census is never
-  trusted alone, so centre-omission can only cost a vouch (false-UNRECOGNIZED, safe), never mint one (false-VOUCH,
-  catastrophic). Centre-carrying live and replayed steps read identically (the centre round-trips through the replay
-  payload), so this is the load-time authority :meth:`CompilationResponse._check_frontier_coherence` re-derives the
-  fiction channel with.
+  :class:`~smartchem.reaction_center.ReactionCenter` carried on the step, and both condensation recognizers CHECKED
+  the centre is a single connected elementary condensation (:meth:`ReactionCenter.is_elementary_condensation`) rather
+  than trusting the config. This made the k=1 assumption a structural FACT (config-robust: 48 reachable k=2 acyl
+  bundles and the k=2 ether bundles that forge the elementary net signature are demoted by their non-elementary
+  spans), and the span-local ether check retired the R57 clause (iii) blacklist -- RECOVERING 40 production-reachable
+  genuine etherifications whose reactant contains an unrelated ether (``methanol + 2-methoxyethanol ->
+  1,2-dimethoxyethane + water``).
+  CONTENT-DETERMINISM (ISSUE-126 for the condensations, ISSUE-132 for the pericyclics) now SUPERSEDES the R58
+  trusted-centre read entirely: NO recognizer reads the step's ``reaction_center`` for a vouch any longer.  The three
+  condensation recognizers re-derive their locality witness by an independent single-cut scission
+  (:func:`_condensation_rederives`); the fourteen pericyclic recognizers re-derive theirs by their family's guarded
+  retro (``_reactant_*_disconnects_to`` / ``_reactant_rewrites_to``).  Recognition is therefore a PURE FUNCTION of
+  the conserved reactant/product molecules: a forged OR absent centre can neither mint nor block a vouch, a genuine
+  centre-less step is recognized, and a bundled multi-cut fiction (needing >=2 cuts / an extra retro event) is never
+  re-derived.  So centre-omission or forgery can never mint a vouch (the no-false-vouch cardinal holds for a caller
+  controlling every untrusted input field) nor, now, cost one.  The load-time authority
+  :meth:`CompilationResponse._check_frontier_coherence` re-derives the same content-deterministic fiction channel.
 * DISPOSITION FLATTENING (R56 debt, CLOSED by R59 disposition channel) -- historically the fiction blocker shared
   the ``hard_blockers`` tuple with catalyst/section-11 blockers, so a "real reaction, needs industrial catalyst"
   route and a "not a reaction at all" route were both G6-sunk equally (the partial order "real-but-hard strictly
@@ -195,23 +200,6 @@ def recognize_reaction_type_outcome(step) -> RecognitionOutcome:
     return RecognitionOutcome(ABSTAIN, None, ())
 
 
-def _declared_center(step):
-    """The step's DECLARED reaction centre (caller- or engine-supplied), or ``None``.
-
-    Read ONLY by the pericyclic recognizers (Diels-Alder / sigmatropic / electrocyclic), whose SOUNDNESS rests
-    entirely on their Layer A re-derivation FROM THE MOLECULES (``_reactant_*_disconnects_to`` /
-    ``_reactant_rewrites_to``).  A forged centre can NEVER mint a vouch: Layer A refuses a non-matching step before
-    the centre is read, so the centre is only a Layer-B/-C confirmation on a step Layer A already proved genuine --
-    it can DEMOTE a genuine step (Layer C blocks an absent centre), never UPGRADE a fiction.  The condensation
-    recognizers do NOT read this at all; they re-derive their own locality witness (:func:`_condensation_rederives`),
-    so they are fully content-deterministic.  Net (ISSUE-126 Phase II, a stored centre being forgeable via
-    ``dataclasses.replace`` / a fake ``from_transform`` transform): NO caller-settable field can MINT a vouch for
-    ANY recognizer; the condensation families ignore the centre entirely; the pericyclic families still require a
-    present+matching centre, so a genuine centre-less pericyclic step is demoted -- a fail-closed-safe, coverage-only
-    residual (a follow-up can make them rely on Layer A alone).  ([[a-verifier-that-cannot-verify-must-fail-closed]])"""
-    return getattr(step, "reaction_center", None)
-
-
 _WATER_CACHE: list = []
 #: Content-keyed memo for the re-derivation (ISSUE-126 Phase II).  Recognition is content-deterministic, so the
 #: verdict depends only on (target identity, the two precursor identities, the nucleophile set); caching it collapses
@@ -266,6 +254,9 @@ def _condensation_rederives(step, nucleophiles) -> bool:
     if len(non_water_products) != 1 or len(non_water_reactants) != 2:
         return False
     target = non_water_products[0]
+    from ..diels_alder import is_closed_shell_neutral
+    if not (is_closed_shell_neutral(target) and all(is_closed_shell_neutral(m) for m in non_water_reactants)):
+        return False  # #132 hardening: a radical / charged / ylide partner is not a condensation reactant (fail-closed)
     try:
         want = tuple(sorted(resonance_identity(r) for r in non_water_reactants))
         key = (resonance_identity(target), want, tuple(nucleophiles))
@@ -428,27 +419,23 @@ def _alkyne_diels_alder(step) -> bool:
     The fifth active class, and the FIRST pericyclic recognizer that keeps a second unsaturation in the adduct: an
     alkyne dienophile donates its second pi bond into the ring, so the product is 1,4-cyclohexadiene (verified
     chemistry), not the fully-saturated-except-one-alkene cyclohexene the alkene family makes.  It is a straight
-    clone of :func:`_diels_alder`'s three-layer discipline against the alkyne sibling family
-    (:mod:`smartchem.diels_alder`'s :data:`_ALKYNE_DA_CENTER` /
-    :func:`~smartchem.diels_alder._reactant_alkyne_da_disconnects_to`), so it inherits the SAME soundness argument
-    rather than a hand-rolled second one: Layer A re-derives [4+2]-ness from the step's own molecules (never the
-    transform type), Layer B pins the exact alkyne-family reaction centre (distinct from the alkene family's, so the
-    two classes cannot cross-poach each other), and Layer C fail-closed blocks a centre-less step.
+    clone of :func:`_diels_alder`'s re-derivation discipline against the alkyne sibling family
+    (:func:`~smartchem.diels_alder._reactant_alkyne_da_disconnects_to`), so it inherits the SAME soundness argument
+    rather than a hand-rolled second one: the guarded alkyne [4+2] retro is re-derived from the step's own molecules
+    (never the transform type, never a caller-supplied centre), and its distinct formed/broken bond structure keeps
+    the alkyne class from cross-poaching the alkene one -- a fuzz-verified sound sole gate + separator (ISSUE-132).
 
     SCOPE: only alkyne-dienophile -> 1,4-cyclohexadiene.  An allene dienophile or an alkyne embedded in a larger
     conjugated system is genuine [4+2] chemistry this recognizer does NOT vouch -- honest coverage loss
     (false-UNRECOGNIZED, safe), never a false-vouch."""
-    from ..diels_alder import _ALKYNE_DA_CENTER, _reactant_alkyne_da_disconnects_to
+    from ..diels_alder import _reactant_alkyne_da_disconnects_to
     reactants = tuple(step.reactants)
     products = tuple(step.products)
     if len(products) != 1 or len(reactants) != 2:
         return False
-    if not _reactant_alkyne_da_disconnects_to(products[0], reactants):
-        return False  # Layer A: the adduct does not re-derive a guarded alkyne [4+2] retro into these two reactants
-    center = _declared_center(step)
-    if center is None:
-        return False  # Layer C fail-closed: no readable centre -> the family re-derivation cannot vouch alone
-    return center == _ALKYNE_DA_CENTER  # Layer B: the centre is exactly the alkyne-family pericyclic [4+2] signature
+    # ISSUE-132 content-determinism: the guarded alkyne [4+2] retro re-derived from the molecules IS the vouch; no
+    # caller-supplied centre is read (a fuzz-verified sound sole gate + separator -- PERICYCLIC-LAYER-A-FUZZ-132).
+    return _reactant_alkyne_da_disconnects_to(products[0], reactants)
 
 
 def _diels_alder(step) -> bool:
@@ -459,19 +446,18 @@ def _diels_alder(step) -> bool:
     genuine [4+2] this recognizer does NOT vouch -- honest coverage loss (false-UNRECOGNIZED, safe), never a
     false-vouch; the family rule fixes an alkene dienophile.
 
-    Conservation-locked like its siblings, but the lock is the DA family's own double certificate rather than a
-    functional-group census (a pericyclic reaction has no dehydrative signature).  Three layers:
-    * Layer A (the census analogue) -- re-derive [4+2]-ness FROM THE STEP'S OWN MOLECULES, never from the
-      transform type: the step must be a 2->1 combination whose single product admits a GUARDED retro-Diels-Alder
-      disconnecting into exactly the two reactants (:func:`smartchem.diels_alder._reactant_da_disconnects_to`).  A
-      mass-balancing 2->1 combination that is NOT a genuine [4+2] is refused -- conservation alone does not prove a
-      cycloaddition (the load-bearing certificate; a budget-exhausted retro DEMOTES, never vouches -- fail-closed).
-    * Layer B (span-local) -- the reaction centre must be the pericyclic [4+2] signature
-      (:data:`smartchem.diels_alder._DA_CENTER`: two sigma C-C formed + the central pi shift, three pi broken, one
-      connected six-carbon cluster), matched by exact equality.
-    * Layer C (fail-closed, TAMPER-HARDENING-01) -- a step with no readable centre BLOCKS.
-    Soundness rests on Layer A's independent re-derivation; the centre supplies elementarity + tamper-resistance,
-    never the vouch alone.  Structural type-validity only (Problem A): no feasibility/endo-exo/regiochemistry.
+    Conservation-locked like its siblings, but the lock is the DA family's own re-derivation certificate rather than
+    a functional-group census (a pericyclic reaction has no dehydrative signature).  The vouch is a single content
+    re-derivation (ISSUE-132: no caller-supplied centre is read):
+    re-derive [4+2]-ness FROM THE STEP'S OWN MOLECULES, never from the transform type -- the step must be a 2->1
+    combination whose single product admits a GUARDED retro-Diels-Alder disconnecting into exactly the two reactants
+    (:func:`smartchem.diels_alder._reactant_da_disconnects_to`).  A mass-balancing 2->1 combination that is NOT a
+    genuine [4+2] is refused -- conservation alone does not prove a cycloaddition (the load-bearing certificate; a
+    budget-exhausted retro DEMOTES, never vouches -- fail-closed).  Elementarity is intrinsic: one guarded retro
+    yielding EXACTLY the two declared reactants cannot be a bundled double adduct.  The guarded retro is a
+    fuzz-verified sound sole gate + separator (PERICYCLIC-LAYER-A-FUZZ-132), so no reaction-centre read is needed for
+    soundness, tamper-resistance (re-derivation reads molecules, not a forgeable field) or separation; a genuine
+    centre-less step is recognized.  Structural type-validity only (Problem A): no feasibility/endo-exo/regiochemistry.
 
     HOT PATH (load-bearing reachability, evil-morty): this runs via :func:`route_reaction_type_blockers` in
     production route ranking for ALL users, so Layer A's retro runs on every 2->1 step's product (cheap ~1 ms; the
@@ -479,38 +465,32 @@ def _diels_alder(step) -> bool:
     users ONLY because the default single-cut (``max_reactant_cuts = 1``) CappedScission cannot emit a ring-forming
     2->1 step -- a reachability property, NOT structural.  Enable a carbocyclic 2->1 provider (or raise the cut
     budget) and DA vouches begin firing in production: the intended, sound behaviour, not a regression."""
-    from ..diels_alder import _DA_CENTER, _reactant_da_disconnects_to
+    from ..diels_alder import _reactant_da_disconnects_to
     reactants = tuple(step.reactants)
     products = tuple(step.products)
     if len(products) != 1 or len(reactants) != 2:
         return False
-    if not _reactant_da_disconnects_to(products[0], reactants):
-        return False  # Layer A: the adduct does not re-derive a guarded [4+2] retro into these two reactants
-    center = _declared_center(step)
-    if center is None:
-        return False  # Layer C fail-closed: no readable centre -> the family re-derivation cannot vouch alone
-    return center == _DA_CENTER  # Layer B: the centre is exactly the pericyclic [4+2] signature
+    # ISSUE-132 content-determinism: the guarded [4+2] retro re-derived from the molecules IS the vouch; no
+    # caller-supplied centre is read (a fuzz-verified sound sole gate + separator -- PERICYCLIC-LAYER-A-FUZZ-132).
+    return _reactant_da_disconnects_to(products[0], reactants)
 
 
 def _hetero_diels_alder(step, family) -> bool:
-    """The shared three-layer discipline for a HETEROATOM-dienophile Diels-Alder [4+2] family (aza: X=N, oxa: X=O),
+    """The shared re-derivation discipline for a HETEROATOM-dienophile Diels-Alder [4+2] family (aza: X=N, oxa: X=O),
     parameterized by the family descriptor (:data:`smartchem.diels_alder.AZA_DA` / :data:`~smartchem.diels_alder.
-    OXA_DA`).  Identical soundness argument to :func:`_diels_alder`, just against the family's own relabeled
-    re-derivation + centre: Layer A re-derives THIS family's guarded [4+2] retro from the step's own molecules
-    (:func:`~smartchem.diels_alder._reactant_hetero_da_disconnects_to`), Layer B pins the exact family centre
-    (``(C, X, .)`` bond pairs, distinct from every other family's, so the classes cannot cross-poach), Layer C
-    fail-closed blocks a centre-less step."""
+    OXA_DA`).  Identical soundness argument to :func:`_diels_alder`, against the family's own relabeled re-derivation:
+    the guarded [4+2] retro for THIS family is re-derived from the step's own molecules
+    (:func:`~smartchem.diels_alder._reactant_hetero_da_disconnects_to`), whose ``(C, X, .)`` bond structure is
+    distinct from every other family's -- so the families cannot cross-poach even where they share a centre, which is
+    exactly why the re-derivation (not the centre) is the separator (PERICYCLIC-LAYER-A-FUZZ-132)."""
     from ..diels_alder import _reactant_hetero_da_disconnects_to
     reactants = tuple(step.reactants)
     products = tuple(step.products)
     if len(products) != 1 or len(reactants) != 2:
         return False
-    if not _reactant_hetero_da_disconnects_to(family, products[0], reactants):
-        return False  # Layer A: the adduct does not re-derive a guarded hetero [4+2] retro into these two reactants
-    center = _declared_center(step)
-    if center is None:
-        return False  # Layer C fail-closed: no readable centre -> the family re-derivation cannot vouch alone
-    return center == family.center  # Layer B: exactly this hetero family's pericyclic [4+2] signature
+    # ISSUE-132 content-determinism: this family's guarded hetero [4+2] retro re-derived from the molecules IS the
+    # vouch; no caller-supplied centre is read (a fuzz-verified sound sole gate + separator).
+    return _reactant_hetero_da_disconnects_to(family, products[0], reactants)
 
 
 def _aza_diels_alder(step) -> bool:
@@ -518,9 +498,9 @@ def _aza_diels_alder(step) -> bool:
 
     The SIXTH active class, and the FIRST heteroatom (non-all-carbon) pericyclic recognizer -- the ground the
     all-carbon DA families opened onto a heteroatom dienophile.  Delegates to :func:`_hetero_diels_alder` bound to
-    :data:`smartchem.diels_alder.AZA_DA`, so it inherits the DA double-certificate soundness argument (Layer A
-    re-derivation is the gate) against the aza family's own centre (which carries ``(C, N, .)`` pairs no other
-    family's centre carries -- no cross-poach).
+    :data:`smartchem.diels_alder.AZA_DA`, so it inherits the DA re-derivation soundness argument (the family's
+    guarded retro IS the gate) against the aza family's own ``(C, N, .)`` bond structure, which no other family's
+    re-derivation reconstructs -- no cross-poach, no centre read (ISSUE-132).
 
     SCOPE: only imine-dienophile -> tetrahydropyridine.  Other aza-[4+2] variants (an N-in-the-diene 1-aza-diene,
     a nitroso/azo dienophile) are genuine chemistry this recognizer does NOT vouch -- honest coverage loss
@@ -562,15 +542,16 @@ def _thia_diels_alder(step) -> bool:
 def _aza_diene_diels_alder(step) -> bool:
     """Recognizer: a 1-azadiene Diels-Alder [4+2] (an N-terminus diene + alkene -> a tetrahydropyridine isomer).
 
-    The NINTH active class, and the FIRST recognizer whose separation from a sibling rests on Layer A ALONE.  The
-    heteroatom is now in the DIENE (vertex 0), not the dienophile, so this family and :func:`_aza_diels_alder` share
-    an IDENTICAL reaction centre (the ``(C,N,.)`` formed/broken multiset is invariant to where the single N sits in
-    the ring) -- Layer B (:data:`AZA_DIENE_DA`'s ``center``) does NOT distinguish them.  Layer A does: the two
-    adducts are distinct regio-isomers (N adjacent to the ring C=C for THIS diene family, N isolated for the
-    dienophile family), so :func:`~smartchem.diels_alder._reactant_hetero_da_disconnects_to` bound to
-    :data:`AZA_DIENE_DA` re-derives ONLY the 1-azadiene adduct into these reactants and abstains on the dienophile
-    adduct (verified no cross-poach).  Delegates to :func:`_hetero_diels_alder`, so the soundness argument (Layer A
-    is the gate) is inherited unchanged."""
+    The NINTH active class, and the FIRST recognizer whose separation from a sibling rests on the RE-DERIVATION
+    alone.  The heteroatom is now in the DIENE (vertex 0), not the dienophile, so this family and
+    :func:`_aza_diels_alder` share an IDENTICAL formed/broken bond structure (the ``(C,N,.)`` multiset is invariant to
+    where the single N sits in the ring) -- a reaction-centre would NOT distinguish them (which is one reason ISSUE-132
+    stopped reading one).  The re-derivation does: the two adducts are distinct regio-isomers (N adjacent to the ring
+    C=C for THIS diene family, N isolated for the dienophile family), so
+    :func:`~smartchem.diels_alder._reactant_hetero_da_disconnects_to` bound to :data:`AZA_DIENE_DA` re-derives ONLY the
+    1-azadiene adduct into these reactants and abstains on the dienophile adduct (fuzz-verified no cross-poach --
+    PERICYCLIC-LAYER-A-FUZZ-132).  Delegates to :func:`_hetero_diels_alder`, so the re-derivation-is-the-gate soundness
+    argument is inherited unchanged."""
     from ..diels_alder import AZA_DIENE_DA
     return _hetero_diels_alder(step, AZA_DIENE_DA)
 
@@ -602,24 +583,21 @@ def _thia_diene_diels_alder(step) -> bool:
 
 
 def _sigmatropic_rearrangement(step, family) -> bool:
-    """The shared three-layer discipline for a [3,3] sigmatropic ISOMERIZATION (Cope / Claisen), the first
-    rank-FLAT (1->1) recognizers.  Same soundness argument as the DA recognizers against the lateral family's own
-    re-derivation + centre: Layer A re-derives THIS family's guarded [3,3] rewrite from the step's own single
-    molecule (:func:`~smartchem.lateral_rewrite._reactant_rewrites_to` -- conservation alone proves nothing, since
-    every isomer balances mass, so the re-derivation IS the gate), Layer B pins the exact family centre, Layer C
-    fail-closed blocks a centre-less step.  A 1->1 shape early-out keeps this a cheap no-op for the common (2->1 /
-    2->2) production step."""
+    """The shared re-derivation discipline for the rank-FLAT (1->1) lateral recognizers -- the [3,3] sigmatropic
+    isomerizations (Cope / Claisen) AND the electrocyclizations.  Same soundness argument as the DA recognizers
+    against the lateral family's own re-derivation: THIS family's guarded [3,3]/electrocyclic rewrite is re-derived
+    from the step's own single molecule (:func:`~smartchem.lateral_rewrite._reactant_rewrites_to` -- conservation
+    alone proves nothing, since every isomer balances mass, so the re-derivation IS the gate, and it is a
+    fuzz-verified sound sole gate + separator, PERICYCLIC-LAYER-A-FUZZ-132).  A 1->1 shape early-out keeps this a
+    cheap no-op for the common (2->1 / 2->2) production step."""
     from ..lateral_rewrite import _reactant_rewrites_to
     reactants = tuple(step.reactants)
     products = tuple(step.products)
     if len(reactants) != 1 or len(products) != 1:
         return False
-    if not _reactant_rewrites_to(family, products[0], reactants):
-        return False  # Layer A: the product does not re-derive a guarded [3,3] rewrite into the reactant isomer
-    center = _declared_center(step)
-    if center is None:
-        return False  # Layer C fail-closed: no readable centre -> the re-derivation cannot vouch alone
-    return center == family.center  # Layer B: exactly this sigmatropic family's [3,3] centre
+    # ISSUE-132 content-determinism: the guarded rank-flat rewrite re-derived from the molecules IS the vouch; no
+    # caller-supplied centre is read (every isomer balances mass, so the re-derivation alone is load-bearing).
+    return _reactant_rewrites_to(family, products[0], reactants)
 
 
 def _cope_rearrangement(step) -> bool:
@@ -703,12 +681,13 @@ def _electrocyclization_6pi(step) -> bool:
 #: N-alkylation by any sp3 alcohol (subsuming the methyl sub-case; each a conservation-locked class, NOT a
 #: bounded-radius patch). The Diels-Alder [4+2] recognizer promotes the opt-in rule-calculus DA family into the
 #: oracle -- the first pericyclic, non-condensation class, locked by the family's own re-derivation certificate; the
-#: alkyne-dienophile sibling ADDS a fifth entry (its own distinct centre + re-derivation), the first pericyclic class
+#: alkyne-dienophile sibling ADDS a fifth entry (its own distinct re-derivation), the first pericyclic class
 #: that keeps a second unsaturation in the adduct (1,4-cyclohexadiene, not cyclohexene).  The aza- and oxa-DA
 #: recognizers ADD a SIXTH and SEVENTH entry -- the first HETEROATOM pericyclic classes (diene + imine ->
-#: tetrahydropyridine; diene + carbonyl -> dihydropyran), each with its own heteroatom-bearing centre and
-#: re-derivation.  All FOUR DA classes are locked apart by their exact-equality centre check, so none can poach
-#: another's steps.
+#: tetrahydropyridine; diene + carbonyl -> dihydropyran), each with its own heteroatom-bearing re-derivation.  All
+#: 14 pericyclic classes are locked apart by their per-family guarded RE-DERIVATION alone (ISSUE-132: no centre is
+#: read; the 14x14 identity matrix in PERICYCLIC-LAYER-A-FUZZ-132 pins no cross-poach), so none can poach another's
+#: steps.
 _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
     ("acyl condensation (esterification/amidation)", _acyl_condensation),
     ("etherification (dehydrative, R-OH + R'-OH -> ether + water)", _etherification),

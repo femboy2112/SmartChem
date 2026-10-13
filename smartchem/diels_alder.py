@@ -167,6 +167,58 @@ def whole_fragment_neutral(molecule: Molecule) -> bool:
     return all((nv := _NEUTRAL_VALENCE.get(molecule.atoms[v])) is None or degree[v] <= nv
                for v in range(len(molecule.atoms)))
 
+
+#: Allowed CLOSED-SHELL NEUTRAL valences per element (bond-order-sum).  Fixed-valence organic atoms (H,C,O) have a
+#: single value, so a deviation is a radical/ion; the common multivalent heteroatoms carry their full neutral set
+#: (sulfoxide/sulfone S 4/6, nitro/azide N 5, phosphate P 5), and the halogens are monovalent -- so a genuine
+#: sulfonamide / halogenated / nitro substrate is NOT false-rejected (that would regress claimed coverage), while a
+#: radical/ion/ylide centre (an off-valence atom) still is.  (:data:`_NEUTRAL_VALENCE` stays the heavy-atom-only,
+#: single-value matched-centre table guard 2c uses.)
+_CLOSED_SHELL_VALENCES: dict[str, frozenset] = {
+    "H": frozenset({1}), "C": frozenset({4}), "O": frozenset({2}),
+    "N": frozenset({3, 5}), "S": frozenset({2, 4, 6}), "P": frozenset({3, 5}),
+    "F": frozenset({1}), "Cl": frozenset({1}), "Br": frozenset({1}), "I": frozenset({1}),
+}
+
+
+def is_closed_shell_neutral(molecule: Molecule) -> bool:
+    """``True`` iff ``molecule`` is a CLOSED-SHELL NEUTRAL species.  A pericyclic (or condensation) reactant/product
+    must be one -- a radical (an under-coordinated carbon), a carbanion/carbocation or a charge-separated net-neutral
+    ylide is NOT, and admitting one as a reaction partner is a false-vouch (evil-morty, #132 hardening): guard 2c is
+    one-sided (``degree > nv`` only) so it drops over-coordination but NOT the under-coordinated radical/ion, and the
+    net ``charge == 0`` check misses a net-neutral charge-separated ring.
+
+    The model carries NO per-atom formal charge (only net :attr:`Molecule.charge`), so a formal charge or an unpaired
+    electron shows up purely as a valence DEVIATION from an allowed closed-shell valence
+    (:data:`_CLOSED_SHELL_VALENCES`).  The check is REPRESENTATION-AWARE because H may be explicit or implicit:
+    * EXPLICIT-H (``parse_smiles`` -- the untrusted caller surface evil-morty attacked): every atom's bond-order-sum
+      must be one of its ALLOWED valences.  A radical / ion / ylide carbon reads bond-sum 3 (not in {4}) and is
+      rejected; a genuine closed-shell molecule -- including a sulfonamide S (6), a nitroalkene N (5) or a
+      halogenated substrate -- reads an allowed valence everywhere.
+    * IMPLICIT-H (a heavy-atom graph -- the provider/internal surface): implicit H fill each heavy atom UP TO its
+      valence, so a radical/ion is not representable; only OVER-valence is a defect, bounded by ``<= max(allowed)``.
+    Net charge must be 0 either way.  An atom outside the table (a metal, an exotic element) FAILS CLOSED -- honest
+    coverage loss on an out-of-scope substrate, never a false-vouch."""
+    if type(molecule) is not Molecule or getattr(molecule, "charge", 0) != 0:
+        return False
+    atoms = molecule.atoms
+    degree = [0] * len(atoms)
+    for b in molecule.bonds:
+        degree[b.i] += b.order
+        degree[b.j] += b.order
+    explicit_h = "H" in atoms   # parse_smiles makes H explicit; a heavy-atom graph leaves them implicit
+    for v, label in enumerate(atoms):
+        allowed = _CLOSED_SHELL_VALENCES.get(label)
+        if allowed is None:
+            return False                       # out-of-scope element -> fail closed (coverage loss, never a vouch)
+        if explicit_h:
+            if degree[v] not in allowed:
+                return False                   # explicit-H: an off-valence atom is a radical/ion/ylide
+        elif degree[v] > max(allowed):
+            return False                       # implicit-H: only over-valence is a defect (H fill the rest)
+    return True
+
+
 def _synthesis_center(rule: BondRule) -> ReactionCenter:
     """The coordinate-free reaction centre of ``rule`` in the SYNTHESIS (left->right) direction, DERIVED from the
     rule's own edge delta so it TRACKS the rule rather than a hand-typed constant that could silently drift when
@@ -490,6 +542,8 @@ def _reactant_da_disconnects_to(reactant: Molecule, products: tuple[Molecule, ..
         graph = _joined((reactant,))
     except (RuleError, ScissionError, TypeError, ValueError):
         return False
+    if not (is_closed_shell_neutral(reactant) and all(is_closed_shell_neutral(p) for p in products)):
+        return False  # #132 hardening: a radical / charged / ylide partner is not a pericyclic reactant (fail-closed)
     want = Config.of(*products)
     audits, _ = retro_da_disconnections(graph)
     return any(_config(a.witness.target) == want for a in audits)
@@ -650,6 +704,8 @@ def _reactant_alkyne_da_disconnects_to(reactant: Molecule, products: tuple[Molec
         graph = _joined((reactant,))
     except (RuleError, ScissionError, TypeError, ValueError):
         return False
+    if not (is_closed_shell_neutral(reactant) and all(is_closed_shell_neutral(p) for p in products)):
+        return False  # #132 hardening: a radical / charged / ylide partner is not a pericyclic reactant (fail-closed)
     want = Config.of(*products)
     audits, _ = retro_alkyne_da_disconnections(graph)
     return any(_config(a.witness.target) == want for a in audits)
@@ -900,6 +956,8 @@ def _reactant_hetero_da_disconnects_to(family: _HeteroDAFamily, reactant: Molecu
         graph = _joined((reactant,))
     except (RuleError, ScissionError, TypeError, ValueError):
         return False
+    if not (is_closed_shell_neutral(reactant) and all(is_closed_shell_neutral(p) for p in products)):
+        return False  # #132 hardening: a radical / charged / ylide partner is not a pericyclic reactant (fail-closed)
     want = Config.of(*products)
     audits, _ = hetero_da_disconnections(family, graph)
     return any(_config(a.witness.target) == want for a in audits)

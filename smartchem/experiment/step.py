@@ -91,22 +91,18 @@ class ExperimentStep(Digestible):
       is a NON-identity annotation: declared ``compare=False`` so it does NOT enter the content digest
       (:func:`~smartchem.contracts.canonical_digest` skips non-comparing fields), so two steps that differ
       only in how the generator discovered them share one digest and one replay identity.  It is ADVISORY
-      diagnostic metadata -- the graph/scheme layer and the replay round-trip carry it for display.  ISSUE-126
-      Phase II, the precise guarantee (a stored field is forgeable: ``dataclasses.replace``, a fake
-      :meth:`from_transform` transform, and the bare constructor all route through the public constructor):
+      diagnostic metadata -- the graph/scheme layer and the replay round-trip carry it for display.  No recognizer
+      reads it (ISSUE-126 for the condensations, ISSUE-132 for the pericyclics; a stored field is forgeable:
+      ``dataclasses.replace``, a fake :meth:`from_transform` transform, and the bare constructor all route through
+      the public constructor), the precise guarantee:
 
-      * **No caller-supplied annotation can MINT a VOUCH, for ANY of the 17 recognizers.**  Soundness
-        (no-false-vouch) is determined by the molecules alone -- the condensation recognizers RE-DERIVE an
-        elementary single-cut condensation from the molecules, and the pericyclic recognizers gate on their own
-        Layer-A re-derivation (``_reactant_*_disconnects_to``) before the centre is read.  A forged centre on a
-        non-matching step is refused by the molecular re-derivation first, so it can only ever DEMOTE, never
-        upgrade.  This is the invariant that replaces the retired forgeable ``center_trusted`` bit.
-      * **The condensation recognizers (acyl / ether / N-alkylation) -- the #126 forge surface -- are fully
-        CONTENT-DETERMINISTIC:** their verdict is a pure function of the ``reactants``/``products`` multisets and
-        ignores this field entirely.
-      * The pericyclic recognizers still READ this declared centre as a (non-load-bearing) Layer-B/-C
-        confirmation, so a genuine pericyclic step built WITHOUT a readable centre is demoted -- a fail-closed,
-        coverage-only residual (never a false-vouch), tracked for a follow-up that makes them rely on Layer A alone.
+      * **Recognition is a PURE FUNCTION of the conserved ``reactants``/``products`` multisets, for ALL 17
+        recognizers.**  No caller-supplied annotation can MINT a vouch nor, now, block one: the condensation
+        recognizers (acyl / ether / N-alkylation) RE-DERIVE an elementary single-cut condensation from the molecules;
+        the 14 pericyclic recognizers RE-DERIVE their family's guarded retro (``_reactant_*_disconnects_to`` /
+        ``_reactant_rewrites_to``).  A forged centre on a non-matching step is refused by the molecular re-derivation,
+        and a genuine step built WITHOUT a centre is recognized.  This single content-determinism invariant replaces
+        both the retired forgeable ``center_trusted`` bit and the former pericyclic Layer-B/-C centre read.
     """
 
     schema_version: str

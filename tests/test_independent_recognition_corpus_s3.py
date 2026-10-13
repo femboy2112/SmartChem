@@ -15,7 +15,7 @@ def test_no_false_vouch_full_recall_and_no_drift():
     m = bench.measure()
     assert m["false_vouch"] == 0, (
         f"CARDINAL: a fiction/mutation was vouched -- {[r[0].name for r in m['rows'] if r[4] == bench.FALSE_VOUCH]}")
-    assert m["recall_hits"] == m["recall_total"] == 9, f"recall regressed: {m['recall_hits']}/{m['recall_total']}"
+    assert m["recall_hits"] == m["recall_total"] == 10, f"recall regressed: {m['recall_hits']}/{m['recall_total']}"
     assert not m["mismatches"], f"coverage drifted from the recorded labels: {m['mismatches']}"
     assert bench.validate() is True
 
@@ -31,12 +31,12 @@ def test_documented_coverage_gaps_are_the_expected_four():
     assert len(gaps) == 4, f"coverage-gap set changed: {sorted(gaps)}"
 
 
-def test_pericyclic_centreless_residual_is_132():
-    # The #132 residual, surfaced as data: a genuine Diels-Alder with a carried centre VOUCHES, but the SAME
-    # reaction hand-built without a centre abstains (pericyclic Layer-C fail-closes on an absent centre).  When
-    # #132 makes the pericyclic families content-deterministic (Layer A alone), this residual must disappear.
+def test_pericyclic_centreless_residual_is_closed_by_132():
+    # #132 CLOSED the residual: the pericyclic recognizers now re-derive via Layer A alone (no centre read), so a
+    # genuine Diels-Alder hand-built WITHOUT a centre is recognized exactly like the centre-carrying one.  The
+    # residual catalogue is therefore empty (if a future change reopens it, this assertion goes red deliberately).
     residuals = bench.measure()["pericyclic_residuals"]
-    assert len(residuals) == 1 and "centre-less" in residuals[0], residuals
+    assert residuals == [], f"a pericyclic centre-less residual reappeared: {residuals}"
 
 
 def test_isomer_mutations_flip_recognition_off():

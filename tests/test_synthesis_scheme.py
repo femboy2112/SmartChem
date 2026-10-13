@@ -26,11 +26,12 @@ from smartchem.graph_projection import (
     render_scheme_html,
     _bond_change_text,
     _conditions_summary,
-    _reaction_family,
     _reaction_family_for_step,
 )
 
-_DA_NAME = "Diels–Alder [4+2] cycloaddition"
+# the oracle's re-derived carbocyclic Diels-Alder class string contains this concise substring; the graph
+# shows the oracle's name verbatim, so every family assertion is a substring check against that single source.
+_DA_NAME = "Diels-Alder [4+2] cycloaddition"
 
 
 def _da_route():
@@ -57,15 +58,15 @@ def test_cyclohexene_retro_surfaces_butadiene_and_ethene_as_a_named_diels_alder(
     # AND-dependency: ONE reaction consumes BOTH precursors (not two alternative OR-routes).
     assert sorted(repr_formula(m) for m in step.precursors) == ["C2H4", "C4H6"]
     assert len(step.precursors) == 2
-    # The family is the carbocyclic Diels-Alder, recovered by exact reaction-centre match.
-    assert _reaction_family(step.reaction_center) == _DA_NAME
+    # The family is the carbocyclic Diels-Alder, RE-DERIVED by the oracle from the step's molecules.
+    assert _DA_NAME in (_reaction_family_for_step(step) or "")
     # The projection keeps it convergent: the single reaction node has two distinct consumes arcs.
     graph = project_synthesis(route, search_result=search)
     reaction = next(n for n in graph.nodes if n.kind == "reaction")
     consumes = [a for a in graph.arcs if a.target == reaction.id and a.role == "consumes"]
     assert len(consumes) == 2 and len({a.source for a in consumes}) == 2
     assert graph.search_status == "COMPLETE_WITHIN_BOUNDS"
-    assert dict(reaction.attributes)["reaction_family"] == _DA_NAME
+    assert _DA_NAME in dict(reaction.attributes)["reaction_family"]
 
 
 def repr_formula(mol):
@@ -75,21 +76,34 @@ def repr_formula(mol):
 
 # --- Family naming is sound-or-silent, never fabricated --------------------------------------
 
-def test_reaction_family_is_named_only_on_an_exact_centre_match():
+def test_family_naming_is_rederived_by_the_oracle_never_centre_equality():
+    # ISSUE-128: a family is named by the oracle's INDEPENDENT re-derivation from the step's molecules,
+    # never from reaction-centre equality.  The adversarial fixture: a balanced NON-reaction (H + H -> H2)
+    # carrying a verbatim copy of the carbocyclic Diels-Alder centre.  The centre matches exactly, yet the
+    # oracle's Layer-A retro-derivation abstains, so the graph must NOT name it -- it shows a bond-change.
     from smartchem.reaction_center import ReactionCenter
+    from smartchem.diels_alder import _DA_CENTER
+    from smartchem.smiles import parse_smiles
+    from smartchem.experiment.step import ExperimentStep
+
+    # the genuine provider-generated DA IS named (positive control).
     route, _ = _da_route()
-    da_center = route.steps[0].reaction_center
-    assert _reaction_family(da_center) == _DA_NAME
-    # No centre -> no family.
-    assert _reaction_family(None) is None
-    # A reaction centre that no family declares as its own must NOT be given a Diels-Alder (or any)
-    # family name -- the sound-or-silent rule. A bond-change description is still available for it.
+    genuine = route.steps[0]
+    assert genuine.reaction_center == _DA_CENTER
+    assert _DA_NAME in (_reaction_family_for_step(genuine) or "")
+
+    # the H + H -> H2 step wearing a BORROWED DA centre is NOT named (the authority-escalation fixture).
+    h2, atom = parse_smiles("[H][H]"), parse_smiles("[H]")
+    borrowed = ExperimentStep.assembling(h2, (atom, atom), (h2,), reaction_center=_DA_CENTER)
+    assert borrowed.reaction_center == _DA_CENTER        # the centre is an exact copy ...
+    assert _reaction_family_for_step(borrowed) is None   # ... but the oracle re-derivation abstains: no name.
+    assert _bond_change_text(borrowed.reaction_center)   # a neutral bond-change description is shown instead.
+
+    # a foreign centre on a step the oracle cannot vouch is likewise unnamed, with a bond-change available.
     foreign = ReactionCenter.of([("C", "O", 1)], [("C", "O", 2)], 1)
-    assert _reaction_family(foreign) is None
+    hand = ExperimentStep.assembling(h2, (atom, atom), (h2,), reaction_center=foreign)
+    assert _reaction_family_for_step(hand) is None
     assert _bond_change_text(foreign)
-    # And a centre one bond off from the real DA centre is NOT laundered into "Diels-Alder".
-    tampered = ReactionCenter.of(list(da_center.formed)[:-1], list(da_center.broken), 1)
-    assert _reaction_family(tampered) is None
 
 
 def test_bond_change_text_is_a_neutral_sound_description():
@@ -108,6 +122,47 @@ def test_undeclared_conditions_report_unknown_never_a_default():
 
 # --- The scheme render: inherits attestation, degrades honestly, stays injection-safe ----------
 
+def _scheme_display_class(html, status):
+    """Replicate the generated script's banner predicate in Python, driven by its OWN emitted COMPLETE set
+    (ISSUE-129): extract ``const COMPLETE = {...}`` from the HTML and classify ``status`` as the page would."""
+    import re
+    m = re.search(r"const COMPLETE = (\{[^}]*\});", html)
+    assert m, "the scheme's COMPLETE predicate object was not found in the generated script"
+    keys = set(re.findall(r"(\w+):1", m.group(1)))
+    complete = status in keys
+    unattested = status == "UNATTESTED"
+    return "ok" if complete else ("unknown" if unattested else "warn")
+
+
+def test_scheme_marks_unattested_completeness_as_unknown_not_complete():
+    # ISSUE-129: an UNATTESTED route (rendered with no search receipt) must NOT be shown complete/green, and
+    # must NOT be shown as a FAILED/partial search either -- it is a distinct 'completeness unknown' state.
+    # This tests the generated DISPLAY PREDICATE over its own emitted constants, not mere string presence.
+    route, _ = _da_route()
+    html = render_scheme_html(route)                         # no search_result -> UNATTESTED
+    data = _parse_island(html)
+    assert data["search_status"] == "UNATTESTED"
+    assert data["receipt_digest"] is None
+    # the predicate classifies the three states distinctly, from the script's OWN COMPLETE object:
+    assert _scheme_display_class(html, "UNATTESTED") == "unknown"
+    assert _scheme_display_class(html, "COMPLETE_WITHIN_BOUNDS") == "ok"
+    assert _scheme_display_class(html, "PARTIAL_DEPTH_LIMIT") == "warn"
+    # and the UNATTESTED disclosure is present and does not allege a failed search
+    assert "completeness UNKNOWN" in html
+    assert "not a failed search" in html
+
+
+def test_scheme_marks_a_complete_receipt_as_complete_distinct_from_unknown():
+    # the positive control: a route bound to a real COMPLETE_WITHIN_BOUNDS receipt is 'ok', distinct from the
+    # UNATTESTED 'unknown' state -- complete, unknown and partial never collapse onto one class.
+    route, search = _da_route()
+    html = render_scheme_html(route, search_result=search)
+    data = _parse_island(html)
+    assert data["search_status"] == "COMPLETE_WITHIN_BOUNDS"
+    assert data["receipt_digest"]
+    assert _scheme_display_class(html, data["search_status"]) == "ok"
+
+
 def test_scheme_shows_named_step_and_inherits_projection_attestation():
     route, search = _da_route()
     html = render_scheme_html(route, search_result=search, route_label="route 0 of 1")
@@ -119,7 +174,7 @@ def test_scheme_shows_named_step_and_inherits_projection_attestation():
     # the drawn/degraded data island must be valid JSON and must not break out of the script element
     assert "</script>" not in _data_island_raw(html)
     payload = _parse_island(html)
-    assert payload["steps"][0]["family"] == _DA_NAME
+    assert _DA_NAME in payload["steps"][0]["family"]
     assert sorted(p["formula"] for p in payload["steps"][0]["precursors"]) == ["C2H4", "C4H6"]
     # no cell ever carries a scripted SVG
     assert all("<script" not in (c.get("svg") or "").lower()
@@ -147,8 +202,7 @@ def test_scheme_names_an_oracle_vouched_condensation_not_only_diels_alder():
     # which the DA-only matcher could not surface.
     route, search = _paracetamol_route()
     step = route.steps[0]
-    assert _reaction_family(step.reaction_center) is None            # not a DA centre
-    name = _reaction_family_for_step(step)
+    name = _reaction_family_for_step(step)                           # oracle re-derivation, no DA centre here
     assert name is not None and "acyl condensation" in name          # oracle-vouched family
     html = render_scheme_html(route, search_result=search)
     assert "acyl condensation" in html
@@ -161,8 +215,8 @@ def test_unvouched_step_stays_unnamed_rather_than_guessing():
     from smartchem.reaction_center import ReactionCenter
     from types import SimpleNamespace
     fake = SimpleNamespace(reaction_center=ReactionCenter.of([("C", "O", 1)], [("C", "O", 2)], 1))
-    # recognize_reaction_type would reject this synthetic step; the matcher already returns None.
-    assert _reaction_family(fake.reaction_center) is None
+    # the oracle cannot vouch this synthetic step (it has no readable molecules), so the step is unnamed.
+    assert _reaction_family_for_step(fake) is None
 
 
 def test_scheme_degrades_to_formula_boxes_without_depiction(monkeypatch):
@@ -177,7 +231,7 @@ def test_scheme_degrades_to_formula_boxes_without_depiction(monkeypatch):
     assert all(c["svg"] is None
                for step in payload["steps"]
                for c in step["precursors"] + [step["target"]])
-    assert payload["steps"][0]["family"] == _DA_NAME     # chemistry still legible without drawings
+    assert _DA_NAME in payload["steps"][0]["family"]     # chemistry still legible without drawings
     assert "C6H10" in html and "C4H6" in html
 
 

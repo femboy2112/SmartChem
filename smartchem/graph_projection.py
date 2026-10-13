@@ -241,55 +241,6 @@ def _conditions_summary(envelope) -> str:
     return ", ".join(parts) or "declared"
 
 
-_FAMILY_CENTERS: dict | None = None
-
-
-def _witness_label(witness: str, class_label: str) -> str:
-    """A human family name from a provider's witness kind (sibling diene/dienophile isomers of one
-    hetero [4+2] share a name, since their element-pair reaction centre is identical)."""
-    pretty = {
-        "DIELS_ALDER": "Diels–Alder [4+2] cycloaddition",
-        "DIELS_ALDER_ALKYNE": "Diels–Alder [4+2] (alkyne dienophile)",
-        "DIELS_ALDER_AZA": "aza-Diels–Alder [4+2]",
-        "DIELS_ALDER_AZA_DIENE": "aza-Diels–Alder [4+2]",
-        "DIELS_ALDER_OXA": "oxa-Diels–Alder [4+2]",
-        "DIELS_ALDER_OXA_DIENE": "oxa-Diels–Alder [4+2]",
-        "DIELS_ALDER_THIA": "thia-Diels–Alder [4+2]",
-        "DIELS_ALDER_THIA_DIENE": "thia-Diels–Alder [4+2]",
-        "CAPPED_SCISSION": "bond scission (capped)",
-    }
-    return pretty.get(witness) or (class_label or witness).replace("_", " ").replace("-", " ")
-
-
-def _family_centers() -> dict:
-    """A ``(formed, broken) -> family name`` table built from each family's OWN canonical reaction
-    centre (ground truth), so a name is emitted ONLY on an exact centre match -- never guessed from a
-    formula.  Two families that share one element-pair centre (an aza [4+2] and its aza-diene isomer)
-    collapse to the single label they agree on, so no step is ever mislabelled."""
-    global _FAMILY_CENTERS
-    if _FAMILY_CENTERS is None:
-        table: dict[tuple, str] = {}
-        try:  # the one carbocyclic Diels-Alder centre, from the DA module's own derivation
-            from .diels_alder import _DA_CENTER
-            table[(_DA_CENTER.formed, _DA_CENTER.broken)] = _witness_label("DIELS_ALDER", "")
-        except Exception:
-            pass
-        try:  # every hetero [4+2] family that exposes its canonical centre
-            from .algebra_profiles import resolve_algebra_profile
-            for provider in resolve_algebra_profile("certified-route-v07").providers:
-                family = getattr(provider, "family", None)
-                center = getattr(family, "center", None) if family is not None else None
-                if center is None:
-                    continue
-                label = _witness_label(getattr(provider, "witness_kind", ""),
-                                       getattr(family, "class_label", ""))
-                table.setdefault((center.formed, center.broken), label)
-        except Exception:
-            pass
-        _FAMILY_CENTERS = table
-    return _FAMILY_CENTERS
-
-
 def _bond_change_text(center) -> str:
     """A neutral, sound description of a reaction centre: which bonds form and which break."""
     if center is None:
@@ -305,28 +256,21 @@ def _bond_change_text(center) -> str:
     return f"forms {fmt(center.formed)}; breaks {fmt(center.broken)}"
 
 
-def _reaction_family(center) -> str | None:
-    """The named reaction family for a reaction centre, or ``None`` when no family's own centre matches
-    exactly (the caller then shows the neutral bond-change description instead)."""
-    if center is None:
-        return None
-    return _family_centers().get((center.formed, center.broken))
-
-
 def _reaction_family_for_step(step) -> str | None:
-    """The named family of a whole STEP: an exact reaction-centre match first (the Diels-Alder zoo,
-    whose generating providers carry a canonical centre), else the reaction-type oracle's
-    CONSERVATION-LOCKED vouch (acyl condensation = esterification/amidation, etherification,
-    N-alkylation, [3,3]-sigmatropic), else ``None``.
+    """The named reaction family of a whole STEP, from the reaction-type oracle's INDEPENDENT
+    re-derivation -- NEVER from reaction-centre equality alone (ISSUE-128).
 
-    The oracle only returns a class it can PROVE a step is a genuine instance of, so an unvouched step
-    stays unnamed and the caller shows its bond-change instead -- a family name is never invented, and
-    this is strictly MORE sound than the centre-match alone (it surfaces the names the compiler can
-    already defend but the DA-only matcher could not).
+    The oracle names a class ONLY after re-deriving it from the step's own molecules: for the pericyclic
+    families (the Diels-Alder zoo, [3,3]-sigmatropics, electrocyclizations) a guarded retro-disconnection
+    of the adduct back into exactly these reactants (Layer A); for the dehydrative condensations (acyl,
+    etherification, N-alkylation) a conservation-locked whole-molecule census; and -- post ISSUE-126 --
+    only when the reaction centre is TRUSTED engine evidence.  The centre is therefore necessary but NOT
+    sufficient: a balanced step that merely CARRIES a copy of a family's canonical centre (e.g. a synthetic
+    H + H -> H2 wearing a borrowed Diels-Alder centre) is NOT named, because the oracle's Layer-A
+    re-derivation abstains.  The previous centre-equality table named such a step from the centre alone;
+    that path is removed, so the graph now agrees with the oracle on every step and never names chemistry
+    it cannot defend.  An unnamed step shows its neutral :func:`_bond_change_text` instead.
     """
-    family = _reaction_family(getattr(step, "reaction_center", None))
-    if family is not None:
-        return family
     try:
         from .experiment.reaction_type_oracle import recognize_reaction_type
         return recognize_reaction_type(step) or None
@@ -1073,14 +1017,14 @@ _SCHEME_TEMPLATE = r"""<!doctype html>
 <style>
   :root { --bg:#f6f7f9; --fg:#14151a; --panel:#ffffff; --line:#c9ced8; --muted:#5a6270;
           --accent:#1d5fbf; --chip:#eef1f6; --species:#ffffff; --warn:#8a1f1f; --ok:#1f6a3a;
-          --arrow:#39404d; }
+          --unknown:#8a5a1f; --arrow:#39404d; }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) { --bg:#13141a; --fg:#e8eaf0; --panel:#1c1e25; --line:#3a4150;
           --muted:#9aa2b1; --accent:#7fb0ff; --chip:#262a33; --species:#1a1c22; --warn:#ff8a8a;
-          --ok:#86e0a6; --arrow:#aab2c0; } }
+          --ok:#86e0a6; --unknown:#e0c086; --arrow:#aab2c0; } }
   :root[data-theme="dark"] { --bg:#13141a; --fg:#e8eaf0; --panel:#1c1e25; --line:#3a4150;
           --muted:#9aa2b1; --accent:#7fb0ff; --chip:#262a33; --species:#1a1c22; --warn:#ff8a8a;
-          --ok:#86e0a6; --arrow:#aab2c0; }
+          --ok:#86e0a6; --unknown:#e0c086; --arrow:#aab2c0; }
   * { box-sizing:border-box; }
   body { margin:0; font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
          background:var(--bg); color:var(--fg); }
@@ -1090,6 +1034,7 @@ _SCHEME_TEMPLATE = r"""<!doctype html>
   #banner { font-size:12px; color:var(--muted); }
   #banner b { color:var(--fg); } #banner .warn { color:var(--warn); font-weight:600; }
   #banner .ok { color:var(--ok); font-weight:600; }
+  #banner .unknown { color:var(--unknown); font-weight:600; }
   #fams { margin-top:6px; font-size:12px; color:var(--muted); }
   #fams span { display:inline-block; background:var(--chip); border:1px solid var(--line);
          border-radius:11px; padding:1px 9px; margin:2px 4px 0 0; color:var(--fg); }
@@ -1144,7 +1089,11 @@ _SCHEME_TEMPLATE = r"""<!doctype html>
 <script>
 "use strict";
 const D = JSON.parse(document.getElementById("data").textContent);
-const COMPLETE = {COMPLETE:1, COMPLETE_WITHIN_BOUNDS:1, UNATTESTED:1};
+// ISSUE-129: three DISTINCT completeness states.  UNATTESTED is NOT complete -- a route with no search
+// receipt cannot certify that every bounded alternative was searched -- but it is also not a FAILED/partial
+// search; it is simply unknown.  COMPLETE/COMPLETE_WITHIN_BOUNDS -> ok (green); a partial/limited receipt
+// status -> warn (incomplete); UNATTESTED -> unknown (amber, completeness not established).
+const COMPLETE = {COMPLETE:1, COMPLETE_WITHIN_BOUNDS:1};
 function el(tag, cls, text){ const e=document.createElement(tag); if(cls) e.className=cls;
   if(text!=null) e.textContent=text; return e; }
 
@@ -1155,10 +1104,13 @@ h1.appendChild(el("small", null, D.target_formula + " · " + D.n_steps + " step"
   + (D.route_label ? " · " + D.route_label : "")));
 
 const complete = !!COMPLETE[D.search_status];
+const unattested = (D.search_status === "UNATTESTED");
 const b = document.getElementById("banner");
 b.innerHTML = "search: ";
-const st = el("b", complete?"ok":"warn", D.search_status); b.appendChild(st);
-if(!complete) b.appendChild(el("span","warn"," — INCOMPLETE: alternative routes/precursors may be missing"));
+const st = el("b", complete ? "ok" : (unattested ? "unknown" : "warn"), D.search_status); b.appendChild(st);
+if(unattested) b.appendChild(el("span","unknown",
+  " — completeness UNKNOWN: this route was not bound to a search receipt, so other routes/precursors may exist (no search was attested, not a failed search)"));
+else if(!complete) b.appendChild(el("span","warn"," — INCOMPLETE: alternative routes/precursors may be missing"));
 b.appendChild(document.createTextNode(
   "  |  source " + D.source_digest.slice(0,12) +
   "  |  receipt " + (D.receipt_digest ? D.receipt_digest.slice(0,12) : "UNATTESTED") +

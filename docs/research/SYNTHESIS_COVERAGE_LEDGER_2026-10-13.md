@@ -224,13 +224,49 @@ B/C are dropped; the recognizers now rely on the re-derivation ALONE.
 - *No wire change:* the contract-freeze / xhigh wire suite is green (`reaction_center` is `compare=False`, never
   serialized; the default compile path emits no pericyclic step, so default semantics are unchanged).
 
+## Round IV — §5 first new-chemistry win (#110) + §6 moonshot (lateral reachability)
+
+**§5(A) — #110 ACTIVATED ACYL TRANSFER recognized** (`experiments/activated_acyl_transfer_110.py` + test). The 18th
+attested class: an anhydride / acyl halide acylating an O/N/S nucleophile (coproduct a carboxylic acid / H-X, NOT
+water) — the free-acid condensation's pre-activated sibling. Recon established this is GENERATED-BUT-DEMOTED: the
+capped-scission search already emits `Ac2O + 4-aminophenol -> paracetamol + AcOH`, `AcCl + MeNH2 -> NMA + HCl`, etc.
+under a declared leaving-group helper + donor stock, but the free-acid census demotes them for lacking a water
+coproduct. The new recognizer (`_activated_acyl_transfer`) re-derives content-deterministically by a single-cut
+scission capped with the LEAVING-GROUP acid (not water) reconstructing exactly {donor, Nu-H} — the same discipline
+as the condensation recognizers, generalised past water. Conservation-locked; closed-shell guard (#132) applies.
+- *Measured:* recognizer matrix 11/11, 6/6 activated positives (incl. the PARACETAMOL litmus route) recognized, 0
+  false-vouch, no poach (free-acid esterification stays "acyl condensation"; Friedel-Crafts C-acylation ABSTAINS —
+  out of scope, deferred to #107). Reachability (actual search): the genuine 1-step `ethanol + Ac2O -> ethyl acetate
+  + AcOH` route is now VOUCHED (empty blockers), while 6 isomer/glue C4H6O3 routes stay DEMOTED — the win recognizes
+  the genuine route WITHOUT lifting a fiction (content-determinism distinguishes the ethyl-acetate isomer-fictions).
+- *Boundaries:* O/N/S only (C-acylation wants #107 + arene guards); small targets via a large donor (acetamide /
+  methyl acetate via Ac2O) are blocked UPSTREAM by the #104 W1 atom-count wall (donor larger than target), so the
+  search never emits them — a generation boundary, not a recognizer gap. evil-morty adversarial review (independent).
+
+**§6 — moonshot: ONE lateral family reachable via opt-in state-aware search, now CENTRE-FREE** (`experiments/
+lateral_reachability_s6.py` + test). `smartchem.lateral_search.lateral_route_to` already reconstructs an opt-in,
+bounded, state-aware lateral route (BFS over isomer states, terminating on its own visited-set + budgets, outside
+the W1 descent). Demonstrated end-to-end for Cope, Claisen and 6-pi electrocyclic: each route is oracle-vouched
+step-by-step BOTH with a carried centre and — the #132 payoff — CENTRE-LESS (a hand-assembled route with no
+`reaction_center`, which the retired Layer-C gate demoted). **No hard blocking theorem (recorded, NOT acted on):**
+an independent recon refuted the stale "fusing a rank-flat provider into `search_routes` breaks termination" claim —
+`search_routes` terminates on `max_depth` (not W1), and #124 refuses a non-stock ancestor (blocking phantom
+self-supply, naming "a future rank-flat provider" as the intended customer), so a bounded lateral provider CAN ride
+the route lane (a working adapter was prototyped). The real cost is a factorial simple-path blow-up a lexicographic
+(rank, lateral-budget) measure would cap. That FUSION alters a default-adjacent shared path and needs its own
+soundness + cost regression gate — the NEXT falsifiable step, deferred.
+
 ## Coverage impact so far
 
-**Families newly generable / recognizable / searchable: none yet** — Phase 1 is truthfulness, not coverage. The
-value is a hardened floor: no forged-centre false-VOUCH (#126), no centre-equality mislabel (#128), no green
-UNATTESTED (#129), no phantom self-supply when rank-flat providers land (#124). The coverage expansion lives in
-Phase 2 (the Tier-0 infra walls #104–#109/#125 and the recognizer/grammar tiers #110–#123), characterised in
-`REACTION_ALGEBRA_COVERAGE_AUDIT_2026-10-12.md`.
+**Floor hardened first (Rounds I–III):** no forged-centre false-VOUCH (#126), no centre-equality mislabel (#128), no
+green UNATTESTED (#129), no phantom self-supply when rank-flat providers land (#124), ALL 17→18 recognizers
+content-deterministic + closed-shell-sound (#132). **Coverage now moving (Round IV):**
+- **Newly RECOGNIZABLE:** activated acyl transfer (#110) — the 18th class — flips the already-generated anhydride/
+  acyl-halide O/N/S acylation routes (incl. the paracetamol-via-Ac2O litmus) from demoted-as-fiction to VOUCHED.
+- **Newly SEARCHABLE (opt-in, demonstrated):** the lateral [3,3]/electrocyclic families via
+  `lateral_search.lateral_route_to` (Cope/Claisen/6-pi), oracle-vouched end-to-end and now centre-free (#132).
+The remaining coverage expansion lives in Phase 2 (the Tier-0 infra walls #104–#109/#125 and the recognizer/grammar
+tiers #111–#123), characterised in `REACTION_ALGEBRA_COVERAGE_AUDIT_2026-10-12.md`.
 
 ## Remaining (by directive priority)
 

@@ -163,6 +163,27 @@ is not an authentication boundary. This round replaces self-asserted trust with 
   re-derivation; recognizer + tamper tests and their committed probes (n-alkylation, n-methylation, tamper-hardening)
   were updated to content-determinism and their FROZEN_HASHes re-frozen with documented reasons.
 
+### #127 (§4) — raw result-cap starvation: QUANTIFIED, no meaningful failure observed · `budget-truncated` (measured null) · MEASURED
+
+- **Instrument:** `experiments/candidate_starvation_127.py` (CANDIDATE-STARVATION-127), pinned by
+  `tests/test_candidate_starvation_127.py`. Sweeps `max_routes` 1→1000 on 5 benign targets that return BOTH a
+  recognized route and generated fictions under the production poor-man pool, measuring RECOGNIZED-RECALL
+  (recognized-in-returned / recognized-at-high-cap), each recognized route's digest-order index, the receipt
+  truncation counts, and order-invariance.
+- **Finding (poor-man pool, capped-scission grammar):** recognized-recall is **1.0 at every cap ≥ 1** for every
+  target (ethyl/methyl acetate, di/dimethyl ether, trimethylamine). The recognized single condensation is a 1-STEP
+  route to commodity precursors and enumerates FIRST (index 0, digest order); the fictions are MULTI-step
+  homologation chains occupying later slots. So the hypothesised starvation is **NOT observed** — the raw cap is not
+  the bottleneck, and (per the directive) **no scheduling fix is warranted yet**. The search is also order-INVARIANT
+  (sets keyed by `_ident` + digest-sorted enumeration) — a shuffled reagent/commodity order returns an identical set.
+- **Boundary (honest):** this is a measurement over the natural condensation corpus in the CURRENT grammar, not a
+  theorem. It holds because fictions' glue-fragments are rarely all commodities, forcing fictions multi-step/deeper.
+  When the grammar widens (new providers, 2-cut) a 1-step fiction could sort before a recognized route; the harness
+  is the GUARD — recognized-recall < 1.0 turns the test red, the trigger to build #127's type-gated candidate
+  scheduling. A separate *not-reachable* obstruction surfaced en passant: isopentyl acetate returns 10 routes at
+  cap 1000, ALL fiction, because its one real route's precursor (isopentanol) is neither a commodity nor
+  depth-3-reachable — that is `not-generated`/`budget-truncated`, NOT cap-starvation.
+
 ---
 
 ## Coverage impact so far

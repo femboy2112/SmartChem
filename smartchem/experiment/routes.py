@@ -540,7 +540,15 @@ def search_routes(
             distinct: dict[str, Molecule] = {}
             for m in step.reactants:
                 distinct.setdefault(_ident(m), m)
-            missing = [m for k, m in distinct.items() if k not in on_hand and k not in ancestors]
+            # ISSUE-124: a precursor that is one of this branch's OWN ancestors and is NOT external stock is a
+            # self-referential (cyclic) dependency -- it must be REFUSED, never treated as available: silently
+            # dropping it from `missing` (the old `k not in ancestors` clause) manufactures a phantom self-supplying
+            # route (A made from B made from A, with no external feed), which the linearity invariant then crashes on.
+            # Under the W1 strict-rank grammar an ancestor can never reappear as a precursor, so this guard is a NO-OP
+            # today; it is the safety net that keeps a future rank-flat/reversible provider (#104/#123) sound.
+            if any(k in ancestors and k not in on_hand for k in distinct):
+                continue
+            missing = [m for k, m in distinct.items() if k not in on_hand]
             if not missing:
                 yield ExperimentRoute.of(step)
             elif len(missing) == 1 and depth < max_depth:
@@ -776,7 +784,13 @@ def search_dags(
             distinct: dict[str, Molecule] = {}
             for m in step.reactants:
                 distinct.setdefault(_ident(m), m)
-            missing = [m for k, m in distinct.items() if k not in on_hand and k not in ancestors]
+            # ISSUE-124 (the convergent-DAG twin of the linear guard): an ancestor precursor that is not external
+            # stock is a self-referential cyclic dependency. Refuse the cleavage's branch rather than silently
+            # treating the ancestor as a stocked leaf. A no-op under W1 (ancestors never reappear as precursors);
+            # the guard a future rank-flat/reversible provider needs so it cannot forge a self-supplying DAG.
+            if any(k in ancestors and k not in on_hand for k in distinct):
+                continue
+            missing = [m for k, m in distinct.items() if k not in on_hand]
             if not missing:
                 if not offer((step,)):
                     break

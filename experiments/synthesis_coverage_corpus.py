@@ -82,6 +82,13 @@ def corpus() -> "tuple[Case, ...]":
                            "CC1OC(=O)C(C)OC1=O", _ELEM)),
         Case("forged acyl centre on a non-acyl pairing (2 methanol -> dimethyl ether, acyl centre)", NEGATIVE,
              lambda: _hand(("CO", "CO"), ("COC", "water"), "COC", _ELEM)),
+        # #109 adversarial control: a REACHABLE capped-scission over-generation -- the generator EMITS this
+        # formula-balanced glue-fiction (an engine-derived step with a TRUSTED centre), and the oracle's census +
+        # span must still demote it. This is the R55 motivating example (gluing two alkyl fragments with a new C-C
+        # bond and calling the departing atoms "water"); isopropanol + ethyl acetate do NOT condense to isopentyl
+        # acetate. It must stay demoted PERMANENTLY -- coverage is never "solved" by certifying graph surgery.
+        Case("reachable capped-scission fiction: isopropanol + ethyl acetate -> isopentyl acetate (R55)", NEGATIVE,
+             lambda: _derived("CC(C)CCOC(=O)C", ("CC(C)O", "CCOC(=O)C"))),
         # -- NULL: data-insufficient (centre-less genuine shape) -> must ABSTAIN, not crash ------------
         Case("centre-less acyl shape (no trusted centre)", NULL,
              lambda: _hand(("CC(=O)O", "CO"), ("CC(=O)OC", "water"), "CC(=O)OC", None)),

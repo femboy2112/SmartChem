@@ -100,8 +100,19 @@ coverage (that is Phase 2: the infra walls + recognizers). The objective is to k
 ### Benchmark corpus — SYNTHESIS-COVERAGE-CORPUS-01 (`experiments/synthesis_coverage_corpus.py`)
 
 The campaign's baseline instrument: POSITIVE / NEGATIVE / NULL / MUTATION cases through the oracle, measuring
-recall and the must-be-zero false-vouch rate. **Baseline (post Phase 1): recall 3/3, FALSE-VOUCH 0/2, null 1/1,
+recall and the must-be-zero false-vouch rate. **Baseline (post Phase 1): recall 3/3, FALSE-VOUCH 0/3, null 1/1,
 mutation 1/1 — PASS.** Pinned by `tests/test_synthesis_coverage_corpus.py`.
+
+### #109 — latent capped-scission over-generation as permanent adversarial controls  ·  `generated-but-demoted` ·  CONTROLS LOCKED (partial)
+
+- The corpus is the permanent home for the known over-generation fictions #109 requires. Locked so far: the **R55
+  reachable glue-fiction** — the generator EMITS `isopropanol + ethyl acetate -> isopentyl acetate + water` (an
+  engine-derived step with a *trusted* centre; 24 of the 28 isopentyl-acetate scissions are such fictions), and
+  the oracle's census + span correctly demote it — plus the **forged-centre k=2 bundle** (the lactide double
+  condensation) from the #126 negatives. Both must stay demoted PERMANENTLY; coverage is never "solved" by
+  certifying graph surgery.
+- **Open remainder:** enumerate and lock further documented over-generation classes as the grammar widens; the
+  corpus's NEGATIVE channel is the mechanism.
 
 ---
 

@@ -86,3 +86,56 @@ Wire the `graph synthesis` view through the service's algebra selection so the c
 ethene as an AND-dependency with its reaction family named, and that the richer ensemble still recovers every
 candidate boundary. This is the single change that moves the synthesis explorer from "the toy linear/capped grammar"
 to "what the 1.0 compiler actually knows."
+
+---
+
+## Checkpoint G/H — the drawn, named synthesis SCHEME (2026-10-12, `83bee16`)
+
+Addresses the reviewer's core complaint that the diagrams were *"technically correct information blasted out in
+graph form with no intuitive meaning"* rather than *"diagrammatic steps of actually synthesizing something."* Two
+distinct gaps were found and both closed:
+
+1. **Rendering gap (fixed).** Every `ExperimentStep` already carries the *verbs* of a synthesis — `reagents`
+   (the acetylating agent / solvent), `envelope` (conditions), direction, byproducts — and the generic projection
+   dropped them, keying species by resonance hash + bare formula and merging candidates into one blob.
+2. **Content gap (fixed).** The default `graph synthesis` ran `search_routes` on the legacy **capped-scission**
+   registry, which produces formula-level *fragments*, not named bench steps. The named reaction families live in
+   `certified-route-v07`.
+
+### Verified (committed tests in `tests/test_synthesis_scheme.py`; 13, 3 RDKit-only via `importorskip`)
+
+- **Named algebra, proven on the Diels–Alder litmus.** `--algebra` routes the synthesis search through
+  `resolve_algebra_profile` (default `certified-route-v07`). Cyclohexene retro surfaces **butadiene + ethene** as
+  ONE reaction consuming BOTH precursors (an **AND-dependency**), named **"Diels–Alder [4+2] cycloaddition"**,
+  `COMPLETE_WITHIN_BOUNDS`. This is the previously-deferred falsifiable step, now delivered. (The retro fragments
+  must be supplied as terminal stock — `--available "C=CC=C" "C=C"` — or the search returns 0 routes.)
+- **Family naming is sound-or-silent.** A family is named ONLY on an exact match of the step's `reaction_center`
+  to that family's OWN canonical centre (carbocyclic DA via `diels_alder._DA_CENTER`; hetero `[4+2]` via each
+  provider's `family.center`). A foreign centre, a one-bond-off tamper, and a `None` centre all return no name and
+  degrade to a neutral bond-change description — a family is never guessed from a formula.
+- **The scheme inherits attestation.** `render_scheme_html(route, search_result=…)` validates membership and the
+  receipt↔target binding via `project_synthesis` and never re-searches; search completeness stays the receipt's.
+- **Optional depiction is faithful and degrades.** `smartchem/depiction.py` builds an RDKit `RWMol` directly from a
+  Molecule's atoms+bonds (no SMILES writer) and draws a 2D skeletal SVG (and a static reaction-scheme SVG). It
+  round-trips constitution exactly (paracetamol → `CC(=O)Nc1ccc(O)cc1`), so two constitutional isomers (ethanol /
+  dimethyl ether) are never drawn or labelled the same. With RDKit absent (the committed baseline) the scheme
+  degrades to name/formula boxes and the chemistry stays legible — the DA family is still named without any drawing.
+- **Injection-safe.** The scheme embeds its data as a neutralised JSON island (inherits `_embed_json`); a scripted
+  SVG is never inlined (`<script`-guarded server-side).
+
+### Observed (ran clean on the real path; not a committed regression)
+
+- Flagship drawn artifacts render from real compiler output: ethene + butadiene → cyclohexene, and ethene +
+  2,3-dimethylbutadiene → 1,2-dimethylcyclohexene, both as drawn Diels–Alder reaction schemes (RDKit Cairo PNG/SVG).
+
+### Deferred / honest boundaries
+
+- **The compiler's named algebra is capped-scission + the Diels–Alder family ONLY.** There is no acylation /
+  esterification / amide-formation transform, so **paracetamol and ethyl acetate yield 0 named routes** through
+  `certified-route-v07` (they only ever produced capped-scission *fragments*). A paracetamol "acylation" scheme is
+  correct chemistry but is **not something this compiler's algebra can produce** — the honest named demos are
+  Diels–Alder syntheses. Bridged-bicyclic DA (cyclopentadiene + ethene → norbornene) also yields 0 routes: the
+  registry's `[4+2]` forms monocyclic adducts.
+- The scheme renders ONE candidate per HTML; client-side route switching across the full ensemble is not built.
+- The HTML scheme's structural correctness is validated (data island parses, no script breakout); its interactive
+  rendering is not browser-E2E-tested here.

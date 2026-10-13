@@ -90,9 +90,19 @@ class ExperimentStep(Digestible):
       structural transform that computes one (a hand-built step, or a non-scission transform family).  It
       is a NON-identity annotation: declared ``compare=False`` so it does NOT enter the content digest
       (:func:`~smartchem.contracts.canonical_digest` skips non-comparing fields), so two steps that differ
-      only in how the generator discovered them share one digest and one replay identity.  Reaction-TYPE
-      recognizers read it to confirm the reaction centre is a single elementary condensation instead of
-      inferring elementarity from a whole-molecule count (the R56/R57 locality debt this closes).
+      only in how the generator discovered them share one digest and one replay identity.  It is ADVISORY
+      diagnostic metadata -- the graph/scheme layer and the replay round-trip carry it for display.  No recognizer
+      reads it (ISSUE-126 for the condensations, ISSUE-132 for the pericyclics; a stored field is forgeable:
+      ``dataclasses.replace``, a fake :meth:`from_transform` transform, and the bare constructor all route through
+      the public constructor), the precise guarantee:
+
+      * **Recognition is a PURE FUNCTION of the conserved ``reactants``/``products`` multisets, for ALL 17
+        recognizers.**  No caller-supplied annotation can MINT a vouch nor, now, block one: the condensation
+        recognizers (acyl / ether / N-alkylation) RE-DERIVE an elementary single-cut condensation from the molecules;
+        the 14 pericyclic recognizers RE-DERIVE their family's guarded retro (``_reactant_*_disconnects_to`` /
+        ``_reactant_rewrites_to``).  A forged centre on a non-matching step is refused by the molecular re-derivation,
+        and a genuine step built WITHOUT a centre is recognized.  This single content-determinism invariant replaces
+        both the retired forgeable ``center_trusted`` bit and the former pericyclic Layer-B/-C centre read.
     """
 
     schema_version: str
@@ -225,7 +235,13 @@ class ExperimentStep(Digestible):
         envelope: ConditionEnvelope | None = None,
         reaction_center: "ReactionCenter | None" = None,
     ) -> "ExperimentStep":
-        """Build a step directly from its multisets (the general, structure-agnostic constructor)."""
+        """Build a step directly from its multisets (the general, structure-agnostic constructor).
+
+        A caller-supplied ``reaction_center`` is retained as ADVISORY diagnostic metadata but is NEVER
+        reaction-TYPE recognition evidence (ISSUE-126 Phase II): the oracle re-derives locality from the step's
+        own molecules, so no supplied annotation -- through this constructor, :meth:`from_transform`, or a bare
+        ``dataclasses.replace`` -- can buy a vouch.
+        """
         return cls(
             STEP_SCHEMA,
             target,
@@ -258,10 +274,11 @@ class ExperimentStep(Digestible):
         for the drafter; it defaults to none and never affects conservation.
 
         If ``transform`` exposes a ``reaction_center()`` (a :class:`~smartchem.structure_descent.CappedScission`
-        does; other transform families need not), its coordinate-free rewrite span is carried onto the step so a
-        reaction-TYPE recognizer can read the actual centre (R58).  It is a non-identity annotation and never
-        affects conservation; a transform without one yields a ``None`` centre (the recognizer falls back to its
-        whole-molecule census).
+        does; other transform families need not), its coordinate-free rewrite span is carried onto the step as
+        ADVISORY metadata (R58).  It is a non-identity annotation and never affects conservation; crucially it is
+        NOT recognition evidence (ISSUE-126 Phase II) -- because ``transform`` is an arbitrary duck-typed object a
+        caller may forge, the oracle never trusts the carried centre, it RE-DERIVES locality from the step's own
+        molecules.  A transform without a centre yields a ``None`` centre (recognition is unaffected either way).
         """
         synth_reactants = tuple(transform.products)
         synth_products = (transform.reactant,) + tuple(transform.reagents)
@@ -273,7 +290,7 @@ class ExperimentStep(Digestible):
             synth_products,
             reagents=reagents,
             envelope=envelope,
-            reaction_center=center,
+            reaction_center=center,  # ADVISORY metadata only; the oracle re-derives, never reads this (ISSUE-126)
         )
 
     @classmethod

@@ -55,6 +55,7 @@ commands:
   compile TARGET        [deprecated alias of recompile] ranked, graded, bucket-terminated route dossier
   synthesize TARGET     [deprecated alias] retrosynthesis routes with the sourced-data levers
   audit PATH            audit a probe-evidence manifest (or directory)
+  graph VIEW TARGET     render a decomposition/synthesis graph (json/dot/mermaid/svg/html)
 
 Run `python -m smartchem <command> --help` for a command's options.
 Depth and background: {_WIKI}
@@ -728,6 +729,9 @@ def _dispatch(command: str, rest: list[str]) -> int:
     if command == "audit":
         from .evidence.cli import main as evidence_main
         return evidence_main(rest)
+    if command == "graph":
+        from .graph_cli import main as graph_main
+        return graph_main(rest)
     print(f"python -m smartchem: unknown command {command!r}\n", file=sys.stderr)
     print(_USAGE, file=sys.stderr)
     return 2

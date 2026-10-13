@@ -29,12 +29,13 @@ TWO COHERENT INCISIONS, NO R58 REVERSAL, NO ROUTE/STEP HASH BREAK:
   (non-verified) load keeps the thin catalyst/fiction dispositions ADVISORY -- the lightweight path, unchanged.  The
   remaining irreducible residual is a key-holding forger (the stated HMAC boundary), not the transport.
 
-  PIECE 2 -- the reaction-TYPE oracle's ``_acyl_condensation`` and ``_etherification`` now FAIL CLOSED on an absent
-  reaction centre (``center is None -> return False``), extending the R60 N-methylation gate finding to the other two
-  recognizers.  A tamperer who NULLS ``reaction_center`` in a replay payload therefore gets the step DEMOTED
-  (unrecognized -> fiction_blocker), never census-only VOUCHED -- so centre-omission can only cause false-EXCLUDE
-  (safe), never false-VOUCH (catastrophic).  This defuses the fiction channel WITHOUT digest-binding the centre (no R58
-  reversal), and en passant closes the pre-existing acyl/ether centre-absent homologation debt.
+  PIECE 2 (ISSUE-126 Phase II supersedes the original "fail-closed on an absent centre").  The reaction-TYPE oracle's
+  condensation recognizers no longer READ the carried centre at all; they RE-DERIVE an elementary single-cut
+  condensation from the molecules (``_condensation_rederives``).  So nulling ``reaction_center`` in a replay payload
+  changes NOTHING: a genuine condensation re-derives + stays recognized (content-determinism), and a FICTION is never
+  re-derivable (a bundle needs >= 2 cuts) so it stays demoted -> fiction_blocker.  The fiction tamper channel is thus
+  shut by the re-derivation itself; centre-omission can neither mint a false-VOUCH (catastrophic) nor flip a genuine
+  recognition -- strictly stronger than the retired centre-presence requirement, with no forgeable field in the vouch.
 
 THIS PROBE FREEZES, against LIVE code:
   (1) the HARD tamper reproduced-then-REFUSED: ``result_digest`` invariant under the strip (the hole's root), the
@@ -47,9 +48,9 @@ THIS PROBE FREEZES, against LIVE code:
   (4) THE THIN-TRANSPORT CLOSURE: under verified admission a thin (no-replay) fiction strip is REFUSED (UNVERIFIED),
       while a bare non-verified load still loads -- the closure is scoped to verified admission and preserves the
       lightweight path.
-  (5) the PIECE-2 unit facts: acyl/ether/N-methylation centre-LESS steps all DEMOTE while their centre-CARRYING forms
-      VOUCH, and the sharp evasion case -- a k=2 bundle the CENSUS vouches but the SPAN demotes -- whose centre-less
-      twin now FAILS CLOSED (pre-hardening it census-vouched).
+  (5) the PIECE-2 unit facts (ISSUE-126 Phase II): acyl/ether/N-alkylation centre-LESS genuine steps all RE-DERIVE and
+      VOUCH content-deterministically (as do their centre-CARRYING forms), while the sharp control -- a k=2 bundle the
+      CENSUS vouches but the single-cut RE-DERIVATION demotes -- stays DEMOTED whether or not it carries a centre.
   (6) FRONTIER<=DOSSIERS: a forged-CLEAN entry whose matching dossier is DELETED (so it would hit the summary-None
       skip and dodge re-derivation) is REFUSED at construction, unconditionally -- under verified admission and on a
       bare load -- flipping the honest NOT_A_REACTION tier to CLEAN was the red-team's CRITICAL fail-open; now closed.
@@ -84,7 +85,12 @@ from smartchem.service import (
 #: picking up the NEW `include_replay=True` default (D5's canonical-by-default transport) instead of the thin
 #: wire the probe's own name promises -- fixed above by passing `include_replay=False` explicitly. Confirmed
 #: `validate()` passes against live code FIRST; the hash below is UNCHANGED from before Round II.
-FROZEN_HASH = "3e8d421743776da09619792a71ca84ccd1b2672ca18f4b88eab4dbb558fc8134"
+#: ISSUE-126 Phase II UPDATE (hash re-frozen 3e8d4217 -> d3e0dc2d).  PIECE 2 is superseded: the condensation
+#: recognizers RE-DERIVE elementarity from the molecules, so `centre_absent_is_rederived` now measures genuine
+#: centre-less acyl/ether/N-alkylation steps being VOUCHED (content-determinism) while the k=2 bundle control stays
+#: demoted -- where it formerly measured centre-less steps failing closed.  Every TAMPER refusal is unchanged (the
+#: fiction channel is still shut, now by the re-derivation itself); only the PIECE-2 unit cell flipped.
+FROZEN_HASH = "d3e0dc2dad7f9730a2c95b78864d3f594bd9fe26a51a57ba410142a13f27063c"
 
 #: a poor-man kitchen inventory that LACKS lab glassware -> the Fischer esterification is process-EXCLUDED (REAL_BUT_HARD).
 _KITCHEN = ("stovetop", "pot", "glass jar", "thermometer", "spoon", "funnel")
@@ -219,15 +225,19 @@ def _recognized(step) -> "str | None":
     return recognize_reaction_type(step) if step is not None else None
 
 
-def centre_absent_is_fail_closed() -> dict:
+def centre_absent_is_rederived() -> dict:
+    # ISSUE-126 Phase II: genuine centre-less condensations are RE-DERIVED from the molecules and VOUCHED (content-
+    # determinism), while a bundled FICTION with no centre stays DEMOTED -- the single-cut re-derivation cannot reach
+    # a k>=2 bundle.  So centre-absence NEVER mints a false-vouch; the fiction tamper channel is shut by the
+    # re-derivation itself, not by a centre-presence requirement (the retired PIECE 2).
     acyl_less = _recognized(_hand_step(["CC(=O)O", "CO"], ["CC(=O)OC", "water"], "CC(=O)OC"))
     ether_less = _recognized(_hand_step(["CO", "CO"], ["COC", "water"], "COC"))
     nmethyl_less = _recognized(_hand_step(["Nc1ccccc1", "CO"], ["CNc1ccccc1", "water"], "CNc1ccccc1"))
     acyl_full = _recognized(_derive_step("CC(=O)OC", ["CC(=O)O", "CO"]))
     ether_full = _recognized(_derive_step("COC", ["CO", "CO"]))
-    # the sharp evasion: a k=2 bundle the CENSUS vouches but the SPAN demotes; its centre-less twin now fails closed
-    census_vouch_span_demote = False
-    centreless_twin_fails_closed = False
+    # the sharp control: a k=2 bundle the CENSUS vouches but the RE-DERIVATION demotes; its centre-less twin too
+    census_vouch_rederive_demote = False
+    centreless_twin_demoted = False
     for cs in capped_scissions(parse_smiles("C1CCOC1"),
                                (parse_smiles("O"), parse_smiles("O")), max_reactant_cuts=2)[0]:
         try:
@@ -235,24 +245,24 @@ def centre_absent_is_fail_closed() -> dict:
         except Exception:
             continue
         if _ether_shape_and_net_change(step) and recognize_reaction_type(step) is None:
-            census_vouch_span_demote = True
+            census_vouch_rederive_demote = True
             twin = ExperimentStep.assembling(step.target, step.reactants, step.products,
                                              reagents=step.reagents, envelope=step.envelope)
-            # census STILL vouches the centre-less twin, but the recognizer now DEMOTES it (pre-hardening: vouched)
-            centreless_twin_fails_closed = (
+            # the census STILL vouches the centre-less bundle twin, but the single-cut re-derivation DEMOTES it
+            centreless_twin_demoted = (
                 twin.reaction_center is None
                 and _ether_shape_and_net_change(twin)
                 and recognize_reaction_type(twin) is None
             )
             break
     return {
-        "acyl_centreless_demoted": acyl_less is None,
-        "ether_centreless_demoted": ether_less is None,
-        "nmethyl_centreless_demoted": nmethyl_less is None,
+        "acyl_centreless_vouched": acyl_less is not None and "acyl" in acyl_less,
+        "ether_centreless_vouched": ether_less is not None and "etherification" in ether_less,
+        "nmethyl_centreless_vouched": nmethyl_less is not None,
         "acyl_centre_carrying_vouched": acyl_full is not None and "acyl" in acyl_full,
         "ether_centre_carrying_vouched": ether_full is not None and "etherification" in ether_full,
-        "census_vouch_span_demote_bundle_present": census_vouch_span_demote,
-        "centreless_twin_fails_closed": centreless_twin_fails_closed,
+        "census_vouch_rederive_demote_bundle_present": census_vouch_rederive_demote,
+        "centreless_bundle_twin_demoted": centreless_twin_demoted,
     }
 
 
@@ -356,7 +366,7 @@ def _payload() -> dict:
     fic = fiction_tamper_reproduced_then_refused()
     kill1 = kill1_substitution_refused()
     thin = thin_transport_fiction_closed_under_verified_admission()
-    unit = centre_absent_is_fail_closed()
+    unit = centre_absent_is_rederived()
     resid = residual_boundary_stated()
     nodossier = frontier_entry_without_dossier_is_refused()
     return {
@@ -365,12 +375,12 @@ def _payload() -> dict:
         "fiction_tamper": fic,
         "kill1_substitution": kill1,
         "thin_transport_boundary": thin,
-        "centre_absent_fail_closed": unit,
+        "centre_absent_rederived": unit,
         "residual_boundary": resid,
         "frontier_without_dossier": nodossier,
         # THE VERDICT: both channels of the R59 forgery are closed on load -- the PROVEN REAL_BUT_HARD->CLEAN strip
         # (digest-invariant, now refused), the NOT_A_REACTION->CLEAN strip and its centre-null evasion (refused), the
-        # centre-absent recognizers fail closed while centre-carrying ones vouch, and -- the thin-transport closure --
+        # centre-absent condensations RE-DERIVE content-deterministically (genuine vouches, bundle demotes), and -- the thin-transport closure --
         # even the DEFAULT thin transport's fiction strip is refused under verified admission (replay-mandatory),
         # while a bare non-verified load stays lightweight.  The residual (a fabricated self-consistent replay against
         # a key-holding forger) remains the stated HMAC boundary.
@@ -384,10 +394,10 @@ def _payload() -> dict:
             and kill1["distinct_donor_present"] and kill1["substitution_refused"]
             and thin["fiction_entry_present"] and thin["thin_omits_replay"]
             and thin["thin_fiction_strip_refused_under_va"] and thin["thin_bare_load_still_loads"]
-            and unit["acyl_centreless_demoted"] and unit["ether_centreless_demoted"]
-            and unit["nmethyl_centreless_demoted"]
+            and unit["acyl_centreless_vouched"] and unit["ether_centreless_vouched"]
+            and unit["nmethyl_centreless_vouched"]
             and unit["acyl_centre_carrying_vouched"] and unit["ether_centre_carrying_vouched"]
-            and unit["census_vouch_span_demote_bundle_present"] and unit["centreless_twin_fails_closed"]
+            and unit["census_vouch_rederive_demote_bundle_present"] and unit["centreless_bundle_twin_demoted"]
             and resid["result_digest_excludes_the_frontier"] and resid["honest_self_consistent_replay_loads"]
             and nodossier["fiction_entry_present"] and nodossier["honest_tier_is_not_a_reaction"]
             and nodossier["forged_tier_is_clean"]
@@ -403,9 +413,9 @@ def content_hash() -> str:
 def validate() -> bool:
     """Assert TAMPER-HARDENING-01 against live code: the R59 disposition serialized-tamper is closed on BOTH channels
     (the proven REAL_BUT_HARD->CLEAN hard strip, and the NOT_A_REACTION->CLEAN fiction strip plus its centre-null
-    evasion), the digest is invariant under the strip (the hole's root), the centre-absent recognizers fail closed
-    while centre-carrying ones vouch, and the residual (a fabricated self-consistent replay) is the stated HMAC
-    boundary."""
+    evasion), the digest is invariant under the strip (the hole's root), the centre-absent condensations RE-DERIVE
+    content-deterministically (a genuine centre-less step vouches, a bundled fiction demotes -- ISSUE-126 Phase II),
+    and the residual (a fabricated self-consistent replay) is the stated HMAC boundary."""
     p = _payload()
     h = p["hard_tamper"]
     assert h["result_digest_invariant_under_tamper"], f"the frontier is inside result_digest?! {h}"
@@ -427,12 +437,12 @@ def validate() -> bool:
         f"THIN-TRANSPORT CLOSURE OPEN: the strip loaded under verified admission: {t}"
     # ... while the bare (non-verified) load still succeeds -- the advisory lightweight path is preserved.
     assert t["thin_bare_load_still_loads"], f"the advisory bare-load path broke (a false positive on thin): {t}"
-    u = p["centre_absent_fail_closed"]
-    assert u["acyl_centreless_demoted"] and u["ether_centreless_demoted"] and u["nmethyl_centreless_demoted"], \
-        f"a centre-less recognizer still vouches (PIECE 2 regressed): {u}"
+    u = p["centre_absent_rederived"]
+    assert u["acyl_centreless_vouched"] and u["ether_centreless_vouched"] and u["nmethyl_centreless_vouched"], \
+        f"a genuine centre-less condensation is not re-derived + vouched (content-determinism regressed): {u}"
     assert u["acyl_centre_carrying_vouched"] and u["ether_centre_carrying_vouched"], \
         f"a centre-carrying real reaction stopped being recognized: {u}"
-    assert u["census_vouch_span_demote_bundle_present"] and u["centreless_twin_fails_closed"], \
+    assert u["census_vouch_rederive_demote_bundle_present"] and u["centreless_bundle_twin_demoted"], \
         f"the census/span evasion demonstration broke: {u}"
     r = p["residual_boundary"]
     assert r["result_digest_excludes_the_frontier"], f"the frontier unexpectedly entered result_digest: {r}"

@@ -68,13 +68,15 @@ section-10.4 G6 -- a blocker dominates cost), so a route with any unrecognized s
 frontier. It runs DOWNSTREAM of ``ranked``; it never touches ``_score_tuple``.
 
 Boundaries carried as documented debt (R56 acyl + R57 etherification + R63 N-alkylation scope, per the gates).
-* SEVENTEEN ACTIVE CLASSES -- three dehydrative condensations + eight Diels-Alder [4+2] families + four [3,3]
-  sigmatropic isomerizations + two electrocyclizations, each with its own conservation-lock (condensations) or
-  double-certificate (pericyclic / sigmatropic / electrocyclic) proof:
+* EIGHTEEN ACTIVE CLASSES -- three dehydrative condensations + one activated acyl transfer + eight Diels-Alder [4+2]
+  families + four [3,3] sigmatropic isomerizations + two electrocyclizations, each with its own conservation-lock
+  (condensation / activated transfer) or re-derivation-certificate (pericyclic / sigmatropic / electrocyclic) proof:
   (1) acyl condensation (R56), (2) dehydrative etherification (R57), (3) dehydrative N-alkylation (R63, generalising
   and SUBSUMING the R60 N-methylation sub-case -- it REPLACES the R60 entry rather than adding one; it covers any
   non-carbonyl N nucleophile -- amine, azole, sulfonamide, hydrazide, hydroxylamine, amidine/guanidine -- by an ALKYL
-  alcohol);
+  alcohol); (3b) ACTIVATED acyl transfer (#110 -- an anhydride / acyl halide acylating an O/N/S nucleophile, coproduct
+  a carboxylic acid / H-X, NOT water; the free-acid condensation's pre-activated sibling, re-derived by a single-cut
+  scission capped with the leaving-group acid -- O/N/S only, C-acylation/Friedel-Crafts deferred to #107);
   (4) all-carbon DA, ALKENE dienophile -> cyclohexene (the first PERICYCLIC, non-condensation class); (5) its ALKYNE
   sibling -> 1,4-cyclohexadiene (the first pericyclic class that keeps a second unsaturation); (6) aza-DA + (7) oxa-DA
   (imine / carbonyl dienophile, the first HETEROATOM pericyclic classes); (8) thia-DA (thiocarbonyl dienophile ->
@@ -413,6 +415,136 @@ def _n_alkylation(step) -> bool:
     return _condensation_rederives(step, ("N",))
 
 
+_HALOGENS = frozenset({"F", "Cl", "Br", "I"})
+
+
+def _acyl_adjacency(molecule):
+    adj: dict = {}
+    for b in molecule.bonds:
+        adj.setdefault(b.i, []).append((b.j, b.order))
+        adj.setdefault(b.j, []).append((b.i, b.order))
+    return adj
+
+
+def _is_leaving_group_acid(molecule) -> bool:
+    """The activated-transfer coproduct: a carboxylic acid / carboxylate (``R-COOH`` / ``R-COO-``, the anhydride
+    leaving group) or a hydrogen halide ``H-X`` (the acyl-halide leaving group)."""
+    from .feasibility import _acyl_group_counts
+    if _acyl_group_counts(molecule)[0] >= 1:   # a free acid / carboxylate carbonyl
+        return True
+    counts = dict(molecule.formula)
+    heavy = {k: v for k, v in counts.items() if k != "H"}
+    return (getattr(molecule, "charge", 0) == 0 and counts.get("H", 0) == 1 and len(heavy) == 1
+            and next(iter(heavy)) in _HALOGENS and heavy[next(iter(heavy))] == 1)   # exactly H-X
+
+
+def _is_activated_donor(molecule) -> bool:
+    """An activated acyl donor: an ANHYDRIDE (a carbonyl C whose single-bonded O bridges to a SECOND carbonyl C) or
+    an ACYL HALIDE (a carbonyl C single-bonded to a halogen).  Distinct from a free acid (the condensation donor),
+    whose carbonyl O has no heavy neighbour -- so this recognizer never poaches the free-acid condensation class."""
+    from .feasibility import _is_carbonyl_carbon
+    atoms = molecule.atoms
+    adj = _acyl_adjacency(molecule)
+    for c in range(len(atoms)):
+        if not (atoms[c] == "C" and _is_carbonyl_carbon(c, atoms, adj)):
+            continue
+        for n, order in adj.get(c, ()):
+            if order != 1:
+                continue
+            if atoms[n] in _HALOGENS:
+                return True                                  # acyl halide
+            if atoms[n] == "O" and any(n2 != c and atoms[n2] == "C" and _is_carbonyl_carbon(n2, atoms, adj)
+                                       for n2, _o in adj.get(n, ())):
+                return True                                  # anhydride (bridging O to a 2nd carbonyl)
+    return False
+
+
+def _acyl_ester_amide_thioester_total(molecule) -> int:
+    from .feasibility import _acyl_group_counts
+    _acid, amide, ester, thioester = _acyl_group_counts(molecule)
+    return amide + ester + thioester
+
+
+def _activated_transfer_rederives(step, target, donor, nucleophile, leaving_group) -> bool:
+    """Re-derive the activated acyl transfer FROM THE MOLECULES: does the acylated ``target`` disconnect by ONE
+    elementary cut -- capping with the LEAVING-GROUP acid (not water) -- into EXACTLY the declared ``donor`` and
+    ``nucleophile``?  The reverse of one single-cut leaving-group-capped scission IS, by construction, one genuine
+    elementary acyl transfer; a bundle / a non-transfer needs >=2 cuts or does not reconstruct both precursors, so it
+    is never re-derived.  Restricted to the target's order-1 C--(O/N/S) bonds (the acyl--nucleophile locus).  The
+    content-determinism analogue of :func:`_condensation_rederives`, with the leaving group in place of water."""
+    from ..smiles import resonance_identity
+    from ..structure_descent import single_cut_capped_scissions, ScissionError
+    atoms = target.atoms
+    candidate = tuple(b for b in sorted(target.bonds)
+                      if getattr(b, "order", None) == 1 and "C" in {atoms[b.i], atoms[b.j]}
+                      and ({atoms[b.i], atoms[b.j]} & {"O", "N", "S"}))
+    if not candidate:
+        return False
+    try:
+        want = sorted(resonance_identity(m) for m in (donor, nucleophile))
+        scissions, _complete = single_cut_capped_scissions(target, (leaving_group,), candidate)
+    except (ScissionError, NotImplementedError, TypeError, ValueError):
+        return False   # a target the capper refuses (charged / pathological) -> fail-closed demote, never vouch
+    for cs in scissions:
+        try:
+            if sorted(resonance_identity(p) for p in cs.products) == want:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _activated_acyl_transfer(step) -> bool:
+    """Recognizer: ACTIVATED acyl transfer -- an anhydride / acyl halide acylates an O/N/S nucleophile (#110).
+
+    A DISTINCT class from the free-acid dehydrative condensation (:func:`_acyl_condensation`): the acyl donor is
+    pre-activated, so the coproduct is a CARBOXYLIC ACID (anhydride) or a HYDROGEN HALIDE (acyl halide), NOT water --
+    the activated shape is ``donor + Nu-H -> acyl-Nu + leaving-acid`` (2 reactants -> 2 products, no water).  This is
+    the §5(A) win: the capped-scission search ALREADY GENERATES these routes (e.g. ``Ac2O + 4-aminophenol ->
+    paracetamol + AcOH``, ``AcCl + MeNH2 -> N-methylacetamide + HCl``) but the free-acid census demotes them for
+    lacking a water coproduct; this recognizer vouches the genuine ones WITHOUT lifting any unrelated fiction.
+
+    SCOPE (honest): O/N/S nucleophiles only -- a C-nucleophile Friedel-Crafts acylation (``benzene + Ac2O ->
+    acetophenone``) is a real activated transfer this does NOT vouch (it wants a Lewis-acid activator #107 + arene
+    guards), honest coverage loss, never a false-vouch.  Small targets reachable only via a large donor (acetamide /
+    methyl acetate via Ac2O) are blocked UPSTREAM by the #104 W1 atom-count wall (the donor would be a larger
+    fragment than the target), so the search never emits them -- a generation boundary, not a recognizer gap.
+
+    CONSERVATION-LOCK (the admission proof, mirroring the condensation recognizers).  Within the activated shape and
+    with every species CLOSED-SHELL NEUTRAL (#132 guard), a vouch requires :func:`_activated_transfer_rederives` to
+    INDEPENDENTLY re-derive the transfer: the acylated target must disconnect by ONE elementary cut, capping with the
+    declared leaving-group acid, into EXACTLY the declared donor + nucleophile.  The census fixes the functional
+    TYPES (an anhydride/acyl-halide donor consumed, an ester/amide/thioester net-formed, a carboxylic-acid/H-X
+    leaving group produced); the single-cut re-derivation then forces those types onto one genuine elementary acyl
+    transfer -- a bundle or a non-transfer cannot reconstruct both declared precursors by one leaving-group cut.
+    Content-deterministic: reads only the conserved molecules, no caller-supplied centre.  (Problem A type-validity
+    only; feasibility -- these want the activation they already carry -- is Problem B.)
+    ([[a-whole-set-count-classifier-is-fooled-by-non-locality]] [[a-verifier-that-cannot-verify-must-fail-closed]])"""
+    from .feasibility import _is_water
+    from ..diels_alder import is_closed_shell_neutral
+    reactants = tuple(getattr(step, "reactants", ()))
+    products = tuple(getattr(step, "products", ()))
+    if len(reactants) != 2 or len(products) != 2:
+        return False
+    if any(_is_water(m) for m in reactants) or any(_is_water(m) for m in products):
+        return False   # a water coproduct is the free-acid condensation class, not activated transfer
+    if not all(is_closed_shell_neutral(m) for m in reactants + products):
+        return False   # #132 hardening: a radical / charged / ylide partner is not an acyl-transfer species
+    lg = [i for i, m in enumerate(products) if _is_leaving_group_acid(m)]
+    donors = [i for i, m in enumerate(reactants) if _is_activated_donor(m)]
+    if len(lg) != 1 or len(donors) != 1:
+        return False
+    leaving_group, target = products[lg[0]], products[1 - lg[0]]
+    donor, nucleophile = reactants[donors[0]], reactants[1 - donors[0]]
+    if _is_activated_donor(target):
+        return False   # the "target" must be the acylated product, not another donor (a disproportionation guard)
+    # NET: an ester/amide/thioester carbonyl net-forms on the target that the reactants did not carry.
+    if _acyl_ester_amide_thioester_total(target) <= (
+            _acyl_ester_amide_thioester_total(donor) + _acyl_ester_amide_thioester_total(nucleophile)):
+        return False
+    return _activated_transfer_rederives(step, target, donor, nucleophile, leaving_group)
+
+
 def _alkyne_diels_alder(step) -> bool:
     """Recognizer: an all-carbon Diels-Alder [4+2] cycloaddition (diene + ALKYNE dienophile -> 1,4-cyclohexadiene).
 
@@ -692,6 +824,8 @@ _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
     ("acyl condensation (esterification/amidation)", _acyl_condensation),
     ("etherification (dehydrative, R-OH + R'-OH -> ether + water)", _etherification),
     ("N-alkylation (dehydrative, non-carbonyl N-H + alkyl-OH -> N-alkyl + water)", _n_alkylation),
+    ("activated acyl transfer (anhydride/acyl-halide + R-OH/R-NH/R-SH -> ester/amide/thioester + acid/HX)",
+     _activated_acyl_transfer),
     ("Diels-Alder [4+2] cycloaddition (all-carbon diene + alkene dienophile -> cyclohexene adduct)", _diels_alder),
     ("Diels-Alder [4+2] cycloaddition (all-carbon diene + alkyne dienophile -> 1,4-cyclohexadiene)",
      _alkyne_diels_alder),

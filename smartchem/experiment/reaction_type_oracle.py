@@ -128,12 +128,71 @@ Boundaries carried as documented debt (R56 acyl + R57 etherification + R63 N-alk
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from ..decompiler import Formula
 
 __all__ = [
     "recognize_reaction_type",
+    "recognize_reaction_type_outcome",
     "route_reaction_type_blockers",
+    "route_reaction_type_diagnostics",
+    "RecognitionOutcome",
 ]
+
+#: ISSUE-131 recognition-outcome kinds.  Three materially different scientific outcomes the old ``str | None``
+#: API conflated: a genuine class MATCH, an honest ABSTAIN (no attested class matched), and an
+#: INTERNAL_RECOGNIZER_ERROR (a recognizer raised -- an INSTRUMENT failure, NOT evidence of non-reaction).
+MATCH = "MATCH"
+ABSTAIN = "ABSTAIN"
+INTERNAL_RECOGNIZER_ERROR = "INTERNAL_RECOGNIZER_ERROR"
+
+
+@dataclass(frozen=True)
+class RecognitionOutcome:
+    """The typed result of reaction-TYPE recognition (ISSUE-131).
+
+    The no-false-vouch law is preserved EXACTLY: an exception NEVER becomes a MATCH (a raising recognizer is
+    recorded as a fault and recognition continues), so an internal error can only make a step LESS recognized.
+    The added value is pure OBSERVABILITY -- a caller/telemetry can now tell an instrument failure
+    (``INTERNAL_RECOGNIZER_ERROR``, with the offending recognizer + exception carried in ``faults``) apart from a
+    genuine ``ABSTAIN``, which the fail-closed ``str | None`` API and ``route_reaction_type_blockers`` still
+    collapse to the same demotion.
+    """
+
+    kind: str
+    reaction_class: "str | None" = None
+    #: ((recognizer_name, "ExcType: message"), ...) -- the recognizers that RAISED, for provenance/diagnostics.
+    faults: tuple = ()
+
+    @property
+    def is_match(self) -> bool:
+        return self.kind == MATCH
+
+    @property
+    def is_internal_error(self) -> bool:
+        return self.kind == INTERNAL_RECOGNIZER_ERROR
+
+
+def recognize_reaction_type_outcome(step) -> RecognitionOutcome:
+    """Typed recognition (ISSUE-131): MATCH(class) / ABSTAIN / INTERNAL_RECOGNIZER_ERROR(faults).
+
+    First positive predicate wins a MATCH (recording any faults seen before it, for provenance).  A recognizer
+    that RAISES is recorded as a fault and the scan continues -- it never yields a MATCH.  If no recognizer
+    matched and at least one raised, the outcome is INTERNAL_RECOGNIZER_ERROR (the step is still demoted by the
+    fail-closed API, but the caller can now see it was an instrument failure, not a clean non-match).  No raise,
+    no match -> ABSTAIN.
+    """
+    faults: list[tuple[str, str]] = []
+    for name, predicate in _RECOGNIZERS:
+        try:
+            if predicate(step):
+                return RecognitionOutcome(MATCH, name, tuple(faults))
+        except Exception as exc:  # fail-closed: a raising recognizer ABSTAINS, recorded as an instrument fault
+            faults.append((name, f"{type(exc).__name__}: {exc}"))
+    if faults:
+        return RecognitionOutcome(INTERNAL_RECOGNIZER_ERROR, None, tuple(faults))
+    return RecognitionOutcome(ABSTAIN, None, ())
 
 
 def _vouchable_center(step):
@@ -603,20 +662,16 @@ def _step_equation(step) -> str:
 def recognize_reaction_type(step) -> str | None:
     """The name of the attested reaction CLASS ``step`` matches, or ``None`` if it matches none.
 
-    TOTAL + FAIL-CLOSED: a recognizer that raises is treated as abstaining (``continue``), never a spurious match,
-    so an internal error can only make a step LESS recognized (more likely demoted), NEVER spuriously vouched. A
-    ``None`` return is "unrecognized reaction type", which :func:`route_reaction_type_blockers` turns into a
-    demotion -- it is honest non-recognition, never the claim "proven fake".
+    TOTAL + FAIL-CLOSED: a recognizer that raises is treated as abstaining, never a spurious match, so an internal
+    error can only make a step LESS recognized (more likely demoted), NEVER spuriously vouched. A ``None`` return is
+    "unrecognized reaction type", which :func:`route_reaction_type_blockers` turns into a demotion -- it is honest
+    non-recognition, never the claim "proven fake".
+
+    This is the STABLE ``str | None`` contract: it collapses both ABSTAIN and INTERNAL_RECOGNIZER_ERROR to ``None``.
+    A caller that needs to tell those apart uses :func:`recognize_reaction_type_outcome` (ISSUE-131); this wrapper
+    is behaviour-identical to the pre-ISSUE-131 loop.
     """
-    for name, predicate in _RECOGNIZERS:
-        try:
-            if predicate(step):
-                return name
-        except Exception:
-            # a recognizer that chokes on some Molecule the search emitted ABSTAINS (fail-closed); it never
-            # produces a spurious VOUCH, and the step remains subject to the other recognizers / demotion.
-            continue
-    return None
+    return recognize_reaction_type_outcome(step).reaction_class
 
 
 def route_reaction_type_blockers(route) -> tuple[str, ...]:
@@ -647,3 +702,21 @@ def route_reaction_type_blockers(route) -> tuple[str, ...]:
                 f"not-a-known-reaction (Problem A; NOT a claim of cost or feasibility)"
             )
     return tuple(sorted(reasons))
+
+
+def route_reaction_type_diagnostics(route) -> "tuple[RecognitionOutcome, ...]":
+    """Per-step typed recognition outcomes for a route (ISSUE-131 observability).
+
+    :func:`route_reaction_type_blockers` is fail-closed and collapses a genuine ABSTAIN and an
+    INTERNAL_RECOGNIZER_ERROR to the SAME "unrecognized reaction type" demotion -- correct for soundness, but it
+    leaves release/deployment telemetry unable to tell "insufficient rule coverage" from "a recognizer faulted on
+    this substrate".  This additive channel exposes the distinction WITHOUT changing the blocker strings or the
+    ``str | None`` recognizer: one :class:`RecognitionOutcome` per step, in step order.  A step whose outcome
+    computation itself raises is reported as INTERNAL_RECOGNIZER_ERROR (never silently dropped)."""
+    out: list[RecognitionOutcome] = []
+    for step in getattr(route, "steps", ()) or ():
+        try:
+            out.append(recognize_reaction_type_outcome(step))
+        except Exception as exc:  # the recognizer harness itself faulted -- an instrument failure, reported as such
+            out.append(RecognitionOutcome(INTERNAL_RECOGNIZER_ERROR, None, (("<recognize>", f"{type(exc).__name__}: {exc}"),)))
+    return tuple(out)

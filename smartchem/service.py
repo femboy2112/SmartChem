@@ -4764,6 +4764,13 @@ def _step_from_payload(payload) -> "object":
         tuple(_molecule_from_payload(m) for m in payload["reagents"]),
         _condition_envelope_from_payload(payload["envelope"]),
         center,
+        # ISSUE-126: the deserialized centre is recognizer vouch evidence because it rides the replay subsystem's
+        # OWN authentication -- _check_verified_admission re-enumerates the carried algebra and refuses any step
+        # whose reaction_center is not one that algebra assigns (``step.reaction_center not in centres``).  A bare
+        # (non-verified) load leaves dispositions ADVISORY by the existing contract; trusting the centre here
+        # preserves that behaviour exactly and keeps _check_frontier_coherence's re-derivation from false-rejecting
+        # a genuine recognized route on reload.  This is the replay boundary, NOT the hand-built public API #126 closes.
+        center is not None,
     )
 
 

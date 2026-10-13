@@ -102,12 +102,26 @@ class ExperimentStep(Digestible):
     reagents: tuple[Molecule, ...]
     envelope: ConditionEnvelope
     reaction_center: "ReactionCenter | None" = field(default=None, compare=False)
+    #: ISSUE-126 center-authority gate.  A ``reaction_center`` may serve as a reaction-TYPE recognizer's
+    #: locality/elementarity WITNESS (justifying a VOUCH) ONLY when the ENGINE derived or authenticated it:
+    #: :meth:`from_transform` sets it (the generator derived the centre from a real transform), and the replay
+    #: deserialization seam (``service._step_from_payload``) sets it (the centre rides the replay subsystem's own
+    #: ``in centres`` authentication under verified admission).  A centre handed to the PUBLIC
+    #: :meth:`assembling` / the bare dataclass constructor defaults to ``False`` -- it is retained as neutral
+    #: diagnostic metadata but is NOT vouch evidence, so a caller cannot forge an elementary centre onto a
+    #: balanced non-elementary fiction to buy a false VOUCH.  ``compare=False``: outside route/step identity and
+    #: every digest (like ``reaction_center`` itself), so this is not a wire/contract change.
+    center_trusted: bool = field(default=False, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.schema_version != STEP_SCHEMA:
             raise StepError(f"schema_version must be exactly {STEP_SCHEMA!r}")
         if self.reaction_center is not None and type(self.reaction_center) is not ReactionCenter:
             raise StepError("reaction_center must be a smartchem.reaction_center.ReactionCenter or None")
+        if type(self.center_trusted) is not bool:
+            raise StepError("center_trusted must be a bool")
+        if self.center_trusted and self.reaction_center is None:
+            raise StepError("center_trusted asserts the reaction_center is vouch evidence, but none is present")
         if type(self.target) is not Molecule:
             raise StepError("target must be a smartchem.category.Molecule")
         for name in ("reactants", "products", "reagents"):
@@ -224,8 +238,15 @@ class ExperimentStep(Digestible):
         reagents: tuple[Molecule, ...] = (),
         envelope: ConditionEnvelope | None = None,
         reaction_center: "ReactionCenter | None" = None,
+        _center_trusted: bool = False,
     ) -> "ExperimentStep":
-        """Build a step directly from its multisets (the general, structure-agnostic constructor)."""
+        """Build a step directly from its multisets (the general, structure-agnostic constructor).
+
+        A caller-supplied ``reaction_center`` is retained but is NOT recognizer vouch evidence (ISSUE-126):
+        ``_center_trusted`` stays ``False`` for the public caller.  It is set True ONLY by the engine's own
+        derivers (:meth:`from_transform`, ``service._step_from_payload``), never through this public surface --
+        the leading underscore marks it engine-internal.
+        """
         return cls(
             STEP_SCHEMA,
             target,
@@ -234,6 +255,7 @@ class ExperimentStep(Digestible):
             tuple(reagents),
             envelope if envelope is not None else ConditionEnvelope.unknown(),
             reaction_center,
+            _center_trusted,
         )
 
     @classmethod
@@ -274,6 +296,9 @@ class ExperimentStep(Digestible):
             reagents=reagents,
             envelope=envelope,
             reaction_center=center,
+            # the ENGINE derived this centre from the real transform's rewrite span, so it IS vouch evidence
+            # (ISSUE-126): a recognizer may read it as the locality witness.  A ``None`` centre stays untrusted.
+            _center_trusted=center is not None,
         )
 
     @classmethod

@@ -136,6 +136,29 @@ __all__ = [
 ]
 
 
+def _vouchable_center(step):
+    """The step's reaction centre, but ONLY when it is TRUSTED engine evidence (ISSUE-126).
+
+    A recognizer reads the centre as its locality/elementarity WITNESS -- and a caller who hand-builds an
+    :class:`~smartchem.experiment.step.ExperimentStep` through the public ``assembling`` constructor can supply ANY
+    descriptor, including an elementary condensation centre forged onto a balanced NON-elementary fiction (a bundled
+    multi-cut step that forges the whole-molecule census but whose true centre is non-elementary).  The span check
+    :meth:`~smartchem.reaction_center.ReactionCenter.is_elementary_condensation` inspects only the centre's OWN
+    declared bonds, so a forged elementary centre defeats it and buys a false VOUCH.
+
+    The gate: a centre justifies a vouch ONLY when ``step.center_trusted`` -- set by the engine's own derivers
+    (:meth:`~smartchem.experiment.step.ExperimentStep.from_transform`, which derived it from a real transform; and the
+    replay deserialization seam, which rides the ``in centres`` re-enumeration authentication).  An untrusted or absent
+    centre returns ``None`` here, so every recognizer fails CLOSED on it -- identical to the pre-existing absent-centre
+    behaviour (TAMPER-HARDENING-01).  An untrusted centre is retained on the step as neutral diagnostic metadata; it is
+    simply never recognition evidence.  ([[a-verifier-that-cannot-verify-must-fail-closed]])
+    """
+    center = getattr(step, "reaction_center", None)
+    if center is None or not getattr(step, "center_trusted", False):
+        return None
+    return center
+
+
 def _acyl_condensation(step) -> bool:
     """Recognizer: an intermolecular acyl condensation (esterification / amidation / thioesterification), R58.
 
@@ -163,7 +186,7 @@ def _acyl_condensation(step) -> bool:
     from .feasibility import _is_intermolecular_acyl_condensation
     if not _is_intermolecular_acyl_condensation(step):
         return False
-    center = getattr(step, "reaction_center", None)
+    center = _vouchable_center(step)
     if center is None:
         return False  # fail-closed: no readable centre -> the non-local census cannot vouch alone (TAMPER-HARDENING-01)
     return center.is_elementary_condensation(("O", "N", "S"))
@@ -192,7 +215,7 @@ def _etherification(step) -> bool:
     nulled ``reaction_center`` in a serialized replay can therefore only DEMOTE, never buy a census-only vouch --
     centre-omission is false-UNRECOGNIZED (safe), not false-VOUCH."""
     from .feasibility import _ether_shape_and_net_change
-    center = getattr(step, "reaction_center", None)
+    center = _vouchable_center(step)
     if center is None:
         return False  # fail-closed: no readable centre -> the non-local census cannot vouch alone (TAMPER-HARDENING-01)
     return _ether_shape_and_net_change(step) and center.is_elementary_condensation(("O",))
@@ -246,7 +269,7 @@ def _n_alkylation(step) -> bool:
     N-centre.  A centre-less step is honest coverage loss (false-UNRECOGNIZED, safe), never a census-only vouch
     (false-VOUCH, catastrophic) -- the arch's declared-but-unrecognizable-input-must-BLOCK polarity."""
     from .feasibility import _n_alkylation_shape_and_net_change
-    center = getattr(step, "reaction_center", None)
+    center = _vouchable_center(step)
     if center is None:
         return False  # fail-closed: no readable centre -> the non-local census cannot vouch alone (gate finding)
     return _n_alkylation_shape_and_net_change(step) and center.is_elementary_condensation(("N",))
@@ -275,7 +298,7 @@ def _alkyne_diels_alder(step) -> bool:
         return False
     if not _reactant_alkyne_da_disconnects_to(products[0], reactants):
         return False  # Layer A: the adduct does not re-derive a guarded alkyne [4+2] retro into these two reactants
-    center = getattr(step, "reaction_center", None)
+    center = _vouchable_center(step)
     if center is None:
         return False  # Layer C fail-closed: no readable centre -> the family re-derivation cannot vouch alone
     return center == _ALKYNE_DA_CENTER  # Layer B: the centre is exactly the alkyne-family pericyclic [4+2] signature
@@ -316,7 +339,7 @@ def _diels_alder(step) -> bool:
         return False
     if not _reactant_da_disconnects_to(products[0], reactants):
         return False  # Layer A: the adduct does not re-derive a guarded [4+2] retro into these two reactants
-    center = getattr(step, "reaction_center", None)
+    center = _vouchable_center(step)
     if center is None:
         return False  # Layer C fail-closed: no readable centre -> the family re-derivation cannot vouch alone
     return center == _DA_CENTER  # Layer B: the centre is exactly the pericyclic [4+2] signature
@@ -337,7 +360,7 @@ def _hetero_diels_alder(step, family) -> bool:
         return False
     if not _reactant_hetero_da_disconnects_to(family, products[0], reactants):
         return False  # Layer A: the adduct does not re-derive a guarded hetero [4+2] retro into these two reactants
-    center = getattr(step, "reaction_center", None)
+    center = _vouchable_center(step)
     if center is None:
         return False  # Layer C fail-closed: no readable centre -> the family re-derivation cannot vouch alone
     return center == family.center  # Layer B: exactly this hetero family's pericyclic [4+2] signature
@@ -446,7 +469,7 @@ def _sigmatropic_rearrangement(step, family) -> bool:
         return False
     if not _reactant_rewrites_to(family, products[0], reactants):
         return False  # Layer A: the product does not re-derive a guarded [3,3] rewrite into the reactant isomer
-    center = getattr(step, "reaction_center", None)
+    center = _vouchable_center(step)
     if center is None:
         return False  # Layer C fail-closed: no readable centre -> the re-derivation cannot vouch alone
     return center == family.center  # Layer B: exactly this sigmatropic family's [3,3] centre

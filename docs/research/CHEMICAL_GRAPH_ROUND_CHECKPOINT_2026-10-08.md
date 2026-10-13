@@ -128,14 +128,27 @@ distinct gaps were found and both closed:
 - Flagship drawn artifacts render from real compiler output: ethene + butadiene → cyclohexene, and ethene +
   2,3-dimethylbutadiene → 1,2-dimethylcyclohexene, both as drawn Diels–Alder reaction schemes (RDKit Cairo PNG/SVG).
 
-### Deferred / honest boundaries
+### Correction (2026-10-13): paracetamol DOES synthesize — the earlier claim here was wrong
 
-- **The compiler's named algebra is capped-scission + the Diels–Alder family ONLY.** There is no acylation /
-  esterification / amide-formation transform, so **paracetamol and ethyl acetate yield 0 named routes** through
-  `certified-route-v07` (they only ever produced capped-scission *fragments*). A paracetamol "acylation" scheme is
-  correct chemistry but is **not something this compiler's algebra can produce** — the honest named demos are
-  Diels–Alder syntheses. Bridged-bicyclic DA (cyclopentadiene + ethene → norbornene) also yields 0 routes: the
-  registry's `[4+2]` forms monocyclic adducts.
+An earlier version of this record claimed "paracetamol and ethyl acetate yield 0 named routes; the compiler's
+named algebra is capped-scission + Diels–Alder only." **That was wrong, on two counts, and is corrected here:**
+
+- **Capped scission is a general σ-bond metathesis**, not just a fragmenter. With the free acid available and water
+  as the byproduct reagent, it generates the dehydrative condensation directly: **4-aminophenol + acetic acid →
+  paracetamol + water** returns `routes=1, COMPLETE_WITHIN_BOUNDS`, and the reaction-type oracle **vouches it as
+  "acyl condensation (esterification/amidation)."** Ethyl acetate, aspirin, benzocaine, ibuprofen ester, etc. all
+  synthesize the same way. The earlier 0-routes result came from probing with acetic **anhydride** (whose route the
+  feasibility census demotes) instead of the free acid.
+- **The scheme's family-namer only matched Diels–Alder centres**, so even a vouched amidation rendered as a bare
+  bond-change — conflating "the scheme can't label it" with "the compiler can't make it." Fixed in `9b44234`:
+  `_reaction_family_for_step` now falls back to the oracle's conservation-locked vouch, so paracetamol draws as a
+  named amidation (the north-star litmus).
+
+The genuine gaps are characterised in `REACTION_ALGEBRA_COVERAGE_AUDIT_2026-10-12.md` (the fan-out audit): the
+industrial acetic-anhydride route is census-demoted; cross-couplings/substitutions generate but are unrecognised;
+oxidation/ring-closure hit the W1 rank wall; 1,3-dipolar cycloadditions hit the charged-species wall. Bridged-
+bicyclic DA (cyclopentadiene + ethene → norbornene) still yields 0 routes: the registry's `[4+2]` forms monocyclic
+adducts.
 - The scheme renders ONE candidate per HTML; client-side route switching across the full ensemble is not built.
 - The HTML scheme's structural correctness is validated (data island parses, no script breakout); its interactive
   rendering is not browser-E2E-tested here.

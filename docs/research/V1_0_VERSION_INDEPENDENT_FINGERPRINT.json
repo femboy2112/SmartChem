@@ -62,12 +62,12 @@
   },
   "paracetamol": {
    "has_result_digest": true,
-   "invariant_sha": "afd08b338096c27fe434ceb6cda38028287a06bbd887b8242783cb783d323856",
+   "invariant_sha": "a3832167a748da49ae31321882e3733f467fbbd3566c80d02f15e2d04d0b3a17",
    "tool_version_carries_live": true
   },
   "paracetamol@research-lab": {
    "has_result_digest": true,
-   "invariant_sha": "5c8254f0acb24aca62eb8ea3598fa231945630226b930d740a744919b02709a6",
+   "invariant_sha": "8bf034438790a5295471a3bd142f4dbd2bf4a15dd2ba5e8bd30afe51b3fa20be",
    "tool_version_carries_live": true
   },
   "paracetamol_incomplete": {

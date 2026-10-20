@@ -3,7 +3,7 @@
 Pins two committed artifacts:
 
 * the provider/family INVENTORY invariants (the measured gap 0.7 exists to close: the default registry
-  GENERATES with one provider while the oracle RECOGNISES 17 classes);
+  GENERATES with one provider while the oracle RECOGNISES 18 classes);
 * the FORCING VERTICAL: the alkene Diels-Alder family widening the algebra through the UNCHANGED route
   search, all eight plan properties, WITHOUT flipping the global default.
 
@@ -30,8 +30,11 @@ def test_default_registry_generates_with_exactly_one_provider():
     assert DEFAULT_TRANSFORM_REGISTRY.provider_ids == ("capped-scission-mediated",)
 
 
-def test_oracle_recognises_seventeen_classes_but_none_are_wired_into_the_default():
-    assert _oracle_class_count() == 17
+def test_oracle_recognises_eighteen_classes_but_none_are_wired_into_the_default():
+    # 1.1.0a1 MINOR coverage expansion: #110 (activated acyl transfer) is the 18th recognized class
+    # (COMPATIBILITY.md sec 1/sec 7 -- a new RULE that widens coverage). The "recognised != generated"
+    # gap this test pins is unchanged: the oracle is a readiness-layer demoter, not a search provider.
+    assert _oracle_class_count() == 18
     # every non-capped family is opt-in: none but capped-scission is in the default.
     rows = build_rows()
     in_default = [r["provider_id"] for r in rows if r["in_default"]]

@@ -283,9 +283,14 @@ def _maximal_bench(profile_id="maximal"):
     )
 
 
+# NOTE: paracetamol <- 4-aminophenol + acetic anhydride was a below-PROCESS_SPECIFIED case here through
+# v1.0.0; the 1.1.0a1 #110 coverage expansion legitimately graduated it to PROCESS_SPECIFIED (its sourced
+# procedure, already in the corpus, was previously gated only by the unrecognized reaction type). It is
+# therefore no longer a valid witness for "below the top rung" and is dropped from this LAW's fixtures; the
+# graduation itself is pinned in tests/test_v0_8_readiness_core.py. The two that remain stay below the top
+# rung for a genuinely-missing obligation (aspirin: no sourced procedure; methyl salicylate: no procedure).
 @pytest.mark.parametrize("target, reagents, have", [
     ("acetylsalicylic acid", ("acetic acid",), ("salicylic acid", "acetic anhydride")),
-    ("paracetamol", ("acetic acid",), ("4-aminophenol", "acetic anhydride")),
     ("methyl salicylate", ("water",), ("salicylic acid", "methanol")),
 ])
 def test_below_process_specified_route_never_fits_even_under_a_maximal_bench(target, reagents, have):

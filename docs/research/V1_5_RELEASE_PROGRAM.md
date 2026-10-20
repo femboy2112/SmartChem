@@ -1,0 +1,117 @@
+# SmartChem — the post-1.0 release program (1.1 → 1.5, with 2.0 prerequisites)
+
+**One authoritative map of what is done, what the 1.x ladder commits to, and what is deliberately a 2.0
+obligation.** Supersedes nothing: `V1_0_RELEASE_GATE.md` and the `v1.0.0` tag remain the frozen 1.0 record.
+
+## 0. Baselines (verified against the live repo, not a prompt)
+
+| ref | SHA | note |
+|---|---|---|
+| `v1.0.0` (published release) | `8345bbb` | the stable 1.0 record; `git diff v1.0.0 -- smartchem/` vs `origin/main` is empty |
+| `origin/main` | `99fce34` | 5 commits past the tag, all docs/launch — semantically ≡ `v1.0.0` |
+| `feat/chemical-graph-projections` (PR #101, draft) | `d547e6e` + P0 fix | this program's development branch; now `__version__ = 1.1.0a1` |
+
+## 1. Scientific authority model (invariant across the whole 1.x series — never relaxed)
+
+These distinctions are load-bearing and every rung below preserves them:
+
+1. Formula equality ≠ constitutional identity.
+2. A formally conserving transformation ≠ an established chemical reaction.
+3. A recognized structural reaction family ≠ laboratory feasibility.
+4. Sourced conditions ≠ a complete procedure.
+5. A complete procedure ≠ a particular bench's capability fit.
+6. Bench capability ≠ safety certification.
+7. A complete *bounded* search ≠ universal chemical completeness.
+
+Readiness vocabulary (cumulative, weakest-link): `FORMAL_CANDIDATE < REACTION_VOUCHED < CONDITIONS_SUPPORTED
+< PROCESS_SPECIFIED`. **A new validator is an instrument with a declared scope and identifiable failures. A
+displayed diagram may EXPLAIN an existing claim; it may never MINT one.** The reaction-type oracle and the
+graph re-derivation recognizers rerun the generator's OWN scission/retro machinery — a useful *internal
+consistency* witness, explicitly **not an independent external-chemistry witness**; every claim that leans on
+them says so.
+
+## 2. What is actually implemented on the branch (the 1.1 candidate)
+
+* **P0 — the version boundary is repaired.** `__version__ 1.0.0 → 1.1.0a1`; the version-independent
+  fingerprint golden was re-frozen under that declared MINOR, with a field-by-field proof
+  (`V1_1_COVERAGE_EXPANSION_110.md`) that the ONLY semantic move is #110's paracetamol promotion, under an
+  unchanged `semantic_digest`. `Verified`.
+* **#110 activated acyl transfer** — the 18th recognized class (anhydride/acyl-halide onto O/N/S). Flips the
+  real industrial paracetamol route (4-aminophenol + Ac₂O → paracetamol + AcOH) to `PROCESS_SPECIFIED`.
+  The **paracetamol litmus north-star firing for the first time.**
+* **Typed chemical graph projection + named synthesis schemes** — DOT/Mermaid/SVG, offline HTML, optional
+  RDKit depiction, route/DAG ensembles (#128/#129 family-naming + completeness honesty on the branch).
+* **Soundness fixes on the branch (OPEN on main — see §6):** #124 cyclic-refusal, #126 forged-centre retired,
+  #131 typed recognition outcomes, #132 pericyclic content-determinism.
+
+## 3. Proposed 1.1 → 1.5 ladder (a PROPOSAL; each rung names its own gate)
+
+| rung | theme | issues | owner modules | why this order |
+|---|---|---|---|---|
+| **1.1** (this branch) | graph workbench + first coverage win | graph PR #101, #110, #124/#126/#128/#129/#131/#132 | `graph_projection`, `depiction`, `reaction_type_oracle`, `readiness` | highest return: a trustworthy workbench + one real route to `PROCESS_SPECIFIED` |
+| **1.2** | cheap RECOGNITION wins (no new generators) | #111 ethers/esters, #112 SN2, #115 Claisen-lock | `reaction_type_oracle` | recognition is cheaper + lower-risk than generation; max coverage per rule |
+| **1.3** | contained OPERATOR families w/ transformation certificates | #114 hydrogenation (opt-in profile), #116 elimination, #117 enolate C–C | `transform_provider`, `bond_order_edit` | each family ships a conservation + locality certificate, opt-in, no default-flip |
+| **1.4** | bounded SEARCH + sound lateral capability | #104 W1 redesign, #124/#125 arity, #123 opt-in finite lateral | `routes`, `lateral_search`, `structure_descent` | an opt-in, finite, SOUND lateral search; fusion into `search_routes` stays deferred |
+| **1.5** | evidence/capability hardening + release | #107 catalyst ledger, #109 latent-fiction audit | `catalyst_availability`, capability layer | consolidation; the 1.5 acceptance gates (§4) must all be green |
+
+## 4. Mandatory 1.5 acceptance gates
+
+1. **No demonstrated false-VOUCH** on the standing adversarial corpus + every new rule's hostile controls.
+2. **Version-boundary discipline:** every semantic move since 1.0 is classified in a forensic record; the
+   version-independent golden is green; no undeclared promotion can recur (the gate fails if it does).
+3. **Workbench threat model:** hostile graph/name/status fixtures render inert; UNATTESTED never displays as
+   COMPLETE; family names derive from the oracle, not caller-supplied centres; renderer is resource-bounded;
+   core runs without RDKit/PySCF.
+4. **Fail-closed preserved everywhere:** an unread demand stays `UNKNOWN`; a finer requested identity layer
+   (stereo/config) never silently terminates on the wrong isomer — it refuses.
+5. **Full OOM-safe suite green** (`scripts/run_suite.sh`) **and** clean wheel-install tests on Python
+   3.10–3.13, on the FINAL branch SHA — not an ancestor. No cancelled/partial run counts as green.
+
+## 5. Explicit 2.0 prerequisites (deferred — recorded, NOT implemented)
+
+* **#105 per-atom formal-charge rail** — today only the molecule's one global charge is carried; blocks all
+  ionic/dipolar chemistry from being represented soundly.
+* **#106 radius-1 environment predicate** — `ReactionCenter` is context-free; local molecular-environment
+  predicates are a 2.0 representation change.
+* **#108 organometallic elements** (Li/Sn/Ni/Al/Ti/[B]).
+* **#130 configuration-aware route identity** — constitution-only matching must never terminate on the wrong
+  enantiomer under a finer requested identity layer (today: refuse; 2.0: honor).
+* **The general reaction-event calculus** — fusing the opt-in lateral search into `search_routes` (true
+  scission vs connected lateral vs intramolecular-with-coproducts as separate typed event families, with a
+  correct finite-depth/state-budget termination proof and a disclosed completeness boundary). Its proof
+  burden exceeds the 1.5 budget; 1.5 ships only the opt-in finite lateral capability.
+* **Atom-mapped transformation witnessing** + source-subject binding of procedure evidence.
+
+## 6. Issue reconciliation (branch vs main)
+
+Issues #103–#132 are **OPEN on `main`** and correctly so: their fixes live on the unmerged PR #101. A fix
+`Verified` on the branch is NOT resolved on `main` until the PR merges. Close-on-merge, not close-on-claim.
+
+## 7. Governance — the 3-lane projection (unchanged from the generic-compiler reorientation)
+
+A = Alpha-conformance, B = chemical-genericity, C = bench-readiness. **Progress in one lane never implies
+another.** A generic bounded SEARCH compiler parameterized by a still-narrowing transform algebra; the oracle
+is a readiness-layer demoter, not a search provider.
+
+## 8. Reproduction (every milestone's proof command)
+
+```sh
+# P0 version boundary + forensic differential:
+.venv/bin/python experiments/v1_0_version_transition.py --check-golden        # NO DRIFT
+.venv/bin/python -m pytest -q -p no:cacheprovider tests/test_v1_0_version_transition.py tests/test_v1_0_public_contract.py
+# recognizer count + #110:
+.venv/bin/python -m pytest -q -p no:cacheprovider tests/test_transform_algebra_expansion.py tests/test_activated_acyl_transfer_110.py
+# readiness laws (graduation + non-monotonicity cap preserved):
+.venv/bin/python -m pytest -q -p no:cacheprovider tests/test_v0_8_readiness_core.py tests/test_v0_9_capability_round_iii.py
+# the full OOM-safe gate:
+scripts/run_suite.sh
+```
+
+## 9. Known limitations / source boundaries
+
+* `is_closed_shell_neutral` is a representation-relative heuristic — no general per-atom charge/electron
+  model; its scope is bounded, not a universal closed-shell proof (2.0 #105 is the real fix).
+* RDKit = dev-only oracle; it never changes a verdict. The committed baseline runs without it.
+* Procedure-source evidence proves arithmetic/placement, not subject binding (deferred, §5).
+* A complete bounded search is complete only within the declared grammar; absence of a route is never
+  evidence of absence.

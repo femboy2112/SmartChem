@@ -87,3 +87,77 @@ def test_empirical_reversible_requires_reverse_orders():
         Mechanism(("A", "B"), [[1.0], [0.0]], [[0.0], [1.0]], ("X",), [[1, 1]],
                   (ReactionRate(k_f=1.0, k_r=1.0, reversible=True),),
                   kinetics="empirical", forward_orders=[[1.0], [0.0]])
+
+
+# ---- B1: the THREE permanent distinguishing examples, pinned together ----------------------------------------
+def test_the_three_permanent_distinguishing_examples_share_a_net_yet_differ_in_kinetics():
+    """A -> B, A + B -> 2B, A + C -> B + C: the net column CANNOT be the kinetic authority.
+    A->B and A+B->2B share the EXACT net column on (A,B) but diverge at a seedless state; the catalyst
+    A+C->B+C has net C = 0 yet a live [C] dependence.  This is the permanent guard for the lossy-projection
+    theorem [[net-stoichiometry-is-not-a-mechanism]]."""
+    uni = Mechanism.from_net(("A", "B"), [[-1.0], [1.0]], ("X", "charge"), [[1, 1], [0, 0]],
+                             (ReactionRate(k_f=1.0, reversible=False),), label="A->B")
+    auto = _autocatalytic()      # A + B -> 2B
+    cat = _catalytic()           # A + C -> B + C
+    # A->B and A+B->2B: identical net column, opposite behaviour where the shared product is absent.
+    assert np.array_equal(uni.N, auto.N)
+    assert uni.rate_vector([5.0, 0.0])[0] == 5.0 and auto.rate_vector([5.0, 0.0])[0] == 0.0
+    # the catalyst's net is zero on C, but reducing to net would wrongly erase its rate dependence.
+    assert cat.N[2, 0] == 0.0 and cat.rate_vector([5.0, 0.0, 0.0])[0] == 0.0
+    assert cat.rate_vector([5.0, 0.0, 3.0])[0] == pytest.approx(15.0)
+
+
+# ---- B1: strengthened structural validation (finite / integer / unique / bounded) ----------------------------
+def test_duplicate_species_identity_is_refused():
+    with pytest.raises(InvalidParameterError):
+        Mechanism(("A", "A"), [[1.0], [0.0]], [[0.0], [1.0]], ("X",), [[1, 1]],
+                  (ReactionRate(k_f=1.0, reversible=False),))
+
+
+def test_fractional_complex_multiplicity_is_refused_but_fractional_orders_are_not():
+    with pytest.raises(InvalidParameterError):   # a half MOLECULE as a structural reactant is nonsense...
+        Mechanism(("A", "B"), [[0.5], [0.0]], [[0.0], [1.0]], ("X",), [[1, 1]],
+                  (ReactionRate(k_f=1.0, reversible=False),))
+    # ...but a half-ORDER empirical rate law is legitimate (integer complex, fractional order) -- must NOT raise.
+    m = Mechanism(("A", "B"), [[1.0], [0.0]], [[0.0], [1.0]], ("X",), [[1, 1]],
+                  (ReactionRate(k_f=1.0, reversible=False),),
+                  kinetics="empirical", forward_orders=[[0.5], [0.0]], rate_law_note="half-order (SYNTHETIC)")
+    assert m.rate_vector([4.0, 0.0])[0] == pytest.approx(2.0)
+
+
+def test_non_finite_complex_is_refused():
+    with pytest.raises(InvalidParameterError):
+        Mechanism(("A", "B"), [[np.inf], [0.0]], [[0.0], [1.0]], ("X",), [[1, 1]],
+                  (ReactionRate(k_f=1.0, reversible=False),))
+
+
+def test_oversized_reaction_count_is_a_bounded_refusal():
+    from experiments.sandbox_foundation.twocell import MAX_REACTIONS
+    big = MAX_REACTIONS + 1
+    with pytest.raises(InvalidParameterError):   # refused at the bound BEFORE any (big) allocation downstream
+        Mechanism(("A", "B"), np.zeros((2, big)), np.zeros((2, big)), ("X", "charge"),
+                  [[1, 1], [0, 0]], ())
+
+
+def test_oversized_coefficient_is_a_bounded_refusal():
+    from experiments.sandbox_foundation.twocell import MAX_COEFF
+    with pytest.raises(InvalidParameterError):
+        Mechanism(("A", "B"), [[MAX_COEFF + 1.0], [0.0]], [[0.0], [1.0]], ("X", "charge"),
+                  [[1, 1], [0, 0]], (ReactionRate(k_f=1.0, reversible=False),))
+
+
+# ---- B1: explicit behaviour for the degenerate cases ---------------------------------------------------------
+def test_zero_net_transformation_is_well_defined():
+    # reactant == product (A -> A): net column is exactly zero, so the net source is identically 0.
+    m = Mechanism(("A", "B"), [[1.0], [0.0]], [[1.0], [0.0]], ("X", "charge"), [[1, 1], [0, 0]],
+                  (ReactionRate(k_f=3.0, reversible=False),), label="A->A (zero-net)")
+    assert np.array_equal(m.N, [[0.0], [0.0]])
+    assert np.array_equal(m.source_density([5.0, 0.0]), [0.0, 0.0])   # no net change for any state
+
+
+def test_zero_reaction_network_is_well_defined():
+    # an empty reaction set (R = 0) is a valid, inert mechanism: no reactions, no source, no crash.
+    m = Mechanism(("A",), np.zeros((1, 0)), np.zeros((1, 0)), ("X",), [[1.0]], ())
+    assert m.n_reactions == 0
+    assert m.rate_vector([2.0]).shape == (0,)
+    assert np.array_equal(m.source_density([2.0]), [0.0])

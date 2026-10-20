@@ -49,6 +49,12 @@ UNITS = {
 }
 DT_RTOL = 1e-12  # slack on the dt bound so dt == dt_max is admitted despite roundoff
 
+# Structural bounds: a malformed / adversarial huge mechanism is a BOUNDED typed refusal, never an
+# unbounded allocation.  These are generous ceilings for the small experimental networks, not physics.
+MAX_SPECIES = 1024
+MAX_REACTIONS = 1024
+MAX_COEFF = 1.0e6   # ceiling on a single structural complex multiplicity (reactant/product entry)
+
 
 # --------------------------------------------------------------------------------------------- errors
 class SandboxError(Exception):
@@ -233,17 +239,34 @@ class Mechanism:
         product = np.array(self.product, dtype=float)
         E = np.array(self.E, dtype=float)
         S = len(self.species)
+        if S > MAX_SPECIES:
+            raise InvalidParameterError(f"{S} species exceeds MAX_SPECIES={MAX_SPECIES} (bounded refusal)")
+        if len(set(self.species)) != S:
+            raise InvalidParameterError("species identities must be unique")
         if reactant.ndim != 2 or reactant.shape[0] != S or reactant.shape != product.shape:
             raise InvalidParameterError("reactant and product must both be (S, R) with one row per species")
         R = reactant.shape[1]
+        if R > MAX_REACTIONS:
+            raise InvalidParameterError(f"{R} reactions exceeds MAX_REACTIONS={MAX_REACTIONS} (bounded refusal)")
         if E.ndim != 2 or E.shape != (len(self.element_labels), S):
             raise InvalidParameterError("E must be (len(element_labels), S)")
+        if not np.all(np.isfinite(E)):
+            raise InvalidParameterError("E must be all finite")
         if R != len(self.rates):
             raise InvalidParameterError("one ReactionRate per reaction column is required")
-        if np.any(reactant < 0) or np.any(product < 0):
-            raise InvalidParameterError("reactant/product are complex multiplicities and must be >= 0 "
-                                        "(a NET column is not a complex -- use Mechanism.from_net for a "
-                                        "reaction with no species shared across its two sides)")
+        for nm, arr in (("reactant", reactant), ("product", product)):
+            if not np.all(np.isfinite(arr)):
+                raise InvalidParameterError(f"{nm} must be all finite")
+            if np.any(arr < 0):
+                raise InvalidParameterError("reactant/product are complex multiplicities and must be >= 0 "
+                                            "(a NET column is not a complex -- use Mechanism.from_net for a "
+                                            "reaction with no species shared across its two sides)")
+            if np.any(arr > MAX_COEFF):
+                raise InvalidParameterError(f"{nm} multiplicity exceeds MAX_COEFF={MAX_COEFF} (bounded refusal)")
+            if not np.all(arr == np.round(arr)):
+                raise InvalidParameterError(f"{nm} complex multiplicities must be EXACT non-negative integers -- a "
+                                            "fractional KINETIC order belongs in forward_orders/reverse_orders "
+                                            "(empirical law), never in the structural complex")
         N = product - reactant
         if self.kinetics not in ("elementary", "empirical"):
             raise InvalidParameterError(f"unknown kinetics kind {self.kinetics!r}")
@@ -265,6 +288,8 @@ class Mechanism:
             for nm, o in (("forward_orders", order_f), ("reverse_orders", order_r)):
                 if o.shape != (S, R):
                     raise InvalidParameterError(f"{nm} must be (S, R)")
+                if not np.all(np.isfinite(o)):
+                    raise InvalidParameterError(f"{nm} must be all finite")
                 if np.any(o < 0):
                     raise InvalidParameterError(f"{nm} must be >= 0")
         for arr in (reactant, product, E, N, order_f, order_r):

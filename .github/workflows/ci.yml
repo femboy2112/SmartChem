@@ -100,7 +100,7 @@ jobs:
   pyscf-smoke:
     name: Optional PySCF backend (smoke)
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -126,8 +126,22 @@ jobs:
           result = PySCFOracle("HF", "cc-pVDZ", max_atoms=1).energy(Molecule.atom("H"));
           assert result is not None and result.method.startswith("HF/cc-pVDZ")'
 
-      - name: Test fast suite with PySCF available
-        run: pytest -q -rs -m "not slow"
+      - name: Test fast suite with PySCF available (OOM-safe batched runner)
+        # The monolithic `pytest` accumulates memory across ~290 files and, with the PySCF-backed tests
+        # now executing, ran past this job's wall on the ~7 GB runner -- the exact reason the core `test`
+        # job switched to the batched runner (see its note). Run the SAME OOM-safe runner here so the fast
+        # suite coexists with the real backend without memory thrash. run_suite.sh passes no --runslow, so
+        # the expensive wavefunction tests stay skipped (tests/conftest.py) -- the prior `-m "not slow"`
+        # selection, now batched (a fresh pytest process per batch, junit-xml tally).
+        run: LOGDIR="$RUNNER_TEMP/smartchem-pyscf-suite" PY="$(command -v python)" scripts/run_suite.sh
+
+      - name: Upload PySCF suite logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: suite-logs-pyscf
+          path: ${{ runner.temp }}/smartchem-pyscf-suite
+          if-no-files-found: ignore
 
       # This job is the ONLY place the benchmark can fail, so it is the only place the
       # benchmark means anything. The core `test` job runs it with no backend, so it

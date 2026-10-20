@@ -9,7 +9,7 @@ obligation.** Supersedes nothing: `V1_0_RELEASE_GATE.md` and the `v1.0.0` tag re
 |---|---|---|
 | `v1.0.0` (published release) | `8345bbb` | the stable 1.0 record; `git diff v1.0.0 -- smartchem/` vs `origin/main` is empty |
 | `origin/main` | `99fce34` | 5 commits past the tag, all docs/launch — semantically ≡ `v1.0.0` |
-| `feat/chemical-graph-projections` (PR #101, draft) | `22ea54e` | this program's development branch (P0 + Waves A/B/C); `__version__ = 1.1.0a1` |
+| `feat/chemical-graph-projections` (PR #101, draft) | `3a37d46` (+#114) | this program's development branch (P0 + Waves A/B/C + CI OOM-fix; this commit adds Wave D #114); `__version__ = 1.1.0a1` |
 
 ## 1. Scientific authority model (invariant across the whole 1.x series — never relaxed)
 
@@ -45,6 +45,17 @@ them says so.
   hemiacetal/enol / latent sulfate miscount); closed by an sp3-alkyl-carbinol + sulfonate-S census, with aryl-O
   (phenol) deferred to #105. A second, independent adversarial pass found no false-vouch. `Verified` (bench 15/15,
   false-vouch 0; the three kills retained as permanent controls; CI required jobs green on `22ea54e`).
+* **#114 bond-order-edit (de/hydrogenation) family behind the opt-in `bond-order-edit-v1` profile** — a REACHABILITY
+  gain, **not** a 20th recognizer (the oracle count stays 19). The already-sound `BondOrderEditProvider` (raise one
+  heavy–heavy bond by one order, shed H₂; construction certificate + W1 descent) is now reachable through a NAMED,
+  reviewed, selectable algebra profile (capped-scission base + bond-order-edit) instead of only a hand-built test
+  registry. The synthesis-direction hydrogenation route `unsaturated + H₂ → saturated` becomes REACHABLE under the
+  profile (4/4 bench cases) and is unreachable under either default. **Opt-in only:** one dict entry, no default
+  constant flipped, version-independent fingerprint unmoved. **Honest demotion:** the family has no oracle
+  recognizer, so its routes stay `FORMAL_CANDIDATE` ("unrecognized") — reachability (W1/W3), never a minted vouch
+  (the state paracetamol-via-Ac₂O held before #110). An evil-morty pass (1,200+ steps, attribution-theft surface)
+  plus an independent end-to-end sweep found 0 false-vouch, 0 internal-error leak, 0 default perturbation, 0 crash.
+  `Verified` (profile test 32/32; bench reachable 4/4, false-vouch 0).
 * **Typed chemical graph projection + named synthesis schemes** — DOT/Mermaid/SVG, offline HTML, optional
   RDKit depiction, route/DAG ensembles (#128/#129 family-naming + completeness honesty on the branch).
 * **Soundness fixes on the branch (OPEN on main — see §6):** #124 cyclic-refusal, #126 forged-centre retired,
@@ -54,9 +65,9 @@ them says so.
 
 | rung | theme | issues | owner modules | why this order |
 |---|---|---|---|---|
-| **1.1** (this branch) | graph workbench + first coverage wins | graph PR #101, #110, **#111**, #124/#126/#128/#129/#131/#132 | `graph_projection`, `depiction`, `reaction_type_oracle`, `readiness` | highest return: a trustworthy workbench + two real recognition wins (the 18th/19th classes) |
+| **1.1** (this branch) | graph workbench + first coverage wins | graph PR #101, #110, **#111**, **#114**, #124/#126/#128/#129/#131/#132 | `graph_projection`, `depiction`, `reaction_type_oracle`, `readiness`, `algebra_profiles` | highest return: a trustworthy workbench + two real recognition wins (18th/19th classes) + the first opt-in operator profile (#114) |
 | **1.2** | cheap RECOGNITION wins (no new generators) | ~~#111~~ (landed early on 1.1), #112 SN2, #115 Claisen-lock | `reaction_type_oracle` | recognition is cheaper + lower-risk than generation; max coverage per rule |
-| **1.3** | contained OPERATOR families w/ transformation certificates | #114 hydrogenation (opt-in profile), #116 elimination, #117 enolate C–C | `transform_provider`, `bond_order_edit` | each family ships a conservation + locality certificate, opt-in, no default-flip |
+| **1.3** | contained OPERATOR families w/ transformation certificates | ~~#114 hydrogenation~~ (landed early as the `bond-order-edit-v1` opt-in profile on 1.1), #116 elimination, #117 enolate C–C | `transform_provider`, `bond_order_edit` | each family ships a conservation + locality certificate, opt-in, no default-flip |
 | **1.4** | bounded SEARCH + sound lateral capability | #104 W1 redesign, #124/#125 arity, #123 opt-in finite lateral | `routes`, `lateral_search`, `structure_descent` | an opt-in, finite, SOUND lateral search; fusion into `search_routes` stays deferred |
 | **1.5** | evidence/capability hardening + release | #107 catalyst ledger, #109 latent-fiction audit | `catalyst_availability`, capability layer | consolidation; the 1.5 acceptance gates (§4) must all be green |
 
@@ -110,6 +121,9 @@ is a readiness-layer demoter, not a search provider.
 # #111 alkyl sulfonate-ester transfer (adversary-hardened, 19th class):
 .venv/bin/python -m experiments.sulfonate_ester_transfer_111
 .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_sulfonate_ester_transfer_111.py
+# #114 opt-in de/hydrogenation profile (reachability gain, honestly demoted, adversary-clean):
+.venv/bin/python -m experiments.bond_order_edit_profile_114
+.venv/bin/python -m pytest -q -p no:cacheprovider tests/test_bond_order_edit_profile_114.py
 # readiness laws (graduation + non-monotonicity cap preserved):
 .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_v0_8_readiness_core.py tests/test_v0_9_capability_round_iii.py
 # the full OOM-safe gate:
@@ -123,6 +137,14 @@ scripts/run_suite.sh
 * #111 recognizes ALKYL sulfonate esters only. Aryl-O (phenol → aryl mesylate/tosylate) is NOT recognized: a
   Kekulized aryl carbinol carbon is indistinguishable from an acyclic enol in the aromaticity-free graph, so the
   sound scope is alkyl-O (honest coverage loss, deferred to the 2.0 aromaticity model #105).
+* #114's `bond-order-edit-v1` profile delivers REACHABILITY, not recognition: the de/hydrogenation family has no
+  reaction-type oracle recognizer, so its routes stay `FORMAL_CANDIDATE` ("unrecognized"). Graduating them to
+  `REACTION_VOUCHED` is a separate, adversary-gated recognizer task (deferred). The no-false-vouch property is
+  inherited from the recognizers' re-derivation discipline (each reconstructs all declared reactants, and H₂ is
+  irreducible as a retro fragment); a standing invariant test pins it, and that discipline MUST hold for every
+  added class. The profile is opt-in — promoting it toward a default would first need a measured search-cost blast
+  radius (its H₂-shedding edges widen branching on large saturated substrates: bounded, never a hang, not yet
+  measured at scale).
 * RDKit = dev-only oracle; it never changes a verdict. The committed baseline runs without it.
 * Procedure-source evidence proves arithmetic/placement, not subject binding (deferred, §5).
 * A complete bounded search is complete only within the declared grammar; absence of a route is never

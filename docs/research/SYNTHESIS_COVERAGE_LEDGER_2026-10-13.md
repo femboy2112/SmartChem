@@ -286,6 +286,38 @@ mutually exclusive (sulfonyl S vs acyl carbonyl C), so the full 19× no-cross-po
   clean-carbon tricks, tautomer masks, bundled multi-bond steps, donor-gate & sulfonate-S census slips,
   charge/radical/kekulé representation tricks, cross-poach both directions). Full OOM-safe suite green (7623/0).
 
+## OPERATION SMARTCHEM 1.5 mega-round — Wave D (#114), 2026-10-20
+
+**#114 — BOND-ORDER-EDIT (DE/HYDROGENATION) FAMILY wired behind the opt-in `bond-order-edit-v1` algebra profile**
+(`experiments/bond_order_edit_profile_114.py` + `tests/test_bond_order_edit_profile_114.py`). **NOT a 20th
+recognizer — the oracle count stays 19.** A REACHABILITY gain, not a recognition gain: the already-sound
+`BondOrderEditProvider` (raise one heavy–heavy bond by one order, shed H2; construction certificate + W1 descent) is
+now exposed through a NAMED, reviewed, selectable profile (capped-scission base + bond-order-edit) instead of only a
+hand-assembled test registry.
+- *Gain (measured):* the synthesis-direction hydrogenation route `unsaturated + H2 -> saturated` is REACHABLE under
+  the profile in 4/4 bench cases; UNREACHABLE (0) under both default profiles. Composes through the UNCHANGED route
+  AND DAG search (the registry parameter, no engine branch).
+- *Honest demotion (the scientific-authority point):* the family has NO oracle recognizer, so every generated step
+  stays `FORMAL_CANDIDATE` — the oracle ABSTAINS cleanly (`is_match=False`, `is_internal_error=False`). Pure
+  reachability (W1/W3), never a minted vouch — the state paracetamol-via-Ac2O held before #110's recognizer.
+- *Opt-in discipline:* one dict entry in `algebra_profiles.py` + an import; NO default flipped (DEFAULT_ALGEBRA_
+  PROFILE / LEGACY_MISSING / DEFAULT_ROUTE_ALGEBRA_PROFILE / DEFAULT_TRANSFORM_REGISTRY all untouched), version-
+  independent fingerprint NO DRIFT. The one golden moved is the closed profile-id set (now 4).
+- *Independent witnesses (mandate §5):* bond-order (exactly one heavy bond +1 order, two H shed) and stoichiometry
+  (reactant atoms == precursor + H2) each re-derived from PUBLIC molecule fields by a route different from the
+  provider's own `_precursor`/`forget`.
+- *Adversary (evil-morty) + independent corroboration:* 1,200+ hydrogenation steps across ~500 molecules + a
+  targeted attribution-theft pass (DA-adduct / ester / ether / amide product shapes, worst case
+  `cyclohexa-1,3-diene + H2 -> cyclohexene`) → **0 false-vouch, 0 internal-error leak, 0 default perturbation, 0
+  topology crash.** I independently reproduced the no-vouch result end-to-end (8 diverse targets, live positive
+  control = esterification MATCHES) and ENCODED the invariant as a standing parametrized guard. The no-false-vouch
+  property is EMERGENT from the recognizers' re-derivation discipline (every recognizer reconstructs all declared
+  reactants; H2 is irreducible as a retro/scission fragment; the step shape is always 2→1-with-H2) — a future 2→1
+  recognizer that skipped reconstructing both declared reactants would reopen it, so the guard now pins it. Residual
+  (noted, NOT a break): the H2-shedding edges widen search branching on large saturated substrates — strictly
+  bounded (bond order capped at 3, depth-bounded; no hang), but measure the blast radius before any default
+  promotion.
+
 ## Coverage impact so far
 
 **Floor hardened first (Rounds I–III):** no forged-centre false-VOUCH (#126), no centre-equality mislabel (#128), no
@@ -296,7 +328,10 @@ content-deterministic + closed-shell-sound (#132). **Coverage now moving (Round 
   and ALKYL sulfonate-ester transfer (#111) — the 19th class — the cheap recognition win (mesylate/tosylate/triflate
   activation of alkyl alcohols), adversary-hardened against three false-vouches.
 - **Newly SEARCHABLE (opt-in, demonstrated):** the lateral [3,3]/electrocyclic families via
-  `lateral_search.lateral_route_to` (Cope/Claisen/6-pi), oracle-vouched end-to-end and now centre-free (#132).
+  `lateral_search.lateral_route_to` (Cope/Claisen/6-pi), oracle-vouched end-to-end and now centre-free (#132); and
+  the de/hydrogenation family via the `bond-order-edit-v1` profile (#114) — hydrogenation routes now REACHABLE under
+  an opt-in algebra, honestly demoted to FORMAL_CANDIDATE (no recognizer), adversary-clean for false-vouch. Note the
+  distinction from "RECOGNIZABLE" above: #114 moves REACHABILITY, not readiness — it mints no vouch.
 The remaining coverage expansion lives in Phase 2 (the Tier-0 infra walls #104–#109/#125 and the recognizer/grammar
 tiers #111–#123), characterised in `REACTION_ALGEBRA_COVERAGE_AUDIT_2026-10-12.md`.
 

@@ -9,7 +9,7 @@ obligation.** Supersedes nothing: `V1_0_RELEASE_GATE.md` and the `v1.0.0` tag re
 |---|---|---|
 | `v1.0.0` (published release) | `8345bbb` | the stable 1.0 record; `git diff v1.0.0 -- smartchem/` vs `origin/main` is empty |
 | `origin/main` | `99fce34` | 5 commits past the tag, all docs/launch — semantically ≡ `v1.0.0` |
-| `feat/chemical-graph-projections` (PR #101, draft) | `d547e6e` + P0 fix | this program's development branch; now `__version__ = 1.1.0a1` |
+| `feat/chemical-graph-projections` (PR #101, draft) | `22ea54e` | this program's development branch (P0 + Waves A/B/C); `__version__ = 1.1.0a1` |
 
 ## 1. Scientific authority model (invariant across the whole 1.x series — never relaxed)
 
@@ -39,6 +39,12 @@ them says so.
 * **#110 activated acyl transfer** — the 18th recognized class (anhydride/acyl-halide onto O/N/S). Flips the
   real industrial paracetamol route (4-aminophenol + Ac₂O → paracetamol + AcOH) to `PROCESS_SPECIFIED`.
   The **paracetamol litmus north-star firing for the first time.**
+* **#111 alkyl sulfonate-ester transfer** — the 19th recognized class (a sulfonyl halide sulfonylating an sp3
+  alkyl alcohol: mesylate/tosylate/triflate activation). The cheap Wave-C recognition win. A first adversarial
+  pass broke the initial cut with three false-vouches (carboxylic-acid mixed anhydride / masked-carbonyl gem-diol/
+  hemiacetal/enol / latent sulfate miscount); closed by an sp3-alkyl-carbinol + sulfonate-S census, with aryl-O
+  (phenol) deferred to #105. A second, independent adversarial pass found no false-vouch. `Verified` (bench 15/15,
+  false-vouch 0; the three kills retained as permanent controls; CI required jobs green on `22ea54e`).
 * **Typed chemical graph projection + named synthesis schemes** — DOT/Mermaid/SVG, offline HTML, optional
   RDKit depiction, route/DAG ensembles (#128/#129 family-naming + completeness honesty on the branch).
 * **Soundness fixes on the branch (OPEN on main — see §6):** #124 cyclic-refusal, #126 forged-centre retired,
@@ -48,8 +54,8 @@ them says so.
 
 | rung | theme | issues | owner modules | why this order |
 |---|---|---|---|---|
-| **1.1** (this branch) | graph workbench + first coverage win | graph PR #101, #110, #124/#126/#128/#129/#131/#132 | `graph_projection`, `depiction`, `reaction_type_oracle`, `readiness` | highest return: a trustworthy workbench + one real route to `PROCESS_SPECIFIED` |
-| **1.2** | cheap RECOGNITION wins (no new generators) | #111 ethers/esters, #112 SN2, #115 Claisen-lock | `reaction_type_oracle` | recognition is cheaper + lower-risk than generation; max coverage per rule |
+| **1.1** (this branch) | graph workbench + first coverage wins | graph PR #101, #110, **#111**, #124/#126/#128/#129/#131/#132 | `graph_projection`, `depiction`, `reaction_type_oracle`, `readiness` | highest return: a trustworthy workbench + two real recognition wins (the 18th/19th classes) |
+| **1.2** | cheap RECOGNITION wins (no new generators) | ~~#111~~ (landed early on 1.1), #112 SN2, #115 Claisen-lock | `reaction_type_oracle` | recognition is cheaper + lower-risk than generation; max coverage per rule |
 | **1.3** | contained OPERATOR families w/ transformation certificates | #114 hydrogenation (opt-in profile), #116 elimination, #117 enolate C–C | `transform_provider`, `bond_order_edit` | each family ships a conservation + locality certificate, opt-in, no default-flip |
 | **1.4** | bounded SEARCH + sound lateral capability | #104 W1 redesign, #124/#125 arity, #123 opt-in finite lateral | `routes`, `lateral_search`, `structure_descent` | an opt-in, finite, SOUND lateral search; fusion into `search_routes` stays deferred |
 | **1.5** | evidence/capability hardening + release | #107 catalyst ledger, #109 latent-fiction audit | `catalyst_availability`, capability layer | consolidation; the 1.5 acceptance gates (§4) must all be green |
@@ -101,6 +107,9 @@ is a readiness-layer demoter, not a search provider.
 .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_v1_0_version_transition.py tests/test_v1_0_public_contract.py
 # recognizer count + #110:
 .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_transform_algebra_expansion.py tests/test_activated_acyl_transfer_110.py
+# #111 alkyl sulfonate-ester transfer (adversary-hardened, 19th class):
+.venv/bin/python -m experiments.sulfonate_ester_transfer_111
+.venv/bin/python -m pytest -q -p no:cacheprovider tests/test_sulfonate_ester_transfer_111.py
 # readiness laws (graduation + non-monotonicity cap preserved):
 .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_v0_8_readiness_core.py tests/test_v0_9_capability_round_iii.py
 # the full OOM-safe gate:
@@ -111,6 +120,9 @@ scripts/run_suite.sh
 
 * `is_closed_shell_neutral` is a representation-relative heuristic — no general per-atom charge/electron
   model; its scope is bounded, not a universal closed-shell proof (2.0 #105 is the real fix).
+* #111 recognizes ALKYL sulfonate esters only. Aryl-O (phenol → aryl mesylate/tosylate) is NOT recognized: a
+  Kekulized aryl carbinol carbon is indistinguishable from an acyclic enol in the aromaticity-free graph, so the
+  sound scope is alkyl-O (honest coverage loss, deferred to the 2.0 aromaticity model #105).
 * RDKit = dev-only oracle; it never changes a verdict. The committed baseline runs without it.
 * Procedure-source evidence proves arithmetic/placement, not subject binding (deferred, §5).
 * A complete bounded search is complete only within the declared grammar; absence of a route is never

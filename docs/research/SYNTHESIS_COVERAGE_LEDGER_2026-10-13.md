@@ -256,13 +256,45 @@ the route lane (a working adapter was prototyped). The real cost is a factorial 
 (rank, lateral-budget) measure would cap. That FUSION alters a default-adjacent shared path and needs its own
 soundness + cost regression gate — the NEXT falsifiable step, deferred.
 
+## OPERATION SMARTCHEM 1.5 mega-round — Wave C (#111), 2026-10-20
+
+**#111 — ALKYL SULFONATE-ESTER TRANSFER recognized** (`experiments/sulfonate_ester_transfer_111.py` + test;
+commit `22ea54e`). The 19th attested class: a sulfonyl halide sulfonylating an sp3 ALKYL alcohol O —
+`R-OH + R'-SO2-X -> R-O-SO2-R' + H-X` (methyl/ethyl/isopropyl/benzyl mesylate, triflate). Structurally #110's
+activated-transfer shape with a SULFONYL electrophile (S(=O)2) rather than an ACYL one (C=O); the donor gates are
+mutually exclusive (sulfonyl S vs acyl carbonyl C), so the full 19× no-cross-poach matrix holds.
+- *Root-cause class (two-pass adversary):* the FIRST evil-morty pass BROKE the initial cut with three VERIFIED
+  false-vouches from a `not-recognizable`→false-VOUCH regression — a loose census counting any O on any carbon +
+  any two-=O sulfur (a NON-LOCAL signature, the R48 lesson one alphabet over): (F1) a carboxylic-acid O gave a mixed
+  carboxylic-sulfonic ANHYDRIDE vouched as a sulfonate ester; (F2) masked-carbonyl O-nucleophiles (gem-diol /
+  hemiacetal / enol — hydrates/tautomers of a carbonyl) vouched; (F3 latent) a dialkyl sulfate / chlorosulfate
+  miscounted.
+- *Fix:* `_sulfonate_ester_bond_count` now counts only a GENUINE alkyl sulfonate-ester linkage — an sp3
+  non-aromatic ALKYL-carbinol carbon (every bond order-1; only heteroatom neighbour the ester O) bonded through O to
+  a SULFONATE S (two =O AND its own S-C). This is N-alkylation's proven `_alkyl_carbinol_alcohol_count` lock
+  (dalembert KILL 1) applied at the formed O-S locus — representation-robust (reads bond orders, no aromaticity
+  model). Soundness lock = census → single O-S cut capped with H-X re-derivation (`resonance_identity` canonicalizes
+  resonance NOT tautomers → no enol→keto laundering) → ExperimentStep conservation cert; content-deterministic
+  (a forged reaction centre buys nothing).
+- *Boundaries:* ARYL-O (a PHENOL sulfonate) is honest `unrepresentable`-class COVERAGE LOSS deferred to the 2.0
+  aromaticity model (#105) — a Kekulized aryl carbinol carbon is indistinguishable from an acyclic enol in this
+  aromaticity-free graph. N (sulfonamide) / S (thiosulfonate) nucleophiles and the sulfonic-anhydride donor are
+  likewise out-of-scope, each a later #111 widening behind its own gate.
+- *Measured:* recognizer matrix 15/15, 4/4 alkyl positives recognized, **0 false-vouch**, no poach. The three kills
+  + aryl-O retained as PERMANENT regression controls. A SECOND, independent evil-morty pass found no false-vouch
+  across the full named attack surface (allyl/propargyl/benzyl/strained/bridgehead carbinols, orthoester/acetal
+  clean-carbon tricks, tautomer masks, bundled multi-bond steps, donor-gate & sulfonate-S census slips,
+  charge/radical/kekulé representation tricks, cross-poach both directions). Full OOM-safe suite green (7623/0).
+
 ## Coverage impact so far
 
 **Floor hardened first (Rounds I–III):** no forged-centre false-VOUCH (#126), no centre-equality mislabel (#128), no
-green UNATTESTED (#129), no phantom self-supply when rank-flat providers land (#124), ALL 17→18 recognizers
-content-deterministic + closed-shell-sound (#132). **Coverage now moving (Round IV):**
+green UNATTESTED (#129), no phantom self-supply when rank-flat providers land (#124), ALL 17→18→19 recognizers
+content-deterministic + closed-shell-sound (#132). **Coverage now moving (Round IV + 1.5 Wave C):**
 - **Newly RECOGNIZABLE:** activated acyl transfer (#110) — the 18th class — flips the already-generated anhydride/
-  acyl-halide O/N/S acylation routes (incl. the paracetamol-via-Ac2O litmus) from demoted-as-fiction to VOUCHED.
+  acyl-halide O/N/S acylation routes (incl. the paracetamol-via-Ac2O litmus) from demoted-as-fiction to VOUCHED;
+  and ALKYL sulfonate-ester transfer (#111) — the 19th class — the cheap recognition win (mesylate/tosylate/triflate
+  activation of alkyl alcohols), adversary-hardened against three false-vouches.
 - **Newly SEARCHABLE (opt-in, demonstrated):** the lateral [3,3]/electrocyclic families via
   `lateral_search.lateral_route_to` (Cope/Claisen/6-pi), oracle-vouched end-to-end and now centre-free (#132).
 The remaining coverage expansion lives in Phase 2 (the Tier-0 infra walls #104–#109/#125 and the recognizer/grammar

@@ -9,7 +9,7 @@ Phase II retires the trust bit entirely.  The condensation recognizers (acyl/eth
 forge surface -- RE-DERIVE their locality/elementarity witness from the step's own molecules (an independent
 single-cut capped scission, :func:`_condensation_rederives`), so for them recognition is a pure function of the
 conserved ``reactants``/``products`` content (CONTENT-DETERMINISTIC), ignoring the forgeable centre entirely.
-The universal guarantee across ALL 18 recognizers: no caller-settable field can MINT a vouch -- the pericyclic
+The universal guarantee across ALL 19 recognizers: no caller-settable field can MINT a vouch -- the pericyclic
 families gate on their own Layer-A re-derivation, so a forged centre can only ever DEMOTE, never upgrade a
 fiction.  The forge therefore closes under direct construction, ``dataclasses.replace``, AND an arbitrary fake
 transform.  (These tests exercise the condensation families, where full content-determinism holds.)

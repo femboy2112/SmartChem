@@ -42,9 +42,9 @@ _NEW_CLASS_STEPS = [
 ]
 
 
-def test_oracle_has_eighteen_recognizers():
-    # 1.1.0a1: #110 activated acyl transfer added as the 18th recognizer (MINOR coverage expansion).
-    assert len(_RECOGNIZERS) == 18
+def test_oracle_has_nineteen_recognizers():
+    # 1.1.0a1: #110 activated acyl transfer (18th) + #111 sulfonate-ester transfer (19th) -- MINOR coverage.
+    assert len(_RECOGNIZERS) == 19
 
 
 @pytest.mark.parametrize("label,step,expect", _NEW_CLASS_STEPS, ids=[c[0] for c in _NEW_CLASS_STEPS])
@@ -65,8 +65,8 @@ def test_no_cross_poach_exactly_one_recognizer_fires(label, step, _expect):
     assert len(fired) == 1, f"{label} fired {len(fired)} recognizers: {fired}"
 
 
-def test_full_18x_no_cross_poach_matrix():
-    """Every new class's step, run against ALL 18 recognizers, fires exactly its own -- and NO existing class's
+def test_full_19x_no_cross_poach_matrix():
+    """Every new class's step, run against ALL 19 recognizers, fires exactly its own -- and NO existing class's
     recognizer fires on it (the matrix that pins the whole whitelist apart)."""
     for label, step, _ in _NEW_CLASS_STEPS:
         matches = [cname for cname, pred in _RECOGNIZERS if _safe(pred, step)]

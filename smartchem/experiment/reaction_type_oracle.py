@@ -545,6 +545,178 @@ def _activated_acyl_transfer(step) -> bool:
     return _activated_transfer_rederives(step, target, donor, nucleophile, leaving_group)
 
 
+def _is_sulfonyl_halide(molecule) -> bool:
+    """An activated SULFONYL donor R-SO2-X: a sulfur double-bonded to exactly two oxygens, single-bonded to a
+    halogen, and single-bonded to its R carbon.  Distinct from an acyl halide (whose electrophile is a CARBONYL
+    carbon, not sulfur), so the #111 sulfonate recognizer never poaches the #110 acyl-transfer donor -- and vice
+    versa, an acyl halide is never a sulfonyl halide (no sulfur)."""
+    atoms = molecule.atoms
+    adj = _acyl_adjacency(molecule)
+    for s in range(len(atoms)):
+        if atoms[s] != "S":
+            continue
+        nbrs = adj.get(s, ())
+        dbl_o = sum(1 for n, o in nbrs if atoms[n] == "O" and o == 2)
+        has_halide = any(atoms[n] in _HALOGENS and o == 1 for n, o in nbrs)
+        has_carbon = any(atoms[n] == "C" and o == 1 for n, o in nbrs)
+        if dbl_o == 2 and has_halide and has_carbon:
+            return True
+    return False
+
+
+def _sulfonate_ester_bond_count(molecule) -> int:
+    """Count GENUINE alkyl sulfonate-ester linkages C(sp3)-O-SO2-C: an oxygen single-bonded to an sp3 non-aromatic
+    ALKYL-carbinol carbon AND single-bonded to a SULFONATE sulfur (a sulfur bearing two =O AND its own single-bonded
+    carbon, the R'-SO2- group).  This is the bond an alkyl sulfonate transfer FORMS; counting it lets the net check
+    see exactly one such linkage appear on the sulfonylated target.
+
+    Hardened against three Wave-C adversary false-vouches (evil-morty) -- the earlier loose count (any O on any
+    single-bonded carbon and any two-=O sulfur) was a non-local signature SHARED by other classes, the R48 lesson
+    one alphabet over:
+    * the carbinol carbon must be an sp3 non-aromatic ALKYL carbinol (every bond single) whose only heteroatom
+      neighbour is this ester O -- so a CARBOXYLIC-acid O (an acyl C=O carbon; MsCl + R-COOH is a mixed
+      carboxylic-sulfonic ANHYDRIDE, a DIFFERENT class, not a sulfonate ester) and a MASKED-carbonyl O (a gem-diol /
+      hemiacetal / enol -- a hydrate or tautomer of a carbonyl, not an isolable alcohol) are NOT counted.  This is
+      exactly :func:`~smartchem.experiment.feasibility._alkyl_carbinol_alcohol_count`'s donor-half lock (dalembert
+      KILL 1), applied at the formed O-S locus.
+    * ARYL-O (a phenol sulfonate) is honest COVERAGE LOSS here, NOT a false-vouch: a Kekulized aryl carbinol carbon
+      carries a ring C=C indistinguishable from an acyclic enol in this aromaticity-free graph representation, so
+      the sound narrow scope is ALKYL-O only; aryl sulfonate esters are deferred to a 2.0 aromaticity model (#105).
+    * the sulfonate sulfur must bear its OWN single-bonded carbon (R'-SO2-), so a dialkyl SULFATE's O-SO2-O bridge
+      and a chlorosulfate are not miscounted as sulfonate-ester linkages (Finding 3 hardening, closed before any
+      donor-gate widening could make it bite).
+
+    CALLER CONTRACT: this census reads bond ORDERS, not a per-atom valence/charge model, so it trusts its caller to
+    have gated CLOSED-SHELL NEUTRALITY first -- a hypervalent / drawn-neutral sulfur is kept out of the count only by
+    the ``is_closed_shell_neutral`` guard that :func:`_sulfonate_ester_transfer` evaluates BEFORE this (the sole call
+    site).  A future caller invoking this without that preceding gate inherits a potential miscount."""
+    atoms = molecule.atoms
+    adj = _acyl_adjacency(molecule)
+
+    def _is_sulfonate_s(n: int) -> bool:
+        nbrs = adj.get(n, ())
+        return (atoms[n] == "S"
+                and sum(1 for n2, o2 in nbrs if atoms[n2] == "O" and o2 == 2) == 2
+                and any(atoms[n2] == "C" and o2 == 1 for n2, o2 in nbrs))
+
+    def _is_alkyl_carbinol_c(c: int, ester_o: int) -> bool:
+        nbrs = adj.get(c, ())
+        if atoms[c] != "C" or any(order != 1 for _n, order in nbrs):
+            return False   # sp3, non-aromatic, non-carbonyl, non-enol: every bond single (kekulized aryl/C=O/C=C out)
+        other_heavy = [n for n, _o in nbrs if atoms[n] != "H" and n != ester_o]
+        return all(atoms[n] == "C" for n in other_heavy)   # only heteroatom neighbour is this ester O (no masked C=O)
+
+    count = 0
+    for o in range(len(atoms)):
+        if atoms[o] != "O":
+            continue
+        nbrs = adj.get(o, ())
+        on_sulfonate_s = any(atoms[n] == "S" and order == 1 and _is_sulfonate_s(n) for n, order in nbrs)
+        carbinol = any(order == 1 and _is_alkyl_carbinol_c(n, o) for n, order in nbrs)
+        if on_sulfonate_s and carbinol:
+            count += 1
+    return count
+
+
+def _is_hydrogen_halide(molecule) -> bool:
+    """Exactly H-X (HF / HCl / HBr / HI): the sulfonyl-halide leaving group -- neutral, one H and one halogen, no
+    other heavy atom.  (The H-X half of :func:`_is_leaving_group_acid`, narrowed to exclude the carboxylic-acid
+    leaving group so the sulfonate recognizer admits only the sulfonyl-HALIDE donor, not a sulfonic anhydride.)"""
+    counts = dict(molecule.formula)
+    heavy = {k: v for k, v in counts.items() if k != "H"}
+    return (getattr(molecule, "charge", 0) == 0 and counts.get("H", 0) == 1 and len(heavy) == 1
+            and next(iter(heavy)) in _HALOGENS and heavy[next(iter(heavy))] == 1)
+
+
+def _sulfonate_transfer_rederives(step, target, donor, nucleophile, leaving_group) -> bool:
+    """Re-derive the sulfonate transfer FROM THE MOLECULES: does the sulfonylated ``target`` disconnect by ONE
+    elementary cut -- capping with the HYDROGEN-HALIDE leaving group -- into EXACTLY the declared sulfonyl-halide
+    ``donor`` and alcohol ``nucleophile``?  Restricted to the target's order-1 O--S(sulfonyl) bonds (the sulfonate
+    ester locus -- the bond the transfer forms).  The content-determinism analogue of
+    :func:`_activated_transfer_rederives`, cutting the O-S ester bond instead of the acyl C-Nu bond; the reverse of
+    one such single-cut capped scission IS one genuine elementary sulfonyl transfer, and a bundle / non-transfer
+    cannot reconstruct both declared precursors by one cut.  Fail-closed: a capper refusal / no matching cut -> False."""
+    from ..smiles import resonance_identity
+    from ..structure_descent import ScissionError, single_cut_capped_scissions
+    atoms = target.atoms
+    adj = _acyl_adjacency(target)
+
+    def _is_sulfonyl_s(n: int) -> bool:
+        return atoms[n] == "S" and sum(1 for n2, o2 in adj.get(n, ()) if atoms[n2] == "O" and o2 == 2) == 2
+
+    candidate = tuple(b for b in sorted(target.bonds)
+                      if getattr(b, "order", None) == 1
+                      and ((atoms[b.i] == "O" and _is_sulfonyl_s(b.j))
+                           or (atoms[b.j] == "O" and _is_sulfonyl_s(b.i))))
+    if not candidate:
+        return False
+    try:
+        want = sorted(resonance_identity(m) for m in (donor, nucleophile))
+        scissions, _complete = single_cut_capped_scissions(target, (leaving_group,), candidate)
+    except (ScissionError, NotImplementedError, TypeError, ValueError):
+        return False   # a target the capper refuses (charged / pathological) -> fail-closed demote, never vouch
+    for cs in scissions:
+        try:
+            if sorted(resonance_identity(p) for p in cs.products) == want:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _sulfonate_ester_transfer(step) -> bool:
+    """Recognizer: SULFONATE-ESTER transfer -- a sulfonyl halide sulfonylates an alcohol O (#111 sub-family).
+
+    The narrow, defensible #111 opening: ``R-OH + R'-SO2-X -> R-O-SO2-R' + H-X`` for an ALKYL carbinol R (methyl
+    mesylate / ethyl / isopropyl / benzyl / triflate ester formation).  Structurally the activated-transfer SHAPE of
+    #110 (2 reactants -> 2 products, no water, a leaving acid) but with a SULFONYL electrophile (S(=O)2) rather than
+    an ACYL one (C=O), so it CANNOT poach #110: #110's donor gate (:func:`_is_activated_donor`) requires an acyl
+    carbonyl carbon a sulfonyl halide lacks, and this gate (:func:`_is_sulfonyl_halide`) requires a sulfonyl sulfur
+    an acyl halide lacks -- mutually exclusive.
+
+    SCOPE (honest, narrow): an sp3 ALKYL-carbinol O nucleophile (-> an alkyl sulfonate ESTER) and a HYDROGEN-HALIDE
+    leaving group only.  Deliberately NOT vouched -- real sulfonyl transfers that are honest COVERAGE LOSS, never a
+    false-vouch, each deferred behind its own later gate: an N nucleophile (sulfonamide), an S nucleophile
+    (thiosulfonate), a sulfonic-ANHYDRIDE donor, and an ARYL-O nucleophile (a PHENOL sulfonate -- a Kekulized aryl
+    carbinol carbon is indistinguishable from an acyclic enol in this aromaticity-free graph, so aryl-O waits on a
+    2.0 aromaticity model, #105).  A CARBOXYLIC-acid O is not in scope at all: MsCl/TsCl + R-COOH forms a mixed
+    carboxylic-sulfonic ANHYDRIDE (a different #110-adjacent class), and the alkyl-carbinol census below excludes it.
+
+    CONSERVATION-LOCK (mirroring #110, adversary-hardened -- evil-morty Wave C).  Within the activated shape and with
+    every species CLOSED-SHELL NEUTRAL, the census fixes the TYPES (exactly one sulfonyl-halide donor consumed,
+    exactly one H-X produced, exactly one GENUINE alkyl sulfonate-ester linkage net-formed on the target --
+    :func:`_sulfonate_ester_bond_count`, whose sp3-alkyl-carbinol + sulfonate-S discipline is what excludes the
+    mixed-anhydride, masked-carbonyl/enol and sulfate false-vouches -- and the target itself not a sulfonyl halide,
+    the disproportionation guard); the single-cut re-derivation (:func:`_sulfonate_transfer_rederives`) then forces
+    those types onto ONE genuine elementary sulfonyl transfer -- a bundle or a non-transfer cannot reconstruct both
+    declared precursors by one H-X-capped O-S cut.  Content-deterministic: reads only the conserved molecules, no
+    caller-supplied centre.  (Problem A type-validity only; feasibility -- these want the activation they carry --
+    is Problem B.) ([[a-whole-set-count-classifier-is-fooled-by-non-locality]] [[a-verifier-that-cannot-verify-must-fail-closed]])"""
+    from ..diels_alder import is_closed_shell_neutral
+    from .feasibility import _is_water
+    reactants = tuple(getattr(step, "reactants", ()))
+    products = tuple(getattr(step, "products", ()))
+    if len(reactants) != 2 or len(products) != 2:
+        return False
+    if any(_is_water(m) for m in reactants + products):
+        return False   # a water coproduct is a dehydrative class, not activated sulfonyl transfer
+    if not all(is_closed_shell_neutral(m) for m in reactants + products):
+        return False   # #132 hardening: a radical / charged / ylide partner is not a sulfonyl-transfer species
+    lg = [i for i, m in enumerate(products) if _is_hydrogen_halide(m)]
+    donors = [i for i, m in enumerate(reactants) if _is_sulfonyl_halide(m)]
+    if len(lg) != 1 or len(donors) != 1:
+        return False
+    leaving_group, target = products[lg[0]], products[1 - lg[0]]
+    donor, nucleophile = reactants[donors[0]], reactants[1 - donors[0]]
+    if _is_sulfonyl_halide(target):
+        return False   # the product must be the sulfonate ester, not another sulfonyl halide (disproportionation guard)
+    # NET: exactly one sulfonate-ester linkage net-forms on the target that the reactants did not carry.
+    if _sulfonate_ester_bond_count(target) <= (
+            _sulfonate_ester_bond_count(donor) + _sulfonate_ester_bond_count(nucleophile)):
+        return False
+    return _sulfonate_transfer_rederives(step, target, donor, nucleophile, leaving_group)
+
+
 def _alkyne_diels_alder(step) -> bool:
     """Recognizer: an all-carbon Diels-Alder [4+2] cycloaddition (diene + ALKYNE dienophile -> 1,4-cyclohexadiene).
 
@@ -826,6 +998,7 @@ _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
     ("N-alkylation (dehydrative, non-carbonyl N-H + alkyl-OH -> N-alkyl + water)", _n_alkylation),
     ("activated acyl transfer (anhydride/acyl-halide + R-OH/R-NH/R-SH -> ester/amide/thioester + acid/HX)",
      _activated_acyl_transfer),
+    ("sulfonate-ester transfer (sulfonyl halide + R-OH -> sulfonate ester + HX)", _sulfonate_ester_transfer),
     ("Diels-Alder [4+2] cycloaddition (all-carbon diene + alkene dienophile -> cyclohexene adduct)", _diels_alder),
     ("Diels-Alder [4+2] cycloaddition (all-carbon diene + alkyne dienophile -> 1,4-cyclohexadiene)",
      _alkyne_diels_alder),

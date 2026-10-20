@@ -34,7 +34,21 @@ from .graph_projection import (
     render_svg,
 )
 
-_COMPLETE = ("COMPLETE", "COMPLETE_WITHIN_BOUNDS", "UNATTESTED")
+_COMPLETE = ("COMPLETE", "COMPLETE_WITHIN_BOUNDS")  # #A1: UNATTESTED is NOT complete (no search receipt)
+
+
+def _completeness_exit_code(search_status: str) -> int:
+    """Three honest completeness states as DISTINCT exit codes (#A1; the ``graph`` verb is non-stable,
+    COMPATIBILITY sec 2.2). A CI gate on exit 0 must NEVER see UNATTESTED (no receipt) as an exhaustively
+    searched COMPLETE, nor conflate it with a truncated search.
+
+    * ``0`` attested-complete (COMPLETE / COMPLETE_WITHIN_BOUNDS)
+    * ``3`` UNATTESTED -- completeness NOT established (no search receipt); NOT a failed search
+    * ``4`` attested-incomplete -- a bounded search ran and was truncated; candidates may be missing
+    """
+    if search_status in _COMPLETE:
+        return 0
+    return 3 if search_status == "UNATTESTED" else 4
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -158,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
           f"source_digest={graph.source_digest} "
           f"receipt={graph.receipt_digest or 'UNATTESTED'} view_digest={graph.digest}",
           file=sys.stderr)
-    return 0 if graph.search_status in _COMPLETE else 4
+    return _completeness_exit_code(graph.search_status)
 
 
 if __name__ == "__main__":

@@ -242,7 +242,15 @@ def _conditions_summary(envelope) -> str:
 
 
 def _bond_change_text(center) -> str:
-    """A neutral, sound description of a reaction centre: which bonds form and which break."""
+    """A neutral rendering of a DECLARED reaction centre (which bonds it says form/break).
+
+    ADVISORY ONLY: ``center`` is caller-settable, forgeable metadata (ISSUE-126: ``dataclasses.replace``, a
+    fake ``from_transform``, the bare constructor) and is NEVER reconstructed from the step's checked
+    molecular topology. So this text describes what the centre CLAIMS, not proven chemistry -- callers must
+    surface it as DECLARED/advisory and must not use it as a step's authoritative identity (that is
+    :meth:`step.equation`, derived from the conserved multisets). A carbon-free ``H + H -> H2`` step wearing
+    a borrowed Diels-Alder centre renders carbon bond-changes here; that is the centre lying, not the step.
+    """
     if center is None:
         return ""
     glyph = {1: "-", 2: "=", 3: "#"}
@@ -669,13 +677,25 @@ def render_svg(graph: ChemicalGraphProjection) -> str:
             "dot/mermaid/html formats need no extra dependency and carry the same topology, "
             "stoichiometry and identity tags (dot/svg expose full identity on hover)"
         )
-    proc = subprocess.run([dot_bin, "-Tsvg"], input=render_dot(graph),
-                          capture_output=True, text=True)
+    try:
+        proc = subprocess.run([dot_bin, "-Tsvg"], input=render_dot(graph),
+                              capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        raise GraphProjectionError(
+            "graphviz dot timed out (>30s): this graph is too large/dense to lay out as SVG. The "
+            "dot/mermaid/html formats need no subprocess and carry the same topology and identity."
+        ) from None
     if proc.returncode != 0:
         raise GraphProjectionError(
             f"graphviz dot failed (exit {proc.returncode}): {proc.stderr.strip()[:200]}"
         )
-    return proc.stdout
+    out = proc.stdout
+    if len(out) > 32_000_000:  # ~32 MB: a pathological layout can emit unbounded SVG -- bound it
+        raise GraphProjectionError(
+            f"graphviz dot produced an oversized SVG ({len(out)} bytes > 32 MB cap); use the "
+            "dot/mermaid/html formats for a graph this large"
+        )
+    return out
 
 
 def _embed_json(payload: dict) -> str:
@@ -750,8 +770,9 @@ def render_scheme_html(route, *, search_result=None, depict: bool = True,
                 svg = depict_svg(mol)
             except Exception:
                 svg = None
-            if svg and "<script" in svg.lower():   # never inline a scripted SVG, whatever its origin
-                svg = None
+            if svg and "<script" in svg.lower():   # defense-in-depth only; the real boundary is the
+                svg = None                          # client <img> sandbox (an <img>-embedded SVG runs no
+                                                    # script/event handler) -- never trust this blacklist alone
         return {"name": _species_name(mol), "formula": formula, "svg": svg}
 
     produced_by: dict[str, int] = {}
@@ -776,8 +797,10 @@ def render_scheme_html(route, *, search_result=None, depict: bool = True,
         steps_payload.append({
             "index": index + 1,
             "family": family or "",
-            "headline": family or _bond_change_text(center) or step.equation(),
-            "bond_change": _bond_change_text(center),
+            # headline is the SOUND identity: an oracle-vouched family, else the conserved-multiset equation
+            # -- NEVER the forgeable centre (a borrowed centre must not become a step's headline claim, #A3).
+            "headline": family or step.equation(),
+            "bond_change": _bond_change_text(center),  # ADVISORY: the DECLARED centre; labelled as such at display
             "conditions": _conditions_summary(step.envelope),
             "equation": step.equation(),
             "precursors": precursors,
@@ -889,10 +912,16 @@ const COLW = 220, ROWH = 64, PAD = 40, NW = 168, NH = 34;
 const nodeById = {}; G.nodes.forEach(n => nodeById[n.id] = n);
 
 document.getElementById("title").textContent = G.source_kind + "  ·  view " + D.view_digest.slice(0,12);
+// ISSUE-129 / #A1: three DISTINCT completeness states. UNATTESTED (no search receipt) is NOT complete, but
+// it is ALSO NOT a failed/truncated search -- it is simply unknown, so it must read neither "complete" nor
+// "INCOMPLETE — candidates missing".
 const complete = (G.search_status === "COMPLETE" || G.search_status === "COMPLETE_WITHIN_BOUNDS");
+const unattested = (G.search_status === "UNATTESTED");
 const banner = document.getElementById("banner");
 banner.innerHTML =
-  "search: <b>" + G.search_status + "</b>" + (complete ? "" : " <span class='warn'>(INCOMPLETE — candidates may be missing)</span>") +
+  "search: <b>" + G.search_status + "</b>" + (complete ? "" : unattested
+    ? " <span class='warn'>(UNATTESTED — completeness not established: no search receipt, not a failed search)</span>"
+    : " <span class='warn'>(INCOMPLETE — a bounded search was truncated; candidates may be missing)</span>") +
   " &nbsp;|&nbsp; source " + G.source_digest.slice(0,12) +
   " &nbsp;|&nbsp; receipt " + (G.receipt_digest ? G.receipt_digest.slice(0,12) : "UNATTESTED") +
   " &nbsp;|&nbsp; " + G.nodes.length + " nodes / " + G.arcs.length + " arcs";
@@ -1119,12 +1148,16 @@ b.appendChild(document.createTextNode(
 const fams = document.getElementById("fams");
 if(D.families.length){ fams.appendChild(document.createTextNode("reaction families: "));
   D.families.forEach(f => fams.appendChild(el("span", null, f))); }
-else fams.appendChild(document.createTextNode("reaction families: named family not resolved — steps show their bond-change centre"));
+else fams.appendChild(document.createTextNode("reaction families: no family re-derived by the oracle — steps show the sound equation; any declared bond-change centre is advisory, not proven"));
 
 function cell(c){
   const wrap = el("div","cell");
   const pic = el("div","pic");
-  if(c.svg){ pic.innerHTML = c.svg; }           // trusted RDKit SVG (server-verified: no <script>)
+  if(c.svg){                                     // #A2: embed the optional RDKit SVG as a SANDBOXED <img>
+    const im = el("img"); im.className = "depiction"; im.alt = c.formula;  // an <img>-referenced SVG runs
+    im.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(c.svg);  // no script/event handler
+    pic.appendChild(im);                          // -- so onload/onerror/foreignObject/javascript: are inert
+  }
   else { pic.classList.add("text"); pic.textContent = c.formula; }
   wrap.appendChild(pic);
   const name = (c.name && c.name !== c.formula) ? c.name : c.formula;
@@ -1142,7 +1175,7 @@ D.steps.forEach(s => {
   head.appendChild(el("span","num","Step " + s.index));
   head.appendChild(el("span","fam", s.headline));
   head.appendChild(el("span","cond","conditions: " + s.conditions));
-  if(s.bond_change) head.appendChild(el("span","bc", s.bond_change));
+  if(s.bond_change) head.appendChild(el("span","bc", "declared Δbonds (advisory): " + s.bond_change));
   card.appendChild(head);
 
   const rxn = el("div","rxn");
@@ -1177,7 +1210,7 @@ if(D.leaf_inputs.length){
 const notes = el("ul","notes");
 [ "This is ONE candidate route, drawn in synthesis order; it is not a ranked recommendation and not all alternatives.",
   "Structures are drawn by the optional RDKit backend; a plain formula box means that species was not drawn (absent backend or a fragment that would not sanitise), never a missing identity.",
-  "A named reaction family is shown only where the step's reaction centre exactly matches that family's own centre; otherwise the neutral bond-change is shown.",
+  "A named reaction family is shown only where the reaction-type oracle INDEPENDENTLY RE-DERIVES that family from the step's own molecules (ISSUE-128: never from a caller-supplied reaction centre); otherwise the sound conserved-multiset equation is the headline, and any declared bond-change centre is shown as a DECLARED, advisory annotation — never proven chemistry.",
   "Conditions read UNKNOWN unless the step carries a sourced envelope — no default conditions are filled in.",
   "No yield, readiness, hazard, or bench-capability verdict is asserted by this drawing."
 ].forEach(t => notes.appendChild(el("li", null, t)));

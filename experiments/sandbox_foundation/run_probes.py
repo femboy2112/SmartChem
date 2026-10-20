@@ -108,7 +108,7 @@ def probe_c() -> dict:
     out["limiting_reactant_extent_overshoot_mol"] = max(0.0, rl.extents["A"][0] - 0.3)
     out["min_amount_after_exhaustion_mol"] = float(sl.n.min())
     out["exhaustion_clamp_flag_raised"] = rl.clamped
-    nokin = Mechanism(("P", "Q"), [[-1.0], [1.0]], ("X",), [[1, 1]], (ReactionRate(k_f=1.0),))
+    nokin = Mechanism.from_net(("P", "Q"), [[-1.0], [1.0]], ("X",), [[1, 1]], (ReactionRate(k_f=1.0),))
     out["missing_k_r_raises_MissingKineticParameter"] = _raises(
         MissingKineticParameter, lambda: reaction_step(single_cell_system(nokin), s0, 1.0))
     return out

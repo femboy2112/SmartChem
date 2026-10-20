@@ -150,6 +150,7 @@ class StepReport:
     dt_limit: Optional[float] = None
     extents: dict = field(default_factory=dict)
     solver: Optional[dict] = None
+    clamp_residual: float = 0.0  # max |E @ (clip - raw)| from any non-conservative species clip; 0 if none / exact
 
 
 # --------------------------------------------------------------------------------------------- boundaries
@@ -198,32 +199,100 @@ class ReactionRate:
 
 @dataclass(frozen=True, eq=False)
 class Mechanism:
-    """A constitution-balanced mechanism: species, stoichiometric matrix N (S x R), inventory matrix E (K x S)
-    whose rows are elements + 'charge', and per-reaction rate constants.  label says what it IS (SYNTHETIC)."""
+    """A constitution-balanced mechanism, COMPLEX-primary.
+
+    The authoritative data are the REACTANT complex and the PRODUCT complex: `reactant` and `product` are
+    (S x R) NON-NEGATIVE multiplicity matrices (species rows x reaction columns).  The net stoichiometric
+    matrix N = product - reactant is a DERIVED projection -- it loses the per-side multiplicities and so is
+    NOT an identity authority: A + B -> 2B and A -> B share the net column [-1, +1], and only the complexes
+    tell them apart.  Element/charge conservation lives on the net: E @ N = 0 (E's rows are elements + 'charge').
+
+    Mass-action kinetics, evaluated on c clipped to >= 0:
+        r_j = k_f,j * prod_i c_i^{order_f[i,j]}   -   k_r,j * prod_i c_i^{order_r[i,j]}   (reverse term iff reversible)
+    For an ELEMENTARY reaction (the default) the kinetic orders ARE the complex multiplicities:
+    order_f = reactant, order_r = product.  A NON-ELEMENTARY / empirical law (kinetics="empirical") MUST supply
+    its own `forward_orders` (and `reverse_orders` if any reaction is reversible); `rate_law_note` records the
+    law's validity regime / units.  Orders are NEVER inferred for an empirical law, and NEVER read off the net
+    column -- that historical bug silently dropped catalysts (net 0) and autocatalysts (product on both sides).
+    `label` says what it IS (SYNTHETIC)."""
     species: tuple
-    N: np.ndarray
+    reactant: np.ndarray
+    product: np.ndarray
     element_labels: tuple
     E: np.ndarray
     rates: tuple
     label: str = "SYNTHETIC"
+    forward_orders: Optional[np.ndarray] = None
+    reverse_orders: Optional[np.ndarray] = None
+    kinetics: str = "elementary"
+    rate_law_note: str = ""
     validate: InitVar[bool] = True
 
     def __post_init__(self, validate):
-        N = np.array(self.N, dtype=float)
+        reactant = np.array(self.reactant, dtype=float)
+        product = np.array(self.product, dtype=float)
         E = np.array(self.E, dtype=float)
         S = len(self.species)
-        if N.ndim != 2 or N.shape[0] != S or E.ndim != 2 or E.shape != (len(self.element_labels), S):
-            raise InvalidParameterError("shape mismatch among species / N / E / element_labels")
-        if N.shape[1] != len(self.rates):
-            raise InvalidParameterError("one ReactionRate per reaction column of N is required")
-        N.setflags(write=False)
-        E.setflags(write=False)
-        object.__setattr__(self, "N", N)
+        if reactant.ndim != 2 or reactant.shape[0] != S or reactant.shape != product.shape:
+            raise InvalidParameterError("reactant and product must both be (S, R) with one row per species")
+        R = reactant.shape[1]
+        if E.ndim != 2 or E.shape != (len(self.element_labels), S):
+            raise InvalidParameterError("E must be (len(element_labels), S)")
+        if R != len(self.rates):
+            raise InvalidParameterError("one ReactionRate per reaction column is required")
+        if np.any(reactant < 0) or np.any(product < 0):
+            raise InvalidParameterError("reactant/product are complex multiplicities and must be >= 0 "
+                                        "(a NET column is not a complex -- use Mechanism.from_net for a "
+                                        "reaction with no species shared across its two sides)")
+        N = product - reactant
+        if self.kinetics not in ("elementary", "empirical"):
+            raise InvalidParameterError(f"unknown kinetics kind {self.kinetics!r}")
+        if self.kinetics == "elementary":
+            if self.forward_orders is not None or self.reverse_orders is not None:
+                raise InvalidParameterError("elementary kinetics take their orders from the complexes; pass "
+                                            "kinetics='empirical' to supply forward_orders/reverse_orders")
+            order_f, order_r = reactant, product
+        else:  # empirical: orders are supplied, never inferred
+            if self.forward_orders is None:
+                raise InvalidParameterError("empirical kinetics require explicit forward_orders")
+            order_f = np.array(self.forward_orders, dtype=float)
+            if self.reverse_orders is None:
+                if any(rate.reversible for rate in self.rates):
+                    raise InvalidParameterError("empirical kinetics with a reversible reaction require reverse_orders")
+                order_r = np.zeros_like(order_f)
+            else:
+                order_r = np.array(self.reverse_orders, dtype=float)
+            for nm, o in (("forward_orders", order_f), ("reverse_orders", order_r)):
+                if o.shape != (S, R):
+                    raise InvalidParameterError(f"{nm} must be (S, R)")
+                if np.any(o < 0):
+                    raise InvalidParameterError(f"{nm} must be >= 0")
+        for arr in (reactant, product, E, N, order_f, order_r):
+            arr.setflags(write=False)
+        object.__setattr__(self, "reactant", reactant)
+        object.__setattr__(self, "product", product)
         object.__setattr__(self, "E", E)
+        object.__setattr__(self, "N", N)            # derived; cached read-only for the many N @ xi call sites
+        object.__setattr__(self, "order_f", order_f)
+        object.__setattr__(self, "order_r", order_r)
         if validate:
+            if not np.any(E):  # empty or all-zero E: E @ N == 0 is vacuous -- it certifies conservation of nothing
+                raise ConstitutionError("vacuous element inventory (empty or all-zero E) cannot certify conservation")
             res = E @ N
             if np.max(np.abs(res), initial=0.0) != 0.0:  # integer-valued test mechanisms => exact zero demanded
                 raise ConstitutionError(f"E.N != 0 (element/charge imbalance):\n{res}")
+
+    @classmethod
+    def from_net(cls, species, N, element_labels, E, rates, *, label="SYNTHETIC", forward_orders=None,
+                 reverse_orders=None, kinetics="elementary", rate_law_note="", validate=True) -> "Mechanism":
+        """Build from a NET stoichiometric matrix.  VALID ONLY when no species appears on both sides of a
+        reaction (no catalyst, no autocatalysis): then reactant = max(-N, 0), product = max(N, 0) recover the
+        complexes exactly.  A reaction WITH a shared species (e.g. A + B -> 2B) has an ambiguous net column --
+        construct Mechanism(species, reactant, product, ...) directly for those."""
+        N = np.array(N, dtype=float)
+        return cls(species, np.clip(-N, 0.0, None), np.clip(N, 0.0, None), element_labels, E, rates,
+                   label=label, forward_orders=forward_orders, reverse_orders=reverse_orders,
+                   kinetics=kinetics, rate_law_note=rate_law_note, validate=validate)
 
     @property
     def n_reactions(self) -> int:
@@ -240,16 +309,16 @@ class Mechanism:
                 _check_pos(v, f"reaction {r} {nm}", strict=False)
 
     def rate_vector(self, c: np.ndarray) -> np.ndarray:
-        """Per-reaction rate, mol/(m^3 s), on c clipped to >= 0 (documented guard)."""
+        """Per-reaction mass-action rate, mol/(m^3 s), on c clipped to >= 0.  Kinetic orders are the
+        reactant/product COMPLEX multiplicities (elementary) or the explicit empirical orders -- never the net
+        column, so a catalyst (net 0) and an autocatalyst (shared product) keep their rate dependence."""
         self.require_complete()
         c = np.clip(np.asarray(c, dtype=float), 0.0, None)
         r = np.empty(self.n_reactions)
         for j, rate in enumerate(self.rates):
-            of = np.clip(-self.N[:, j], 0.0, None)
-            orv = np.clip(self.N[:, j], 0.0, None)
-            r[j] = rate.k_f * np.prod(c ** of)
+            r[j] = rate.k_f * np.prod(c ** self.order_f[:, j])
             if rate.reversible:
-                r[j] -= rate.k_r * np.prod(c ** orv)
+                r[j] -= rate.k_r * np.prod(c ** self.order_r[:, j])
         return r
 
     def source_density(self, c: np.ndarray) -> np.ndarray:
@@ -494,11 +563,24 @@ def apply_controller(system: System, state: State, controller, cell: int, T_targ
 
 
 def reaction_cell(mech: Mechanism, n0: np.ndarray, V: float, dt: float, settings: SolverSettings):
-    """Integrate one closed cell over dt in extent space.  Returns (n1, xi, clamped)."""
+    """Integrate one closed cell over dt in extent space (n = n0 + N xi, so E @ (n - n0) = 0 by construction).
+    Returns (n1, xi, clamped, clamp_residual).
+
+    Positivity restoration for a sub-pos_tol integrator overshoot:
+      * R == 1: clamp the single EXTENT to its limiting-reactant window, landing the accepted state back in
+        n0 + im(N) so conservation stays exact to roundoff (a componentwise species clip would instead leave
+        im(N) and silently create matter).  The limiting amount then sits at 0 +/- roundoff, which can be a few
+        ulp NEGATIVE when its net coefficient is not a power of two (e.g. 96.73 - 3*(96.73/3) < 0), so the
+        roundoff clip below is still applied so State accepts the result.
+      * R > 1: a general conservative multi-reaction projection is an LP, deferred (see
+        docs/research/V2_0_PHYSICAL_MECHANISM_CONTRACT.md); the componentwise clip below is the fallback.
+    Either way the accepted state is clipped to >= 0 and the clip's conservation displacement
+    max|E @ (clip - pre)| is RETURNED as clamp_residual -- surfaced, never hidden.  A clip that displaces
+    conservation past pos_tol, or an overshoot past -pos_tol before any clamp, FAILS CLOSED."""
     mech.require_complete()
     R = mech.n_reactions
     if dt == 0.0:
-        return np.array(n0), np.zeros(R), False
+        return np.array(n0), np.zeros(R), False, 0.0
 
     def f(_t, xi):
         return V * mech.rate_vector((n0 + mech.N @ xi) / V)
@@ -510,12 +592,22 @@ def reaction_cell(mech: Mechanism, n0: np.ndarray, V: float, dt: float, settings
     n1 = n0 + mech.N @ xi
     lo = float(np.min(n1, initial=math.inf))
     clamped = False
+    clamp_residual = 0.0
     if lo < 0:
         if lo < -settings.pos_tol:
             raise NegativeAmountError(f"reaction produced amount {lo} < -pos_tol")
-        n1 = np.clip(n1, 0.0, None)
+        if R == 1:
+            lo_x, hi_x = mech.extent_bounds(n0, 0)          # window that keeps every amount >= 0 for this reaction
+            xi = np.array([min(max(float(xi[0]), lo_x), hi_x)])
+            n1 = n0 + mech.N @ xi                            # conservative: back into n0 + im(N)
+        n1_pre = n1
+        n1 = np.clip(n1_pre, 0.0, None)                     # clip roundoff/limiting negatives so State accepts n1
+        clamp_residual = float(np.max(np.abs(mech.E @ (n1 - n1_pre)), initial=0.0))
+        if clamp_residual > settings.pos_tol:               # a conservation leak past tolerance is a real failure
+            raise NegativeAmountError(
+                f"positivity clip displaced element/charge by {clamp_residual} > pos_tol={settings.pos_tol}")
         clamped = True
-    return n1, xi, clamped
+    return n1, xi, clamped, clamp_residual
 
 
 def reaction_step(system: System, state: State, dt: float, *, cells: Sequence[int] = (0, 1),
@@ -529,10 +621,11 @@ def reaction_step(system: System, state: State, dt: float, *, cells: Sequence[in
                                                    "atol": settings.atol, "pos_tol": settings.pos_tol,
                                                    "seed": settings.seed})
     for i in cells:
-        n1, xi, cl = reaction_cell(mech, n[i], system.volumes_m3[i], dt, settings)
-        src = mech.N @ xi
+        n1, xi, cl, cres = reaction_cell(mech, n[i], system.volumes_m3[i], dt, settings)
+        src = n1 - n[i]                     # the ACTUAL accepted transition (incl. any clamp), not the raw N @ xi
         rep.extents[CELL_NAMES[i]] = xi
         rep.clamped = rep.clamped or cl
+        rep.clamp_residual = max(rep.clamp_residual, cres)
         if ledger is not None:
             for s, nm in enumerate(system.species):
                 ledger.add(step=step, operator="reaction", kind=REACTION, quantity=nm, cell=i,

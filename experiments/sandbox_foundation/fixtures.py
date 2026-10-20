@@ -20,13 +20,13 @@ def thermal_system(C=(10.0, 30.0), k=2.0, thermal_boundaries=None) -> System:
 def isomer_mechanism(kf=1.5, kr=0.5, **rate_overrides) -> Mechanism:
     """SYNTHETIC P <-> Q.  Rows of E: X, Y, charge.  P and Q are 'isomers' with charge +1."""
     rate = ReactionRate(**{"k_f": kf, "k_r": kr, **rate_overrides})
-    return Mechanism(("P", "Q"), [[-1.0], [1.0]], ("X", "Y", "charge"),
+    return Mechanism.from_net(("P", "Q"), [[-1.0], [1.0]], ("X", "Y", "charge"),
                      [[2, 2], [1, 1], [1, 1]], (rate,), label="SYNTHETIC-isomerization")
 
 
 def bimolecular_mechanism(k=2.0) -> Mechanism:
     """SYNTHETIC R+ + S- -> RS (irreversible, second order).  Charge: +1 -1 -> 0."""
-    return Mechanism(("R+", "S-", "RS"), [[-1.0], [-1.0], [1.0]], ("X", "Y", "charge"),
+    return Mechanism.from_net(("R+", "S-", "RS"), [[-1.0], [-1.0], [1.0]], ("X", "Y", "charge"),
                      [[1, 0, 1], [0, 1, 1], [1, -1, 0]], (ReactionRate(k_f=k, reversible=False),),
                      label="SYNTHETIC-bimolecular")
 
@@ -39,7 +39,7 @@ def single_cell_system(mech: Mechanism, V=(1.0, 1.0)) -> System:
 
 def composite_mechanism(kf=1.5, kr=0.5) -> Mechanism:
     """SYNTHETIC P <-> Q plus a passive tracer T (zero N row).  Rows of E: X, Tunit, charge."""
-    return Mechanism(("P", "Q", "T"), [[-1.0], [1.0], [0.0]], ("X", "Tunit", "charge"),
+    return Mechanism.from_net(("P", "Q", "T"), [[-1.0], [1.0], [0.0]], ("X", "Tunit", "charge"),
                      [[2, 2, 0], [0, 0, 1], [1, 1, 0]], (ReactionRate(k_f=kf, k_r=kr),),
                      label="SYNTHETIC-composite")
 

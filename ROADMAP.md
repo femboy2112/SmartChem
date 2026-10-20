@@ -1,5 +1,13 @@
 # SmartChem roadmap
 
+> ## ▶ CURRENT STATUS (2026-10-20) — branch only
+> **Branch `feat/chemical-graph-projections`, HEAD `34e1891`; PR #101 (OPEN, DRAFT, base `main`); `__version__` =
+> `1.1.0a1` (dev); CI green on `34e1891` (run `39381019664`).** **Branch only — NO merge to `main`, NO tag, NO
+> release.** `main` (`99fce34`) and the `v1.0.0` tag are unchanged. Pointers: the 1.5 program
+> [`docs/research/V1_5_RELEASE_PROGRAM.md`](docs/research/V1_5_RELEASE_PROGRAM.md); the 2.0 pivot docs being
+> authored this round (may not exist yet): `docs/research/V2_0_PHYSICAL_MECHANISM_CONTRACT.md` and
+> `docs/research/V3_0_VINEGAR_BICARBONATE_FLAGSHIP.md`. The 2026-10-19 block below is kept as-is for history.
+
 > ## ▶ CURRENT STATUS (2026-10-19)
 > **1.0.0 RELEASED** (tag `v1.0.0` = `8345bbb`; `main` = `99fce34`, docs-only past the tag). **Active dev:
 > 1.1.0a1** on `feat/chemical-graph-projections` (PR #101, draft) — the typed chemical-graph/synthesis

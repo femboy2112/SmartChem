@@ -9,7 +9,7 @@ obligation.** Supersedes nothing: `V1_0_RELEASE_GATE.md` and the `v1.0.0` tag re
 |---|---|---|
 | `v1.0.0` (published release) | `8345bbb` | the stable 1.0 record; `git diff v1.0.0 -- smartchem/` vs `origin/main` is empty |
 | `origin/main` | `99fce34` | 5 commits past the tag, all docs/launch — semantically ≡ `v1.0.0` |
-| `feat/chemical-graph-projections` (PR #101, draft) | `3a37d46` (+#114) | this program's development branch (P0 + Waves A/B/C + CI OOM-fix; this commit adds Wave D #114); `__version__ = 1.1.0a1` |
+| `feat/chemical-graph-projections` (PR #101, draft) | `34e1891` (#114) | this program's development branch (P0 + Waves A/B/C + CI OOM-fix + Wave D #114 at HEAD); `__version__ = 1.1.0a1` |
 
 ## 1. Scientific authority model (invariant across the whole 1.x series — never relaxed)
 
@@ -103,6 +103,8 @@ them says so.
 
 Issues #103–#132 are **OPEN on `main`** and correctly so: their fixes live on the unmerged PR #101. A fix
 `Verified` on the branch is NOT resolved on `main` until the PR merges. Close-on-merge, not close-on-claim.
+The dated per-issue table — with SHAs and the #114 reachability / #105 / #130 deferral status — is at the end
+of this document under **"Issue-state reconciliation (2026-10-20, graceful-pivot round)"**.
 
 ## 7. Governance — the 3-lane projection (unchanged from the generic-compiler reorientation)
 
@@ -149,3 +151,19 @@ scripts/run_suite.sh
 * Procedure-source evidence proves arithmetic/placement, not subject binding (deferred, §5).
 * A complete bounded search is complete only within the declared grammar; absence of a route is never
   evidence of absence.
+
+## Issue-state reconciliation (2026-10-20, graceful-pivot round)
+
+Checked against `git log main..HEAD` (branch HEAD `34e1891`; `main` = `99fce34`). Every "branch" row below is
+absent from `main`.
+
+| Issue | What | Where it landed | On `main`? |
+|---|---|---|---|
+| #110 | Activated acyl transfer (18th recognizer) | branch, `cb79877` (MINOR-boundary declaration `2f9bd11`) | No |
+| #111 | Alkyl sulfonate-ester transfer (19th recognizer) | branch, `22ea54e` | No |
+| #114 | Opt-in `bond-order-edit-v1` de/hydrogenation profile | branch, `34e1891` — a REACHABILITY gain, deliberately NOT a 20th recognizer (oracle count stays 19); the hydrogenation RECOGNITION gap stays open/deferred | No |
+| #105 | Per-atom formal charge (sound fix for `is_closed_shell_neutral` scope) | DEFERRED to 2.0 (`docs/research/V2_0_PHYSICAL_MECHANISM_CONTRACT.md`, being authored this round); branch only documents the scope (`415c5d5`) | No |
+| #130 | Configuration-aware identity | DEFERRED to 2.0 (same contract doc) | No |
+
+Standing rule: **A fix marked done on this unmerged branch is NOT resolved on `main`.** Issues stay open until
+PR #101 merges.

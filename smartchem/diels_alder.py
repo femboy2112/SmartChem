@@ -182,23 +182,35 @@ _CLOSED_SHELL_VALENCES: dict[str, frozenset] = {
 
 
 def is_closed_shell_neutral(molecule: Molecule) -> bool:
-    """``True`` iff ``molecule`` is a CLOSED-SHELL NEUTRAL species.  A pericyclic (or condensation) reactant/product
-    must be one -- a radical (an under-coordinated carbon), a carbanion/carbocation or a charge-separated net-neutral
-    ylide is NOT, and admitting one as a reaction partner is a false-vouch (evil-morty, #132 hardening): guard 2c is
-    one-sided (``degree > nv`` only) so it drops over-coordination but NOT the under-coordinated radical/ion, and the
-    net ``charge == 0`` check misses a net-neutral charge-separated ring.
+    """A REPRESENTATION-RELATIVE HEURISTIC that is ``True`` for the closed-shell-neutral species it can see.
 
-    The model carries NO per-atom formal charge (only net :attr:`Molecule.charge`), so a formal charge or an unpaired
-    electron shows up purely as a valence DEVIATION from an allowed closed-shell valence
-    (:data:`_CLOSED_SHELL_VALENCES`).  The check is REPRESENTATION-AWARE because H may be explicit or implicit:
-    * EXPLICIT-H (``parse_smiles`` -- the untrusted caller surface evil-morty attacked): every atom's bond-order-sum
-      must be one of its ALLOWED valences.  A radical / ion / ylide carbon reads bond-sum 3 (not in {4}) and is
-      rejected; a genuine closed-shell molecule -- including a sulfonamide S (6), a nitroalkene N (5) or a
-      halogenated substrate -- reads an allowed valence everywhere.
-    * IMPLICIT-H (a heavy-atom graph -- the provider/internal surface): implicit H fill each heavy atom UP TO its
-      valence, so a radical/ion is not representable; only OVER-valence is a defect, bounded by ``<= max(allowed)``.
-    Net charge must be 0 either way.  An atom outside the table (a metal, an exotic element) FAILS CLOSED -- honest
-    coverage loss on an out-of-scope substrate, never a false-vouch."""
+    SCOPE AND KNOWN BLIND SPOTS (verified by an adversarial probe -- see tests/test_closed_shell_scope.py,
+    issue #105). The model carries NO per-atom formal charge, NO per-atom hydrogen count, and NO spin/electron
+    state -- only the heavy-atom bond graph and the net :attr:`Molecule.charge`. A formal charge or unpaired
+    electron is therefore visible ONLY as a bond-order-sum deviation from an allowed closed-shell valence
+    (:data:`_CLOSED_SHELL_VALENCES`), and only in a representation that exposes it. So this canNOT prove
+    arbitrary closed-shell status; it is reliable only within this bounded scope:
+
+    * EXPLICIT-H (e.g. ``parse_smiles`` output with H present): every atom's bond-order-sum must be an ALLOWED
+      valence. A radical/ion/ylide carbon reads 3 (not in {4}) and is rejected; a genuine closed-shell molecule
+      (sulfonamide S=6, nitroalkene N=5, a halogenated substrate) reads an allowed valence everywhere.
+    * It CORRECTLY rejects: over-valence, a nonzero net charge, and any out-of-table element (a metal, an
+      exotic element) -- honest coverage loss on an out-of-scope substrate, never a false-vouch.
+
+    KNOWN FALSE-ACCEPTS (documented, NOT patchable without the #105 per-atom model):
+    * an even-valence DIRADICAL whose every atom is valence-normal -- molecular O2 (``O=O``, each O at 2 in {2})
+      reads closed-shell; no valence-only rule can see its triplet ground state.
+    * in the no-H / heavy-atom representation, a bracket-no-H radical at an intermediate (<= max) valence --
+      ``O=[N]=O`` and ``[O-][N+]=O`` (N at bond-sum 4, within {3,5}) read closed-shell, because the implicit-H
+      branch assumes H would fill N up to 5 and cannot tell a ``[N]`` (no implicit H) apart from an ``N``.
+    * REPRESENTATION-DEPENDENCE: the same molecule can flip -- nitromethane passes as ``CN(=O)=O`` (N=5) but is
+      rejected as ``C[N+](=O)[O-]`` (N reads 4), since per-atom charge is not carried.
+
+    WHY THIS IS TOLERATED: it is DEFENSE-IN-DEPTH, not the soundness lock. No demonstrated false-VOUCH chains
+    through it -- the single-cut re-derivation, the :class:`ExperimentStep` conservation certificate and the
+    capped-scission neutral/valence-preserving certificate stand between this gate and any recognition, and the
+    blind-spot species do not arise in a re-derivable transform. A SOUND replacement needs the per-atom
+    formal-charge / electron-state model deferred to 2.0 (#105)."""
     if type(molecule) is not Molecule or getattr(molecule, "charge", 0) != 0:
         return False
     atoms = molecule.atoms

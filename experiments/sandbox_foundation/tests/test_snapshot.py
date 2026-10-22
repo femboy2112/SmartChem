@@ -148,3 +148,11 @@ def test_RIV_C3_renderer_isolation_matrix_leaves_the_digest_invariant():
                 _ = (ascii_render(snap), snap.concentration_mol_per_m3(), snap.amounts_mol.copy())
         digests.append(snap.model_digest)
     assert len(set(digests)) == 1                               # rendering / cosmetics never move the model identity
+
+
+def test_RIV_C3_non_string_species_is_refused_evil_morty_F2():
+    # evil-morty Round IV Finding 2: a bytes-led 3-tuple species was misread by _canon as an array store and
+    # could collide two different worlds' model_digest.  Non-string species are now refused at construction, and
+    # the array store is a typed _ArrayStore with delimited dtype/shape/bytes (no cross-boundary byte shift).
+    with pytest.raises(ValueError):
+        PhysicalWorldSnapshot((b"X", "f8(1,)", ()), [1.0], np.zeros((1, 3)), np.ones((1, 3), bool), {}, 0, 0.0)

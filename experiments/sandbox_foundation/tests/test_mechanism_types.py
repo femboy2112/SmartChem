@@ -278,13 +278,17 @@ class TestA3NoForgedChemicalAuthority:
         ex = isomerization_descriptive().to_executable([verified_law()], omissions=OMIT)
         assert ex.species_identity is SpeciesIdentity.VERIFIED and ex.scientific_claim is True
 
-    def test_a_hand_set_verified_identity_needs_one_key_per_species(self):
+    def test_species_identity_is_not_a_public_constructor_argument(self):
+        # evil-morty Finding 1: a caller must NOT be able to DECLARE itself VERIFIED.  species_identity is
+        # init=False, so passing it is a TypeError, and a plain hand construction is UNTRUSTED.
         comps = ((("C", 2), ("H", 6), ("O", 1)), (("C", 2), ("H", 6), ("O", 1)))
-        with pytest.raises(ConversionRefusal) as ei:
+        with pytest.raises(TypeError):
             ExecutableMechanism(("ethanol", "dimethyl_ether"), comps, (0, 0),
                                 np.array([[1], [0]]), np.array([[0], [1]]), ("R0",), (verified_law(),), OMIT,
-                                SpeciesIdentity.VERIFIED, ())          # claims VERIFIED with no identity keys
-        assert ei.value.kind is K.SELECTION_INVALID
+                                SpeciesIdentity.VERIFIED, ("forged-key-A", "forged-key-B"))
+        ex = ExecutableMechanism(("ethanol", "dimethyl_ether"), comps, (0, 0),
+                                 np.array([[1], [0]]), np.array([[0], [1]]), ("R0",), (verified_law(),), OMIT)
+        assert ex.species_identity is SpeciesIdentity.UNTRUSTED and ex.scientific_claim is False
 
 
 class TestAdapterIntegration:

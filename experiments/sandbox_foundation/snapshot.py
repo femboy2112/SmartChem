@@ -72,27 +72,39 @@ def _jsonify(obj):
     return obj
 
 
+class _ArrayStore(tuple):
+    """Typed marker for an authoritative (bytes, dtype_str, shape) array store.  `_canon` dispatches on this TYPE,
+    NOT on a fragile 'any bytes-led 3-tuple' shape heuristic (evil-morty Round IV Finding 2) -- so an ordinary
+    content tuple (e.g. a species tuple) can never be misread as an array buffer."""
+    __slots__ = ()
+
+
+def _store_array(a, dtype) -> "_ArrayStore":
+    """The immutable backing store for an authoritative array: (bytes, dtype_str, shape), typed _ArrayStore."""
+    arr = np.ascontiguousarray(np.asarray(a, dtype=dtype))
+    return _ArrayStore((arr.tobytes(), arr.dtype.str, arr.shape))
+
+
 def _canon(*parts) -> str:
-    """Stable SHA-256 over a canonical serialization of the parts.  An (bytes, dtype, shape) triple is hashed as a
-    raw numeric buffer; a frozen mapping/sequence/scalar is hashed as sorted-key JSON (NO default= fallback)."""
+    """Stable SHA-256 over a canonical serialization of the parts.  An _ArrayStore is hashed as a raw numeric
+    buffer with its dtype/shape/bytes DELIMITED (so bytes cannot shift across the boundaries and collide); every
+    other part is hashed as sorted-key JSON (NO default= fallback).  Each branch carries a domain tag, so a
+    JSON-encoded value and an array store can never hash-collide."""
     h = hashlib.sha256()
     for p in parts:
-        if isinstance(p, tuple) and len(p) == 3 and isinstance(p[0], (bytes, bytearray)):
+        if isinstance(p, _ArrayStore):
             buf, dtype, shape = p
-            h.update(b"ndarray")
+            h.update(b"ndarray\x1e")
             h.update(str(dtype).encode())
+            h.update(b"\x1e")
             h.update(str(tuple(shape)).encode())
+            h.update(b"\x1e")
             h.update(bytes(buf))
         else:
+            h.update(b"json\x1e")
             h.update(json.dumps(_jsonify(p), sort_keys=True).encode())
         h.update(b"\x1e")  # record separator
     return h.hexdigest()
-
-
-def _store_array(a, dtype) -> tuple:
-    """A (bytes, dtype_str, shape) triple: the immutable backing store for an authoritative array."""
-    arr = np.ascontiguousarray(np.asarray(a, dtype=dtype))
-    return (arr.tobytes(), arr.dtype.str, arr.shape)
 
 
 def _view(store: tuple) -> np.ndarray:
@@ -121,6 +133,8 @@ class PhysicalWorldSnapshot:
                  conservation_diagnostics=None, numerical_uncertainty=None, boundary_material=(),
                  evidence=None, display_hints=None, schema_version=SCHEMA_VERSION):
         species = tuple(species)
+        if not all(isinstance(s, str) for s in species):
+            raise ValueError("species must be a tuple of string names")   # keep non-string content out of the digest
         vols = np.asarray(cell_volumes_m3, dtype=float)
         amt = np.asarray(amounts_mol, dtype=float)
         mask = np.asarray(valid_mask, dtype=bool)

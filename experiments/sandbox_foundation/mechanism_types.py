@@ -252,8 +252,11 @@ class DescriptiveMechanism:
     kinetics: tuple                 # per reaction: KineticLaw or None (= UNKNOWN)
     thermo: dict = field(default_factory=dict)   # facet name -> value or None (= UNKNOWN)
     recognized_family: Optional[str] = None
-    species_identity: SpeciesIdentity = SpeciesIdentity.UNTRUSTED
-    species_identities: tuple = ()               # per-species identity keys when VERIFIED
+    # species identity is NOT a public constructor argument (evil-morty Round IV Finding 1): a hand construction
+    # cannot DECLARE itself VERIFIED.  It defaults UNTRUSTED and is stamped VERIFIED only by from_derivations, which
+    # binds every species to a real Molecule identity key -- so no forged composition table can mint the claim.
+    species_identity: SpeciesIdentity = field(init=False, default=SpeciesIdentity.UNTRUSTED)
+    species_identities: tuple = field(init=False, default=())   # per-species identity keys when VERIFIED
     E: np.ndarray = field(init=False)
     element_labels: tuple = field(init=False)
     N: np.ndarray = field(init=False)
@@ -273,11 +276,6 @@ class DescriptiveMechanism:
             raise ConversionRefusal(ConversionRefusalKind.SELECTION_INVALID, "species names must be unique")
         if any(k is not None and not isinstance(k, KineticLaw) for k in self.kinetics):
             raise ConversionRefusal(ConversionRefusalKind.INVALID_KINETIC_LAW, "kinetics slots are KineticLaw or None")
-        if not isinstance(self.species_identity, SpeciesIdentity):
-            raise ConversionRefusal(ConversionRefusalKind.SELECTION_INVALID, "species_identity must be a SpeciesIdentity")
-        if self.species_identity == SpeciesIdentity.VERIFIED and len(self.species_identities) != S:
-            raise ConversionRefusal(ConversionRefusalKind.SELECTION_INVALID,
-                                    "a VERIFIED species identity needs one identity key per species")
         labels, E = build_E(self.compositions, self.charges)        # DERIVED here; no E can be passed in
         N = product - reactant
         if not np.any(E):
@@ -329,9 +327,13 @@ class DescriptiveMechanism:
                 reactant[keys.index(k), j] = d.reactant[i, 0]
                 product[keys.index(k), j] = d.product[i, 0]
         labels = tuple(reaction_labels) if reaction_labels is not None else tuple(f"R{j}" for j in range(R))
-        return cls(tuple(names), tuple(comps), tuple(charges), reactant, product, labels,
-                   tuple(kinetics) if kinetics is not None else (None,) * R, dict(thermo or {}), recognized_family,
-                   SpeciesIdentity.VERIFIED, tuple(keys))
+        obj = cls(tuple(names), tuple(comps), tuple(charges), reactant, product, labels,
+                  tuple(kinetics) if kinetics is not None else (None,) * R, dict(thermo or {}), recognized_family)
+        # the ONLY path that may stamp VERIFIED: these species ARE bound to real Molecule identities (the keys
+        # come from InventoryDerivation, which the adapter derived from real Molecule.formula/charge).
+        object.__setattr__(obj, "species_identity", SpeciesIdentity.VERIFIED)
+        object.__setattr__(obj, "species_identities", tuple(keys))
+        return obj
 
     # -- conversion --------------------------------------------------------------------------------
     def to_executable(self, laws: Optional[Sequence] = None, *, omissions: Sequence = (),
@@ -357,10 +359,13 @@ class DescriptiveMechanism:
         if not [o for o in omissions if isinstance(o, str) and o.strip()]:
             raise ConversionRefusal(ConversionRefusalKind.OMISSIONS_UNDECLARED,
                                     "an executable mechanism must explicitly list the competing chemistry it omits")
-        return ExecutableMechanism(self.species, self.compositions, self.charges,
-                                   self.reactant[:, sel], self.product[:, sel],
-                                   tuple(self.reaction_labels[j] for j in sel), chosen, tuple(omissions),
-                                   self.species_identity, self.species_identities)
+        ex = ExecutableMechanism(self.species, self.compositions, self.charges,
+                                 self.reactant[:, sel], self.product[:, sel],
+                                 tuple(self.reaction_labels[j] for j in sel), chosen, tuple(omissions))
+        if self.species_identity == SpeciesIdentity.VERIFIED:   # carry the trusted binding through the conversion
+            object.__setattr__(ex, "species_identity", SpeciesIdentity.VERIFIED)
+            object.__setattr__(ex, "species_identities", self.species_identities)
+        return ex
 
 
 # ------------------------------------------------------------------------------------------- executable
@@ -377,8 +382,10 @@ class ExecutableMechanism:
     reaction_labels: tuple
     laws: tuple
     omissions: tuple
-    species_identity: SpeciesIdentity = SpeciesIdentity.UNTRUSTED
-    species_identities: tuple = ()
+    # NOT public constructor arguments (evil-morty Finding 1): a hand-built ExecutableMechanism is UNTRUSTED and
+    # cannot claim verified chemistry.  Only to_executable (from a from_derivations-built descriptive) stamps VERIFIED.
+    species_identity: SpeciesIdentity = field(init=False, default=SpeciesIdentity.UNTRUSTED)
+    species_identities: tuple = field(init=False, default=())
     E: np.ndarray = field(init=False)
     element_labels: tuple = field(init=False)
     N: np.ndarray = field(init=False)
@@ -391,11 +398,6 @@ class ExecutableMechanism:
             raise ConversionRefusal(ConversionRefusalKind.SELECTION_INVALID, "shape mismatch in executable mechanism")
         if np.any(reactant < 0) or np.any(product < 0):
             raise ConversionRefusal(ConversionRefusalKind.SELECTION_INVALID, "complex multiplicities must be >= 0")
-        if not isinstance(self.species_identity, SpeciesIdentity):
-            raise ConversionRefusal(ConversionRefusalKind.SELECTION_INVALID, "species_identity must be a SpeciesIdentity")
-        if self.species_identity == SpeciesIdentity.VERIFIED and len(self.species_identities) != S:
-            raise ConversionRefusal(ConversionRefusalKind.SELECTION_INVALID,
-                                    "a VERIFIED species identity needs one identity key per species")
         for j, law in enumerate(self.laws):
             if not isinstance(law, KineticLaw) or not law.is_complete:
                 raise ConversionRefusal(ConversionRefusalKind.KINETICS_UNAVAILABLE, f"reaction {j} lacks a complete law")
@@ -484,7 +486,7 @@ class ExecutableMechanism:
         law_content = tuple((law.k_f, law.k_r, law.reversible, law.kinetics,
                              tuple(law.forward_orders) if law.forward_orders is not None else None,
                              tuple(law.reverse_orders) if law.reverse_orders is not None else None,
-                             law.k_f_units, law.k_r_units) for law in self.laws)
+                             law.k_f_units, law.k_r_units, law.validity_T_K) for law in self.laws)
         species_key = (self.species_identities if self.species_identity == SpeciesIdentity.VERIFIED
                        else self.compositions)
         return _digest("ExecutableModel", self.species_identity.value, tuple(species_key),

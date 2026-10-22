@@ -102,6 +102,15 @@ def test_A4_downgrade_to_synthetic_survives_to_the_twocell_and_snapshot():
     assert sv.evidence_digest != ss.evidence_digest                    # ...distinct admission identity (not lost)
 
 
+# evil-morty Finding 3: a law's temperature-validity window is authoritative kinetic content -> moves model identity
+def test_A4_validity_window_moves_model_identity():
+    a = _ex(ISO_STEP, KineticLaw(2.0e-3, 1.0e-3, True, AdmissionLevel.SYNTHETIC, "s^-1", "s^-1",
+                                 assumption="x", validity_T_K=(200.0, 300.0)))
+    b = _ex(ISO_STEP, KineticLaw(2.0e-3, 1.0e-3, True, AdmissionLevel.SYNTHETIC, "s^-1", "s^-1",
+                                 assumption="x", validity_T_K=(1000.0, 2000.0)))
+    assert a.model_identity != b.model_identity
+
+
 # the snapshot's evidence digest is independent of the model digest (the two-digest discipline, end to end)
 def test_A4_snapshot_evidence_is_independent_of_model():
     ex = _ex(ISO_STEP, _verified_uni())

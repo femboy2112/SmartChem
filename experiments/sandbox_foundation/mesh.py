@@ -59,6 +59,10 @@ MAX_SPECIES_MESH = 1024
 # forms kron(B_space, I_S), which at the maxima would be (C*S x F*S) = 512 TiB); this budget guards the remaining
 # genuinely dense arrays (state, flux, reference) so a huge-but-legal topology is a typed refusal, not an OOM.
 MAX_DENSE_BYTES = 512 * 1024 ** 2   # 512 MiB
+# The ledger/event cross-check materialises F*2*S FluxEvent PYTHON OBJECTS per substep (not an ndarray, so
+# MAX_DENSE_BYTES does not see them).  Cap that object count so a huge-but-legal topology with a ledger is a
+# bounded typed refusal, not a multi-GB object blow-up (evil-morty Round IV residual).
+MAX_EVENTS = 4_000_000
 
 
 # --------------------------------------------------------------------------------------------- errors
@@ -159,6 +163,7 @@ class Mesh:
                 parent[find(int(f.tail))] = find(int(f.head))
             if len({find(i) for i in range(C)}) > 1:
                 raise MissingFaceError("mesh is disconnected: a face is missing between components")
+        _preflight_dense((C, len(self.faces)))   # the incidence matrix is the LARGEST dense array; guard it here
         B = np.zeros((C, len(self.faces)))
         for k, f in enumerate(self.faces):
             B[f.head, k] = +1.0
@@ -316,15 +321,23 @@ def transport_step_mesh(system: MeshSystem, state: MeshState, dt: float, *, poli
     g = system.g
     ext = _external_flows(system)
     n = np.array(state.n)
+    want_events = events is not None or ledger is not None
+    if want_events and mesh.n_faces * 2 * len(system.species) > MAX_EVENTS:
+        raise ResourceBudgetError(
+            f"the ledger/event cross-check would materialise {mesh.n_faces * 2 * len(system.species)} FluxEvents "
+            f"per substep > MAX_EVENTS={MAX_EVENTS} (bounded refusal; run without a ledger/events list to skip it)")
     for sub in range(nsub):
         c = n / V[:, None]
-        # (1) per-side flux events, each from its OWN cell's perspective (ledger path)
+        # (1) per-side flux events, each from its OWN cell's perspective (ledger path) -- built ONLY when a ledger
+        #     or events list consumes them (otherwise the F*2*S object allocation is pure waste / an OOM risk).
         sub_events = []
-        for k, f in enumerate(mesh.faces):
-            for cell, other, orient in ((f.tail, f.head, -1), (f.head, f.tail, +1)):
-                inflow = flux_fn(g[k], c[cell], c[other], orient)   # mol/s into `cell`
-                for s, nm in enumerate(system.species):
-                    sub_events.append(FluxEvent(k, nm, float(h * inflow[s]), orient, h, FICK, int(cell), step, sub))
+        if want_events:
+            for k, f in enumerate(mesh.faces):
+                for cell, other, orient in ((f.tail, f.head, -1), (f.head, f.tail, +1)):
+                    inflow = flux_fn(g[k], c[cell], c[other], orient)   # mol/s into `cell`
+                    for s, nm in enumerate(system.species):
+                        sub_events.append(
+                            FluxEvent(k, nm, float(h * inflow[s]), orient, h, FICK, int(cell), step, sub))
         # (2) the ACCEPTED transition: one-sided flux ALONG the orientation pushed through B_space (state path)
         c_tail = np.array([c[f.tail] for f in mesh.faces]).reshape(mesh.n_faces, -1)
         c_head = np.array([c[f.head] for f in mesh.faces]).reshape(mesh.n_faces, -1)

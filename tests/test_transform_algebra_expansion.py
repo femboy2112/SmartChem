@@ -42,9 +42,11 @@ _NEW_CLASS_STEPS = [
 ]
 
 
-def test_oracle_has_nineteen_recognizers():
-    # 1.1.0a1: #110 activated acyl transfer (18th) + #111 sulfonate-ester transfer (19th) -- MINOR coverage.
-    assert len(_RECOGNIZERS) == 19
+def test_oracle_has_twenty_recognizers():
+    # 1.1.0a1: #110 activated acyl transfer (18th) + #111 sulfonate-ester transfer (19th) + #115 Claisen
+    # condensation (20th) -- MINOR coverage expansions; the version-transition golden stays UNMOVED (no corpus
+    # case is a Claisen condensation), so this is a pure coverage add, not a semantic re-freeze.
+    assert len(_RECOGNIZERS) == 20
 
 
 @pytest.mark.parametrize("label,step,expect", _NEW_CLASS_STEPS, ids=[c[0] for c in _NEW_CLASS_STEPS])

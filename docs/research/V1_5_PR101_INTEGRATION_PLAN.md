@@ -189,3 +189,35 @@ code, and the cut moves later (never edit a golden to make a prefix pass).
   file-overlap evidence only.
 * CI state of `c1b8e36` (the new `sandbox-foundation` job) was not re-queried here.
 * `gh pr view` was used read-only; no PR/branch/ref was created or changed.
+
+---
+
+## 7. Round IV reconciliation (2026-10-22, HEAD `0a761b9`, `main..HEAD` = 62 commits)
+
+The 2026-10-20 analysis above was written at `c1b8e36` (46 commits). Physicalization Rounds III and IV added
+16 more commits. The load-bearing finding is **reconciled, not overturned**: the history is STILL a clean
+production/experimental split, with ONE explicit exception that is itself cleanly separable.
+
+**What changed since `c1b8e36`:**
+- Round III (6 commits) + Round IV (6 commits, this round) are almost entirely `experiments/sandbox_foundation/`
+  and `docs/` — the 2.0 physical-mechanism engine. `git diff --name-only 34e1891..HEAD -- smartchem/` now lists
+  **exactly one** production file.
+- That one file is `smartchem/experiment/reaction_type_oracle.py`, changed by the **single** Round IV production
+  commit **`cf3d942`** (1.5 #115, the Claisen-condensation recognizer = 20th class). It touches that one source
+  file plus four production test files (`test_claisen_condensation_115.py` new; `test_sulfonate_ester_transfer_111`,
+  `test_transform_algebra_expansion`, `test_v0_7_production_algebra` count-gate updates 19->20) and two
+  `experiments/poor_man_*_probe.py` frozen-hash re-freezes + `test_poor_man_reaction_type_oracle.py`.
+
+**The reconciled seam:**
+- **1.1 production lane** = `main..34e1891` (the original 39-commit stable candidate) **plus the single commit
+  `cf3d942`**. `cf3d942` is cleanly cherry-pickable onto the `34e1891` prefix: it is additive (a new recognizer +
+  its controls), the version-transition golden is UNMOVED (no corpus case is a Claisen condensation, verified via
+  `fingerprint_invariant()`), and it carries an explicit MINOR coverage disposition (count 19->20, no default
+  flip). It depends only on the #110/#111 recognizers already in the prefix.
+- **experimental 2.0 lane** = everything else after `34e1891` — the entire `experiments/sandbox_foundation/`
+  engine (two-cell, mesh, detailed_balance, rate_units, lyapunov, mechanism adapter/types, snapshot, aqueous
+  equilibrium, LibGibson frame example) and its docs. Still **zero** production `smartchem/` impact.
+
+**So the options in sections 3-5 are unchanged in shape**; the only update is that the production unit is now
+"`main..34e1891` + `cf3d942`" rather than "`main..34e1891`". The experimental unit grew but stayed disjoint from
+`smartchem/`. No merge/tag/release/force-push performed; this remains a plan.

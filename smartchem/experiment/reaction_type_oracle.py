@@ -717,6 +717,147 @@ def _sulfonate_ester_transfer(step) -> bool:
     return _sulfonate_transfer_rederives(step, target, donor, nucleophile, leaving_group)
 
 
+def _is_claisen_coproduct_alcohol(molecule) -> bool:
+    """The Claisen-condensation coproduct: the protonated leaving alkoxide -- an ALKYL-carbinol MONO-ol
+    (methanol / ethanol / ...).  Uses :func:`~smartchem.experiment.feasibility._alkyl_carbinol_alcohol_count`
+    (the donor-half lock) so a carboxylic acid, an enol / masked carbonyl or a diol is not miscounted as the
+    alcohol coproduct; exactly one oxygen pins it to a mono-ol."""
+    from .feasibility import _alkyl_carbinol_alcohol_count
+    return _alkyl_carbinol_alcohol_count(molecule) == 1 and sum(1 for a in molecule.atoms if a == "O") == 1
+
+
+def _claisen_acyl_substituents_ok(adj, atoms, c, alpha) -> bool:
+    """The target's ACYL carbon ``c`` (the C=O joined to ``alpha`` by the new C--C bond): its remaining
+    substituents must be only C / H / O-alkyl -- an ester / ketone / carbonate acyl -- never a free -OH (acid),
+    N (amide), S (thioester) or halogen.  So the donor half was a genuine ester / ketone / carbonate, not an acid
+    or an amide (which belong to other classes)."""
+    from .feasibility import _is_carbonyl_carbon
+    for n, order in adj[c]:
+        if n == alpha or (order == 2 and atoms[n] == "O"):
+            continue                                       # the new C--C bond, or the carbonyl =O
+        if atoms[n] in ("C", "H"):
+            continue
+        if atoms[n] == "O" and order == 1:                 # an ester alkoxy O--C(sp3 alkyl), not a free -OH / enol
+            heavy = [x for x, _o in adj[n] if atoms[x] != "H" and x != c]
+            if len(heavy) == 1 and atoms[heavy[0]] == "C" and not _is_carbonyl_carbon(heavy[0], atoms, adj):
+                continue
+        return False
+    return True
+
+
+def _claisen_flank_ok(adj, atoms, flank, alpha) -> bool:
+    """The nucleophile-side FLANK carbonyl ``flank`` (1,3 to the acyl across ``alpha``) must be a KETONE (its one
+    non-carbonyl substituent a carbon) or an ESTER (an O-alkyl) -- never an aldehyde (H), amide (N), acid (-OH) or
+    thioester (S).  This is the 1,3-dicarbonyl lock's nucleophile half."""
+    from .feasibility import _is_carbonyl_carbon
+    subs = [(n, order) for n, order in adj[flank] if n != alpha and not (order == 2 and atoms[n] == "O")]
+    if len(subs) != 1:
+        return False
+    n, order = subs[0]
+    if atoms[n] == "C":
+        return True
+    if atoms[n] == "O" and order == 1:
+        heavy = [x for x, _o in adj[n] if atoms[x] != "H" and x != flank]
+        return len(heavy) == 1 and atoms[heavy[0]] == "C" and not _is_carbonyl_carbon(heavy[0], atoms, adj)
+    return False
+
+
+def _claisen_condensation(step) -> bool:
+    """Recognizer: CLAISEN CONDENSATION -- the 1,3-dicarbonyl / beta-ketoester family (#115).
+
+    NOT the Claisen [3,3] sigmatropic rearrangement (that is :func:`_claisen_rearrangement`, a 1->1 isomerization).
+    The net class is a 2->2 condensation forming a new C--C bond with loss of an alkoxide (as its alcohol):
+        donor-C(=O)-OR'  +  H-CHR-C(=O)-X  ->  donor-C(=O)-CHR-C(=O)-X  +  R'OH
+    (two reactants -> two products, no water; one product the alkyl-carbinol mono-ol coproduct, the other the
+    1,3-dicarbonyl target).  Genuine members: 2 EtOAc -> ethyl acetoacetate + EtOH; acetone + diethyl carbonate ->
+    ethyl acetoacetate + EtOH; acetophenone + EtOAc -> benzoylacetone + EtOH.
+
+    CONSERVATION-LOCK (the admission proof, mirroring #110/#111).  Within the 2->2 shape and with every species
+    CLOSED-SHELL NEUTRAL, the census fixes the TYPES (exactly one alkyl-carbinol mono-ol coproduct; a target that
+    is a 1,3-dicarbonyl -- an sp3 alpha carbon that RETAINS an H, flanked by a ketone/ester carbonyl, joined to an
+    acyl carbon whose substituents are C/H/O-alkyl only).  The single-cut re-derivation then forces those types
+    onto ONE genuine elementary condensation: the target must disconnect by ONE elementary C--C cut, capping with
+    the ALCOHOL coproduct, into EXACTLY the declared reactants -- AND with the ORIENTATION witness that the alcohol
+    caps the ACYL carbon with its O and the ALPHA carbon with its H.  The flipped cap (acyl gets the H -> an
+    aldehyde, alpha gets the OR -> an ether/ester) reconstructs a DIFFERENT, fictitious pair -- that is exactly how
+    the butanone fiction (AcOH + ethane -> butanone) and the MeCHO + methyl-methoxyacetate orientation fake would
+    otherwise slip through -- so without the witness the recognizer would false-vouch; with it they are rejected.
+    Content-deterministic: reads only the conserved molecules, no caller-supplied centre; a capper refusal
+    (charged / pathological target) fails closed to demote, never vouch.
+
+    SCOPE (honest).  Problem A type-validity only.  The stoichiometric alkoxide/enolate BASE is OUTSIDE the
+    conserved equation and is a Problem B / #107 capability-fit question -- a vouch asserts the reaction TYPE, not
+    bench feasibility (same honesty as #110).  Dieckmann (intramolecular, 1->2), aldehyde / amide / acid flanks,
+    an alpha with no retained H, and donors reachable only via the #104 W1 atom-count wall are honest coverage
+    loss (false-UNRECOGNIZED), never false-vouch.
+    ([[a-whole-set-count-classifier-is-fooled-by-non-locality]] [[a-verifier-that-cannot-verify-must-fail-closed]])"""
+    from ..diels_alder import is_closed_shell_neutral
+    from ..smiles import resonance_identity
+    from ..structure_descent import ScissionError, _join, single_cut_capped_scissions
+    from .feasibility import _is_carbonyl_carbon, _is_water
+    reactants = tuple(getattr(step, "reactants", ()))
+    products = tuple(getattr(step, "products", ()))
+    if len(reactants) != 2 or len(products) != 2:
+        return False
+    if any(_is_water(m) for m in reactants + products):
+        return False                                       # a water coproduct is a dehydrative class, not Claisen
+    if not all(is_closed_shell_neutral(m) for m in reactants + products):
+        return False                                       # #132: a radical / charged / ylide partner is out
+    alc = [i for i, m in enumerate(products) if _is_claisen_coproduct_alcohol(m)]
+    if len(alc) != 1:
+        return False
+    cap, target = products[alc[0]], products[1 - alc[0]]
+    if _is_claisen_coproduct_alcohol(target):
+        return False                                       # the other product must be the 1,3-dicarbonyl target
+    atoms = target.atoms
+    adj = _acyl_adjacency(target)
+    candidates: list = []
+    meta: dict = {}
+    for b in sorted(target.bonds):
+        if b.order != 1 or atoms[b.i] != "C" or atoms[b.j] != "C":
+            continue                                       # the formed Claisen bond is an order-1 C--C bond
+        for a, c in ((b.i, b.j), (b.j, b.i)):              # a = alpha carbon, c = acyl carbon
+            if not _is_carbonyl_carbon(c, atoms, adj):
+                continue
+            if any(order != 1 for _n, order in adj[a]):
+                continue                                   # alpha must be sp3 (every bond single)
+            if sum(1 for n, _o in adj[a] if atoms[n] == "H") < 1:
+                continue                                   # the product alpha carbon retains an H
+            flank = [n for n, _o in adj[a] if n != c and atoms[n] == "C"
+                     and _is_carbonyl_carbon(n, atoms, adj) and _claisen_flank_ok(adj, atoms, n, a)]
+            if not flank:
+                continue                                   # the 1,3-dicarbonyl lock
+            if not _claisen_acyl_substituents_ok(adj, atoms, c, a):
+                continue
+            candidates.append(b)
+            meta.setdefault(b, []).append((a, c))
+    if not candidates:
+        return False
+    want = sorted(resonance_identity(m) for m in reactants)
+    try:
+        scissions, _complete = single_cut_capped_scissions(target, (cap,), tuple(candidates))
+    except (ScissionError, NotImplementedError, TypeError, ValueError):
+        return False                                       # a target the capper refuses -> fail-closed demote
+    n = len(target.atoms)
+    for cs in scissions:
+        try:
+            if sorted(resonance_identity(p) for p in cs.products) != want:
+                continue
+            joined_atoms, _bonds, _off = _join(cs.reactant, cs.reagents)   # the capper's own joined index space
+            internal = [b for b in cs.cut if b.i < n and b.j < n]
+            if len(internal) != 1 or len(cs.cut) != 2:
+                continue                                   # exactly one target C--C cut + the alcohol's O--H cut
+            cap_pairs = [(b.i, b.j) for b in cs.caps]
+            for a, c in meta.get(internal[0], []):
+                acyl_gets_o = any(c in p and any(q >= n and joined_atoms[q] == "O" for q in p) for p in cap_pairs)
+                alpha_gets_h = any(a in p and any(q >= n and joined_atoms[q] == "H" for q in p) for p in cap_pairs)
+                if acyl_gets_o and alpha_gets_h:
+                    return True                            # genuine orientation: acyl<-O, alpha<-H
+        except Exception:
+            continue
+    return False
+
+
 def _alkyne_diels_alder(step) -> bool:
     """Recognizer: an all-carbon Diels-Alder [4+2] cycloaddition (diene + ALKYNE dienophile -> 1,4-cyclohexadiene).
 
@@ -999,6 +1140,7 @@ _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
     ("activated acyl transfer (anhydride/acyl-halide + R-OH/R-NH/R-SH -> ester/amide/thioester + acid/HX)",
      _activated_acyl_transfer),
     ("sulfonate-ester transfer (sulfonyl halide + R-OH -> sulfonate ester + HX)", _sulfonate_ester_transfer),
+    ("Claisen condensation (ester/ketone + ester/carbonate -> 1,3-dicarbonyl + alcohol)", _claisen_condensation),
     ("Diels-Alder [4+2] cycloaddition (all-carbon diene + alkene dienophile -> cyclohexene adduct)", _diels_alder),
     ("Diels-Alder [4+2] cycloaddition (all-carbon diene + alkyne dienophile -> 1,4-cyclohexadiene)",
      _alkyne_diels_alder),

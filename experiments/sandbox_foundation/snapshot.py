@@ -1,4 +1,4 @@
-"""Wave G -- a domain-neutral, immutable PhysicalWorldSnapshot: the LibGibson observation boundary.
+"""Wave G -- a domain-neutral, DEEPLY IMMUTABLE PhysicalWorldSnapshot: the LibGibson observation boundary.
 
 Ooh yeah, can do!  SYNTHETIC / experimental.  SmartChem supplies ONE narrow, immutable observation boundary and
 its content identity; LibGibson (its own repo, epic #125) owns the renderer/TUI.  SmartChem must NOT implement
@@ -6,22 +6,35 @@ the renderer; a mock projection here is only enough to PROVE the contract.
 
 THE CONTRACT (two separations, both load-bearing):
   1. AUTHORITATIVE physical state vs DISPLAY realization.  `model_digest` covers ONLY the authoritative scientific
-     content (schema, geometry, species, amounts, masks, tick, time, units, conservation diagnostics).  Renderer-
-     neutral `display_hints` (colours, labels, layout) are EXCLUDED, so a cosmetic change cannot move the model
-     identity (Wave A3).
+     content (schema, geometry, species, amounts, masks, tick, time, units, conservation diagnostics,
+     numerical uncertainty, boundary material).  Renderer-neutral `display_hints` (colours, labels, layout) are
+     EXCLUDED, so a cosmetic change cannot move the model identity (Wave A3).
   2. MODEL identity vs EVIDENCE/ADMISSION identity.  `evidence_digest` covers which sources/checks/domains justify
      the model; it is independent of `model_digest`.  A source-revision change moves the evidence digest without
      silently reusing it as a model-identity receipt, and vice-versa.
 
-THE NON-NEGOTIABLE PROPERTY: a snapshot is FROZEN with read-only arrays, and rendering is a PURE read.  Rendering
-a snapshot zero, one or many times cannot alter the canonical model state or either digest.  The headless replay
-test proves it: a trajectory with rendering at every step is byte-identical to one with no rendering at all.
+DEEP IMMUTABILITY (the Round-IV C3 repair).  A frozen dataclass whose fields are still mutable dicts and
+own-their-data numpy arrays is NOT immutable: a caller could mutate `units`/`evidence`/... in place, or re-enable
+an array's write flag (`setflags(write=True)` succeeds on an array that owns its buffer), and leave the already
+computed digest STALE.  So the authoritative content is now stored in genuinely immutable backing storage:
+  * numeric arrays live as `bytes` and are exposed as `np.frombuffer(...)` VIEWS -- read-only AND unlockable,
+    because their base is an immutable `bytes` object (setflags(write=True) raises, and there is no owning array
+    to reach through `.base`).  Each access regenerates the view from the SAME bytes the digest was taken over, so
+    a mutated copy can never desynchronise the digest.
+  * dict/list content is deep-frozen to `MappingProxyType` / tuples (recursively), so in-place mutation raises.
+  * the digest is a canonical SHA-256 over exactly that frozen content -- never `str()` of an arbitrary object
+    (an un-serialisable value fails closed rather than hashing an unstable repr).
+
+THE NON-NEGOTIABLE PROPERTY: rendering is a PURE read.  Rendering a snapshot zero, one or many times cannot alter
+the canonical model state or either digest.  The headless replay test proves it: a trajectory rendered at every
+step is byte-identical to one with no rendering at all.
 """
 from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Optional
 
 import numpy as np
@@ -29,68 +42,187 @@ import numpy as np
 SCHEMA_VERSION = "phys-world-snapshot-v1"
 
 
+# ------------------------------------------------------------------------------------- immutability helpers
+def _deep_freeze(obj):
+    """Recursively convert dict/list/tuple of JSON-canonical scalars into an immutable structure
+    (MappingProxyType / tuple).  Refuses an arbitrary object -- there is NO str() fallback, because a snapshot
+    digest must be a guaranteed canonical scientific serialisation, not an unstable repr."""
+    if isinstance(obj, Mapping):
+        return MappingProxyType({str(k): _deep_freeze(v) for k, v in obj.items()})
+    if isinstance(obj, (list, tuple)):
+        return tuple(_deep_freeze(v) for v in obj)
+    if isinstance(obj, np.ndarray):
+        return _deep_freeze(obj.tolist())
+    if isinstance(obj, (str, bool, type(None))):
+        return obj
+    if isinstance(obj, (int, np.integer)):
+        return int(obj)
+    if isinstance(obj, (float, np.floating)):
+        return float(obj)
+    raise TypeError(f"snapshot content {type(obj).__name__} is not canonically serialisable (dict/list/tuple of "
+                    "str/bool/int/float/None only); refused rather than hashed via str()")
+
+
+def _jsonify(obj):
+    """Frozen structure -> JSON-safe (MappingProxyType -> dict, tuple -> list)."""
+    if isinstance(obj, Mapping):
+        return {k: _jsonify(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_jsonify(v) for v in obj]
+    return obj
+
+
 def _canon(*parts) -> str:
-    """Stable SHA-256 over a canonical serialization of the given parts (arrays by dtype+shape+bytes)."""
+    """Stable SHA-256 over a canonical serialization of the parts.  An (bytes, dtype, shape) triple is hashed as a
+    raw numeric buffer; a frozen mapping/sequence/scalar is hashed as sorted-key JSON (NO default= fallback)."""
     h = hashlib.sha256()
     for p in parts:
-        if isinstance(p, np.ndarray):
-            a = np.ascontiguousarray(p)
-            h.update(str(a.dtype).encode())
-            h.update(str(a.shape).encode())
-            h.update(a.tobytes())
+        if isinstance(p, tuple) and len(p) == 3 and isinstance(p[0], (bytes, bytearray)):
+            buf, dtype, shape = p
+            h.update(b"ndarray")
+            h.update(str(dtype).encode())
+            h.update(str(tuple(shape)).encode())
+            h.update(bytes(buf))
         else:
-            h.update(json.dumps(p, sort_keys=True, default=str).encode())
+            h.update(json.dumps(_jsonify(p), sort_keys=True).encode())
         h.update(b"\x1e")  # record separator
     return h.hexdigest()
 
 
-@dataclass(frozen=True, eq=False)
+def _store_array(a, dtype) -> tuple:
+    """A (bytes, dtype_str, shape) triple: the immutable backing store for an authoritative array."""
+    arr = np.ascontiguousarray(np.asarray(a, dtype=dtype))
+    return (arr.tobytes(), arr.dtype.str, arr.shape)
+
+
+def _view(store: tuple) -> np.ndarray:
+    """A read-only, UNLOCKABLE view onto an immutable bytes store (its base is `bytes`, so the WRITEABLE flag
+    cannot be re-enabled, and there is no owning array to reach through `.base`)."""
+    buf, dtype, shape = store
+    return np.frombuffer(buf, dtype=dtype).reshape(shape)
+
+
 class PhysicalWorldSnapshot:
-    """An immutable observation of a physical world at one model tick.  Arrays are read-only.
+    """An immutable observation of a physical world at one model tick.  Not a dataclass: the authoritative content
+    is kept in immutable backing storage and exposed through read-only properties, so nothing a consumer (or a
+    buggy/adversarial renderer) does can mutate it or desynchronise the digests.
 
     Authoritative scientific content (feeds model_digest): species, cell_volumes_m3, amounts_mol (cells x species),
     valid_mask (True = a real value; False = invalid/missing), units, model_tick, physical_time_s,
     conservation_diagnostics, numerical_uncertainty, boundary_material.
     Admission content (feeds evidence_digest): evidence (sources / checks / model domains).
     Renderer-neutral (EXCLUDED from both digests): display_hints."""
-    species: tuple
-    cell_volumes_m3: np.ndarray
-    amounts_mol: np.ndarray
-    valid_mask: np.ndarray
-    units: dict
-    model_tick: int
-    physical_time_s: float
-    conservation_diagnostics: dict = field(default_factory=dict)
-    numerical_uncertainty: dict = field(default_factory=dict)
-    boundary_material: tuple = ()
-    evidence: dict = field(default_factory=dict)
-    display_hints: dict = field(default_factory=dict)
-    schema_version: str = SCHEMA_VERSION
 
-    def __post_init__(self):
-        vols = np.array(self.cell_volumes_m3, dtype=float)
-        amt = np.array(self.amounts_mol, dtype=float)
-        mask = np.array(self.valid_mask, dtype=bool)
-        C, S = len(vols), len(self.species)
+    __slots__ = ("_species", "_vol", "_amt", "_mask", "_units", "_model_tick", "_physical_time_s",
+                 "_conservation_diagnostics", "_numerical_uncertainty", "_boundary_material", "_evidence",
+                 "_display_hints", "_schema_version", "_model_digest", "_evidence_digest")
+
+    def __init__(self, species, cell_volumes_m3, amounts_mol, valid_mask, units, model_tick, physical_time_s,
+                 conservation_diagnostics=None, numerical_uncertainty=None, boundary_material=(),
+                 evidence=None, display_hints=None, schema_version=SCHEMA_VERSION):
+        species = tuple(species)
+        vols = np.asarray(cell_volumes_m3, dtype=float)
+        amt = np.asarray(amounts_mol, dtype=float)
+        mask = np.asarray(valid_mask, dtype=bool)
+        C, S = len(vols), len(species)
         if amt.shape != (C, S) or mask.shape != (C, S):
             raise ValueError("amounts_mol and valid_mask must both be (n_cells, n_species)")
         if not np.all(np.isfinite(vols)) or np.any(vols <= 0):
             raise ValueError("cell volumes must be finite and > 0")
         if np.any(~np.isfinite(amt) & mask):
             raise ValueError("a cell/species marked valid carries a non-finite amount")
-        for a in (vols, amt, mask):
-            a.setflags(write=False)
-        object.__setattr__(self, "cell_volumes_m3", vols)
-        object.__setattr__(self, "amounts_mol", amt)
-        object.__setattr__(self, "valid_mask", mask)
-        # model identity: authoritative content ONLY (display_hints and evidence excluded)
-        model = _canon(self.schema_version, tuple(self.species), vols, amt, mask, self.units,
-                       int(self.model_tick), float(self.physical_time_s), self.conservation_diagnostics,
-                       self.numerical_uncertainty, tuple(self.boundary_material))
-        evidence = _canon(self.schema_version, self.evidence)
-        object.__setattr__(self, "model_digest", model)
-        object.__setattr__(self, "evidence_digest", evidence)
 
+        object.__setattr__(self, "_species", species)
+        object.__setattr__(self, "_vol", _store_array(vols, float))
+        object.__setattr__(self, "_amt", _store_array(amt, float))
+        object.__setattr__(self, "_mask", _store_array(mask, bool))
+        object.__setattr__(self, "_units", _deep_freeze(units))
+        object.__setattr__(self, "_model_tick", int(model_tick))
+        object.__setattr__(self, "_physical_time_s", float(physical_time_s))
+        object.__setattr__(self, "_conservation_diagnostics", _deep_freeze(conservation_diagnostics or {}))
+        object.__setattr__(self, "_numerical_uncertainty", _deep_freeze(numerical_uncertainty or {}))
+        object.__setattr__(self, "_boundary_material", _deep_freeze(tuple(boundary_material)))
+        object.__setattr__(self, "_evidence", _deep_freeze(evidence or {}))
+        object.__setattr__(self, "_display_hints", _deep_freeze(display_hints or {}))
+        object.__setattr__(self, "_schema_version", str(schema_version))
+
+        # model identity: authoritative content ONLY (display_hints and evidence excluded), over the SAME immutable
+        # stores the properties hand out -- so a consumer's mutated copy can never desynchronise the digest.
+        model = _canon(self._schema_version, species, self._vol, self._amt, self._mask, self._units,
+                       self._model_tick, self._physical_time_s, self._conservation_diagnostics,
+                       self._numerical_uncertainty, self._boundary_material)
+        evidence_digest = _canon(self._schema_version, self._evidence)
+        object.__setattr__(self, "_model_digest", model)
+        object.__setattr__(self, "_evidence_digest", evidence_digest)
+
+    def __setattr__(self, name, value):  # belt-and-suspenders: the instance is frozen after construction
+        raise AttributeError("PhysicalWorldSnapshot is immutable")
+
+    def __delattr__(self, name):
+        raise AttributeError("PhysicalWorldSnapshot is immutable")
+
+    # -- read-only authoritative content -----------------------------------------------------------
+    @property
+    def species(self) -> tuple:
+        return self._species
+
+    @property
+    def cell_volumes_m3(self) -> np.ndarray:
+        return _view(self._vol)
+
+    @property
+    def amounts_mol(self) -> np.ndarray:
+        return _view(self._amt)
+
+    @property
+    def valid_mask(self) -> np.ndarray:
+        return _view(self._mask)
+
+    @property
+    def units(self):
+        return self._units
+
+    @property
+    def model_tick(self) -> int:
+        return self._model_tick
+
+    @property
+    def physical_time_s(self) -> float:
+        return self._physical_time_s
+
+    @property
+    def conservation_diagnostics(self):
+        return self._conservation_diagnostics
+
+    @property
+    def numerical_uncertainty(self):
+        return self._numerical_uncertainty
+
+    @property
+    def boundary_material(self) -> tuple:
+        return self._boundary_material
+
+    @property
+    def evidence(self):
+        return self._evidence
+
+    @property
+    def display_hints(self):
+        return self._display_hints
+
+    @property
+    def schema_version(self) -> str:
+        return self._schema_version
+
+    @property
+    def model_digest(self) -> str:
+        return self._model_digest
+
+    @property
+    def evidence_digest(self) -> str:
+        return self._evidence_digest
+
+    # -- derived reads -----------------------------------------------------------------------------
     def concentration_mol_per_m3(self) -> np.ndarray:
         """A derived read; invalid cells/species are NaN, not a fabricated 0."""
         c = self.amounts_mol / self.cell_volumes_m3[:, None]
@@ -99,10 +231,10 @@ class PhysicalWorldSnapshot:
     def with_display_hints(self, **hints) -> "PhysicalWorldSnapshot":
         """A new snapshot with different COSMETIC hints only -- the model_digest is unchanged by construction."""
         return PhysicalWorldSnapshot(
-            self.species, np.array(self.cell_volumes_m3), np.array(self.amounts_mol), np.array(self.valid_mask),
-            self.units, self.model_tick, self.physical_time_s, self.conservation_diagnostics,
-            self.numerical_uncertainty, self.boundary_material, self.evidence,
-            {**self.display_hints, **hints}, self.schema_version)
+            self._species, self.cell_volumes_m3, self.amounts_mol, self.valid_mask,
+            _jsonify(self._units), self._model_tick, self._physical_time_s, _jsonify(self._conservation_diagnostics),
+            _jsonify(self._numerical_uncertainty), self._boundary_material, _jsonify(self._evidence),
+            {**_jsonify(self._display_hints), **hints}, self._schema_version)
 
     @classmethod
     def from_mesh(cls, system, state, *, model_tick: int = 0, evidence: Optional[dict] = None,
@@ -124,11 +256,13 @@ def ascii_render(snap: PhysicalWorldSnapshot) -> str:
     """A MOCK renderer (LibGibson's job in its own repo).  A PURE read: it returns a string and touches nothing.
     display_hints may style it; the authoritative data is read from amounts_mol / valid_mask only."""
     sep = snap.display_hints.get("sep", " | ")
+    amt = snap.amounts_mol
+    mask = snap.valid_mask
     rows = []
     for i in range(len(snap.cell_volumes_m3)):
         cells = []
         for s, nm in enumerate(snap.species):
-            v = f"{snap.amounts_mol[i, s]:.3g}" if snap.valid_mask[i, s] else "--"
+            v = f"{amt[i, s]:.3g}" if mask[i, s] else "--"
             cells.append(f"{nm}={v}")
         rows.append(sep.join(cells))
     return "\n".join(rows)

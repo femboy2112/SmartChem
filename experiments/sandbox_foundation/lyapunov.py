@@ -53,7 +53,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.special import xlogy
 
-from experiments.sandbox_foundation.twocell import System, State
+from experiments.sandbox_foundation.twocell import InvalidParameterError, System, State
 
 
 def _h(c: np.ndarray, c_star: np.ndarray) -> np.ndarray:
@@ -79,19 +79,28 @@ def relative_free_energy(system: System, state: State, c_star) -> float:
 
 
 def diffusion_dissipation_rate(system: System, state: State) -> float:
-    """Analytical dPhi/dt from transport across the single interface (no c* -- it cancels):
+    """Analytical INTERNAL diffusion contribution to dPhi/dt across the single interface (no c* -- it cancels):
         - sum_species g_i (c_A,i - c_B,i)(log c_A,i - log c_B,i)  <= 0.
-    Independent of any integrator.  For c -> 0 the per-species term carries the log singularity (-> -inf),
-    still <= 0; where c_A,i == c_B,i the term is exactly 0 (no gradient)."""
-    g = system.g                                         # (S,) m^3/s
+    This is the diffusion term ONLY, not a whole-system passivity certificate (see total_dissipation_rate /
+    is_closed_passive for the open/driven guard).  Independent of any integrator.  Limits made EXPLICIT:
+      * g_i == 0 (immobile species): contribution is EXACTLY 0 -- zero diffusivity = no flux = no dissipation,
+        computed BEFORE any multiply so the degenerate 0*inf never produces a NaN;
+      * c_A,i == c_B,i: 0 (no concentration gradient -> no flux);
+      * otherwise g_i (c_A - c_B)(log c_A - log c_B) >= 0, and -> +inf as a cell empties -- the ideal-dilute log
+        singularity of the chemical potential: the dissipation is then unbounded but its SIGN is right (<= 0).
+    Non-finite or negative concentrations are refused (fail closed)."""
+    g = np.asarray(system.g, float)                      # (S,) m^3/s
     c = state.concentration(system)                      # (2, S)
+    if not np.all(np.isfinite(c)) or np.any(c < 0.0):
+        raise InvalidParameterError("diffusion_dissipation_rate needs finite, non-negative concentrations")
     cA, cB = c[0], c[1]
     dc = cA - cB
     with np.errstate(divide="ignore", invalid="ignore"):
         dlog = np.log(cA) - np.log(cB)
-    term = dc * dlog
-    term = np.where(dc == 0.0, 0.0, term)                # equal concentrations: no flux, no dissipation
-    return float(-np.sum(g * term))
+        # mask the degenerate cells (g==0 or no gradient) to 0 FIRST; np.where still evaluates the other branch,
+        # but the errstate suppresses its 0*inf warning and np.where discards that masked NaN.
+        contrib = np.where((g == 0.0) | (dc == 0.0), 0.0, g * dc * dlog)
+    return float(-np.sum(contrib))
 
 
 def _forward_reverse_rates(mech, c: np.ndarray):
@@ -173,7 +182,30 @@ def dPhi_dt_chain_rule(system: System, state: State, c_star) -> float:
     return float(np.sum(V[:, None] * grad * dcdt))
 
 
+def is_closed_passive(system: System) -> bool:
+    """True iff the system satisfies the CLOSED, PASSIVE hypotheses the dissipation theorem rests on: NO external
+    species drive (every species boundary closed) AND no thermal drive (every thermal boundary adiabatic -- a
+    heater or a fixed-T reservoir breaks the isothermal hypothesis).  A driven/open system can legitimately RAISE
+    Phi, so its internal diffusion+reaction terms alone are NOT a whole-system passivity certificate."""
+    sb_ok = all(b.kind == "closed" for b in system.species_boundaries)
+    tb_ok = all(b.kind == "adiabatic" for b in system.thermal_boundaries)
+    return bool(sb_ok and tb_ok)
+
+
 def total_dissipation_rate(system: System, state: State, c_star) -> float:
-    """dPhi/dt = diffusion + reaction (the latter only when c_star is detailed-balanced)."""
+    """WHOLE-SYSTEM passivity certificate dPhi/dt = internal diffusion + internal reaction (the reaction term only
+    when c_star is detailed-balanced), which is <= 0 under the closed-passive hypotheses.
+
+    FAIL-CLOSED on an open/driven system: if any species boundary carries an external flow or any thermal boundary
+    drives the cell, the sum of the INTERNAL terms is not the complete dPhi/dt (an external source can make Phi
+    rise legitimately), so certifying passivity from it would be a false claim from an incomplete ledger.  For a
+    driven system use diffusion_dissipation_rate / reaction_dissipation_rate -- the labelled internal contributions
+    that make no whole-system claim."""
+    if not is_closed_passive(system):
+        raise InvalidParameterError(
+            "total_dissipation_rate certifies passivity only for a CLOSED, PASSIVE system (all species boundaries "
+            "closed, all thermal boundaries adiabatic); this system is externally driven/open and an external "
+            "source can legitimately raise Phi. Use diffusion_dissipation_rate / reaction_dissipation_rate for the "
+            "internal contributions, which make no whole-system passivity claim")
     rxn = reaction_dissipation_rate(system, state, c_star) if system.mechanism is not None else 0.0
     return diffusion_dissipation_rate(system, state) + rxn

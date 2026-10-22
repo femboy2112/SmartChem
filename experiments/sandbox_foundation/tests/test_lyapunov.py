@@ -10,11 +10,11 @@ import numpy as np
 import pytest
 
 from experiments.sandbox_foundation.lyapunov import (
-    diffusion_dissipation_rate, dPhi_dt_chain_rule, is_detailed_balance_equilibrium,
+    diffusion_dissipation_rate, dPhi_dt_chain_rule, is_closed_passive, is_detailed_balance_equilibrium,
     reaction_dissipation_rate, relative_free_energy, total_dissipation_rate)
 from experiments.sandbox_foundation.twocell import (
-    Ledger, Mechanism, ReactionRate, SolverSettings, SpeciesBoundary, State, System,
-    audit, reaction_step, transport_step)
+    InvalidParameterError, Ledger, Mechanism, ReactionRate, SolverSettings, SpeciesBoundary, State, System,
+    ThermalBoundary, audit, reaction_step, transport_step)
 
 
 def _sys(mech=None, V=(1.0, 1.0), D=(0.1, 0.1), sb=None):
@@ -153,3 +153,59 @@ def test_empirical_kinetics_are_refused_by_the_reaction_dissipation_theorem():
         reaction_dissipation_rate(system, s, cstar)
     with pytest.raises(ValueError):
         total_dissipation_rate(system, s, cstar)
+
+
+# ======================================================================================================
+# Round IV -- C1/C2 hardening: zero-diffusivity limit + open-system passivity refusal.
+# ======================================================================================================
+def test_RIV_C1_zero_diffusivity_and_zero_concentration_limits():
+    # (a) zero diffusivity, nonzero concentration difference -> EXACTLY 0 (no flux, no dissipation; never NaN)
+    sysz = System(("A",), (1.0, 1.0), (1.0, 1.0), (0.0,), area_m2=1.0, distance_m=1.0, conductivity_W_per_mK=0.0)
+    r = diffusion_dissipation_rate(sysz, State.make(sysz, [[1.0], [0.0]], [300.0, 300.0]))
+    assert r == 0.0 and not np.isnan(r)
+    # (b) positive diffusivity, a zero-concentration region -> ideal-dilute log singularity: -inf, still <= 0
+    sysp = System(("A",), (1.0, 1.0), (1.0, 1.0), (1.0,), area_m2=1.0, distance_m=1.0, conductivity_W_per_mK=0.0)
+    rp = diffusion_dissipation_rate(sysp, State.make(sysp, [[1.0], [0.0]], [300.0, 300.0]))
+    assert rp == -np.inf and rp <= 0.0
+    # (c) equal concentrations, both zero -> 0
+    r0 = diffusion_dissipation_rate(sysp, State.make(sysp, [[0.0], [0.0]], [300.0, 300.0]))
+    assert r0 == 0.0
+    # (d) a species that is immobile (g=0) does not poison a mobile one's finite dissipation
+    sysm = System(("A", "B"), (1.0, 1.0), (1.0, 1.0), (0.0, 1.0), area_m2=1.0, distance_m=1.0,
+                  conductivity_W_per_mK=0.0)
+    rm = diffusion_dissipation_rate(sysm, State.make(sysm, [[1.0, 2.0], [0.0, 1.0]], [300.0, 300.0]))
+    assert np.isfinite(rm) and rm <= 0.0            # A (g=0, empty cell) contributes 0; B contributes finite < 0
+
+
+def test_RIV_C1_nonfinite_concentration_is_refused():
+    # a real State is already finite-checked at construction; the dissipation guard is defense-in-depth against a
+    # duck-typed caller, exercised here with a minimal mock whose concentration() returns a non-finite value.
+    class _Sys:
+        g = np.array([1.0])
+
+    class _St:
+        def concentration(self, system):
+            return np.array([[np.inf], [1.0]])
+
+    with pytest.raises(InvalidParameterError):
+        diffusion_dissipation_rate(_Sys(), _St())
+
+
+def test_RIV_C2_externally_driven_species_cannot_be_certified_passive():
+    sb = (SpeciesBoundary("prescribed_flow", (0.5,)), SpeciesBoundary())
+    syso = System(("A",), (1.0, 1.0), (1.0, 1.0), (1.0,), area_m2=1.0, distance_m=1.0, conductivity_W_per_mK=0.0,
+                  species_boundaries=sb)
+    sto = State.make(syso, [[1.0], [1.0]], [300.0, 300.0])
+    assert is_closed_passive(syso) is False
+    with pytest.raises(InvalidParameterError):
+        total_dissipation_rate(syso, sto, [1.0])                     # no closed-passivity certificate for an open system
+    # ...but the labelled INTERNAL diffusion contribution is still available and makes no whole-system claim:
+    assert diffusion_dissipation_rate(syso, sto) <= 0.0
+
+
+def test_RIV_C2_thermal_drive_breaks_passivity_certificate():
+    syst = System(("A",), (1.0, 1.0), (1.0, 1.0), (1.0,), area_m2=1.0, distance_m=1.0, conductivity_W_per_mK=0.0,
+                  thermal_boundaries=(ThermalBoundary("heater", power_W=5.0), ThermalBoundary()))
+    assert is_closed_passive(syst) is False
+    with pytest.raises(InvalidParameterError):
+        total_dissipation_rate(syst, State.make(syst, [[1.0], [2.0]], [300.0, 300.0]), [1.0])

@@ -1,25 +1,40 @@
-"""Typed authority for mechanisms: Descriptive (inspect) vs Executable (run) -- Wave A2.
+"""Typed authority for mechanisms: Descriptive (inspect) vs Executable (run) + the ADMISSION model -- Waves A1-A4.
 
-Resolves the standing V2.0 ambiguity.  Yeah, naming a reaction family is not the same as having a rate law,
-and this module makes that a type error instead of a vibe.
+Resolves the standing V2.0 ambiguity.  Naming a reaction family is not the same as having a rate law, a rate law
+is not the same as sourced science, a bare citation is not the same as a verified source, and a caller-supplied
+composition table is not the same as a verified molecular identity.  This module makes each of those a TYPE fact
+instead of a vibe.
 
-* ``DescriptiveMechanism``  -- verified species + stoichiometry + element/charge inventory, with OPTIONAL
-  thermo / kinetic facets that may be explicitly UNKNOWN (None).  For inspection.  ``is_executable`` is always
-  False, and nothing about it -- including a recognizer's family name -- can change that.
-* ``ExecutableMechanism``   -- an explicitly selected finite reaction set, COMPLETE admitted kinetic laws for
-  exactly that selection, dimension-checked units, a structural inventory it re-derives itself, provenance, and
-  explicit omissions of competing chemistry.  Its E is NOT a constructor argument (``init=False``): it is
-  derived in ``__post_init__`` from compositions+charges, so a forged E cannot even be passed in.
-* Conversion ``DescriptiveMechanism.to_executable`` REQUIRES laws.  A missing/None law is a typed
-  ``KINETICS_UNAVAILABLE`` refusal, never a fabricated rate and never a silent zero.
-* Two provenances.  SOURCED needs a non-empty source citation.  SYNTHETIC needs a non-empty assumption
-  statement and yields a mechanism whose ``scientific_claim`` is False: hypothetical user rate laws run, but are
-  never relabelled as sourced science.  Any SYNTHETIC law makes the whole mechanism SYNTHETIC.
+TWO ORTHOGONAL AUTHORITY AXES (Round IV):
+  * KINETIC ADMISSION (per law), a 4-level facet -- NOT a one-string boolean:
+      SYNTHETIC            hypothetical caller rate law; runs for labelled experiments; NO prediction authority.
+      SOURCE_DECLARED      a citation string is attached, but nothing about it has been checked.
+      SOURCE_VERIFIED      a structured AdmissionReceipt (source record + version + species + units + conditions +
+                           model form + applicable range) was checked VERIFIED under a stated policy.
+      BENCHMARK_VALIDATED  the model additionally survived a named independent physical benchmark.
+    A1: the admission value is runtime-validated to be an AdmissionLevel -- an unknown string/int/None is a
+    fail-closed refusal, never silently folded to "sourced".
+    A2: a bare citation reaches only SOURCE_DECLARED; SOURCE_VERIFIED requires the receipt, so a fabricated source
+    STRING can never mint a verified scientific claim.  The receipt is content-identified, so a source update
+    changes the admission identity (and can REVOKE it) WITHOUT touching the model content.
+  * SPECIES IDENTITY (per mechanism):
+      UNTRUSTED  compositions/charges came straight from a public constructor -- structural DECLARATIONS only.
+      VERIFIED   built via from_derivations from InventoryDerivation, i.e. bound to real SmartChem Molecule
+                 identities whose composition was derived (the adapter's central law).
+    A3: a forged composition table (public constructor) is UNTRUSTED and can never mint verified chemical
+    authority, even carrying a verified kinetic receipt.
 
-Floats appear only at the explicit boundary ``ExecutableMechanism.to_twocell`` (the twocell solver is float).
+scientific_claim (a scientifically ADMITTED physical prediction) requires BOTH axes: kinetics >= SOURCE_VERIFIED
+AND species identity VERIFIED.  This module cannot establish real-world source correctness (sigma) from code; it
+enforces the STRUCTURE of admission -- completeness, content identity, the policy gate, the species binding -- and
+fails closed everywhere else.  The 1.x readiness enum is NOT touched.
+
+Floats appear only at the explicit boundary ExecutableMechanism.to_twocell (the twocell solver is float).
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from dataclasses import dataclass, field
 from enum import Enum
@@ -40,6 +55,7 @@ class ConversionRefusalKind(str, Enum):
     OMISSIONS_UNDECLARED = "OMISSIONS_UNDECLARED"
     SELECTION_INVALID = "SELECTION_INVALID"
     INVENTORY_REFUSED = "INVENTORY_REFUSED"
+    ADMISSION_INVALID = "ADMISSION_INVALID"          # bad admission level / missing-or-unverified receipt
 
 
 class ConversionRefusal(Exception):
@@ -49,9 +65,88 @@ class ConversionRefusal(Exception):
         self.detail = detail
 
 
-class Provenance(str, Enum):
-    SOURCED = "SOURCED"
+# ------------------------------------------------------------------------------------------- admission facets
+class AdmissionLevel(str, Enum):
     SYNTHETIC = "SYNTHETIC"
+    SOURCE_DECLARED = "SOURCE_DECLARED"
+    SOURCE_VERIFIED = "SOURCE_VERIFIED"
+    BENCHMARK_VALIDATED = "BENCHMARK_VALIDATED"
+
+
+_ADMISSION_ORDER = {
+    AdmissionLevel.SYNTHETIC: 0,
+    AdmissionLevel.SOURCE_DECLARED: 1,
+    AdmissionLevel.SOURCE_VERIFIED: 2,
+    AdmissionLevel.BENCHMARK_VALIDATED: 3,
+}
+
+
+class VerificationStatus(str, Enum):
+    UNVERIFIED = "UNVERIFIED"
+    VERIFIED = "VERIFIED"
+    REVOKED = "REVOKED"          # a source update / retraction invalidates a previously-verified admission
+
+
+class SpeciesIdentity(str, Enum):
+    UNTRUSTED = "UNTRUSTED"      # caller-declared compositions (public constructor)
+    VERIFIED = "VERIFIED"        # bound to real Molecule identities via InventoryDerivation
+
+
+def _digest(*parts) -> str:
+    h = hashlib.sha256()
+    for p in parts:
+        h.update(json.dumps(p, sort_keys=True, default=str).encode())
+        h.update(b"\x1e")
+    return h.hexdigest()
+
+
+@dataclass(frozen=True)
+class SourceRecord:
+    """A source-specific identity for a verified admission.  Its content digest IS its identity, so ANY source
+    update (edition, parameters, conditions, species, range) changes the admission identity -- the old receipt
+    cannot be silently reused for new data."""
+    citation: str
+    version: str
+    species: tuple
+    units: str
+    conditions: str
+    model_form: str
+    parameter_range: str
+
+    def __post_init__(self):
+        for nm in ("citation", "version", "units", "conditions", "model_form", "parameter_range"):
+            if not str(getattr(self, nm)).strip():
+                raise ConversionRefusal(ConversionRefusalKind.PROVENANCE_MISSING,
+                                        f"SourceRecord.{nm} must be a non-empty statement")
+        if not tuple(self.species):
+            raise ConversionRefusal(ConversionRefusalKind.PROVENANCE_MISSING,
+                                    "SourceRecord must name the species it speaks to")
+
+    @property
+    def identity(self) -> str:
+        return _digest("SourceRecord", self.citation, self.version, tuple(self.species), self.units,
+                       self.conditions, self.model_form, self.parameter_range)
+
+
+@dataclass(frozen=True)
+class AdmissionReceipt:
+    """A reviewed admission receipt binding a rate law to a verified SourceRecord + a re-verification status.  Its
+    identity includes the status, so a REVOKED receipt is a distinct identity from the VERIFIED one it replaces."""
+    record: SourceRecord
+    status: VerificationStatus
+    reviewer: str = ""            # the policy / reviewer that performed the check
+    benchmark: str = ""           # for BENCHMARK_VALIDATED: the independent physical benchmark passed
+
+    def __post_init__(self):
+        if not isinstance(self.record, SourceRecord):
+            raise ConversionRefusal(ConversionRefusalKind.ADMISSION_INVALID, "receipt.record must be a SourceRecord")
+        if not isinstance(self.status, VerificationStatus):
+            raise ConversionRefusal(ConversionRefusalKind.ADMISSION_INVALID,
+                                    f"receipt.status must be a VerificationStatus, got {self.status!r}")
+
+    @property
+    def identity(self) -> str:
+        return _digest("AdmissionReceipt", self.record.identity, self.status.value, self.reviewer, self.benchmark)
 
 
 # ------------------------------------------------------------------------------------------- units
@@ -82,12 +177,14 @@ class KineticLaw:
 
     kinetics 'elementary' => orders are the complex multiplicities; 'empirical' => forward_orders (and
     reverse_orders if reversible) per species are REQUIRED and are never inferred.  ``k_*_units`` must equal the SI
-    units implied by the overall order (checked on conversion).  ``source`` (SOURCED) or ``assumption``
-    (SYNTHETIC) must be a non-empty statement."""
+    units implied by the overall order (checked on conversion).  ``admission`` is a strictly-typed AdmissionLevel:
+    SYNTHETIC needs a non-empty ``assumption``; SOURCE_DECLARED needs a non-empty ``source`` citation;
+    SOURCE_VERIFIED / BENCHMARK_VALIDATED need an AdmissionReceipt whose status is VERIFIED (and, for the
+    benchmark level, a named benchmark)."""
     k_f: Optional[float]
     k_r: Optional[float]
     reversible: bool
-    provenance: Provenance
+    admission: AdmissionLevel
     k_f_units: str = ""
     k_r_units: str = ""
     kinetics: str = "elementary"
@@ -95,17 +192,39 @@ class KineticLaw:
     reverse_orders: Optional[tuple] = None
     source: str = ""
     assumption: str = ""
+    receipt: Optional[AdmissionReceipt] = None
     validity_T_K: Optional[tuple] = None      # (lo, hi) if the law is only valid in a window
 
     def __post_init__(self):
         if self.kinetics not in ("elementary", "empirical"):
             raise ConversionRefusal(ConversionRefusalKind.INVALID_KINETIC_LAW, f"unknown kinetics {self.kinetics!r}")
-        if self.provenance == Provenance.SOURCED and not self.source.strip():
-            raise ConversionRefusal(ConversionRefusalKind.PROVENANCE_MISSING,
-                                    "a SOURCED law must cite its source")
-        if self.provenance == Provenance.SYNTHETIC and not self.assumption.strip():
-            raise ConversionRefusal(ConversionRefusalKind.PROVENANCE_MISSING,
-                                    "a SYNTHETIC law must state its hypothetical assumption")
+        # A1: the admission value MUST be an AdmissionLevel -- an unknown string / int / None / enum lookalike is a
+        # fail-closed refusal, never silently treated as sourced.  (A type annotation is not runtime validation.)
+        if not isinstance(self.admission, AdmissionLevel):
+            raise ConversionRefusal(ConversionRefusalKind.ADMISSION_INVALID,
+                                    f"admission must be an AdmissionLevel, got {self.admission!r} "
+                                    f"({type(self.admission).__name__})")
+        A = AdmissionLevel
+        if self.admission == A.SYNTHETIC:
+            if not self.assumption.strip():
+                raise ConversionRefusal(ConversionRefusalKind.PROVENANCE_MISSING,
+                                        "a SYNTHETIC law must state its hypothetical assumption")
+        elif self.admission == A.SOURCE_DECLARED:
+            if not self.source.strip():
+                raise ConversionRefusal(ConversionRefusalKind.PROVENANCE_MISSING,
+                                        "a SOURCE_DECLARED law must carry a source citation")
+        else:  # SOURCE_VERIFIED or BENCHMARK_VALIDATED
+            if not isinstance(self.receipt, AdmissionReceipt):
+                raise ConversionRefusal(ConversionRefusalKind.ADMISSION_INVALID,
+                                        f"{self.admission.value} requires an AdmissionReceipt (a structured, "
+                                        "content-identified source record), not a bare citation string")
+            if self.receipt.status != VerificationStatus.VERIFIED:
+                raise ConversionRefusal(ConversionRefusalKind.ADMISSION_INVALID,
+                                        f"{self.admission.value} requires a VERIFIED receipt; receipt status is "
+                                        f"{self.receipt.status.value}")
+            if self.admission == A.BENCHMARK_VALIDATED and not self.receipt.benchmark.strip():
+                raise ConversionRefusal(ConversionRefusalKind.ADMISSION_INVALID,
+                                        "BENCHMARK_VALIDATED requires the receipt to name the benchmark passed")
         if self.validity_T_K is not None:
             lo, hi = self.validity_T_K
             if not (_finite_nonneg(lo) and _finite_nonneg(hi) and 0 < lo <= hi):
@@ -121,7 +240,9 @@ class KineticLaw:
 class DescriptiveMechanism:
     """Verified structure; thermo/kinetic facets optional and possibly UNKNOWN.  NEVER executable.
 
-    ``recognized_family`` is advisory text (e.g. a reaction recognizer's verdict).  It confers NO authority."""
+    ``recognized_family`` is advisory text (e.g. a reaction recognizer's verdict).  It confers NO authority.
+    ``species_identity`` records whether the compositions were caller-DECLARED (UNTRUSTED, the public constructor)
+    or bound to real Molecule identities (VERIFIED, via from_derivations)."""
     species: tuple
     compositions: tuple
     charges: tuple
@@ -131,6 +252,8 @@ class DescriptiveMechanism:
     kinetics: tuple                 # per reaction: KineticLaw or None (= UNKNOWN)
     thermo: dict = field(default_factory=dict)   # facet name -> value or None (= UNKNOWN)
     recognized_family: Optional[str] = None
+    species_identity: SpeciesIdentity = SpeciesIdentity.UNTRUSTED
+    species_identities: tuple = ()               # per-species identity keys when VERIFIED
     E: np.ndarray = field(init=False)
     element_labels: tuple = field(init=False)
     N: np.ndarray = field(init=False)
@@ -150,6 +273,11 @@ class DescriptiveMechanism:
             raise ConversionRefusal(ConversionRefusalKind.SELECTION_INVALID, "species names must be unique")
         if any(k is not None and not isinstance(k, KineticLaw) for k in self.kinetics):
             raise ConversionRefusal(ConversionRefusalKind.INVALID_KINETIC_LAW, "kinetics slots are KineticLaw or None")
+        if not isinstance(self.species_identity, SpeciesIdentity):
+            raise ConversionRefusal(ConversionRefusalKind.SELECTION_INVALID, "species_identity must be a SpeciesIdentity")
+        if self.species_identity == SpeciesIdentity.VERIFIED and len(self.species_identities) != S:
+            raise ConversionRefusal(ConversionRefusalKind.SELECTION_INVALID,
+                                    "a VERIFIED species identity needs one identity key per species")
         labels, E = build_E(self.compositions, self.charges)        # DERIVED here; no E can be passed in
         N = product - reactant
         if not np.any(E):
@@ -181,7 +309,8 @@ class DescriptiveMechanism:
     def from_derivations(cls, derivations: Sequence[InventoryDerivation], *, reaction_labels=None,
                          kinetics=None, thermo=None, recognized_family: Optional[str] = None
                          ) -> "DescriptiveMechanism":
-        """Merge verified single-reaction derivations (species unified by identity) into one descriptive mechanism."""
+        """Merge verified single-reaction derivations (species unified by identity) into one descriptive mechanism.
+        The result is species-identity VERIFIED: every species is bound to a real Molecule identity key."""
         if not derivations:
             raise ConversionRefusal(ConversionRefusalKind.SELECTION_INVALID, "no reactions selected")
         keys, names, comps, charges = [], [], [], []
@@ -201,13 +330,15 @@ class DescriptiveMechanism:
                 product[keys.index(k), j] = d.product[i, 0]
         labels = tuple(reaction_labels) if reaction_labels is not None else tuple(f"R{j}" for j in range(R))
         return cls(tuple(names), tuple(comps), tuple(charges), reactant, product, labels,
-                   tuple(kinetics) if kinetics is not None else (None,) * R, dict(thermo or {}), recognized_family)
+                   tuple(kinetics) if kinetics is not None else (None,) * R, dict(thermo or {}), recognized_family,
+                   SpeciesIdentity.VERIFIED, tuple(keys))
 
     # -- conversion --------------------------------------------------------------------------------
     def to_executable(self, laws: Optional[Sequence] = None, *, omissions: Sequence = (),
                       selected: Optional[Sequence] = None) -> "ExecutableMechanism":
         """Promote to executable.  REQUIRES one admitted law per selected reaction (``laws`` overrides this
-        mechanism's own facets), a non-empty list of omissions of competing chemistry, and valid units.
+        mechanism's own facets), a non-empty list of omissions of competing chemistry, and valid units.  The
+        species-identity axis is carried through unchanged (an UNTRUSTED descriptive stays UNTRUSTED executable).
 
         Refuses with KINETICS_UNAVAILABLE on any missing / incomplete law -- never invents a rate, never a zero."""
         sel = tuple(range(len(self.reaction_labels))) if selected is None else tuple(selected)
@@ -228,14 +359,16 @@ class DescriptiveMechanism:
                                     "an executable mechanism must explicitly list the competing chemistry it omits")
         return ExecutableMechanism(self.species, self.compositions, self.charges,
                                    self.reactant[:, sel], self.product[:, sel],
-                                   tuple(self.reaction_labels[j] for j in sel), chosen, tuple(omissions))
+                                   tuple(self.reaction_labels[j] for j in sel), chosen, tuple(omissions),
+                                   self.species_identity, self.species_identities)
 
 
 # ------------------------------------------------------------------------------------------- executable
 @dataclass(frozen=True, eq=False)
 class ExecutableMechanism:
     """A selected, fully-lawed reaction set.  Construct via ``DescriptiveMechanism.to_executable``; the
-    constructor re-validates everything itself so a hand-built instance gets no free pass either."""
+    constructor re-validates everything itself so a hand-built instance gets no free pass -- in particular a
+    hand-built instance is species-identity UNTRUSTED by default and so can never claim verified chemistry."""
     species: tuple
     compositions: tuple
     charges: tuple
@@ -244,10 +377,11 @@ class ExecutableMechanism:
     reaction_labels: tuple
     laws: tuple
     omissions: tuple
+    species_identity: SpeciesIdentity = SpeciesIdentity.UNTRUSTED
+    species_identities: tuple = ()
     E: np.ndarray = field(init=False)
     element_labels: tuple = field(init=False)
     N: np.ndarray = field(init=False)
-    provenance: Provenance = field(init=False)
 
     def __post_init__(self):
         reactant = np.array(self.reactant, dtype=np.int64)
@@ -257,6 +391,11 @@ class ExecutableMechanism:
             raise ConversionRefusal(ConversionRefusalKind.SELECTION_INVALID, "shape mismatch in executable mechanism")
         if np.any(reactant < 0) or np.any(product < 0):
             raise ConversionRefusal(ConversionRefusalKind.SELECTION_INVALID, "complex multiplicities must be >= 0")
+        if not isinstance(self.species_identity, SpeciesIdentity):
+            raise ConversionRefusal(ConversionRefusalKind.SELECTION_INVALID, "species_identity must be a SpeciesIdentity")
+        if self.species_identity == SpeciesIdentity.VERIFIED and len(self.species_identities) != S:
+            raise ConversionRefusal(ConversionRefusalKind.SELECTION_INVALID,
+                                    "a VERIFIED species identity needs one identity key per species")
         for j, law in enumerate(self.laws):
             if not isinstance(law, KineticLaw) or not law.is_complete:
                 raise ConversionRefusal(ConversionRefusalKind.KINETICS_UNAVAILABLE, f"reaction {j} lacks a complete law")
@@ -279,8 +418,6 @@ class ExecutableMechanism:
         object.__setattr__(self, "E", E)
         object.__setattr__(self, "N", N)
         object.__setattr__(self, "element_labels", labels)
-        prov = Provenance.SYNTHETIC if any(law.provenance == Provenance.SYNTHETIC for law in self.laws) else Provenance.SOURCED
-        object.__setattr__(self, "provenance", prov)
 
     @staticmethod
     def _orders(j, law, reactant, product):
@@ -317,15 +454,48 @@ class ExecutableMechanism:
         return True
 
     @property
+    def admission_level(self) -> AdmissionLevel:
+        """The WEAKEST law's admission caps the mechanism (fail-closed): a single SYNTHETIC or SOURCE_DECLARED law
+        pulls the whole mechanism down to that level."""
+        return min((law.admission for law in self.laws), key=lambda a: _ADMISSION_ORDER[a])
+
+    @property
     def scientific_claim(self) -> bool:
-        """True only if EVERY law is SOURCED.  SYNTHETIC/hypothetical laws run but are never a scientific claim."""
-        return self.provenance == Provenance.SOURCED
+        """True only if BOTH axes are satisfied: kinetics admission >= SOURCE_VERIFIED AND the species are bound to
+        VERIFIED molecular identities.  A bare citation (SOURCE_DECLARED), a SYNTHETIC law, OR a forged /
+        caller-declared composition table (UNTRUSTED species) all yield False."""
+        return (_ADMISSION_ORDER[self.admission_level] >= _ADMISSION_ORDER[AdmissionLevel.SOURCE_VERIFIED]
+                and self.species_identity == SpeciesIdentity.VERIFIED)
+
+    @property
+    def admission_identities(self) -> tuple:
+        """Per-law admission identity: (level, receipt.identity or '') -- the EVIDENCE identity, independent of the
+        model content.  A source update / revocation changes these without touching E / N / stoichiometry."""
+        return tuple((law.admission.value, law.receipt.identity if law.receipt is not None else "")
+                     for law in self.laws)
+
+    @property
+    def model_identity(self) -> str:
+        """Content identity of the AUTHORITATIVE scientific model: species identity (the real Molecule keys when
+        VERIFIED, else the declared compositions) + stoichiometry + element/charge inventory + per-law kinetic
+        content.  EXCLUDES admission/evidence (so a source revision or a relabel does NOT move it) -- while a
+        changed chemical identity or a changed kinetic parameter DOES.  The orthogonal companion of
+        admission_identities (model identity _|_ evidence identity, the two-digest discipline)."""
+        law_content = tuple((law.k_f, law.k_r, law.reversible, law.kinetics,
+                             tuple(law.forward_orders) if law.forward_orders is not None else None,
+                             tuple(law.reverse_orders) if law.reverse_orders is not None else None,
+                             law.k_f_units, law.k_r_units) for law in self.laws)
+        species_key = (self.species_identities if self.species_identity == SpeciesIdentity.VERIFIED
+                       else self.compositions)
+        return _digest("ExecutableModel", self.species_identity.value, tuple(species_key),
+                       self.reactant.tolist(), self.product.tolist(), self.E.tolist(), self.element_labels,
+                       law_content)
 
     def to_twocell(self) -> Mechanism:
         """The explicit float boundary: hand the exact-integer structure to the (float) twocell solver."""
         rates = tuple(ReactionRate(k_f=float(law.k_f), k_r=None if law.k_r is None else float(law.k_r),
                                    reversible=law.reversible) for law in self.laws)
-        label = "SYNTHETIC" if self.provenance == Provenance.SYNTHETIC else "SOURCED"
+        label = self.admission_level.value
         kw = {}
         if any(law.kinetics == "empirical" for law in self.laws):
             fo = np.zeros(self.reactant.shape)
@@ -341,5 +511,6 @@ class ExecutableMechanism:
             raise ConversionRefusal(ConversionRefusalKind.INVENTORY_REFUSED, str(exc)) from exc
 
 
-__all__ = ["ConversionRefusal", "ConversionRefusalKind", "Provenance", "KineticLaw", "DescriptiveMechanism",
-           "ExecutableMechanism", "expected_rate_constant_units", "AdapterRefusal", "RefusalKind"]
+__all__ = ["ConversionRefusal", "ConversionRefusalKind", "AdmissionLevel", "VerificationStatus", "SpeciesIdentity",
+           "SourceRecord", "AdmissionReceipt", "KineticLaw", "DescriptiveMechanism", "ExecutableMechanism",
+           "expected_rate_constant_units", "AdapterRefusal", "RefusalKind"]

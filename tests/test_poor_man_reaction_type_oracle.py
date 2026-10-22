@@ -83,12 +83,17 @@ def test_both_r55_false_vouch_fakes_are_now_demoted():
         assert all(route_reaction_type_blockers(r) for r in routes)   # every route demoted (unrecognized)
 
 
-def test_real_cc_condensations_are_demoted_as_honest_coverage_loss():
-    # Friedel-Crafts / Claisen are real but unregistered -> demoted-as-UNRECOGNIZED (coverage loss, NOT false-vouch).
+def test_claisen_now_recognized_other_cc_condensations_stay_coverage_loss():
+    # 1.5 #115 MOVEMENT: the Claisen CONDENSATION moved from honest coverage-loss (a reachable real C-C condensation
+    # the oracle demoted as UNRECOGNIZED) to a RECOGNIZED class (the 20th).  Friedel-Crafts has no recognizer yet,
+    # so it stays honest coverage loss -- demoted-as-UNRECOGNIZED, never false-vouched.
     fc = _routes("CC(=O)c1ccccc1", ["benzene", "acetic acid"], reagents=["water"])
-    assert fc and all(route_reaction_type_blockers(r) for r in fc)
-    claisen = _routes("CCOC(=O)CC(=O)C", ["CCOC(=O)C"], reagents=["ethanol"])
-    assert claisen and all(route_reaction_type_blockers(r) for r in claisen)
+    assert fc and all(route_reaction_type_blockers(r) for r in fc)           # Friedel-Crafts still coverage loss
+    claisen = _routes("CCOC(=O)CC(=O)C", ["CCOC(=O)C"], reagents=["ethanol"])   # 2 ethyl acetate -> ethyl acetoacetate
+    assert claisen, "Claisen condensation stopped being reachable"
+    assert any(not route_reaction_type_blockers(r) for r in claisen)         # now RECOGNIZED: a route is unblocked
+    fires = [recognize_reaction_type(st) for r in claisen for st in r.steps]
+    assert any(name is not None and "Claisen condensation" in name for name in fires)   # named as its own class
 
 
 def test_caffeine_is_now_vouched_via_the_class_specific_recognizer():

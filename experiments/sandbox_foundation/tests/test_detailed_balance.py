@@ -166,3 +166,61 @@ def test_oversized_matrix_is_a_bounded_refusal():
     big = np.eye(MAX_DIM + 1)
     with pytest.raises(DetailedBalanceError):
         check_detailed_balance(big, np.full(MAX_DIM + 1, 2.0))
+
+
+# ======================================================================================================
+# Round IV -- B2/B3: THREE DISTINGUISHABLE failure modes, each its own permanent control.
+#   Mode 1 (kept, C5 above): mathematically FULL-RANK but numerically ILL-CONDITIONED float input.
+#   Mode 2 (new): integer input that FLOAT CONVERSION would damage (2**53 + 1 -> 2**53).
+#   Mode 3 (new): exact integer null vector TOO LARGE for an int64 output format.
+# They are different bugs and deserve different controls (B3).
+# ======================================================================================================
+def test_RIV_B2_mode2_float_damaged_integer_is_preserved_full_rank():
+    """N=[[2**53, 2**53+1],[1,1]] has true det=-1 (FULL rank, ker={0}: every positive K admissible).  A
+    dtype=float conversion collapses 2**53+1 -> 2**53, faking rank 1 and a phantom (1,-1) cycle.  Read with its
+    native integer dtype the exact kernel is empty, so the verdict is consistent for ANY positive K."""
+    q = 2 ** 53
+    v = check_detailed_balance([[q, q + 1], [1, 1]], [2.0, 5.0], tol=TOL)
+    assert v.exact_rank == 2 and v.n_cycles == 0
+    assert v.consistent is True                    # ker trivial -> no Wegscheider constraint
+    assert v.offending_cycles == []
+    # the lossy float DIAGNOSTIC legitimately disagrees here -- that disagreement is the conditioning FLAG,
+    # not a chemical contradiction; the exact authority still governs.
+    assert v.float_rank < v.exact_rank and v.method_agreement is False
+
+
+def test_RIV_B2_mode3_huge_kernel_vector_is_exact_not_int64_wrapped():
+    """N=[[p,1,0],[0,p,1]], p=1e10 -> primitive kernel [1, -p, p**2], p**2 = 1e20 > int64 max.  The published
+    `cycles` must be the EXACT Python int, never a wrapped int64 (which gave -9223372036854775808)."""
+    p = 10 ** 10
+    v = check_detailed_balance([[p, 1, 0], [0, p, 1]], [1.0, 1.0, 1.0], tol=TOL)
+    assert v.n_cycles == 1 and v.exact_rank == 2
+    assert [int(x) for x in v.cycles[0]] == [1, -p, p * p]      # exact 1e20, not wrapped
+    assert v.consistent is True                                 # all K = 1 is trivially balanced
+
+
+def test_RIV_B2_float_entry_beyond_2to53_is_refused_but_python_int_is_exact():
+    """A float entry beyond 2**53 cannot faithfully represent its integer -> refused.  The SAME value as a Python
+    int is exact and accepted (the representability policy is explicit, not silent)."""
+    q = 2 ** 53
+    with pytest.raises(DetailedBalanceError):
+        check_detailed_balance(np.array([[q, q + 1], [1, 1]], dtype=float), [2.0, 5.0])   # float dtype -> damaged
+    v = check_detailed_balance([[q, q + 1], [1, 1]], [2.0, 5.0])                           # python ints -> exact
+    assert v.exact_rank == 2
+
+
+def test_RIV_B3_input_entry_beyond_budget_is_a_bounded_refusal():
+    from experiments.sandbox_foundation.detailed_balance import MAX_ENTRY_BITS
+    huge = 2 ** (MAX_ENTRY_BITS + 1)
+    with pytest.raises(DetailedBalanceError):
+        check_detailed_balance([[huge, 1], [1, 1]], [2.0, 3.0])
+
+
+def test_RIV_B3_oversized_kernel_coordinate_is_a_bounded_refusal():
+    """A bidiagonal chain whose primitive kernel coordinate is p**16 ~ 532 bits > MAX_KERNEL_BITS=512 must be a
+    bounded typed refusal, not an enormous (or wrapped) published integer."""
+    p = 10 ** 10
+    s = 16
+    N = [[p if j == i else (1 if j == i + 1 else 0) for j in range(s + 1)] for i in range(s)]
+    with pytest.raises(DetailedBalanceError):
+        check_detailed_balance(N, [1.0] * (s + 1))

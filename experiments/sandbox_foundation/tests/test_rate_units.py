@@ -92,3 +92,45 @@ def test_cycle_logK_sum_is_independent_of_the_reference_concentration():
         logKo = np.array([math.log(thermodynamic_K(m1, c_ref)[0]), math.log(thermodynamic_K(m2, c_ref)[0])])
         sums.append(float(cycle @ logKo))
     assert sums[0] == pytest.approx(sums[1])                # invariant under the concentration-standard change
+
+
+# ---- Round IV B1: thermodynamic_K must be SPECIESWISE, not merely total-order --------------------------------
+def _ab_empirical(fo, ro, k_f=4.0, k_r=1.0):
+    """A <-> B with empirical orders fo/ro (A row then B row).  E@N = 0 by X-conservation."""
+    return Mechanism(("A", "B"), [[1.0], [0.0]], [[0.0], [1.0]], ("X", "charge"), [[1, 1], [0, 0]],
+                     (ReactionRate(k_f=k_f, k_r=k_r, reversible=True),), kinetics="empirical",
+                     forward_orders=fo, reverse_orders=ro, rate_law_note="SYNTHETIC empirical")
+
+
+def test_RIV_B1_matching_total_but_mismatched_specieswise_is_restricted():
+    """THE counterexample: v_f = 4[A]^2, v_r = [B]^2.  Total orders match (m_f=m_r=2), dnu=0 -- the OLD total-order
+    test admitted it and returned K=4, but the true positive ratio is [B]/[A]=2.  Specieswise orr-of = [-2,+2] !=
+    N = [-1,+1], so it must be RESTRICTED (raise)."""
+    m = _ab_empirical(fo=[[2.0], [0.0]], ro=[[0.0], [2.0]])
+    with pytest.raises(InvalidParameterError):
+        thermodynamic_K(m, 1.0)
+
+
+def test_RIV_B1_elementary_is_admitted_and_equals_kf_over_kr():
+    m = _ab(k_f=4.0, k_r=1.0)                               # elementary A<->B, dnu=0
+    assert thermodynamic_K(m, 1.0) == pytest.approx([4.0])
+
+
+def test_RIV_B1_empirical_with_valid_specieswise_orders_is_admitted():
+    # empirical orders that DO equal the complexes (orr-of == N): first-order both ways -> K = kf/kr
+    m = _ab_empirical(fo=[[1.0], [0.0]], ro=[[0.0], [1.0]], k_f=3.0, k_r=1.5)
+    assert thermodynamic_K(m, 1.0) == pytest.approx([2.0])
+
+
+def test_RIV_B1_irreversible_or_incomplete_is_refused():
+    m = Mechanism(("A", "B"), [[1.0], [0.0]], [[0.0], [1.0]], ("X", "charge"), [[1, 1], [0, 0]],
+                  (ReactionRate(k_f=2.0, k_r=None, reversible=False),))
+    with pytest.raises(InvalidParameterError):
+        thermodynamic_K(m, 1.0)                            # needs every reaction reversible (k_f and k_r)
+
+
+def test_RIV_B1_reversed_orientation_gives_the_reciprocal_K():
+    fwd = _ab(k_f=4.0, k_r=1.0)                             # A -> B
+    rev = Mechanism(("A", "B"), [[0.0], [1.0]], [[1.0], [0.0]], ("X", "charge"), [[1, 1], [0, 0]],
+                    (ReactionRate(k_f=1.0, k_r=4.0, reversible=True),))   # B -> A, swapped constants
+    assert thermodynamic_K(fwd, 1.0)[0] == pytest.approx(1.0 / thermodynamic_K(rev, 1.0)[0])

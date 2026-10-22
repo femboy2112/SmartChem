@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from experiments.sandbox_foundation.detailed_balance import _exact_kernel
+from experiments.sandbox_foundation.detailed_balance import exact_kernel, to_exact_int_matrix
 from experiments.sandbox_foundation.twocell import InvalidParameterError, Mechanism
 
 
@@ -84,20 +84,33 @@ def equilibrium_conc_exponent(mech: Mechanism) -> np.ndarray:
 def thermodynamic_K(mech: Mechanism, c_ref_mol_per_m3: float) -> np.ndarray:
     """Dimensionless K^o_j = (k_f,j/k_r,j) / (c^o)^{dnu_j} for every reversible reaction, c^o = c_ref.
 
-    Requires complete, reversible rate constants.  Refuses (restricted verdict) when the kinetic mole change
-    (m_r - m_f) disagrees with the structural dnu = sum_i N -- i.e. an empirical law whose orders are not the
-    elementary complex multiplicities -- because then the elementary detailed-balance relation does not apply."""
+    Requires complete, reversible rate constants.  Refuses (RESTRICTED verdict) unless the SPECIESWISE condition
+            reverse_orders[i,j] - forward_orders[i,j] == N[i,j]   for EVERY species i and reaction j
+    holds.  This is strictly stronger than the earlier total-order test (m_r - m_f == dnu), which is only
+    NECESSARY, not sufficient: the counterexample A<->B with v_f = k_f[A]^2, v_r = k_r[B]^2 has equal total orders
+    (m_f = m_r = 2) and dnu = 0, so the total test ADMITS it, yet the positive equilibrium ratio is
+    [B]/[A] = sqrt(k_f/k_r), NOT k_f/k_r -- the elementary relation K^o = (k_f/k_r)/(c^o)^dnu is simply wrong for
+    it.  The specieswise condition is exactly what makes k_f/k_r the mass-action equilibrium constant of the net
+    reaction.  For an ELEMENTARY law it holds by construction (orders = complexes, N = product - reactant).
+
+    SCOPE: this establishes only the STRUCTURAL compatibility of the claimed elementary equilibrium relation under
+    the declared IDEAL (activity = concentration), isothermal standard-state assumptions.  It does NOT establish
+    the physical validity of an arbitrary empirical rate law, nor admit non-ideal activities."""
     if not np.isfinite(c_ref_mol_per_m3) or c_ref_mol_per_m3 <= 0:
         raise InvalidParameterError("c_ref must be a finite positive reference concentration (mol/m^3)")
     mech.require_complete()
     if not all(r.reversible for r in mech.rates):
         raise InvalidParameterError("thermodynamic_K needs every reaction reversible (k_f and k_r)")
-    dnu = net_mole_change(mech)
-    kinetic_exp = equilibrium_conc_exponent(mech)
-    if not np.allclose(kinetic_exp, dnu, rtol=0, atol=1e-12):
+    N = np.asarray(mech.N, float)
+    specieswise = np.asarray(mech.order_r, float) - np.asarray(mech.order_f, float)   # (S, R)
+    if not np.allclose(specieswise, N, rtol=0, atol=1e-12):
+        mism = specieswise - N
+        bad = [(int(i), int(j)) for i, j in zip(*np.nonzero(np.abs(mism) > 1e-12))]
         raise InvalidParameterError(
-            "kinetic mole change (m_r - m_f) != structural dnu = sum N; the elementary detailed-balance relation "
-            "K^o = (k_f/k_r)/(c^o)^dnu does not apply to these empirical orders (restricted verdict)")
+            "specieswise (reverse_orders - forward_orders) != N per species; the elementary detailed-balance "
+            f"relation K^o = (k_f/k_r)/(c^o)^dnu does not apply to these orders (RESTRICTED verdict). "
+            f"Offending (species, reaction) indices: {bad}; mismatch (orr - of - N):\n{mism}")
+    dnu = N.sum(axis=0)
     kf = np.array([r.k_f for r in mech.rates], float)
     kr = np.array([r.k_r for r in mech.rates], float)
     return (kf / kr) / (float(c_ref_mol_per_m3) ** dnu)
@@ -105,18 +118,18 @@ def thermodynamic_K(mech: Mechanism, c_ref_mol_per_m3: float) -> np.ndarray:
 
 def standard_state_invariance_residual(N) -> float:
     """max over the EXACT integer kernel of N of |gamma . dnu|, dnu = sum_i N.  Exactly 0 by the invariance
-    theorem (gamma . dnu = ones^T (N gamma) = 0); computed with the same exact kernel as the Wegscheider check."""
-    Nm = np.asarray(N, float)
-    if Nm.ndim != 2:
-        raise InvalidParameterError("N must be 2-D (species x reactions)")
-    if not np.all(Nm == np.round(Nm)):
-        raise InvalidParameterError("N must be integer-valued for the exact cycle invariance")
-    basis, _ = _exact_kernel(np.round(Nm).astype(np.int64))
-    dnu = Nm.sum(axis=0)
-    res = 0.0
+    theorem (gamma . dnu = ones^T (N gamma) = 0).  Computed ENTIRELY in exact Python ints (the same exact kernel
+    object as the Wegscheider check), so a stoichiometry above 2**53 / a kernel coordinate above int64 range stays
+    exact -- no float64, no int64, no overflow."""
+    Nint = to_exact_int_matrix(N)                       # exact Python ints (refuses non-integer / out-of-budget)
+    basis, _ = exact_kernel(N)                           # exact Python-int kernel basis
+    S = len(Nint)
+    R = len(Nint[0]) if S else 0
+    dnu = [sum(Nint[i][j] for i in range(S)) for j in range(R)]            # exact per-reaction net mole change
+    res = 0
     for gamma in basis:
-        # two ways: gamma . dnu, and ones^T (N gamma) -- both must be 0 and must agree
-        a = float(np.dot(gamma, dnu))
-        b = float(np.ones(Nm.shape[0]) @ (Nm @ gamma))
+        a = sum(g * d for g, d in zip(gamma, dnu))                         # gamma . dnu                (exact int)
+        ngamma = [sum(Nint[i][j] * gamma[j] for j in range(R)) for i in range(S)]
+        b = sum(ngamma)                                                    # ones^T (N gamma)           (exact int)
         res = max(res, abs(a), abs(a - b))
-    return res
+    return float(res)

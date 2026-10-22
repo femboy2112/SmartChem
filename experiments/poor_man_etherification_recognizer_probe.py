@@ -62,6 +62,9 @@ from smartchem.service import build_recompile_request, run_compilation, _reconst
 from experiments.poor_man_step_validity_demoter_defer_probe import _resolve, _routes_of, raw_rule_blocks
 import experiments.poor_man_reaction_type_oracle_probe as p56
 
+# UNCHANGED by 1.5 #115: #115 is a reaction-type DEMOTER (it never changes route GENERATION), so this probe's
+# payload does not deterministically move.  (An earlier transient read suggested a change; it was the pre-existing
+# route-count nondeterminism documented in PHYSICALIZATION_ROUND_IV_2026-10-22.md section 8, not a #115 effect.)
 FROZEN_HASH = "6d783d59b1f50a36eb106a10b510e545f9e3895ef55fafcf1f95fad59fdcffda"
 
 _ETHER_CLASS = "etherification"

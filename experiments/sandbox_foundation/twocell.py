@@ -591,17 +591,23 @@ def reaction_cell(mech: Mechanism, n0: np.ndarray, V: float, dt: float, settings
     """Integrate one closed cell over dt in extent space (n = n0 + N xi, so E @ (n - n0) = 0 by construction).
     Returns (n1, xi, clamped, clamp_residual).
 
-    Positivity restoration for a sub-pos_tol integrator overshoot:
+    Positivity restoration for a sub-pos_tol integrator overshoot (the true mass-action ODE cannot go negative --
+    rates vanish as a reactant depletes -- so a negative is a numerical artifact near exhaustion):
       * R == 1: clamp the single EXTENT to its limiting-reactant window, landing the accepted state back in
         n0 + im(N) so conservation stays exact to roundoff (a componentwise species clip would instead leave
         im(N) and silently create matter).  The limiting amount then sits at 0 +/- roundoff, which can be a few
         ulp NEGATIVE when its net coefficient is not a power of two (e.g. 96.73 - 3*(96.73/3) < 0), so the
         roundoff clip below is still applied so State accepts the result.
-      * R > 1: a general conservative multi-reaction projection is an LP, deferred (see
-        docs/research/V2_0_PHYSICAL_MECHANISM_CONTRACT.md); the componentwise clip below is the fallback.
+      * R > 1 (Round IV D3): a CONSERVATIVE extent BACKTRACK -- scale the whole extent vector xi by the largest
+        s in [0, 1] that keeps every amount >= 0 (the multi-reaction analogue of the limiting-reactant window,
+        applied along the xi direction).  The accepted state n0 + N(s*xi) stays in n0 + im(N), so conservation is
+        EXACT -- no componentwise species clip, no tolerated mass leak.  It under-reacts (a measured accuracy
+        cost vs a full positivity-preserving LP, which remains deferred -- see
+        docs/research/V2_0_PHYSICAL_MECHANISM_CONTRACT.md), but it never leaks matter and never leaves the
+        stoichiometric subspace.  A two-reaction competing-limiting-species case lands the shared reactant at 0.
     Either way the accepted state is clipped to >= 0 and the clip's conservation displacement
-    max|E @ (clip - pre)| is RETURNED as clamp_residual -- surfaced, never hidden.  A clip that displaces
-    conservation past pos_tol, or an overshoot past -pos_tol before any clamp, FAILS CLOSED."""
+    max|E @ (clip - pre)| is RETURNED as clamp_residual -- surfaced, never hidden.  A displacement past pos_tol,
+    or an overshoot past -pos_tol before any clamp, FAILS CLOSED."""
     mech.require_complete()
     R = mech.n_reactions
     if dt == 0.0:
@@ -625,6 +631,16 @@ def reaction_cell(mech: Mechanism, n0: np.ndarray, V: float, dt: float, settings
             lo_x, hi_x = mech.extent_bounds(n0, 0)          # window that keeps every amount >= 0 for this reaction
             xi = np.array([min(max(float(xi[0]), lo_x), hi_x)])
             n1 = n0 + mech.N @ xi                            # conservative: back into n0 + im(N)
+        else:
+            # R > 1: conservative extent BACKTRACK -- largest s in [0,1] with n0 + N(s*xi) >= 0 (stays in im(N))
+            xi = np.asarray(xi, float)
+            d = mech.N @ xi
+            neg = d < -0.0
+            s = 1.0
+            if np.any(neg):
+                s = max(0.0, min(1.0, float(np.min(n0[neg] / -d[neg]))))
+            xi = s * xi
+            n1 = n0 + mech.N @ xi                            # conservative: back into n0 + im(N), no species clip
         n1_pre = n1
         n1 = np.clip(n1_pre, 0.0, None)                     # clip roundoff/limiting negatives so State accepts n1
         clamp_residual = float(np.max(np.abs(mech.E @ (n1 - n1_pre)), initial=0.0))

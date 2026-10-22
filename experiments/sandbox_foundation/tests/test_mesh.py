@@ -11,12 +11,12 @@ from scipy.linalg import expm
 
 from experiments.sandbox_foundation.fixtures import isomer_mechanism, tracer_system
 from experiments.sandbox_foundation.mesh import (
-    MAX_CELLS, DuplicateFaceError, Face, FluxEvent, Mesh, MeshState, MeshSystem, MissingFaceError, TopologyError,
-    audit_mesh, chain_mesh, coupled_rhs, interface_report, reaction_step_mesh, run_mesh, transition_residual,
-    transport_step_mesh)
+    MAX_CELLS, MAX_DENSE_BYTES, DuplicateFaceError, Face, FluxEvent, Mesh, MeshState, MeshSystem, MissingFaceError,
+    ResourceBudgetError, TopologyError, _preflight_dense, audit_mesh, chain_mesh, coupled_rhs, interface_report,
+    reaction_step_mesh, run_mesh, transition_residual, transport_step_mesh)
 from experiments.sandbox_foundation.twocell import (
-    InvalidParameterError, Ledger, NegativeAmountError, SandboxError, SpeciesBoundary, State, TimestepError,
-    transport_step)
+    InvalidParameterError, Ledger, Mechanism, NegativeAmountError, ReactionRate, SandboxError,
+    SpeciesBoundary, State, TimestepError, transport_step)
 
 VOL = (1.0e-6, 2.0e-6, 1.5e-6)      # m^3
 AREA = (1.0e-4, 2.0e-4)             # m^2, 2 faces
@@ -348,3 +348,92 @@ def test_reaction_diffusion_conserves_elements_and_tracks_monolithic_expm_with_f
     assert errs[2] < 5e-3
     with pytest.raises(InvalidParameterError):
         reaction_step_mesh(sys3(), st3(), 0.1)                       # no mechanism => refused
+
+
+# ======================================================================================================
+# Round IV -- Wave D: matrix-free RHS + a bounded budget (D1), a non-chain graph verified against expm (D2),
+# and multi-reaction conservative positivity (D3).
+# ======================================================================================================
+def _graph(cells, edges, vol=1.0, area=1.0, dist=1.0):
+    faces = tuple(Face(a, b, area, dist) for a, b in edges)
+    return Mesh((vol,) * cells, faces, "graph")
+
+
+def test_RIV_D1_coupled_rhs_is_matrix_free_identical_and_budget_bounded():
+    # equivalence to the explicit dense Kronecker form on a non-chain (cycle) graph, exactly
+    msys = MeshSystem(("A", "B"), (0.1, 0.2), _graph(3, [(0, 1), (1, 2), (2, 0)]))
+    n = np.array([[2.0, 0.0], [0.0, 1.0], [1.0, 0.5]])
+    got = coupled_rhs(msys, n)
+    B, S = msys.mesh.B_space, 2
+    c = n / 1.0
+    Jrows = np.array([c[f.tail] - c[f.head] for f in msys.mesh.faces])
+    J = (msys.g * Jrows).reshape(-1)
+    dense = (np.kron(B, np.eye(S)) @ J).reshape(3, S)
+    np.testing.assert_array_equal(got, dense)                       # EXACT, not approximate
+    # the preflight refuses a dense ask beyond the budget, before allocating
+    huge = int(MAX_DENSE_BYTES // 8) + 1
+    with pytest.raises(ResourceBudgetError):
+        _preflight_dense((huge,))
+    _preflight_dense((MAX_CELLS, 2))                                # a legal shape passes silently
+
+
+def test_RIV_D2_cycle_graph_diffusion_matches_matrix_exponential():
+    # unit-scale geometry so g = D (area/dist = 1) and dt_max = V/(2*max D) = 1/0.2 = 5 s is generous
+    msys = MeshSystem(("A", "B"), (0.05, 0.1), _graph(3, [(0, 1), (1, 2), (2, 0)], vol=1.0, area=1.0, dist=1.0))
+    assert np.allclose(np.ones(3) @ msys.mesh.B_space, 0.0)          # conservation, structural
+    n0 = np.array([[3.0, 0.0], [0.0, 2.0], [1.0, 1.0]])
+    t = 5.0
+    ref = expm_reference(msys, n0, t)
+    errs = {ns: np.max(np.abs(run_mesh(msys, MeshState(n0), t, ns).state.n - ref)) for ns in (2000, 4000, 8000)}
+    ratios = [errs[a] / errs[b] for a, b in ((2000, 4000), (4000, 8000))]
+    assert all(1.7 < r < 2.3 for r in ratios), (errs, ratios)       # first-order Euler convergence
+    assert errs[8000] < 1e-3
+    np.testing.assert_allclose(ref.sum(axis=0), n0.sum(axis=0), rtol=0, atol=1e-12)   # closed: total conserved
+    assert np.max(np.abs(ref - n0)) > 0.2                           # the reference actually moved mass
+
+
+def test_RIV_D2_fork_graph_diffusion_matches_matrix_exponential():
+    # a star / fork: centre cell 0 joined to 1, 2, 3; unit-scale geometry (dt_max = 1/(3*0.1) = 3.33 s)
+    msys = MeshSystem(("A",), (0.1,), _graph(4, [(0, 1), (0, 2), (0, 3)], vol=1.0, area=1.0, dist=1.0))
+    n0 = np.array([[5.0], [0.0], [0.0], [0.0]])
+    t = 4.0
+    ref = expm_reference(msys, n0, t)
+    got = run_mesh(msys, MeshState(n0), t, 8000).state.n
+    assert np.max(np.abs(got - ref)) < 1e-3
+    np.testing.assert_allclose(got.sum(), 5.0, rtol=0, atol=1e-9)   # conserved
+
+
+def test_RIV_D2_graph_missing_duplicate_and_self_loop_faces_are_refused():
+    with pytest.raises(MissingFaceError):
+        _graph(4, [(0, 1), (1, 2)])                                 # cell 3 disconnected
+    with pytest.raises(DuplicateFaceError):
+        _graph(3, [(0, 1), (1, 0), (1, 2)])                         # 0-1 twice (either orientation)
+    with pytest.raises(TopologyError):
+        _graph(3, [(0, 0), (1, 2)])                                 # self-loop
+
+
+def _two_reaction_mech():
+    # r1: A + B -> C   r2: A + D -> E   (shared limiting reactant A); elements X,Y,Z
+    reactant = np.array([[1, 1], [1, 0], [0, 0], [0, 1], [0, 0]], float)
+    product = np.array([[0, 0], [0, 0], [1, 0], [0, 0], [0, 1]], float)
+    E = np.array([[1, 0, 1, 0, 1], [0, 1, 1, 0, 0], [0, 0, 0, 1, 1]], float)
+    return Mechanism(("A", "B", "C", "D", "E"), reactant, product, ("X", "Y", "Z"), E,
+                     (ReactionRate(1.0e3, None, False), ReactionRate(1.0e3, None, False)))
+
+
+def test_RIV_D3_two_reaction_competing_limiting_species_conserves_exactly():
+    mech = _two_reaction_mech()
+    msys = MeshSystem(mech.species, (0.0,) * 5, chain_mesh([1.0, 1.0], [1.0], [1.0]), mechanism=mech)
+    # A is the scarce shared reactant; B, D abundant.  Both cells react.
+    n0 = np.array([[1.0, 10.0, 0.0, 10.0, 0.0], [1.0, 10.0, 0.0, 10.0, 0.0]])
+    st = MeshState(n0)
+    tot0 = mech.E @ n0.sum(axis=0)
+    any_clamped = False
+    for k in range(3):
+        st, rep = reaction_step_mesh(msys, st, 50.0, step=k)
+        any_clamped = any_clamped or rep.clamped
+        assert rep.clamp_residual < 1e-12                          # conservative backtrack: no leak beyond roundoff
+        np.testing.assert_allclose(mech.E @ st.n.sum(axis=0), tot0, rtol=0, atol=1e-9)   # inventory conserved
+    assert any_clamped                                             # the depletion step DID exercise the R>1 clamp
+    assert np.all(st.n >= 0.0)                                     # positivity preserved
+    assert np.all(st.n[:, 0] == 0.0)                              # the shared limiting reactant A lands at 0

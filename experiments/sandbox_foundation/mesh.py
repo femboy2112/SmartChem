@@ -55,6 +55,10 @@ from .twocell import (  # reuse, never redefine
 MAX_CELLS = 4096
 MAX_FACES = 16384
 MAX_SPECIES_MESH = 1024
+# A single dense float64 array the mesh builds must fit this budget.  The coupled RHS is MATRIX-FREE (it never
+# forms kron(B_space, I_S), which at the maxima would be (C*S x F*S) = 512 TiB); this budget guards the remaining
+# genuinely dense arrays (state, flux, reference) so a huge-but-legal topology is a typed refusal, not an OOM.
+MAX_DENSE_BYTES = 512 * 1024 ** 2   # 512 MiB
 
 
 # --------------------------------------------------------------------------------------------- errors
@@ -68,6 +72,21 @@ class MissingFaceError(TopologyError):
 
 class DuplicateFaceError(TopologyError):
     """The same unordered cell pair is joined by more than one face (or an event is duplicated)."""
+
+
+class ResourceBudgetError(TopologyError):
+    """A dense allocation that would exceed MAX_DENSE_BYTES -- a bounded typed refusal, never an OOM."""
+
+
+def _preflight_dense(*shapes) -> None:
+    """Refuse BEFORE allocating if any requested dense float64 array would exceed MAX_DENSE_BYTES."""
+    for shp in shapes:
+        n = 1
+        for d in shp:
+            n *= int(d)
+        if n * 8 > MAX_DENSE_BYTES:
+            raise ResourceBudgetError(f"a dense {tuple(shp)} float64 array = {n * 8 / 1024 ** 2:.0f} MiB exceeds "
+                                      f"MAX_DENSE_BYTES={MAX_DENSE_BYTES // 1024 ** 2} MiB (bounded refusal)")
 
 
 # --------------------------------------------------------------------------------------------- geometry
@@ -385,22 +404,30 @@ def run_mesh(system: MeshSystem, state0: MeshState, t_end: float, n_steps: int, 
 
 # --------------------------------------------------------------------------------------------- the coupled law, verbatim
 def coupled_rhs(system: MeshSystem, n: np.ndarray) -> np.ndarray:
-    """dn/dt = (I_cells (x) N) r + (B_space (x) I_species) J + b_external, with n flattened cell-major
-    (index = cell*S + s) and J flattened face-major (index = face*S + s).  Returns shape (C, S), mol/s.
-    A diagnostic / reference RHS; the steppers use the split operators above."""
+    """dn/dt = (I_cells (x) N) r + (B_space (x) I_species) J + b_external, computed MATRIX-FREE -- the Kronecker
+    products are NEVER allocated.  At the structural maxima kron(B_space, I_S) alone would be (C*S x F*S) =
+    4194304 x 16777216 float64 ~ 512 TiB; that is not a resource bound, it is an OOM.  The identities used are
+    EXACT, not approximations:
+        (I_C (x) N) r           acts per cell as   N @ r_cell          (r_cell = the cell's extent-rate vector)
+        (B_space (x) I_S) vec_row(J) == vec_row(B_space @ J)           for the (F, S) face-flux matrix J,
+    because B_space mixes only cells (never species) and N mixes only species (never cells).  Preserves
+    ones^T B_space == 0 (discrete conservation) by construction.  Returns (C, S) mol/s.  A diagnostic / reference
+    RHS; the steppers use the split operators above."""
     mesh = system.mesh
     C, F, S = mesh.n_cells, mesh.n_faces, len(system.species)
+    _preflight_dense((C, S), (F, S))                       # bounded refusal before any dense allocation
     V = np.asarray(mesh.volumes_m3, float)
     c = np.asarray(n, float) / V[:, None]
+    react = np.zeros((C, S))
     if system.mechanism is not None:
         N = system.mechanism.N
-        r = np.concatenate([V[i] * system.mechanism.rate_vector(c[i]) for i in range(C)])  # extent rate, mol/s
-        react = np.kron(np.eye(C), N) @ r
-    else:
-        react = np.zeros(C * S)
-    J = (system.g * np.array([c[f.tail] - c[f.head] for f in mesh.faces]).reshape(F, S)).reshape(F * S)
-    spatial = np.kron(mesh.B_space, np.eye(S)) @ J
-    return (react + spatial + _external_flows(system).reshape(C * S)).reshape(C, S)
+        for i in range(C):
+            react[i] = N @ (V[i] * system.mechanism.rate_vector(c[i]))     # (I_C (x) N) r, one cell at a time
+    tail = np.fromiter((f.tail for f in mesh.faces), dtype=int, count=F) if F else np.zeros(0, dtype=int)
+    head = np.fromiter((f.head for f in mesh.faces), dtype=int, count=F) if F else np.zeros(0, dtype=int)
+    J = system.g * (c[tail] - c[head]) if F else np.zeros((0, S))          # (F, S) mol/s along tail -> head
+    spatial = mesh.B_space @ J                                             # (B_space (x) I_S) vec(J) == B_space @ J
+    return react + spatial + _external_flows(system)
 
 
 # --------------------------------------------------------------------------------------------- audits

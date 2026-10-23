@@ -1,4 +1,4 @@
-"""Wave G -- a domain-neutral, DEEPLY IMMUTABLE PhysicalWorldSnapshot: the LibGibson observation boundary.
+"""Wave G/F -- a domain-neutral, DEEPLY IMMUTABLE PhysicalWorldSnapshot: the LibGibson observation boundary.
 
 Ooh yeah, can do!  SYNTHETIC / experimental.  SmartChem supplies ONE narrow, immutable observation boundary and
 its content identity; LibGibson (its own repo, epic #125) owns the renderer/TUI.  SmartChem must NOT implement
@@ -7,11 +7,12 @@ the renderer; a mock projection here is only enough to PROVE the contract.
 THE CONTRACT (two separations, both load-bearing):
   1. AUTHORITATIVE physical state vs DISPLAY realization.  `model_digest` covers ONLY the authoritative scientific
      content (schema, geometry, species, amounts, masks, tick, time, units, conservation diagnostics,
-     numerical uncertainty, boundary material).  Renderer-neutral `display_hints` (colours, labels, layout) are
-     EXCLUDED, so a cosmetic change cannot move the model identity (Wave A3).
+     numerical uncertainty, boundary material, the receipt's model side).  Renderer-neutral `display_hints` and
+     `illustration` (colours, labels, layout, decoration) are EXCLUDED, so a cosmetic change cannot move the model
+     identity (Wave A3).
   2. MODEL identity vs EVIDENCE/ADMISSION identity.  `evidence_digest` covers which sources/checks/domains justify
-     the model; it is independent of `model_digest`.  A source-revision change moves the evidence digest without
-     silently reusing it as a model-identity receipt, and vice-versa.
+     the model plus the receipt's admission side; it is independent of `model_digest`.  A source-revision change
+     moves the evidence digest without silently reusing it as a model-identity receipt, and vice-versa.
 
 DEEP IMMUTABILITY (the Round-IV C3 repair).  A frozen dataclass whose fields are still mutable dicts and
 own-their-data numpy arrays is NOT immutable: a caller could mutate `units`/`evidence`/... in place, or re-enable
@@ -25,6 +26,19 @@ computed digest STALE.  So the authoritative content is now stored in genuinely 
   * the digest is a canonical SHA-256 over exactly that frozen content -- never `str()` of an arbitrary object
     (an un-serialisable value fails closed rather than hashing an unstable repr).
 
+WAVE F (trustworthy simulator -> LibGibson observation contract).  Two additions so that source validity and numerical
+assumptions CANNOT vanish on the way to a pixel:
+  * `ModelRunReceipt` -- admission level + scientific verdict of the mechanism(s) behind the state, the numerical
+    assumptions (solver, tolerances, convergence status, residuals) and the orthogonal model-identity vs
+    admission-identity digests.  `admitted` is DERIVED by a trusted factory (`from_executable`), never accepted from
+    the public constructor ("a label is not a binding"); `numerically_verified` is COMPUTED from residuals vs
+    tolerances and FAILS CLOSED on a missing residual.  An absent receipt reads as UNADMITTED / UNVERIFIED.
+  * `QuantityKind` -- every quantity a frame carries is exactly one of CANONICAL / MODEL_DERIVED / UNSUPPORTED /
+    ILLUSTRATION; the snapshot stores the illustration and unsupported-quantity declarations so a renderer can never
+    present decoration or a missing value as a measurement.
+The snapshot has NO write path back into the model: it owns private immutable copies, and `verify_integrity()` lets a
+consumer re-derive both digests to detect an object-level tamper.
+
 THE NON-NEGOTIABLE PROPERTY: rendering is a PURE read.  Rendering a snapshot zero, one or many times cannot alter
 the canonical model state or either digest.  The headless replay test proves it: a trajectory rendered at every
 step is byte-identical to one with no rendering at all.
@@ -33,13 +47,29 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Mapping
+from enum import Enum
 from types import MappingProxyType
 from typing import Optional
 
 import numpy as np
 
-SCHEMA_VERSION = "phys-world-snapshot-v1"
+from .mechanism_types import AdmissionLevel
+
+SCHEMA_VERSION = "phys-world-snapshot-v2"   # v2: + receipt, illustration, unsupported_quantities (Wave F)
+
+
+class QuantityKind(str, Enum):
+    """The 4-way typing of every quantity in a frame (Wave F2).  Exactly one applies to any value."""
+    CANONICAL = "CANONICAL"          # authoritative simulated state (amounts, volumes, tick, time)
+    MODEL_DERIVED = "MODEL_DERIVED"  # computed from the model (e.g. concentration); inherits the receipt's admission
+    UNSUPPORTED = "UNSUPPORTED"      # the model does not supply it / it is masked: serialises to null, NEVER 0
+    ILLUSTRATION = "ILLUSTRATION"    # pure visual decoration; never a measurement
+
+
+MEASUREMENT_KINDS = frozenset({QuantityKind.CANONICAL, QuantityKind.MODEL_DERIVED})
+_CONVERGED_OK = ("CONVERGED", "NOT_ITERATIVE")   # statuses under which residuals may certify; anything else cannot
 
 
 # ------------------------------------------------------------------------------------- immutability helpers
@@ -102,7 +132,7 @@ def _canon(*parts) -> str:
             h.update(bytes(buf))
         else:
             h.update(b"json\x1e")
-            h.update(json.dumps(_jsonify(p), sort_keys=True).encode())
+            h.update(json.dumps(_jsonify(p), sort_keys=True, allow_nan=False).encode())
         h.update(b"\x1e")  # record separator
     return h.hexdigest()
 
@@ -114,27 +144,148 @@ def _view(store: tuple) -> np.ndarray:
     return np.frombuffer(buf, dtype=dtype).reshape(shape)
 
 
+# --------------------------------------------------------------------------------------------- the run receipt
+_TRUSTED = object()   # module-private sentinel: only the factories below can stamp `admitted`
+
+
+class ModelRunReceipt:
+    """What produced this state, and how much a reader may believe it -- readable WITHOUT re-deriving anything.
+
+    model identity   `model_identity`            content identity of the authoritative model (moves with chemistry/params)
+    admission        `admission_level`, `law_levels`, `admission_identities`, `admitted`  (the EVIDENCE side)
+    numerics         `numerics`: solver, convergence_status, tolerances{name: tol}, residuals{name: value|None}, notes
+
+    `admitted` is True ONLY when a trusted factory (`from_executable`) derived it from an ExecutableMechanism under an
+    AdmissionPolicy; the public constructor can record a DECLARED level but never sets `admitted` (a label is not a
+    binding).  `numerically_verified` is COMPUTED: the convergence status must be CONVERGED / NOT_ITERATIVE, there must
+    be at least one tolerance, and EVERY tolerance must have a finite residual <= it -- a missing (None) residual FAILS
+    CLOSED.  What 'numerically verified' does NOT mean: it certifies the listed residuals (conservation, positivity,
+    passivity), NOT a truncation-error bound against the exact solution of the underlying PDE."""
+
+    __slots__ = ("_model_identity", "_level", "_admitted", "_derived", "_law_levels", "_adm_ids", "_numerics")
+
+    def __init__(self, model_identity: str, numerics: Mapping, *, admission_level="SYNTHETIC", law_levels=(),
+                 admission_identities=(), _stamp=None, _admitted=False, _derived=False):
+        if not isinstance(model_identity, str) or not model_identity:
+            raise ValueError("model_identity must be a non-empty string")
+        level = AdmissionLevel(admission_level).value          # unknown level -> ValueError, not a free-form label
+        if _stamp is not _TRUSTED:                             # public path: a DECLARATION, never an authority
+            _admitted, _derived = False, False
+        object.__setattr__(self, "_model_identity", model_identity)
+        object.__setattr__(self, "_level", level)
+        object.__setattr__(self, "_admitted", bool(_admitted))
+        object.__setattr__(self, "_derived", bool(_derived))
+        object.__setattr__(self, "_law_levels", tuple(AdmissionLevel(x).value for x in law_levels))
+        object.__setattr__(self, "_adm_ids", _deep_freeze([list(x) if isinstance(x, (tuple, list)) else x
+                                                           for x in admission_identities]))
+        object.__setattr__(self, "_numerics", _deep_freeze(dict(numerics)))
+
+    def __setattr__(self, name, value):
+        raise AttributeError("ModelRunReceipt is immutable")
+
+    def __delattr__(self, name):
+        raise AttributeError("ModelRunReceipt is immutable")
+
+    # -- trusted factories ---------------------------------------------------------------------------
+    @classmethod
+    def from_executable(cls, executable, policy, numerics) -> "ModelRunReceipt":
+        """DERIVE the admission side from an ExecutableMechanism under `policy` (the trusted path)."""
+        return cls(executable.model_identity, numerics,
+                   admission_level=executable.admission_level_under(policy).value,
+                   law_levels=[lv.value for lv in executable.law_levels(policy)],
+                   admission_identities=executable.admission_identities,
+                   _stamp=_TRUSTED, _admitted=executable.admitted_under(policy), _derived=True)
+
+    @classmethod
+    def unadmitted_transport(cls, model_identity: str, numerics: Mapping) -> "ModelRunReceipt":
+        """A passive-transport-only model with caller-declared conductances: NO kinetic mechanism is admitted, so the
+        derived verdict is SYNTHETIC / not admitted (derived, not merely declared)."""
+        return cls(model_identity, numerics, admission_level="SYNTHETIC", law_levels=(), admission_identities=(),
+                   _stamp=_TRUSTED, _admitted=False, _derived=True)
+
+    # -- reads -----------------------------------------------------------------------------------------
+    model_identity = property(lambda self: self._model_identity)
+    admission_level = property(lambda self: self._level)
+    admitted = property(lambda self: self._admitted)
+    admission_derived = property(lambda self: self._derived)
+    law_levels = property(lambda self: self._law_levels)
+    admission_identities = property(lambda self: self._adm_ids)
+    numerics = property(lambda self: self._numerics)
+
+    @property
+    def numerically_verified(self) -> bool:
+        n = self._numerics
+        if n.get("convergence_status") not in _CONVERGED_OK:
+            return False
+        tol, res = n.get("tolerances") or {}, n.get("residuals") or {}
+        if not tol:
+            return False
+        for k, t in tol.items():
+            r = res.get(k)
+            if r is None or isinstance(r, bool) or not isinstance(r, (int, float)):
+                return False                       # a missing / non-numeric residual cannot certify anything
+            if not (math.isfinite(r) and math.isfinite(t) and r <= t):
+                return False
+        return True
+
+    @property
+    def scientific_measurement(self) -> bool:
+        """admitted AND numerically verified -- the only combination a renderer may call a validated measurement."""
+        return self._admitted and self.numerically_verified
+
+    @property
+    def label(self) -> str:
+        a = "ADMITTED" if self._admitted else f"UNADMITTED({self._level})"
+        n = "NUMERICS-VERIFIED" if self.numerically_verified else "NUMERICS-UNVERIFIED"
+        return f"{a}+{n}"
+
+    # -- digest parts (model side vs evidence side stay orthogonal) -----------------------------------
+    def model_part(self):
+        return ("receipt-model", self._model_identity, self._numerics)
+
+    def admission_part(self):
+        return ("receipt-admission", self._level, self._admitted, self._derived, self._law_levels, self._adm_ids)
+
+    def to_dict(self) -> dict:
+        return {"present": True, "model_identity": self._model_identity, "admission_level": self._level,
+                "admitted": self._admitted, "admission_derived": self._derived,
+                "law_levels": list(self._law_levels), "admission_identities": _jsonify(self._adm_ids),
+                "numerics": _jsonify(self._numerics), "numerically_verified": self.numerically_verified,
+                "scientific_measurement": self.scientific_measurement, "label": self.label}
+
+
+def absent_receipt_dict() -> dict:
+    """What a frame says when NO receipt travelled with the state: unadmitted, unverified -- never silent."""
+    return {"present": False, "admitted": False, "numerically_verified": False, "scientific_measurement": False,
+            "label": "NO-RECEIPT(UNADMITTED+NUMERICS-UNVERIFIED)"}
+
+
+# --------------------------------------------------------------------------------------------- the snapshot
 class PhysicalWorldSnapshot:
     """An immutable observation of a physical world at one model tick.  Not a dataclass: the authoritative content
     is kept in immutable backing storage and exposed through read-only properties, so nothing a consumer (or a
     buggy/adversarial renderer) does can mutate it or desynchronise the digests.
 
     Authoritative scientific content (feeds model_digest): species, cell_volumes_m3, amounts_mol (cells x species),
-    valid_mask (True = a real value; False = invalid/missing), units, model_tick, physical_time_s,
-    conservation_diagnostics, numerical_uncertainty, boundary_material.
-    Admission content (feeds evidence_digest): evidence (sources / checks / model domains).
-    Renderer-neutral (EXCLUDED from both digests): display_hints."""
+    valid_mask (True = a real value; False = UNSUPPORTED/missing), units, model_tick, physical_time_s,
+    conservation_diagnostics, numerical_uncertainty, boundary_material, unsupported_quantities, receipt (model side).
+    Admission content (feeds evidence_digest): evidence (sources / checks / model domains), receipt (admission side).
+    Renderer-neutral (EXCLUDED from both digests): display_hints, illustration."""
 
     __slots__ = ("_species", "_vol", "_amt", "_mask", "_units", "_model_tick", "_physical_time_s",
                  "_conservation_diagnostics", "_numerical_uncertainty", "_boundary_material", "_evidence",
-                 "_display_hints", "_schema_version", "_model_digest", "_evidence_digest")
+                 "_display_hints", "_illustration", "_unsupported", "_receipt", "_schema_version",
+                 "_model_digest", "_evidence_digest")
 
     def __init__(self, species, cell_volumes_m3, amounts_mol, valid_mask, units, model_tick, physical_time_s,
                  conservation_diagnostics=None, numerical_uncertainty=None, boundary_material=(),
-                 evidence=None, display_hints=None, schema_version=SCHEMA_VERSION):
+                 evidence=None, display_hints=None, schema_version=SCHEMA_VERSION, *,
+                 receipt: Optional[ModelRunReceipt] = None, illustration=None, unsupported_quantities=None):
         species = tuple(species)
         if not all(isinstance(s, str) for s in species):
             raise ValueError("species must be a tuple of string names")   # keep non-string content out of the digest
+        if receipt is not None and not isinstance(receipt, ModelRunReceipt):
+            raise TypeError("receipt must be a ModelRunReceipt (or None = explicitly unadmitted / unverified)")
         vols = np.asarray(cell_volumes_m3, dtype=float)
         amt = np.asarray(amounts_mol, dtype=float)
         mask = np.asarray(valid_mask, dtype=bool)
@@ -145,6 +296,11 @@ class PhysicalWorldSnapshot:
             raise ValueError("cell volumes must be finite and > 0")
         if np.any(~np.isfinite(amt) & mask):
             raise ValueError("a cell/species marked valid carries a non-finite amount")
+        unsupported = dict(unsupported_quantities or {})
+        illus = dict(illustration or {})
+        clash = (set(unsupported) | set(illus)) & ({"amount_mol", "concentration_mol_per_m3"} | set(species))
+        if clash or (set(unsupported) & set(illus)):
+            raise ValueError(f"quantity names must be unique across kinds; clashing: {sorted(clash)}")
 
         object.__setattr__(self, "_species", species)
         object.__setattr__(self, "_vol", _store_array(vols, float))
@@ -158,16 +314,29 @@ class PhysicalWorldSnapshot:
         object.__setattr__(self, "_boundary_material", _deep_freeze(tuple(boundary_material)))
         object.__setattr__(self, "_evidence", _deep_freeze(evidence or {}))
         object.__setattr__(self, "_display_hints", _deep_freeze(display_hints or {}))
+        object.__setattr__(self, "_illustration", _deep_freeze(illus))
+        object.__setattr__(self, "_unsupported", _deep_freeze({str(k): str(v) for k, v in unsupported.items()}))
+        object.__setattr__(self, "_receipt", receipt)
         object.__setattr__(self, "_schema_version", str(schema_version))
 
-        # model identity: authoritative content ONLY (display_hints and evidence excluded), over the SAME immutable
-        # stores the properties hand out -- so a consumer's mutated copy can never desynchronise the digest.
-        model = _canon(self._schema_version, species, self._vol, self._amt, self._mask, self._units,
+        m, e = self._compute_digests()
+        object.__setattr__(self, "_model_digest", m)
+        object.__setattr__(self, "_evidence_digest", e)
+
+    def _compute_digests(self) -> tuple:
+        """model identity: authoritative content ONLY (display_hints, illustration and evidence excluded), over the
+        SAME immutable stores the properties hand out -- so a consumer's mutated copy can never desynchronise it."""
+        rcpt_m = self._receipt.model_part() if self._receipt is not None else None
+        rcpt_a = self._receipt.admission_part() if self._receipt is not None else None
+        model = _canon(self._schema_version, self._species, self._vol, self._amt, self._mask, self._units,
                        self._model_tick, self._physical_time_s, self._conservation_diagnostics,
-                       self._numerical_uncertainty, self._boundary_material)
-        evidence_digest = _canon(self._schema_version, self._evidence)
-        object.__setattr__(self, "_model_digest", model)
-        object.__setattr__(self, "_evidence_digest", evidence_digest)
+                       self._numerical_uncertainty, self._boundary_material, self._unsupported, rcpt_m)
+        return model, _canon(self._schema_version, self._evidence, rcpt_a)
+
+    def verify_integrity(self) -> bool:
+        """Re-derive both digests from the stored content.  False means the object was tampered with at the object
+        level (e.g. via object.__setattr__) after construction -- a consumer can detect, though Python cannot forbid."""
+        return self._compute_digests() == (self._model_digest, self._evidence_digest)
 
     def __setattr__(self, name, value):  # belt-and-suspenders: the instance is frozen after construction
         raise AttributeError("PhysicalWorldSnapshot is immutable")
@@ -225,6 +394,20 @@ class PhysicalWorldSnapshot:
         return self._display_hints
 
     @property
+    def illustration(self):
+        """name -> {"values": [...], ...}: PURE VISUAL ILLUSTRATION.  Never a measurement; excluded from digests."""
+        return self._illustration
+
+    @property
+    def unsupported_quantities(self):
+        """name -> unit: quantities the model does NOT supply.  Serialised as null; never a fabricated 0."""
+        return self._unsupported
+
+    @property
+    def receipt(self) -> Optional[ModelRunReceipt]:
+        return self._receipt
+
+    @property
     def schema_version(self) -> str:
         return self._schema_version
 
@@ -238,7 +421,7 @@ class PhysicalWorldSnapshot:
 
     # -- derived reads -----------------------------------------------------------------------------
     def concentration_mol_per_m3(self) -> np.ndarray:
-        """A derived read; invalid cells/species are NaN, not a fabricated 0."""
+        """A MODEL_DERIVED read; invalid cells/species are NaN, not a fabricated 0."""
         c = self.amounts_mol / self.cell_volumes_m3[:, None]
         return np.where(self.valid_mask, c, np.nan)
 
@@ -248,11 +431,14 @@ class PhysicalWorldSnapshot:
             self._species, self.cell_volumes_m3, self.amounts_mol, self.valid_mask,
             _jsonify(self._units), self._model_tick, self._physical_time_s, _jsonify(self._conservation_diagnostics),
             _jsonify(self._numerical_uncertainty), self._boundary_material, _jsonify(self._evidence),
-            {**_jsonify(self._display_hints), **hints}, self._schema_version)
+            {**_jsonify(self._display_hints), **hints}, self._schema_version,
+            receipt=self._receipt, illustration=_jsonify(self._illustration),
+            unsupported_quantities=_jsonify(self._unsupported))
 
     @classmethod
     def from_mesh(cls, system, state, *, model_tick: int = 0, evidence: Optional[dict] = None,
-                  display_hints: Optional[dict] = None, numerical_uncertainty: Optional[dict] = None):
+                  display_hints: Optional[dict] = None, numerical_uncertainty: Optional[dict] = None,
+                  receipt: Optional[ModelRunReceipt] = None):
         """Build a snapshot from a Wave-D MeshSystem + MeshState (amounts per cell), with a conservation diagnostic
         from the mechanism's element/charge inventory where present."""
         vols = np.asarray(system.mesh.volumes_m3, float)
@@ -262,7 +448,7 @@ class PhysicalWorldSnapshot:
         return cls(tuple(system.species), vols, amt, np.ones_like(amt, dtype=bool),
                    {"amount": "mol", "volume": "m^3", "time": "s"}, model_tick,
                    float(state.t), {"inventory_totals": totals.tolist()}, numerical_uncertainty or {}, (),
-                   evidence or {}, display_hints or {})
+                   evidence or {}, display_hints or {}, receipt=receipt)
 
 
 # --------------------------------------------------------------------------------------------- mock renderer

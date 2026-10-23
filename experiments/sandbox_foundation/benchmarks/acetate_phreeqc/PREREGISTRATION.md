@@ -98,3 +98,17 @@ A4 (before comparison) noNaAcPair scratch variants: minteq `Na+ + Acetate- = Na(
    (First llnl attempt failed silently because -analytic overrides log_k; caught because noPair == pair to 4 digits at C3 while I != nominal.)
 A5 (AFTER seeing C5 DIVERGE; post-hoc, exploratory) 1-D scans (NaAc series, buffer series, HAc series; grid_scan.json) to locate where |dpH| crosses 0.02 and 0.05. Not part of the pre-registered verdict set.
 A6 Tolerance for the molar-matching control (1e-8 M) and "charge-residual" are my choices; prereg said <=1e-6 relative.
+A7 (AFTER the pre-registered verdict; Round VI, 2026-10-23; post-hoc and clearly labelled as such, like A5.)  The Wave D
+   DIAGNOSIS -- that the omitted NaAc(aq) ion pair drives the C5 divergence -- was ACTED ON: `aqueous_equilibrium.py`
+   gained an OPT-IN NaAc ion pair (`include_ion_pair=True`; association logK -0.18 at 25 C, NIST46.4, the value PHREEQC's
+   minteq.v4 already used -- so this is not back-fitting a free parameter, it is adopting the reference DB's own sourced
+   constant).  The PHREEQC reference is NOT re-run: its SOLUTION inputs, its two sha256-pinned databases, and its
+   determinism are unchanged, and it already modelled the pair, so its pH values stand as the fixed external reference.
+   Only the code side is re-run and re-compared (`ion_pair_comparison.py` -> `ion_pair_comparison.json` /
+   `ion_pair_comparison_stdout.txt`).  This is NOT part of the original pre-registered agree/diverge verdict SET; it is a
+   documented follow-up that CLOSES the diagnosed divergence (worst |dpH| 0.0527 -> 0.0238; both DIVERGE cases become
+   MARGINAL; 0 DIVERGE over 28 rows).  The AGREE/MARGINAL/DIVERGE thresholds are UNCHANGED from section 5 (not re-tuned to
+   flatter the result).  The remaining ~0.023 at C5 is the Davies-vs-DH activity-model + molal/molar residual, not the
+   species set.  Measured-datum VALIDATION (section 7) remains UNKNOWN -- a fresh 2026-10-23 search reconfirmed no
+   defensible independent measured acetate-buffer pH (not an NBS/NIST primary standard; the pKa literature shares the
+   Harned/MacInnes EMF lineage).  No measured datum and no ion-pair constant is fabricated.

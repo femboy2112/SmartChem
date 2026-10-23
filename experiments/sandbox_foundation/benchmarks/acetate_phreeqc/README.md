@@ -35,8 +35,48 @@ not run in the core suite or the sandbox CI job.
   or fabricated. The `reaktoro_benchmark_obligation()` and this rung both stand at
   `EXTERNAL_VALIDATION_UNAVAILABLE`.
 
-See `PREREGISTRATION.md` (written before any speciation run, with dated amendments A0–A6) and
+See `PREREGISTRATION.md` (written before any speciation run, with dated amendments A0–A7) and
 `comparison_stdout.txt` / `comparison_table.json` for the full sweep.
+
+## Round VI update (2026-10-23) — the NaAc(aq) ion pair is now MODELED (opt-in), closing the C5 divergence
+
+Wave D *diagnosed* the C5 divergence as the omitted NaAc(aq) ion pair. Round VI ("The Salt Bridge") *acts* on that:
+the model gains an **opt-in** ion pair, `AcetateWaterSystem(..., include_ion_pair=True)`, with association constant
+`K_NAAC_ION_PAIR_25C` (logK = −0.18 at 25 °C, **NIST 46.4** via minteq.v4; provenance + uncertainty in the model file).
+The PHREEQC reference is **unchanged** (it already included the pair; same inputs, same sha256-pinned DBs, deterministic),
+so only the code side was re-run — see `ion_pair_comparison.py` / `ion_pair_comparison.json` / `ion_pair_comparison_stdout.txt`.
+
+Result (code `pH_activity` vs the committed PHREEQC-with-pair `pH_ph`):
+
+| case | I (M) | no-pair \|ΔpH\| | **with-pair \|ΔpH\|** | class shift |
+|---|---|---|---|---|
+| C3 (buffer) | 0.05 | 0.0090 | **0.0002** (minteq) | AGREE → AGREE |
+| C4 (0.1 M NaAc) | 0.10 | 0.0129 | **0.0057** (minteq) | AGREE → AGREE |
+| C5 (0.45 M NaAc) | 0.40 | 0.0517 / 0.0527 | **0.0229 / 0.0238** | **DIVERGE → MARGINAL** |
+
+- **Worst case over all 28 rows: 0.0527 (2 DIVERGE) → 0.0238 (0 DIVERGE). No case diverges with the pair.**
+- Against **minteq.v4** (the DB carrying the *same* logK −0.18 we adopted) every sodium case improves uniformly.
+- Against **llnl** (a weaker pair, logK ≈ −0.079, *and* a different B-dot activity model) the high-I divergence is
+  closed and every case stays AGREE, though the low-I buffer shifts slightly (our stronger pair over-corrects vs llnl's).
+- The residual MARGINAL ~0.023 at C5 is **not** the ion pair — it is the Davies-vs-WATEQ-Debye-Hückel activity-model +
+  molal/molar difference, which the pair does not touch (closing it would need a different *activity model*, not a
+  different species set). That is why the pair-included caveat past 0.1 M speaks of an activity-model residual.
+- **EXTERNAL VALIDATION still UNKNOWN.** The pair improves agreement with an independent *implementation* (PHREEQC); it
+  is **not** validation against a *measured* datum. A fresh search (2026-10-23) reconfirmed the Wave D finding: the
+  acetate buffer is not an NBS/NIST primary pH standard, and the acetate dissociation-constant literature
+  (Harned/MacInnes lineage; Partanen & Covington 2003; Archer & Monk 1964 for the NaAc pair) shares the Ka provenance,
+  so it is not an independent check of Ka. No measured datum is fabricated.
+
+**Adversarial hardening (evil-morty, reproduced + fixed).** A read-only adversarial pass found that Route 2's `h_of_a`
+catastrophically cancelled in the *basic* regime (free Na⁺ > free Ac⁻ ⇒ `-b + √(b²+4Kw_c)` subtracts near-equal large
+numbers), which fails **closed** but spuriously *refused* every basic Na>C_T case the base model solves (e.g. 0.1/0.12,
+0.1/0.4 — excess-base / NaOH-spiked acetate, where hydrolysis-suppressing pairing matters most). Fixed with the
+cancellation-free conjugate branch `2·Kw_c/(b+√(…))` for b>0; regression test
+`test_ion_pair_admits_basic_excess_base_regime_no_route2_cancellation`. The pre-registered C1–C5 results are
+**unchanged** (they sit at Na≤C_T, b≈0, outside the cancellation regime). The adversary also flagged the gate's
+sodium-balance check as a dead identity (it was computed on the gate's own re-derivation, which conserves Na by
+construction); rewritten to guard `solve()`'s *reported* split. **No soundness break was found** — the solver fails
+closed, and the γ-scaling direction, admission forgeability, conservation, and out-of-domain refusal all held.
 
 ## Database provenance (NOT committed — ~0.5–0.7 MB each; fetch to reproduce)
 

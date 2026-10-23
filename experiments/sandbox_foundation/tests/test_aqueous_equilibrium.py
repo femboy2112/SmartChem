@@ -1,20 +1,32 @@
-"""Wave F -- the source-backed acetic acid / acetate / water 0-D equilibrium.
+"""Wave F / Wave A -- the source-backed acetic acid / acetate / water 0-D equilibrium.
 
-SYNTHETIC/experimental.  The equilibrium CONSTANTS are sourced (CRC 84th ed. / standard Kw); the pH predictions
-are validated against (a) the agreement of two INDEPENDENT solver algorithms on the same sourced data and (b)
-SOURCED textbook pH anchors.  The Reaktoro cross-tool is unavailable here, so its benchmark is an explicit UNKNOWN
-obligation, never a fabricated number.
+SYNTHETIC/experimental.  The equilibrium CONSTANTS are sourced (CRC 84th ed. / standard Kw).  The pH predictions
+are checked against (a) the agreement of two INDEPENDENT solver algorithms on the same sourced data and (b) textbook
+pH anchors -- and those anchors are labelled honestly as equation/implementation VERIFICATION (same Ka + ideal
+approximation), NOT independent experimental validation.  The Reaktoro cross-tool is unavailable here, so its
+benchmark carries the permanent EXTERNAL_VALIDATION_UNAVAILABLE verdict, never a fabricated number.
+
+Wave A added, red-first, four pieces of intellectual honesty -- each test below that pins NEW behaviour notes the
+fact it enforces and the pre-fix lie it replaces:
+  A1  pH is activity-based in a nonideal model; p[H] and pH_activity are distinguished; c_ref is declared.
+  A2  the 25 C source-temperature domain is enforced in EVERY activity model, not just davies.
+  A3  an admission gate fails CLOSED: disagreeing routes / non-convergence / out-of-domain I never present a result.
+  A4  the uncertainty discipline is split into single-cause controls; a zero error bar on a MEASURED constant is banned.
+  A5  the result carries an explicit verdict from a named vocabulary.
 """
 import math
 
 import pytest
 
 from experiments.sandbox_foundation.aqueous_equilibrium import (
-    DAVIES_A_25C, KA_ACETIC_25C, KW_25C, AcetateWaterSystem, SourcedConstant, reaktoro_benchmark_obligation, solve)
+    AGREEMENT_RTOL, C_REF, DAVIES_A_25C, DAVIES_I_MAX, EXTERNAL_VALIDATION_UNAVAILABLE, KA_ACETIC_25C, KW_25C,
+    NUMERICALLY_UNVERIFIED, OUT_OF_SOURCE_DOMAIN, SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL, SOLVED_WITHIN_IDEAL_MODEL,
+    SOURCE_T_K, SOURCE_T_TOL_K, VERDICTS, AcetateWaterSystem, NumericalVerificationError, OutOfSourceDomainError,
+    SourcedConstant, _verify_admission, reaktoro_benchmark_obligation, solve)
 from experiments.sandbox_foundation.twocell import InvalidParameterError
 
 
-# ---- provenance discipline: a sourced constant carries real provenance; a fabricated one is refused ----------
+# ---- provenance discipline: a sourced constant carries real provenance -----------------------------------------
 def test_sourced_constants_carry_provenance():
     for c in (KA_ACETIC_25C, KW_25C, DAVIES_A_25C):
         assert c.status == "SOURCED" and c.source.strip() and c.uncertainty > 0 and c.value > 0
@@ -22,9 +34,50 @@ def test_sourced_constants_carry_provenance():
     assert abs(-math.log10(KW_25C.value) - 14.0) < 0.01             # pKw ~ 14
 
 
-def test_a_fabricated_zero_uncertainty_constant_is_refused():
+# ---- A4: the uncertainty discipline, split into INDEPENDENT single-cause controls ------------------------------
+# The old test conflated "zero uncertainty" AND "missing source"; it could not say which refused the constant.
+# These isolate each cause, and decide explicitly that a zero error bar on a MEASURED constant is itself banned.
+def test_a4a_zero_uncertainty_on_a_measured_constant_is_banned_even_with_a_source():
+    # RED on old code: it only required uncertainty >= 0, so this constructed.  A measurement with exactly zero
+    # spread is a fiction -- a fabricated/decorative error bar, ranked worse than an honest UNKNOWN.
     with pytest.raises(InvalidParameterError):
-        SourcedConstant("fake", 1.0e-5, 0.0, "x", 298.15, "")       # no source + decorative error bar
+        SourcedConstant("Ka_fake", 1.75e-5, 0.0, "dimensionless (molar)", 298.15, "a perfectly real-looking source")
+
+
+def test_a4b_empty_source_is_refused_for_the_SOURCE_reason_only():
+    # valid positive uncertainty, only the source missing -> isolates the source cause (characterisation).
+    with pytest.raises(InvalidParameterError):
+        SourcedConstant("Ka_fake", 1.75e-5, 1.0e-6, "dimensionless (molar)", 298.15, "   ")
+
+
+def test_a4c_unknown_status_allows_an_unavailable_value():
+    # an honest blank: UNKNOWN may have no value and no error bar, and that is NOT a fabrication.
+    c = SourcedConstant("not_measured_here", float("nan"), float("nan"), "", 298.15, "", status="UNKNOWN")
+    assert c.status == "UNKNOWN"
+
+
+def test_a4d_sourced_constant_at_the_wrong_temperature_is_refused():
+    # RED on old code: the system never checked a constant's own T, so an off-temperature record was borrowed.
+    off_T_Ka = SourcedConstant("Ka", 1.75e-5, 1.0e-6, "dimensionless (molar)", 350.0, "a 350 K table")
+    with pytest.raises(OutOfSourceDomainError):
+        AcetateWaterSystem(0.1, Ka=off_T_Ka)
+
+
+def test_a4e_mismatched_standard_state_units_are_refused():
+    # RED on old code: no units check, so a MOLAL constant could be mixed with a MOLAR ionic strength unlabelled.
+    molal_Ka = SourcedConstant("Ka", 1.75e-5, 1.0e-6, "mol/kg (molal reference)", 298.15, "a molal table")
+    with pytest.raises(InvalidParameterError):
+        AcetateWaterSystem(0.1, Ka=molal_Ka)
+
+
+def test_a4f_exact_by_definition_is_distinguished_from_a_measured_constant():
+    # RED on old code: there was no EXACT status at all.  Exact-by-definition is the ONLY thing allowed zero spread;
+    # a nonzero bar on it, OR a zero bar on a measured constant, is refused.  The two cannot be confused.
+    assert C_REF.status == "EXACT" and C_REF.value == 1.0 and C_REF.uncertainty == 0.0
+    with pytest.raises(InvalidParameterError):      # a nonzero error bar on a DEFINED quantity is fabricated
+        SourcedConstant("c_ref_bad", 1.0, 0.01, "mol/L", 298.15, "def", status="EXACT")
+    with pytest.raises(InvalidParameterError):      # a zero error bar on a MEASURED quantity is fabricated
+        SourcedConstant("Ka_bad", 1.75e-5, 0.0, "dimensionless (molar)", 298.15, "src", status="SOURCED")
 
 
 # ---- the two independent solver routes must agree (a SOLVER cross-check) --------------------------------------
@@ -37,7 +90,87 @@ def test_two_routes_agree_and_charge_balances(C_T, Na):
     assert abs((r.hac_M + r.ac_minus_M) - C_T) <= 1e-12 * max(1.0, C_T)
 
 
-# ---- SOURCED textbook pH anchors (ideal model) ----------------------------------------------------------------
+# ---- A3: the admission gate fails CLOSED -- a solver failure is never presented as a prediction ----------------
+def test_a3_disagreeing_routes_are_not_admitted():
+    # RED on old code: the gate did not exist; solve() averaged two roots and reported success regardless.
+    # Feed the gate two routes that disagree grossly; everything else consistent with route1.
+    with pytest.raises(NumericalVerificationError) as ei:
+        _verify_admission(
+            h1=1.0e-3, h2=2.0e-3, h=1.0e-3, oh=1e-11, ac=0.0, hac=0.0, C_T=0.0, Na=0.0,
+            Ka_c=KA_ACETIC_25C.value, Kw_c=KW_25C.value, activity_model="ideal",
+            ionic_strength=1e-3, davies_converged=True, davies_iterations=0)
+    assert ei.value.verdict == NUMERICALLY_UNVERIFIED
+
+
+def test_a3_davies_nonconvergence_is_not_admitted():
+    # RED on old code: the davies loop could fall through its 100-iter cap and still return the last gamma silently.
+    with pytest.raises(NumericalVerificationError) as ei:
+        _verify_admission(
+            h1=1.0e-7, h2=1.0e-7, h=1.0e-7, oh=1.0e-7, ac=0.0, hac=0.0, C_T=0.0, Na=0.0,
+            Ka_c=KA_ACETIC_25C.value, Kw_c=KW_25C.value, activity_model="davies",
+            ionic_strength=0.01, davies_converged=False, davies_iterations=100)
+    assert ei.value.verdict == NUMERICALLY_UNVERIFIED
+
+
+def test_a3_negative_concentration_is_not_admitted():
+    with pytest.raises(NumericalVerificationError):
+        _verify_admission(
+            h1=1.0e-7, h2=1.0e-7, h=1.0e-7, oh=1.0e-7, ac=-1.0, hac=1.0, C_T=0.0, Na=0.0,
+            Ka_c=KA_ACETIC_25C.value, Kw_c=KW_25C.value, activity_model="ideal",
+            ionic_strength=1e-7, davies_converged=True, davies_iterations=0)
+
+
+def test_a3_davies_beyond_ionic_strength_domain_is_not_admitted_end_to_end():
+    # RED on old code: a davies solve at I ~ 1.0 (1 M NaOH) returned a result with no domain check at all.
+    with pytest.raises(NumericalVerificationError) as ei:
+        solve(AcetateWaterSystem(0.0, sodium_M=1.0, activity_model="davies"))
+    assert ei.value.verdict == NUMERICALLY_UNVERIFIED
+
+
+def test_a3_in_domain_davies_stays_admitted():
+    # guard the gate's negative polarity: a legitimate low-I davies case must still pass, with I in domain.
+    r = solve(AcetateWaterSystem(0.1, sodium_M=0.1, activity_model="davies"))
+    assert r.verdict == SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL
+    assert r.ionic_strength_M <= DAVIES_I_MAX
+    assert 0 < r.davies_iterations <= 100       # the fixed point demonstrably ran and did not fall through the cap
+
+
+def test_a3_adversarial_regimes_are_each_admitted_with_closed_balances():
+    # pure water / concentrated acid / basic / half-neutralised buffer / near-degenerate / extreme-but-finite.
+    for C_T, Na in [(0.0, 0.0), (5.0, 0.0), (0.0, 0.1), (0.1, 0.05), (1e-10, 0.0), (1e-7, 0.0)]:
+        r = solve(AcetateWaterSystem(C_T, sodium_M=Na))
+        assert r.verdict == SOLVED_WITHIN_IDEAL_MODEL, (C_T, Na)
+        assert r.solver_agreement_residual <= AGREEMENT_RTOL * max(r.h_plus_M, r.solver_agreement_residual)
+        assert abs((r.hac_M + r.ac_minus_M) - C_T) <= 1e-9 * max(1.0, C_T)
+        assert min(r.h_plus_M, r.oh_minus_M, r.hac_M, r.ac_minus_M) >= -1e-12
+
+
+# ---- A1: pH is ACTIVITY-based in a nonideal model; p[H] and pH_activity are distinguished ----------------------
+def test_a1_davies_primary_pH_is_activity_based_not_concentration():
+    # RED on old code: the davies solve reported pH = -log10([H+]) = 4.58662 and called it pH.  IUPAC pH is on
+    # H+ ACTIVITY.  For the reference case gamma = 0.82149, so the honest activity pH is 4.67201.
+    r = solve(AcetateWaterSystem(total_acetic_M=0.1, sodium_M=0.05, temperature_K=298.15, activity_model="davies"))
+    assert r.gamma_monovalent == pytest.approx(0.82149, abs=1e-5)
+    assert r.pH_concentration == pytest.approx(4.58662, abs=1e-5)       # the old number, honestly renamed p[H]
+    assert r.pH_activity == pytest.approx(4.67201, abs=1e-5)            # the activity-based value (permanent pin)
+    assert r.pH == r.pH_activity                                        # the PRIMARY pH is the activity value
+    assert r.pH != pytest.approx(r.pH_concentration, abs=1e-3)          # they genuinely differ in a nonideal model
+
+
+def test_a1_ideal_mode_concentration_and_activity_pH_coincide():
+    r = solve(AcetateWaterSystem(0.1))
+    assert r.gamma_monovalent == 1.0
+    assert r.pH == r.pH_concentration == r.pH_activity
+
+
+def test_a1_c_ref_is_declared_exact_and_unit_molar():
+    assert r"mol/L" in C_REF.units and "molar" in C_REF.units.lower()
+    assert C_REF.status == "EXACT" and C_REF.value == 1.0 and C_REF.uncertainty == 0.0
+    r = solve(AcetateWaterSystem(0.1))
+    assert r.c_ref_M == 1.0
+
+
+# ---- SOURCED textbook pH anchors (ideal model) -- equation VERIFICATION, not independent validation ------------
 def test_pure_water_is_pH_7():
     r = solve(AcetateWaterSystem(0.0, 0.0))
     assert abs(r.pH - 7.0) < 1e-6
@@ -62,6 +195,19 @@ def test_equimolar_acetate_buffer_sits_at_the_pKa():
     assert abs(r.hac_M - r.ac_minus_M) < 1e-3                        # genuinely at the half-neutralisation point
 
 
+# ---- A5: the result carries an explicit verdict from a named vocabulary ----------------------------------------
+def test_a5_solve_carries_a_model_appropriate_verdict():
+    assert solve(AcetateWaterSystem(0.1)).verdict == SOLVED_WITHIN_IDEAL_MODEL
+    assert solve(AcetateWaterSystem(0.1, sodium_M=0.05, activity_model="davies")).verdict == \
+        SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL
+
+
+def test_a5_verdict_vocabulary_is_the_declared_set():
+    assert VERDICTS == {
+        SOLVED_WITHIN_IDEAL_MODEL, SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL,
+        NUMERICALLY_UNVERIFIED, OUT_OF_SOURCE_DOMAIN, EXTERNAL_VALIDATION_UNAVAILABLE}
+
+
 # ---- the Davies nonideal correction shifts pH (documented, not claimed exact) ---------------------------------
 def test_davies_correction_shifts_pH_and_lowers_gamma():
     ideal = solve(AcetateWaterSystem(0.1, sodium_M=0.1, activity_model="ideal"))
@@ -69,19 +215,39 @@ def test_davies_correction_shifts_pH_and_lowers_gamma():
     assert davies.gamma_monovalent < 1.0                            # activity coefficient below 1 at finite I
     assert ideal.gamma_monovalent == 1.0
     assert abs(davies.pH - ideal.pH) > 1e-3                         # a real, documented shift
+    assert davies.pH == davies.pH_activity                          # the davies primary pH is the activity value
     assert davies.activity_model == "davies"
 
 
-def test_davies_off_25C_is_refused_not_extrapolated():
+# ---- A2: the 25 C source-temperature domain is enforced in EVERY activity model --------------------------------
+def test_a2_davies_off_25C_is_refused_not_extrapolated():
     with pytest.raises(InvalidParameterError):
         AcetateWaterSystem(0.1, temperature_K=310.0, activity_model="davies")
 
 
-# ---- the independent benchmark is preserved as an explicit UNKNOWN, never fabricated --------------------------
-def test_reaktoro_benchmark_is_an_unknown_obligation_not_a_fabricated_number():
+def test_a2_ideal_mode_cannot_bypass_the_source_temperature():
+    # RED on old code: the 25 C guard only fired for davies, so ideal mode silently reused 25 C Ka/Kw at 350 K.
+    with pytest.raises(OutOfSourceDomainError) as ei:
+        AcetateWaterSystem(0.1, temperature_K=350.0, activity_model="ideal")
+    assert ei.value.verdict == OUT_OF_SOURCE_DOMAIN
+
+
+def test_a2_source_temperature_band_is_explicit_and_enforced_in_both_modes():
+    assert SOURCE_T_K == 298.15 and SOURCE_T_TOL_K == 0.01           # the band is DECLARED, not implicit
+    for model in ("ideal", "davies"):
+        AcetateWaterSystem(0.1, temperature_K=298.15, activity_model=model)          # dead-centre: ok
+        AcetateWaterSystem(0.1, temperature_K=298.159, activity_model=model)         # inside the band (0.009): ok
+        with pytest.raises(OutOfSourceDomainError):
+            AcetateWaterSystem(0.1, temperature_K=298.161, activity_model=model)     # just outside (0.011): refused
+        with pytest.raises(OutOfSourceDomainError):
+            AcetateWaterSystem(0.1, temperature_K=350.0, activity_model=model)       # far outside: refused
+
+
+# ---- A5: the independent benchmark is EXTERNAL_VALIDATION_UNAVAILABLE, never a fabricated number ---------------
+def test_reaktoro_benchmark_is_external_validation_unavailable_not_fabricated():
     ob = reaktoro_benchmark_obligation()
-    assert ob.tool == "Reaktoro" and ob.status == "UNAVAILABLE_UNKNOWN"
-    assert ob.verdict is None                                       # no fabricated comparison
+    assert ob.tool == "Reaktoro" and ob.verdict == EXTERNAL_VALIDATION_UNAVAILABLE
+    assert ob.comparison is None                                    # no fabricated comparison
     assert "activity_model" in ob.recipe and "independence_caveat" in ob.recipe
 
 

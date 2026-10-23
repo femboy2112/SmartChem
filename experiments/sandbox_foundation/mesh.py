@@ -361,18 +361,38 @@ def transport_step_mesh(system: MeshSystem, state: MeshState, dt: float, *, poli
 
 
 def reaction_step_mesh(system: MeshSystem, state: MeshState, dt: float, *,
-                       settings: SolverSettings = SolverSettings(), ledger: Optional[Ledger] = None, step: int = 0):
-    """Per-cell closed-cell reaction (twocell.reaction_cell, implicit Radau in extent space)."""
+                       settings: SolverSettings = SolverSettings(), ledger: Optional[Ledger] = None, step: int = 0,
+                       T_K=None):
+    """Per-cell closed-cell reaction (twocell.reaction_cell, implicit Radau in extent space).
+
+    Wave B handoff (secondary): a mechanism carrying an admitted-domain ``Applicability`` is re-checked on EVERY
+    transition and FAILS CLOSED when it cannot confirm applicability -- including a windowed law reached with no
+    temperature.  twocell.reaction_step derives that T from the cell's energy U; the MESH carries NO thermal degree
+    of freedom (MeshState holds amounts only, no U), so T CANNOT be derived here -- it must be SUPPLIED.  Pass
+    ``T_K`` as a scalar (same T for every cell) or one value per cell; it is threaded into reaction_cell so a
+    windowed mechanism runs IN-DOMAIN on the mesh path (and refuses OUT-of-domain), closing the hole where
+    reaction_step_mesh called reaction_cell with no temperature and so always failed closed.  T_K=None keeps the
+    old behaviour (fine for a plain SYNTHETIC mechanism; a fail-closed refusal for a windowed one)."""
     mech = system.mechanism
     if mech is None:
         raise InvalidParameterError("system has no mechanism")
     _check_pos(dt, "dt", strict=False)
+    C = system.mesh.n_cells
+    if T_K is None:
+        T_cells = [None] * C
+    elif np.ndim(T_K) == 0:
+        T_cells = [float(T_K)] * C
+    else:
+        T_arr = np.asarray(T_K, float)
+        if T_arr.shape != (C,):
+            raise InvalidParameterError(f"T_K must be a scalar or one temperature per cell (n_cells={C})")
+        T_cells = [float(x) for x in T_arr]
     n = np.array(state.n)
     rep = StepReport("reaction", step, dt, solver={"method": settings.method, "rtol": settings.rtol,
                                                    "atol": settings.atol, "pos_tol": settings.pos_tol,
                                                    "seed": settings.seed})
     for i in range(system.mesh.n_cells):
-        n1, xi, cl, cres = reaction_cell(mech, n[i], system.mesh.volumes_m3[i], dt, settings)
+        n1, xi, cl, cres = reaction_cell(mech, n[i], system.mesh.volumes_m3[i], dt, settings, T_K=T_cells[i])
         src = n1 - n[i]
         rep.extents[i] = xi
         rep.clamped = rep.clamped or cl
@@ -497,3 +517,172 @@ def audit_mesh(system: MeshSystem, state0: MeshState, state1: MeshState, ledger:
     dn = state1.n.sum(axis=0) - state0.n.sum(axis=0)
     inv = system.inventory_matrix @ (dn - ext)
     return {"inventory_residual": float(np.max(np.abs(inv), initial=0.0)), "external_amount_mol": ext}
+
+
+# ===================================================================================================================
+# Wave E -- THE PASSIVE-INTERFACE CONTRACT (a reusable per-face LOCAL DISSIPATION WITNESS)
+# ===================================================================================================================
+# Commander's note: Round IV proved the GLOBAL diffusion dissipation dPhi/dt|diff <= 0 for the two-cell world.
+# Here we generalise it into a LOCAL, per-face law that any passive interface -- wall, valve, membrane -- must obey,
+# and we DERIVE it from the same B_space the conservation law already rides on.  Nothing is asserted; every line is
+# a consequence of the oriented-face incidence and ideal-dilute thermodynamics.  SYNTHETIC / isothermal throughout.
+#
+# DERIVATION (face f oriented tail -> head; B_space[head,f]=+1, B_space[tail,f]=-1):
+#
+#   Chemical potential, ideal-dilute:   mu_i(cell) = mu_i^0 + R T ln(c_i,cell / c_ref).
+#   The face DROP along the orientation is the B_space-weighted sum of the two incident potentials -- and because
+#   every face column of B_space holds exactly one +1 and one -1, the species-uniform mu^0 and c_ref CANCEL:
+#       Delta(mu)_f,i = sum_cell B_space[cell,f] mu_i(cell) = mu_i(head) - mu_i(tail) = R T ln(c_i,head / c_i,tail).
+#   So Delta(mu) = R T (B_space^T ln c).  The ORIENTATION of Delta(mu) is literally B_space's (tail,head) choice.
+#
+#   Fick two-point flux (the EXISTING law, mesh.transport_step_mesh): the molar flow ALONG the orientation is
+#       J_f,i = g_f,i (c_i,tail - c_i,head) = -g_f,i (B_space^T c)_f,i ,   g_f,i = D_i A_f / dx_f  [m^3/s].
+#
+#   Write Fick as a LINEAR-IRREVERSIBLE law J = -L . Delta(mu).  Dividing the two forms:
+#       L_f,i = g_f,i (c_tail - c_head) / (R T ln(c_tail/c_head)) = g_f,i * c_lm,f,i / (R T),
+#   where c_lm = (c_tail - c_head) / (ln c_tail - ln c_head) is the LOG-MEAN concentration.  For strictly positive
+#   c the numerator and denominator share a sign, so c_lm > 0, hence L_f,i >= 0 (g >= 0) -- a POSITIVE
+#   SEMIDEFINITE (here scalar, diagonal-in-species) interface response.  Therefore the per-face witness
+#       Delta(mu)_f . J_f = -L_f (Delta(mu)_f)^2 <= 0            [J/mol . mol/s = W]
+#   holds for EVERY face: a passive interface DISSIPATES free energy, it never injects it (red-team #12).
+#
+#   UNITS:  Delta(mu) [J/mol] ; J [mol/s] ; L = g*c_lm/(RT) = [m^3/s][mol/m^3]/([J/(mol K)][K]) = mol^2/(J s) ;
+#           Delta(mu).J = [J/mol][mol/s] = W (a power).  (The task's intensive L = D c_lm/(RT dx) is PER AREA;
+#           the mesh's extensive L_f carries the face area A_f, L_f = (A_f/dx_f) D c_lm/(RT) -- same law, scaled.)
+#
+#   LIMITS (made explicit, never a NaN):
+#     * c_tail == c_head:  Delta(mu)=0, J=0, witness=0.  c_lm -> c by l'Hopital (d/dc of num and den), so L stays
+#       FINITE (= g c / RT) -- no false singularity at the no-gradient point.
+#     * c -> 0 (a cell empties):  Delta(mu) -> -/+ inf (the ideal-dilute log singularity), J stays finite (g*c_other),
+#       c_lm -> 0; the witness -> -inf.  Its MAGNITUDE diverges but its SIGN is right (<= 0) -- the finite-sign
+#       ideal-dilute limit Round IV already documented.  g==0 (impermeable) or no gradient -> EXACTLY 0.
+#
+# RECONCILIATION with the global Lyapunov dPhi/dt|diff (they MUST agree, and do):
+#       sum_f sum_i Delta(mu)_f,i J_f,i  ==  R T * ( -sum_f sum_i g_f,i (c_tail - c_head)(ln c_tail - ln c_head) )
+#                                        ==  R T * dPhi/dt|diff .
+#   The factor R T is exactly G_phys = R T * Phi_lyapunov: the Lyapunov functional is measured in mol, the physical
+#   free energy in J, and the ideal-dilute bridge between them is R T.  (Proven numerically in the Wave E tests
+#   against lyapunov.diffusion_dissipation_rate on the 2-cell equivalent -- an INDEPENDENT code path.)
+
+R_GAS = 8.314462618  # J/(mol K), CODATA 2018 -- the ONLY physical constant Wave E needs (isothermal, ideal-dilute)
+
+
+def _face_endpoints(mesh: Mesh, field: np.ndarray):
+    """(tail_vals, head_vals), each (F, S), gathered from a per-cell (C, S) field along each face's orientation."""
+    field = np.asarray(field, float)
+    tail = np.fromiter((f.tail for f in mesh.faces), dtype=int, count=mesh.n_faces) if mesh.n_faces \
+        else np.zeros(0, dtype=int)
+    head = np.fromiter((f.head for f in mesh.faces), dtype=int, count=mesh.n_faces) if mesh.n_faces \
+        else np.zeros(0, dtype=int)
+    S = field.shape[1]
+    return (field[tail] if mesh.n_faces else np.zeros((0, S))), (field[head] if mesh.n_faces else np.zeros((0, S)))
+
+
+def face_fick_flux(mesh: Mesh, g: np.ndarray, c: np.ndarray) -> np.ndarray:
+    """The EXISTING two-point Fick molar flow per face ALONG its orientation, (F, S) mol/s:  J = g (c_tail - c_head).
+    `g` is the per-face/species conductance (F, S) m^3/s (so a membrane/valve can zero or scale individual faces --
+    this is strictly more general than MeshSystem.g, which shares one D across all faces).  Equivalates to
+    -g (B_space^T c): the orientation is B_space's."""
+    g = np.asarray(g, float)
+    c_tail, c_head = _face_endpoints(mesh, c)
+    return g * (c_tail - c_head)
+
+
+def face_potential_difference(mesh: Mesh, c: np.ndarray, T_K: float) -> np.ndarray:
+    """Delta(mu)_f = mu(head) - mu(tail) = R T ln(c_head / c_tail) = R T (B_space^T ln c), (F, S) J/mol.
+    DERIVED from B_space (species-uniform mu^0 and c_ref cancel in the +1/-1 face column); the orientation is
+    B_space's (tail,head) labelling.  A cell at c==0 gives a -inf head-minus-tail drop (the ideal-dilute log
+    singularity); callers that need a finite witness should stay at strictly positive c (the apparatus does)."""
+    _check_pos(T_K, "T_K")
+    c = np.asarray(c, float)
+    with np.errstate(divide="ignore"):
+        ln_c = np.log(c)
+    c_tail, c_head = _face_endpoints(mesh, ln_c)
+    return R_GAS * float(T_K) * (c_head - c_tail)
+
+
+def face_log_mean_concentration(mesh: Mesh, c: np.ndarray) -> np.ndarray:
+    """c_lm,f = (c_tail - c_head) / (ln c_tail - ln c_head), (F, S) mol/m^3.  > 0 for strictly positive c (num and
+    den share a sign).  Limit c_tail -> c_head is the common value c (l'Hopital) -- returned exactly there, so L
+    stays finite at the no-gradient point.  A zero endpoint sends c_lm -> 0 (finite numerator / infinite den)."""
+    c = np.asarray(c, float)
+    c_tail, c_head = _face_endpoints(mesh, c)
+    num = c_tail - c_head
+    with np.errstate(divide="ignore", invalid="ignore"):
+        den = np.log(c_tail) - np.log(c_head)
+        lm = np.where(num == 0.0, c_tail, num / den)        # no gradient -> the common value (l'Hopital)
+        lm = np.where(np.isfinite(lm), lm, 0.0)             # a zero endpoint (den = +/-inf) -> c_lm -> 0
+    return lm
+
+
+def face_log_mean_mobility(mesh: Mesh, g: np.ndarray, c: np.ndarray, T_K: float) -> np.ndarray:
+    """L_f = g_f * c_lm,f / (R T), (F, S) mol^2/(J s).  >= 0 (g >= 0, c_lm >= 0): the positive-semidefinite passive
+    interface response in J = -L . Delta(mu).  This is the constitutive content of the contract -- derive, verify,
+    never assert (a mutation that flips its sign is caught by the Wave E dissipation test)."""
+    _check_pos(T_K, "T_K")
+    g = np.asarray(g, float)
+    return g * face_log_mean_concentration(mesh, c) / (R_GAS * float(T_K))
+
+
+def _law_form_dissipation(mesh: Mesh, g: np.ndarray, c: np.ndarray, T_K: float) -> np.ndarray:
+    """The CONSTITUTIVE form of the witness, -L_f (Delta(mu)_f)^2 (F, S) W.  Manifestly non-positive IN L (so a
+    sign/L/log-mean mutation shows up here), but numerically it forms 0*inf = NaN as a cell empties (L -> 0 while
+    Delta(mu) -> inf), which is why `face_dissipation` returns the robust DIRECT product and this stays INTERNAL,
+    used only by `passive_interface_residual` to cross-check the two routes on finite (strictly positive) faces."""
+    dmu = face_potential_difference(mesh, c, T_K)
+    L = face_log_mean_mobility(mesh, g, c, T_K)
+    c_tail, c_head = _face_endpoints(mesh, c)
+    inactive = (np.asarray(g, float) == 0.0) | (c_tail == c_head)
+    with np.errstate(invalid="ignore", over="ignore"):
+        return np.where(inactive, 0.0, -L * dmu * dmu)
+
+
+def face_dissipation(mesh: Mesh, g: np.ndarray, c: np.ndarray, T_K: float) -> np.ndarray:
+    """The per-face LOCAL DISSIPATION WITNESS  Delta(mu)_f . J_f, (F, S) W, each entry <= 0 for a passive interface
+    (because J = -L . Delta(mu) with L >= 0).  Computed as the DIRECT potential-times-flux product so it stays
+    numerically honest as a cell empties: Delta(mu) -> -/+ inf while the Fick flux J stays finite, giving a signed
+    -inf (the ideal-dilute log-singularity limit) -- NEVER a NaN.  `passive_interface_residual` confirms it equals
+    the constitutive -L Delta(mu)^2 on positive faces.  g==0 (impermeable) or no gradient -> exactly 0."""
+    g = np.asarray(g, float)
+    dmu = face_potential_difference(mesh, c, T_K)
+    J = face_fick_flux(mesh, g, c)
+    c_tail, c_head = _face_endpoints(mesh, c)
+    inactive = (g == 0.0) | (c_tail == c_head)      # no flux -> no dissipation; masks the degenerate 0*inf/0*0
+    with np.errstate(invalid="ignore", over="ignore"):
+        return np.where(inactive, 0.0, dmu * J)
+
+
+def passive_interface_residual(mesh: Mesh, g: np.ndarray, c: np.ndarray, T_K: float) -> float:
+    """RELATIVE max |(-L Delta(mu)^2) - (Delta(mu) . J)| over active faces, normalised by the largest |witness| --
+    the two INDEPENDENT routes (constitutive -L Delta(mu)^2 via the log-mean mobility vs. the direct potential-times-
+    flux Fick product) must agree to roundoff.  A dropped log-mean or a wrong L makes them disagree.  Confined to
+    strictly positive, finite-potential faces (the c->0 limit is +/-inf on both sides, trivially equal)."""
+    law = _law_form_dissipation(mesh, g, c, T_K)
+    direct = face_dissipation(mesh, g, c, T_K)
+    finite = np.isfinite(law) & np.isfinite(direct)
+    scale = float(np.max(np.abs(direct[finite]), initial=0.0)) or 1.0
+    return float(np.max(np.abs(law - direct)[finite], initial=0.0)) / scale
+
+
+def mesh_diffusion_dissipation_rate(mesh: Mesh, g: np.ndarray, c: np.ndarray) -> float:
+    """The GLOBAL Lyapunov diffusion dissipation on the whole mesh (generalises lyapunov C2 from 2 cells to the
+    oriented-face chain/graph):  dPhi/dt|diff = -sum_f sum_i g_f,i (c_tail - c_head)(ln c_tail - ln c_head) <= 0,
+    in mol/s.  The per-face witness sum equals R T times THIS (see the module header reconciliation)."""
+    g = np.asarray(g, float)
+    c_tail, c_head = _face_endpoints(mesh, c)
+    dc = c_tail - c_head
+    with np.errstate(divide="ignore", invalid="ignore"):
+        dln = np.log(c_tail) - np.log(c_head)
+        contrib = np.where((g == 0.0) | (dc == 0.0), 0.0, g * dc * dln)
+    return float(-np.sum(contrib))
+
+
+def assert_passive(mesh: Mesh, g: np.ndarray, c: np.ndarray, T_K: float, *, tol: float = 1e-12) -> None:
+    """Fail-closed passivity certificate: raise if ANY face injects free energy (witness > tol).  The reusable
+    second law for the sandbox's interfaces -- a wall, a valve or a membrane that VIOLATES it is refused, loudly."""
+    w = face_dissipation(mesh, g, c, T_K)
+    worst = float(np.max(w, initial=-math.inf))
+    if worst > tol:
+        raise InvalidParameterError(
+            f"passive-interface contract VIOLATED: a face dissipation witness is +{worst:g} W > tol={tol:g} "
+            "(a passive interface must have Delta(mu).J <= 0; it cannot inject free energy)")

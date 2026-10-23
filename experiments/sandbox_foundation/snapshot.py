@@ -68,7 +68,7 @@ class QuantityKind(str, Enum):
     ILLUSTRATION = "ILLUSTRATION"    # pure visual decoration; never a measurement
 
 
-MEASUREMENT_KINDS = frozenset({QuantityKind.CANONICAL, QuantityKind.MODEL_DERIVED})
+MODEL_VALUE_KINDS = frozenset({QuantityKind.CANONICAL, QuantityKind.MODEL_DERIVED})  # model VALUES, NOT measurements
 _CONVERGED_OK = ("CONVERGED", "NOT_ITERATIVE")   # statuses under which residuals may certify; anything else cannot
 
 
@@ -250,9 +250,43 @@ class ModelRunReceipt:
         return numerics_verified(self._numerics)
 
     @property
-    def scientific_measurement(self) -> bool:
-        """admitted AND numerically verified -- the only combination a renderer may call a validated measurement."""
+    def supported_prediction(self) -> bool:
+        """admitted AND numerically verified: a SUPPORTED MODEL PREDICTION -- the strongest claim a simulation can
+        make.  It is explicitly NOT a physical measurement (see observed_measurement): no external observation or
+        instrument produced it.  A renderer may show it as a model prediction, never as a measured / sensed value."""
         return self._admitted and self.numerically_verified
+
+    @property
+    def observed_measurement(self) -> bool:
+        """Always False for a model-run receipt.  An OBSERVED physical measurement requires an external observation
+        source (an instrument / dataset carrying measurement provenance); a ModelRunReceipt describes a SIMULATION
+        and carries none, so it can never mint one.  A numerically converged simulation must not invent a physical
+        observer -- an actual observed value would travel in a separate observation record this sandbox never emits."""
+        return False
+
+    def numerics_disclosure(self) -> dict:
+        """Disclose exactly WHICH residuals were checked against a tolerance (so numerically_verified cannot hide
+        behind a trivial caller-supplied residual dict) and which errors remain UNBOUNDED.  numerically_verified
+        certifies only the listed residuals (conservation / positivity / passivity / ...), NEVER a truncation-error
+        bound against the exact solution -- which is therefore always disclosed as unbounded."""
+        num = self._numerics
+        tol = num.get("tolerances") if isinstance(num, Mapping) else None
+        res = num.get("residuals") if isinstance(num, Mapping) else None
+        checked, unbounded = {}, []
+        if isinstance(tol, Mapping) and isinstance(res, Mapping):
+            for k, t in tol.items():
+                r = res.get(k)
+                if _is_real(r) and _is_real(t):
+                    checked[k] = {"residual": r, "tolerance": t}
+                else:
+                    unbounded.append(k)                      # present but not finitely bounded -> not certified
+            for k in res:
+                if k not in tol:
+                    unbounded.append(k)                      # a residual with NO tolerance is reported, not trusted
+        unbounded.append("truncation error vs the exact solution (no a-posteriori bound)")
+        return {"convergence_status": num.get("convergence_status") if isinstance(num, Mapping) else None,
+                "checked_residuals": checked, "unbounded_errors": sorted(set(unbounded)),
+                "numerically_verified": self.numerically_verified}
 
     @property
     def label(self) -> str:
@@ -270,13 +304,14 @@ class ModelRunReceipt:
                 "admitted": self._admitted, "admission_derived": self._derived,
                 "law_levels": list(self._law_levels), "admission_identities": _jsonify(self._adm_ids),
                 "numerics": _jsonify(self._numerics), "numerically_verified": self.numerically_verified,
-                "scientific_measurement": self.scientific_measurement, "label": self.label}
+                "supported_prediction": self.supported_prediction, "observed_measurement": self.observed_measurement,
+                "numerics_disclosure": self.numerics_disclosure(), "label": self.label}
 
 
 def absent_receipt_dict() -> dict:
     """What a frame says when NO receipt travelled with the state: unadmitted, unverified -- never silent."""
-    return {"present": False, "admitted": False, "numerically_verified": False, "scientific_measurement": False,
-            "label": "NO-RECEIPT(UNADMITTED+NUMERICS-UNVERIFIED)"}
+    return {"present": False, "admitted": False, "numerically_verified": False, "supported_prediction": False,
+            "observed_measurement": False, "label": "NO-RECEIPT(UNADMITTED+NUMERICS-UNVERIFIED)"}
 
 
 def _digests(schema, species, vol, amt, mask, units, tick, time_s, cons, numunc, boundary, unsupported, rcpt_model,

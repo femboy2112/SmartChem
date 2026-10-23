@@ -640,11 +640,43 @@ def reaction_cell(mech: Mechanism, n0: np.ndarray, V: float, dt: float, settings
     def f(_t, xi):
         return V * mech._rate_vector_unchecked((n0 + mech.N @ xi) / V)   # gated once above
 
-    sol = solve_ivp(f, (0.0, dt), np.zeros(R), method=settings.method, rtol=settings.rtol, atol=settings.atol)
+    # Wave A1: an admitted law must hold over the WHOLE trajectory, not only at n0.  T is fixed across this single
+    # closed-cell step, so the one trajectory-varying admitted condition is the concentration cap.  A TERMINAL event
+    # on the most restrictive cap stops and refuses the moment the max concentration rises through it (so an interior
+    # excursion cannot hide, even one that would relax back under by dt), and the accepted endpoint is re-checked by
+    # the mechanism's own admission gate.  Crossing the cap fails CLOSED: a sourced law cannot be integrated past its
+    # validity ceiling and returned as an admitted prediction -- reduce dt, or the law is inapplicable over [0, dt].
+    # (A limited-horizon stop that RETURNS the boundary state is deferred: it would break operator-splitting's
+    # fixed-dt advance -- see docs/research/V2_0_PHYSICAL_MECHANISM_CONTRACT.md.)  A plain mechanism keeps the old path.
+    conc_cap = None
+    events = None
+    if mech.applicability is not None:
+        caps = [cmax for (_lbl, _win, cmax) in mech.applicability.domains if cmax is not None]
+        if caps:
+            conc_cap = min(caps)                          # the binding (most restrictive) admitted cap, mol/m^3
+
+            def _cap_event(_t, xi):                       # margin to the binding cap; -> 0 as max conc rises to it
+                return conc_cap - float(np.max((n0 + mech.N @ xi) / V, initial=-math.inf))
+
+            _cap_event.terminal = True
+            _cap_event.direction = -1.0                   # fire only on an UPWARD crossing (conc rising through cap)
+            events = _cap_event
+
+    sol = solve_ivp(f, (0.0, dt), np.zeros(R), method=settings.method, rtol=settings.rtol, atol=settings.atol,
+                    events=events)
     if not sol.success:
         raise SandboxError(f"reaction integrator failed: {sol.message}")
+    if conc_cap is not None and sol.t_events is not None and sol.t_events[0].size:
+        from .mechanism_types import AdmissionDomainError  # local import breaks the twocell<->mechanism_types cycle
+        t_cross = float(sol.t_events[0][0])
+        c_cross = float(np.max((n0 + mech.N @ sol.y_events[0][0]) / V, initial=0.0))
+        raise AdmissionDomainError(
+            f"an admitted concentration cap ({conc_cap:g} mol/m^3) is crossed at t={t_cross:g} s within the step "
+            f"dt={dt:g} s (max concentration reaches {c_cross:g} mol/m^3); the sourced law leaves its validity domain "
+            "mid-step -- fail closed (reduce dt, or the law is inapplicable over this interval)")
     xi = sol.y[:, -1]
     n1 = n0 + mech.N @ xi
+    mech.require_admitted(T_K=T_K, conc_mol_m3=n1 / V)     # A1: the accepted endpoint itself must be in-domain
     lo = float(np.min(n1, initial=math.inf))
     clamped = False
     clamp_residual = 0.0

@@ -32,7 +32,7 @@ import numpy as np
 from experiments.sandbox_foundation.interface import Apparatus, three_chamber_membrane, transport
 from experiments.sandbox_foundation.mechanism_types import AdmissionLevel
 from experiments.sandbox_foundation.snapshot import (
-    MEASUREMENT_KINDS, ModelRunReceipt, PhysicalWorldSnapshot, QuantityKind, _canon, absent_receipt_dict,
+    MODEL_VALUE_KINDS, ModelRunReceipt, PhysicalWorldSnapshot, QuantityKind, _canon, absent_receipt_dict,
     ascii_render, compute_digests, numerics_verified, trust_label)
 
 K = QuantityKind
@@ -93,7 +93,8 @@ def to_frame(snap: PhysicalWorldSnapshot, interfaces) -> dict:
         "model_tick": snap.model_tick,
         "physical_time_s": snap.physical_time_s,
         "receipt": receipt,                           # F1: admission + numerics + both identities
-        "trust": {k: receipt[k] for k in ("label", "admitted", "numerically_verified", "scientific_measurement")},
+        "trust": {k: receipt[k] for k in ("label", "admitted", "numerically_verified",
+                                          "supported_prediction", "observed_measurement")},
         "quantity_kinds": {"model_tick": K.CANONICAL.value, "physical_time_s": K.CANONICAL.value,
                            "cell_volumes_m3": K.CANONICAL.value, "amount_mol": K.CANONICAL.value,
                            "concentration_mol_per_m3": K.MODEL_DERIVED.value},
@@ -137,7 +138,8 @@ def _jsonify_plain(obj):
     return obj
 
 
-_RECEIPT_REQUIRED = ("present", "admitted", "numerically_verified", "scientific_measurement", "label")
+_RECEIPT_REQUIRED = ("present", "admitted", "numerically_verified", "supported_prediction",
+                     "observed_measurement", "label")
 _RECEIPT_PRESENT_REQUIRED = ("model_identity", "admission_level", "admission_derived", "law_levels",
                              "admission_identities", "numerics")
 
@@ -151,16 +153,17 @@ def derive_trust(frame) -> dict:
         r = frame["receipt"]
         if r.get("present") is not True:
             return {"label": absent_receipt_dict()["label"], "admitted": False, "numerically_verified": False,
-                    "scientific_measurement": False}
+                    "supported_prediction": False, "observed_measurement": False}
         verified = numerics_verified(r.get("numerics"))
         level = r.get("admission_level")
         admitted = (r.get("admitted") is True and r.get("admission_derived") is True and level in (
             AdmissionLevel.SOURCE_VERIFIED.value, AdmissionLevel.BENCHMARK_VALIDATED.value))
         return {"label": trust_label(admitted, str(level), verified), "admitted": admitted,
-                "numerically_verified": verified, "scientific_measurement": admitted and verified}
+                "numerically_verified": verified, "supported_prediction": admitted and verified,
+                "observed_measurement": False}       # a simulation frame carries no external observation source
     except (KeyError, TypeError, AttributeError, IndexError, ValueError):
         return {"label": "UNREADABLE-RECEIPT(UNADMITTED+NUMERICS-UNVERIFIED)", "admitted": False,
-                "numerically_verified": False, "scientific_measurement": False}
+                "numerically_verified": False, "supported_prediction": False, "observed_measurement": False}
 
 
 def validate_frame(frame) -> list:
@@ -236,8 +239,11 @@ def _validate(frame) -> list:
                        "SOURCE_VERIFIED+ level)")
         if r["numerically_verified"] != derived["numerically_verified"]:
             bad.append("receipt.numerically_verified disagrees with its own numerics (recomputed)")
-        if r["scientific_measurement"] != derived["scientific_measurement"]:
-            bad.append("receipt.scientific_measurement disagrees with admitted AND numerically_verified (recomputed)")
+        if r["supported_prediction"] != derived["supported_prediction"]:
+            bad.append("receipt.supported_prediction disagrees with admitted AND numerically_verified (recomputed)")
+        if r.get("observed_measurement") is not False:
+            bad.append("receipt.observed_measurement must be False -- a simulation carries no external observation "
+                       "source and can never report a physical measurement")
         if r["label"] != derived["label"]:
             bad.append("receipt.label disagrees with the recomputed verdict")
     elif r != absent_receipt_dict():
@@ -277,9 +283,11 @@ def _validate(frame) -> list:
     return bad
 
 
-def measurements(frame: dict) -> dict:
-    """The ONLY values a renderer may call measurements: {(species, quantity): [(cell, value)...]} for
-    CANONICAL / MODEL_DERIVED, non-null entries.  Illustration and UNSUPPORTED are structurally absent."""
+def model_values(frame: dict) -> dict:
+    """The model's own reported VALUES (canonical state + model-derived predictions):
+    {(species, quantity): [(cell, value)...]} for CANONICAL / MODEL_DERIVED non-null entries.  These are NOT physical
+    measurements -- no external observation produced them, so a renderer must present them as model output, never as
+    sensed / measured data.  Illustration and UNSUPPORTED are structurally absent."""
     problems = validate_frame(frame)
     if problems:
         raise FrameContractError("; ".join(problems))
@@ -287,7 +295,7 @@ def measurements(frame: dict) -> dict:
     for nm, fld in frame["fields"].items():
         for q in ("amount_mol", "concentration_mol_per_m3"):
             out[(nm, q)] = [(i, v) for i, (k, v) in enumerate(zip(fld["kinds"][q], fld[q]))
-                            if k in {m.value for m in MEASUREMENT_KINDS}]
+                            if k in {m.value for m in MODEL_VALUE_KINDS}]
     return out
 
 
@@ -334,8 +342,10 @@ class HeadlessPresenter:
         lines = [f"tick {frame['model_tick']}  t={frame['physical_time_s']:g} s  [{t['label']}]"]
         if problems:
             lines.append("  !! CONTRACT VIOLATIONS: " + "; ".join(problems))
-        if problems or not t["scientific_measurement"]:
-            lines.append("  ** SIMULATED STATE -- NOT A VALIDATED MEASUREMENT (unadmitted or numerics unverified) **")
+        if problems or not t["supported_prediction"]:
+            lines.append("  ** SIMULATED STATE -- NOT EVEN A SUPPORTED PREDICTION (unadmitted or numerics unverified) **")
+        elif not t["observed_measurement"]:
+            lines.append("  ** SUPPORTED MODEL PREDICTION -- NOT A PHYSICAL MEASUREMENT (no external observation) **")
         g = frame["geometry"]
         for i in range(g["n_cells"]):
             cells = []

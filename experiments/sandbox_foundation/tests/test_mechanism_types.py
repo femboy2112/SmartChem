@@ -610,3 +610,59 @@ class TestWaveB3_AdmissionTravelsIntoExecution:
                                    ((("C", 2), ("H", 6), ("O", 1)),) * 2, (0, 0), np.array([[1], [0]]),
                                    np.array([[0], [1]]), ("R0",), (verified_law(),), OMIT)
         assert hand.to_twocell(POLICY).label == "SOURCE_DECLARED"                 # hand-built: verified law capped
+
+
+class TestWaveA1_AdmittedLawHoldsAcrossTheTrajectory:
+    """Wave A1: an admitted concentration cap is enforced over the WHOLE reaction trajectory, not only at n0.  A law
+    admitted at a safe start cannot be integrated past its validity ceiling and handed back as a supported prediction
+    -- the step fails CLOSED (red-first: before the fix, reaction_cell returned the breaching endpoint unrefused)."""
+
+    @staticmethod
+    def _capped_AB(cap, *, k_f=10.0):
+        """A -> B, elementary first-order irreversible, one element X conserved (E@N=0), carrying an admitted
+        concentration cap (mol/m^3) and NO temperature window -- so the only admitted condition that VARIES along the
+        trajectory is the cap (isolates A1 from the up-front T-window check)."""
+        from experiments.sandbox_foundation.mechanism_types import Applicability
+        from experiments.sandbox_foundation.twocell import ReactionRate
+        mech = Mechanism(("A", "B"), np.array([[1.0], [0.0]]), np.array([[0.0], [1.0]]), ("X",),
+                         np.array([[1.0, 1.0]]), (ReactionRate(k_f=k_f, k_r=None, reversible=False),),
+                         label="SYNTHETIC")
+        return dataclasses.replace(mech, applicability=Applicability((("A->B", None, cap),), (None,), None))
+
+    def test_growth_through_the_cap_mid_step_is_refused(self):
+        # [A, B] = [0.6, 0.4] mol/m^3 are BOTH <= cap 0.75 at t=0 (admitted start), but B -> ~1.0 over dt = 1 s: the
+        # law leaves its validity domain mid-step, so the step must fail closed instead of returning the endpoint.
+        from experiments.sandbox_foundation.twocell import SolverSettings, reaction_cell
+        with pytest.raises(AdmissionDomainError):
+            reaction_cell(self._capped_AB(0.75), np.array([0.6, 0.4]), 1.0, 1.0, SolverSettings(), T_K=None)
+
+    def test_an_in_domain_trajectory_still_runs(self):
+        # [A, B] = [0.3, 0.1]: B climbs only to 0.4 < cap 0.75 -- no breach anywhere, so no false refusal.
+        from experiments.sandbox_foundation.twocell import SolverSettings, reaction_cell
+        n1, _xi, _cl, _cr = reaction_cell(self._capped_AB(0.75), np.array([0.3, 0.1]), 1.0, 1.0,
+                                          SolverSettings(), T_K=None)
+        assert float(n1[1]) > 0.1 and float(np.max(n1)) <= 0.75              # it reacted AND stayed under the cap
+
+    def test_a_trajectory_that_only_approaches_the_cap_is_admitted(self):
+        # total = cap = 0.75: B asymptotes to 0.75 FROM BELOW and never strictly exceeds it over finite dt (the cap
+        # is inclusive -- assert_applicable uses strict >), so an approach to the boundary must NOT be refused.
+        from experiments.sandbox_foundation.twocell import SolverSettings, reaction_cell
+        n1, _xi, _cl, _cr = reaction_cell(self._capped_AB(0.75), np.array([0.5, 0.25]), 1.0, 1.0,
+                                          SolverSettings(), T_K=None)
+        assert float(np.max(n1)) <= 0.75
+
+    def test_a_tighter_cap_just_above_the_start_still_refuses(self):
+        # cap 0.61 is only just above the start max 0.6: the breach happens almost immediately, exercising the
+        # terminal event rather than only the endpoint re-check.  Still fail closed.
+        from experiments.sandbox_foundation.twocell import SolverSettings, reaction_cell
+        with pytest.raises(AdmissionDomainError):
+            reaction_cell(self._capped_AB(0.61), np.array([0.6, 0.4]), 1.0, 1.0, SolverSettings(), T_K=None)
+
+    def test_a_plain_mechanism_without_a_cap_is_unaffected(self):
+        # No applicability -> no cap, no event, no endpoint admission gate: the old path, B reaches ~1.0, unrefused.
+        from experiments.sandbox_foundation.twocell import ReactionRate, SolverSettings, reaction_cell
+        mech = Mechanism(("A", "B"), np.array([[1.0], [0.0]]), np.array([[0.0], [1.0]]), ("X",),
+                         np.array([[1.0, 1.0]]), (ReactionRate(k_f=10.0, k_r=None, reversible=False),),
+                         label="SYNTHETIC")
+        n1, _xi, _cl, _cr = reaction_cell(mech, np.array([0.6, 0.4]), 1.0, 1.0, SolverSettings(), T_K=None)
+        assert float(n1[1]) > 0.75                     # unrefused: a plain mechanism makes no admitted claim to hold

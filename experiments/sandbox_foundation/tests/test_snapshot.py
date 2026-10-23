@@ -210,14 +210,15 @@ def test_RF_F1_absent_receipt_reads_unadmitted_and_unverified():
     snap = _snap_with(None)
     assert snap.receipt is None
     d = absent_receipt_dict()
-    assert d["present"] is False and d["admitted"] is False and d["scientific_measurement"] is False
+    assert d["present"] is False and d["admitted"] is False and d["supported_prediction"] is False
+    assert d["observed_measurement"] is False
 
 
 def test_RF_F1_public_constructor_cannot_claim_admission_a_label_is_not_a_binding():
     r = ModelRunReceipt("m" * 8, _num(), admission_level="BENCHMARK_VALIDATED", law_levels=["BENCHMARK_VALIDATED"])
     assert r.admission_level == "BENCHMARK_VALIDATED"          # the DECLARATION is recorded...
     assert r.admitted is False and r.admission_derived is False   # ...but it is no authority
-    assert r.scientific_measurement is False
+    assert r.supported_prediction is False and r.observed_measurement is False
     assert "UNADMITTED" in r.label
     with pytest.raises(ValueError):
         ModelRunReceipt("m", _num(), admission_level="TOTALLY_VERIFIED")   # not a real level
@@ -231,7 +232,8 @@ def test_RF_F1_admission_is_derived_from_the_executable_mechanism_under_a_policy
     assert good.admission_level == AdmissionLevel.SOURCE_VERIFIED.value
     assert good.model_identity == verified.model_identity
     assert tuple(tuple(x) for x in good.admission_identities) == tuple(verified.admission_identities)
-    assert good.scientific_measurement is True                  # admitted AND numerically verified
+    assert good.supported_prediction is True                    # admitted AND numerically verified...
+    assert good.observed_measurement is False                   # ...but NEVER a physical measurement (A2)
     syn = ModelRunReceipt.from_executable(synthetic, policy, nm)
     assert syn.admitted is False and syn.admission_level == "SYNTHETIC"
     untrusted = ModelRunReceipt.from_executable(verified, AdmissionPolicy(()), nm)   # a store the policy doesn't trust
@@ -313,9 +315,9 @@ def test_RF_F2_quantity_names_cannot_clash_across_kinds():
 
 
 def test_RF_F2_four_kinds_exist_and_only_two_are_measurements():
-    from experiments.sandbox_foundation.snapshot import MEASUREMENT_KINDS
+    from experiments.sandbox_foundation.snapshot import MODEL_VALUE_KINDS
     assert {k.value for k in QuantityKind} == {"CANONICAL", "MODEL_DERIVED", "UNSUPPORTED", "ILLUSTRATION"}
-    assert MEASUREMENT_KINDS == {QuantityKind.CANONICAL, QuantityKind.MODEL_DERIVED}
+    assert MODEL_VALUE_KINDS == {QuantityKind.CANONICAL, QuantityKind.MODEL_DERIVED}
 
 
 def test_RF_F4_verify_integrity_detects_an_object_level_tamper():

@@ -11,7 +11,7 @@ import pytest
 
 from experiments.sandbox_foundation import libgibson_frame_example as lge
 from experiments.sandbox_foundation.libgibson_frame_example import (
-    FrameContractError, HeadlessPresenter, ModelRun, example_snapshot, headless_replay, measurements,
+    FrameContractError, HeadlessPresenter, ModelRun, example_snapshot, headless_replay, model_values,
     membrane_world, run_demo, to_frame, validate_frame)
 
 
@@ -95,7 +95,7 @@ def test_RF_F1_a_frame_with_no_receipt_says_so_loudly():
     snap, ifc = example_snapshot()
     frame = to_frame(snap, ifc)
     assert frame["receipt"]["present"] is False
-    assert frame["trust"]["admitted"] is False and frame["trust"]["scientific_measurement"] is False
+    assert frame["trust"]["admitted"] is False and frame["trust"]["supported_prediction"] is False
     assert "NO-RECEIPT" in frame["trust"]["label"]
 
 
@@ -104,7 +104,7 @@ def test_RF_F1_a_frame_with_no_receipt_says_so_loudly():
     lambda f: f["fields"]["tracer"]["kinds"]["amount_mol"].__setitem__(0, "ILLUSTRATION"),  # decoration in a measurement slot
     lambda f: f["fields"]["acetate"]["amount_mol"].__setitem__(0, None),                  # CANONICAL silently null
     lambda f: f["fields"]["acetate"]["kinds"]["amount_mol"].__setitem__(0, "MADE_UP"),    # fifth kind
-    lambda f: f["trust"].update(scientific_measurement=True),                             # forged trust
+    lambda f: f["trust"].update(supported_prediction=True),                               # forged trust
     lambda f: f.pop("receipt"),                                                           # receipt stripped
     lambda f: f["illustration"].update(glow={"kind": "ILLUSTRATION", "measurement": True, "values": [1]}),
     lambda f: f["unsupported"].update(T={"kind": "UNSUPPORTED", "unit": "K", "values": [0.0, 0.0, 0.0]}),
@@ -117,15 +117,15 @@ def test_RF_F2_a_frame_that_breaks_the_typing_contract_is_refused_not_drawn(corr
     with pytest.raises(FrameContractError):
         HeadlessPresenter().render(json.dumps(frame))
     with pytest.raises(FrameContractError):
-        measurements(frame)
+        model_values(frame)
 
 
-def test_RF_F2_measurements_never_include_illustration_or_unsupported():
+def test_RF_F2_model_values_never_include_illustration_or_unsupported():
     run = ModelRun(*membrane_world(), 20.0)
     frame = to_frame(run.snapshot(), run.interfaces)
     assert set(frame["illustration"]) == {"glow"} and set(frame["unsupported"]) == {
         "temperature_field_K", "electric_potential_V"}
-    m = measurements(frame)
+    m = model_values(frame)
     assert all(q in ("amount_mol", "concentration_mol_per_m3") for (_, q) in m)           # glow / temperature absent
     assert frame["unsupported"]["temperature_field_K"]["values"] == [None, None, None]
     assert frame["illustration"]["glow"]["measurement"] is False
@@ -171,10 +171,11 @@ def test_RF_F1_demo_receipt_travels_in_every_frame_unadmitted_and_numerics_verif
         "conservation_abs_mol", "positivity_violation_mol", "passive_witness_excess_W"}
     assert r["numerics"]["residuals"]["conservation_abs_mol"] <= r["numerics"]["tolerances"]["conservation_abs_mol"]
     assert "NEUTRAL tracers only" in " ".join(r["numerics"]["assumptions"])
-    assert f1["trust"]["scientific_measurement"] is False                   # numerically fine, but NOT admitted
+    assert f1["trust"]["supported_prediction"] is False                     # numerically fine, but NOT admitted
+    assert f1["trust"]["observed_measurement"] is False                     # and never an observed measurement
     assert f1["model_digest"] != f1["evidence_digest"] and r["model_identity"]
     screen = HeadlessPresenter().render(json.dumps(f1))
-    assert "NOT A VALIDATED MEASUREMENT" in screen and "UNADMITTED(SYNTHETIC)+NUMERICS-VERIFIED" in screen
+    assert "NOT EVEN A SUPPORTED PREDICTION" in screen and "UNADMITTED(SYNTHETIC)+NUMERICS-VERIFIED" in screen
     assert "(illustration, not a measurement)" in screen and "temperature_field_K: n/a" in screen
 
 
@@ -441,27 +442,43 @@ def _admitted_frame():
 def test_RF_F1_genuine_frames_validate_clean_including_a_really_admitted_one():
     assert validate_frame(_demo_frame()) == []
     f = _admitted_frame()
-    assert f["trust"]["scientific_measurement"] is True and validate_frame(f) == []
+    assert f["trust"]["supported_prediction"] is True and validate_frame(f) == []
     screen = HeadlessPresenter().render(json.dumps(f))
-    assert "NOT A VALIDATED MEASUREMENT" not in screen and "ADMITTED+NUMERICS-VERIFIED" in screen
+    assert "NOT A PHYSICAL MEASUREMENT" in screen and "ADMITTED+NUMERICS-VERIFIED" in screen
+
+
+def test_RF_A2_a_converged_admitted_simulation_is_a_prediction_never_a_measurement():
+    """Wave A2 falsifier: a real-species, trusted-law model reaches a numerically converged state, yet NO external
+    observation occurred -- the contract must call it a SUPPORTED PREDICTION, never a physical measurement, and the
+    numerics disclosure must still flag the unbounded truncation error."""
+    f = _admitted_frame()                                       # really admitted + numerics verified
+    assert validate_frame(f) == []
+    assert f["trust"]["supported_prediction"] is True           # the strongest a simulation may claim...
+    assert f["trust"]["observed_measurement"] is False          # ...and it is STILL not an observed measurement
+    assert f["receipt"]["observed_measurement"] is False
+    disc = f["receipt"]["numerics_disclosure"]
+    assert "truncation error vs the exact solution (no a-posteriori bound)" in disc["unbounded_errors"]
+    assert "NOT A PHYSICAL MEASUREMENT" in HeadlessPresenter().render(json.dumps(f))
+    f["receipt"]["observed_measurement"] = True                 # a converged state cannot be forged into an observation
+    assert any("observed_measurement" in p for p in validate_frame(f))
 
 
 def test_RF_F1_RED_a_forged_trust_block_on_an_unadmitted_receipt_is_caught_and_never_shown_as_validated():
     f = _demo_frame()
     assert f["receipt"]["admitted"] is False
     f["trust"] = {"label": "ADMITTED+NUMERICS-VERIFIED", "admitted": True, "numerically_verified": True,
-                  "scientific_measurement": True}                  # overwrite ONLY the trust block
+                  "supported_prediction": True, "observed_measurement": False}  # overwrite ONLY the trust block
     probs = validate_frame(f)
     assert any("trust" in p for p in probs)                        # the binding is enforced
     with pytest.raises(FrameContractError):
         HeadlessPresenter().render(json.dumps(f))                  # strict presenter refuses
     screen = HeadlessPresenter().render(json.dumps(f), strict=False)
-    assert "NOT A VALIDATED MEASUREMENT" in screen                 # verdict from the RECEIPT, not the forged block
+    assert "NOT EVEN A SUPPORTED PREDICTION" in screen             # verdict from the RECEIPT, not the forged block
     assert "CONTRACT VIOLATIONS" in screen
 
 
 @pytest.mark.parametrize("forge", [
-    lambda f: f["receipt"].update(numerically_verified=True, scientific_measurement=True),   # receipt flags vs numerics
+    lambda f: f["receipt"].update(numerically_verified=True, supported_prediction=True),     # receipt flags vs numerics
     lambda f: f["receipt"]["numerics"]["residuals"].update(conservation_abs_mol=5.0),        # verdict vs residuals
     lambda f: f["receipt"].update(admitted=True),                                           # admitted w/o derivation/level
     lambda f: f["receipt"].update(admitted=True, admission_derived=True),                   # ... w/o a verified level
@@ -485,7 +502,7 @@ def test_RF_F1_a_forged_trust_on_a_no_receipt_frame_is_caught_too():
     snap, ifc = example_snapshot()
     f = to_frame(snap, ifc)
     assert validate_frame(f) == []
-    f["trust"].update(admitted=True, scientific_measurement=True, numerically_verified=True)
+    f["trust"].update(admitted=True, supported_prediction=True, numerically_verified=True)
     assert any("trust" in p for p in validate_frame(f))
 
 
@@ -516,7 +533,7 @@ def test_RF_F2_a_malformed_frame_is_a_typed_refusal_never_a_bare_keyerror(damage
     with pytest.raises(FrameContractError):
         HeadlessPresenter().render(json.dumps(f))
     with pytest.raises(FrameContractError):
-        measurements(f)
+        model_values(f)
     for junk in ("[]", "3", "null"):
         with pytest.raises(FrameContractError):
             HeadlessPresenter().render(junk)

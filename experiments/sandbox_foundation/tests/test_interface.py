@@ -244,6 +244,41 @@ def test_neutral_tracers_are_admitted():
     assert app.g.shape == (1, 1)                                   # a neutral prototype builds fine
 
 
+# ======================================================================================= Wave E follow-up (dalembert)
+# KILL 1: the certify_passive path must fail CLOSED on a NaN witness, not let transport accept the step.
+def test_WaveE_transport_refuses_a_nan_passivity_witness_two_chamber():
+    ap = two_chamber_valve()                                       # default conductance 1e-8, one Tracer "T"
+    n = np.array([[0.0], [1.0e-323]])                              # cell 0 empty, cell 1 a denormal trace
+    # Delta(mu).J = inf*(-0.0) = NaN; the OLD certificate let np.max swallow the NaN (NaN > tol is False) and
+    # ACCEPTED the step.  The diagnostic now reports the signed -inf, but the certificate must still refuse the
+    # raw inf*0 it cannot evaluate -- a NaN is 'unverified', not 'passed'.
+    assert not np.isnan(ap.dissipation(n)).any()                  # face_dissipation reports -inf, never a NaN
+    with pytest.raises(InvalidParameterError):                    # the certificate fails closed on the raw inf*0
+        transport(ap, n, 1.0)
+
+
+# KILL 2: charge==0 is a TRANSPORT-TIME invariant, not a one-time construction stamp (frozen != immutable).
+def test_WaveE_charge_is_a_transport_time_invariant_not_just_construction():
+    ap = two_chamber_valve(species=(Tracer("T"),), conductance=[[1.0e-9]], T_K=T0)
+    n = np.array([[6.0e-6], [1.0e-6]])
+    object.__setattr__(ap.species[0], "charge", 3)                # flip charge AFTER construction (frozen is not immutable)
+    with pytest.raises(ChargedTransportNotAdmitted):              # transport must re-check, not trust the birth stamp
+        transport(ap, n, dt=ap.transport_dt_max() * 0.5)
+
+
+def test_WaveE_duck_typed_species_is_refused_by_transport():
+    class _DuckTracer:                                            # a non-Tracer carrying .name/.charge slips past ctor
+        def __init__(self, name, charge=0):
+            self.name = name
+            self.charge = charge
+    duck = _DuckTracer("T", 0)                                    # neutral at construction -> the old ctor accepted it
+    ap = two_chamber_valve(species=(duck,), conductance=[[1.0e-9]], T_K=T0)
+    duck.charge = 2                                               # now charged; even neutral it is not a verified Tracer
+    n = np.array([[6.0e-6], [1.0e-6]])
+    with pytest.raises(ChargedTransportNotAdmitted):             # transport admits only verified neutral Tracers
+        transport(ap, n, dt=ap.transport_dt_max() * 0.5)
+
+
 def test_bad_conductance_and_valve_params_are_typed_refusals():
     with pytest.raises(InvalidParameterError):
         Apparatus((Tracer("T"),), MESH2, np.array([[-1.0e-9]]), T_K=T0)        # negative conductance

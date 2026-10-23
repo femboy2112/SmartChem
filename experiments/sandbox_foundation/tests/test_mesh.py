@@ -437,3 +437,43 @@ def test_RIV_D3_two_reaction_competing_limiting_species_conserves_exactly():
     assert any_clamped                                             # the depletion step DID exercise the R>1 clamp
     assert np.all(st.n >= 0.0)                                     # positivity preserved
     assert np.all(st.n[:, 0] == 0.0)                              # the shared limiting reactant A lands at 0
+
+
+# ======================================================================================================
+# Wave E follow-up (dalembert KILL 1): the passivity certificate must NOT fail OPEN on a NaN witness.
+# A cell emptying into an underflowed flux forms Delta(mu).J = inf*0 = NaN; the diagnostic must report the
+# honest signed -inf, and the certificate must fail CLOSED on the raw indeterminate -- never let np.max swallow it.
+# ======================================================================================================
+def test_WaveE_face_dissipation_is_signed_minus_inf_never_nan_when_a_cell_empties():
+    from experiments.sandbox_foundation.mesh import face_dissipation
+    mesh = chain_mesh((1.0e-6, 1.0e-6), [1.0e-4], [1.0e-2])
+    g = np.array([[1.0e-8]])
+    # cell 0 exactly empty, cell 1 a denormal trace -> the Fick flux underflows to signed -0.0 while Delta(mu)
+    # overflows to +inf, so the raw product is 0*inf = NaN.  The honest ideal-dilute limit is a signed -inf
+    # (dissipation diverging, never injection), because Delta(mu) and J carry opposite signs at every face.
+    c = np.array([[0.0], [1.0e-317]])
+    w = face_dissipation(mesh, g, c, 298.15)
+    assert not np.isnan(w).any()                                   # the module's "NEVER a NaN" docstring, made true
+    assert w[0, 0] == -np.inf                                      # pinned to the signed dilute-dissipation limit
+
+
+def test_WaveE_assert_passive_refuses_a_nan_witness_face_in_a_multiface_chain():
+    from experiments.sandbox_foundation.mesh import assert_passive
+    mesh = chain_mesh((1.0, 1.0, 1.0, 1.0), [1.0e-4, 1.0e-4, 1.0e-4], [1.0e-2, 1.0e-2, 1.0e-2])
+    g = np.full((3, 1), 1.0e-8)
+    # face 2 (cells 2,3 = 0, 1e-317) forms a 0*inf = NaN witness; faces 0,1 are finite/-inf.  np.max over the NaN
+    # returns False on '> tol', so the OLD guard silently PASSED -- one NaN face blinding the whole certificate.
+    c = np.array([[5.0], [1.0], [0.0], [1.0e-317]])
+    with pytest.raises(InvalidParameterError):
+        assert_passive(mesh, g, c, 298.15)
+
+
+def test_WaveE_assert_passive_admits_the_legitimate_signed_minus_inf_dilute_limit():
+    from experiments.sandbox_foundation.mesh import assert_passive, face_dissipation
+    mesh = chain_mesh((1.0e-6, 1.0e-6), [1.0e-4], [1.0e-2])
+    g = np.array([[1.0e-8]])
+    # cell 0 empty, cell 1 at a NORMAL concentration -> J stays finite (g*c_head), so Delta(mu).J is a CLEAN -inf,
+    # not an inf*0 indeterminate.  A genuine dissipation limit must PASS: fail-closed is for NaN, not for -inf.
+    c = np.array([[0.0], [1.0]])
+    assert face_dissipation(mesh, g, c, 298.15)[0, 0] == -np.inf
+    assert_passive(mesh, g, c, 298.15)                             # admitted -- a -inf is dissipative, not unverified

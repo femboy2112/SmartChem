@@ -644,12 +644,22 @@ def face_dissipation(mesh: Mesh, g: np.ndarray, c: np.ndarray, T_K: float) -> np
     -inf (the ideal-dilute log-singularity limit) -- NEVER a NaN.  `passive_interface_residual` confirms it equals
     the constitutive -L Delta(mu)^2 on positive faces.  g==0 (impermeable) or no gradient -> exactly 0."""
     g = np.asarray(g, float)
+    c = np.asarray(c, float)
     dmu = face_potential_difference(mesh, c, T_K)
     J = face_fick_flux(mesh, g, c)
     c_tail, c_head = _face_endpoints(mesh, c)
     inactive = (g == 0.0) | (c_tail == c_head)      # no flux -> no dissipation; masks the degenerate 0*inf/0*0
     with np.errstate(invalid="ignore", over="ignore"):
-        return np.where(inactive, 0.0, dmu * J)
+        witness = np.where(inactive, 0.0, dmu * J)
+    # Pin the ideal-dilute log-singularity to its SIGNED limit instead of leaving a 0*inf = NaN on the chart.  When
+    # exactly one incident cell empties, Delta(mu) -> +/-inf while the Fick flux underflows toward the same-sign zero;
+    # the direct product then degenerates to NaN even though the limit is unambiguous.  Delta(mu) and J ALWAYS carry
+    # opposite signs (flux runs down-gradient, potential up), so the witness is <= 0 everywhere and this limit is a
+    # signed -inf -- dissipation diverging, never free-energy injection.  A dead cell gets its cause of death on the
+    # chart, not an illegible NaN.  Restricted to the genuine one-endpoint-empty case so a NaN from a MALFORMED field
+    # (a non-finite or negative concentration) stays visible instead of being papered over with a fake -inf.
+    empties = ~inactive & (((c_tail == 0.0) & (c_head > 0.0)) | ((c_head == 0.0) & (c_tail > 0.0)))
+    return np.where(empties & ~np.isfinite(witness), -math.inf, witness)
 
 
 def passive_interface_residual(mesh: Mesh, g: np.ndarray, c: np.ndarray, T_K: float) -> float:
@@ -678,10 +688,30 @@ def mesh_diffusion_dissipation_rate(mesh: Mesh, g: np.ndarray, c: np.ndarray) ->
 
 
 def assert_passive(mesh: Mesh, g: np.ndarray, c: np.ndarray, T_K: float, *, tol: float = 1e-12) -> None:
-    """Fail-closed passivity certificate: raise if ANY face injects free energy (witness > tol).  The reusable
-    second law for the sandbox's interfaces -- a wall, a valve or a membrane that VIOLATES it is refused, loudly."""
-    w = face_dissipation(mesh, g, c, T_K)
-    worst = float(np.max(w, initial=-math.inf))
+    """Fail-closed passivity certificate: raise if ANY face injects free energy (a FINITE witness > tol) OR if any
+    active face's witness is an indeterminate NaN.  The reusable second law for the sandbox's interfaces -- a wall,
+    a valve or a membrane that VIOLATES it is refused, loudly.
+
+    NaN-awareness is the point of the guard, not a decoration.  A cell emptying into an underflowed flux forms
+    Delta(mu).J = inf*0 = NaN, and `np.max` quietly swallows it (NaN > tol is False) -- one such face would mask
+    every genuinely-finite face and wave an unevaluated step straight through.  So we read the RAW product here (not
+    `face_dissipation`, which repairs the limit to a signed -inf for diagnostics) and refuse any NaN outright: a NaN
+    is 'not verified', not 'passed'.  A -inf is the genuine ideal-dilute dissipation limit (Delta(mu) diverges while
+    the flux stays finite) -- that direction can only dissipate, so it is admitted."""
+    g = np.asarray(g, float)
+    c = np.asarray(c, float)
+    dmu = face_potential_difference(mesh, c, T_K)
+    J = face_fick_flux(mesh, g, c)
+    c_tail, c_head = _face_endpoints(mesh, c)
+    inactive = (g == 0.0) | (c_tail == c_head)
+    with np.errstate(invalid="ignore", over="ignore"):
+        w = np.where(inactive, 0.0, dmu * J)        # the RAW witness: a 0*inf degeneracy is left as a NaN, on purpose
+    if np.isnan(w).any():
+        raise InvalidParameterError(
+            "passive-interface contract UNVERIFIABLE: a face dissipation witness is NaN (a cell emptied into an "
+            "underflowed flux -> Delta(mu).J = inf*0); the certificate fails CLOSED rather than let np.max swallow "
+            "the NaN and fabricate a pass")
+    worst = float(np.max(w[np.isfinite(w)], initial=-math.inf))     # -inf is the legitimate dilute limit; it may pass
     if worst > tol:
         raise InvalidParameterError(
             f"passive-interface contract VIOLATED: a face dissipation witness is +{worst:g} W > tol={tol:g} "

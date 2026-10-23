@@ -148,6 +148,26 @@ class Apparatus:
         return face_dissipation(self.mesh, self.g, self.concentration(n), self.T_K)
 
 
+def _assert_transportable_species(species) -> None:
+    """Transport-time re-validation of the E3 charged-species obstruction.  charge==0 is a SOUNDNESS INVARIANT,
+    not a one-time construction stamp: a frozen dataclass is not immutable (object.__setattr__ flips .charge after
+    the fact), a duck-typed object with .name/.charge slips past the constructor, and the direct transport() entry
+    never re-runs Apparatus.__post_init__.  'Never fabricate ion dynamics' has to hold when the matter actually
+    moves, so we re-check every species here -- only a verified, genuinely-neutral Tracer is admitted."""
+    for t in species:
+        if not isinstance(t, Tracer):           # a duck-typed species cannot be certified charge-free -- refuse it
+            raise ChargedTransportNotAdmitted(
+                f"species {getattr(t, 'name', t)!r} is not a verified neutral Tracer (got {type(t).__name__}); the "
+                "passive-Fick apparatus admits only Tracers whose neutrality it can vouch for, so transport is "
+                "refused (E3 -- ionic / unverified transport is DEFERRED, never faked)")
+        if isinstance(t.charge, bool) or not isinstance(t.charge, (int, np.integer)) or int(t.charge) != 0:
+            raise ChargedTransportNotAdmitted(
+                f"species {t.name!r} carries charge {t.charge!r} at transport time; independent Fick fluxes do not "
+                "enforce local electroneutrality, so ionic transport is DEFERRED (needs the Nernst-Planck "
+                "electrical-potential closure this mesh has no phi field for -- see interface.py E3). charge==0 is a "
+                "transport-time invariant, not just a construction-time check")
+
+
 def transport(apparatus: Apparatus, n: np.ndarray, dt: float, *, policy: str = "raise",
               ledger: Optional[Ledger] = None, events: Optional[list] = None, step: int = 0,
               certify_passive: bool = True) -> np.ndarray:
@@ -159,6 +179,7 @@ def transport(apparatus: Apparatus, n: np.ndarray, dt: float, *, policy: str = "
 
     NO reaction sources are ever added here (this is a passive INTERFACE operator, not a reaction operator) and NO
     external energy/work is drawn (the only ledger entries are INTERFACE transfers that sum to zero per face)."""
+    _assert_transportable_species(apparatus.species)    # E3 as a transport-time invariant, not a construction stamp
     mesh = apparatus.mesh
     V = np.asarray(mesh.volumes_m3, float)
     B = mesh.B_space

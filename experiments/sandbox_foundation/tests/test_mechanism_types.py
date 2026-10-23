@@ -1,14 +1,21 @@
 """Waves A1-A3: Descriptive vs Executable authority + the ADMISSION model.  A recognizer naming a family is not a
 rate law; a bare citation is not a verified source; a caller-declared composition is not a verified molecular
 identity.  SYNTHETIC/experimental sandbox."""
+import copy
+import dataclasses
+import json
+import pickle
+import tempfile
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 from experiments.sandbox_foundation.mechanism_adapter import adapt_step, derive_inventory
 from experiments.sandbox_foundation.mechanism_types import (
-    AdmissionLevel, AdmissionReceipt, ConversionRefusal, ConversionRefusalKind as K, DescriptiveMechanism,
-    ExecutableMechanism, KineticLaw, SourceRecord, SpeciesIdentity, VerificationStatus,
-    expected_rate_constant_units)
+    AdmissionDomainError, AdmissionLevel, AdmissionPolicy, AdmissionReceipt, ConversionRefusal,
+    ConversionRefusalKind as K, DEFAULT_POLICY, DescriptiveMechanism, ExecutableMechanism, KineticLaw, SourceBinding,
+    SourceRecord, SourceStore, SpeciesIdentity, VerificationStatus, expected_rate_constant_units)
 from experiments.sandbox_foundation.twocell import Mechanism
 from smartchem.experiment.step import ExperimentStep
 from smartchem.smiles import parse_smiles
@@ -28,6 +35,42 @@ def _record(version="3rd ed", model_form="elementary unimolecular"):
                         parameter_range="280-320 K")
 
 
+def write_source(root, record_id="iso", version="3rd ed", *, k_f=2.0e-3, k_r=1.0e-3, T=(280.0, 320.0),
+                 conc_max=None, status="current", supersedes=None, validation=None, entry="iso",
+                 reactants=("CCO",), products=("COC",), units="s^-1", reversible=True):
+    """Write one source ARTIFACT (the thing a SourceStore actually opens) -- test-side curator."""
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    e = {"reactants": [{"smiles": x, "count": 1} for x in reactants],
+         "products": [{"smiles": x, "count": 1} for x in products],
+         "kinetics": "elementary", "reversible": reversible, "k_f": {"value": k_f, "units": units},
+         "conditions": {"T_K": list(T), "phase": "liquid", "standard_state": "pure liquid, 1 bar"},
+         "assumptions": ["ideal dilute", "no catalyst"]}
+    if reversible:
+        e["k_r"] = {"value": k_r, "units": units}
+    if conc_max is not None:
+        e["conditions"]["conc_max_mol_m3"] = conc_max
+    if validation is not None:
+        e["validation"] = validation
+    art = {"record_id": record_id, "version": version, "title": f"Imaginary Handbook {version}", "status": status,
+           "entries": {entry: e}}
+    if supersedes is not None:
+        art["supersedes"] = supersedes
+    path = root / f"{record_id}@{version}.json"
+    path.write_text(json.dumps(art))
+    return path
+
+
+# a shared TEST store the policy below trusts (the default policy trusts only the repo's DEFAULT_STORE)
+SRC_DIR = Path(tempfile.mkdtemp(prefix="sc_sources_"))
+write_source(SRC_DIR)
+STORE = SourceStore(SRC_DIR)
+POLICY = AdmissionPolicy((STORE,))
+_ISO = dict(k_f=2.0e-3, k_r=1.0e-3, reversible=True, k_f_units="s^-1", k_r_units="s^-1",
+            validity_T_K=(280.0, 320.0))
+ISO_RECEIPT = STORE.issue_receipt("iso", "3rd ed", "iso", **_ISO)
+
+
 def declared_law(**kw):
     """SOURCE_DECLARED: a bare citation string, nothing checked."""
     base = dict(k_f=2.0e-3, k_r=1.0e-3, reversible=True, admission=AdmissionLevel.SOURCE_DECLARED, k_f_units="s^-1",
@@ -37,10 +80,9 @@ def declared_law(**kw):
 
 
 def verified_law(**kw):
-    """SOURCE_VERIFIED: a structured, VERIFIED admission receipt."""
+    """SOURCE_VERIFIED: backed by a receipt a SourceStore ISSUED from an inspected artifact (not caller-assembled)."""
     base = dict(k_f=2.0e-3, k_r=1.0e-3, reversible=True, admission=AdmissionLevel.SOURCE_VERIFIED, k_f_units="s^-1",
-                k_r_units="s^-1", receipt=AdmissionReceipt(_record(), VerificationStatus.VERIFIED,
-                                                           reviewer="test evidence policy v1"))
+                k_r_units="s^-1", receipt=ISO_RECEIPT, validity_T_K=(280.0, 320.0))
     base.update(kw)
     return KineticLaw(**base)
 
@@ -114,10 +156,11 @@ class TestConversion:
 
     def test_verified_law_with_verified_species_is_a_scientific_claim(self):
         ex = isomerization_descriptive().to_executable([verified_law()], omissions=OMIT)
-        assert ex.admission_level is AdmissionLevel.SOURCE_VERIFIED
+        assert ex.admission_level_under(POLICY) is AdmissionLevel.SOURCE_VERIFIED
         assert ex.species_identity is SpeciesIdentity.VERIFIED
-        assert ex.scientific_claim is True
-        mech = ex.to_twocell()
+        assert ex.admitted_under(POLICY) is True
+        assert ex.scientific_claim is False           # DEFAULT_POLICY trusts only the repo store, not this test store
+        mech = ex.to_twocell(POLICY)
         assert isinstance(mech, Mechanism) and mech.label == "SOURCE_VERIFIED"
         mech.require_complete()
         assert not np.any(mech.constitution_residual())
@@ -244,21 +287,24 @@ class TestA2CitationDoesNotMintScience:
             verified_law(receipt=AdmissionReceipt(_record(), status))
         assert ei.value.kind is K.ADMISSION_INVALID
 
-    def test_benchmark_level_requires_a_named_benchmark(self):
-        with pytest.raises(ConversionRefusal) as ei:
+    def test_benchmark_level_requires_the_artifact_to_carry_a_validation_block(self):
+        with pytest.raises(ConversionRefusal) as ei:        # a caller-built receipt "naming" a benchmark: declaration
             KineticLaw(k_f=1.0, k_r=1.0, reversible=True, admission=AdmissionLevel.BENCHMARK_VALIDATED,
                        k_f_units="s^-1", k_r_units="s^-1",
-                       receipt=AdmissionReceipt(_record(), VerificationStatus.VERIFIED))
+                       receipt=AdmissionReceipt(_record(), VerificationStatus.VERIFIED, benchmark="NIST run 7"))
         assert ei.value.kind is K.ADMISSION_INVALID
+        with pytest.raises(ConversionRefusal) as ei2:       # a REAL inspected source, but with no validation block
+            STORE.law_from_source("iso", "3rd ed", "iso", level=AdmissionLevel.BENCHMARK_VALIDATED)
+        assert ei2.value.kind is K.ADMISSION_INVALID
 
-    def test_a_source_update_moves_admission_identity_but_not_model_content(self):
-        ex1 = isomerization_descriptive().to_executable(
-            [verified_law(receipt=AdmissionReceipt(_record(version="3rd ed"), VerificationStatus.VERIFIED))],
-            omissions=OMIT)
-        ex2 = isomerization_descriptive().to_executable(
-            [verified_law(receipt=AdmissionReceipt(_record(version="4th ed, revised k"),
-                                                   VerificationStatus.VERIFIED))], omissions=OMIT)
+    def test_a_source_update_moves_admission_identity_but_not_model_content(self, tmp_path):
+        st = SourceStore(tmp_path)
+        write_source(tmp_path, version="3rd ed")
+        write_source(tmp_path, version="4th ed")                 # re-issued edition, SAME numbers (no supersedes)
+        ex1 = isomerization_descriptive().to_executable([st.law_from_source("iso", "3rd ed", "iso")], omissions=OMIT)
+        ex2 = isomerization_descriptive().to_executable([st.law_from_source("iso", "4th ed", "iso")], omissions=OMIT)
         assert ex1.admission_identities != ex2.admission_identities          # evidence identity moved
+        assert ex1.model_identity == ex2.model_identity                      # no parameter changed -> model did not
         m1, m2 = ex1.to_twocell(), ex2.to_twocell()
         assert np.array_equal(m1.N, m2.N) and np.array_equal(m1.E, m2.E)     # model content UNCHANGED
 
@@ -271,12 +317,13 @@ class TestA3NoForgedChemicalAuthority:
         ex = ExecutableMechanism(("ethanol", "dimethyl_ether"), comps, (0, 0),
                                  np.array([[1], [0]]), np.array([[0], [1]]), ("R0",), (verified_law(),), OMIT)
         assert ex.species_identity is SpeciesIdentity.UNTRUSTED
-        assert ex.admission_level is AdmissionLevel.SOURCE_VERIFIED       # kinetics verified...
-        assert ex.scientific_claim is False                             # ...but forged species -> NO claim (A3)
+        assert ex.law_levels(POLICY)[0] is AdmissionLevel.SOURCE_DECLARED  # a hand-built mechanism has no structure
+        # binding: the verified law is CAPPED, not silently strengthened (Wave B2); and the species are forged anyway
+        assert ex.admitted_under(POLICY) is False and ex.scientific_claim is False   # forged species -> NO claim (A3)
 
     def test_verified_species_via_the_adapter_do_carry_the_claim(self):
         ex = isomerization_descriptive().to_executable([verified_law()], omissions=OMIT)
-        assert ex.species_identity is SpeciesIdentity.VERIFIED and ex.scientific_claim is True
+        assert ex.species_identity is SpeciesIdentity.VERIFIED and ex.admitted_under(POLICY) is True
 
     def test_species_identity_is_not_a_public_constructor_argument(self):
         # evil-morty Finding 1: a caller must NOT be able to DECLARE itself VERIFIED.  species_identity is
@@ -298,3 +345,268 @@ class TestAdapterIntegration:
             derive_inventory((parse_smiles("C"), parse_smiles("O=O")), (parse_smiles("O=C=O"),),
                              supplied_E=[[1, 0, 1], [0, 0, 0], [0, 2, 2], [0, 0, 0]],
                              supplied_labels=("C", "H", "O", "charge"))
+
+
+# ===================================================================================== Wave B (red-team #6 / #7 / #8)
+class TestWaveB_FabricatedReceiptCannotMintScience:
+    """#6: a receipt is a DECLARATION until a SourceStore (the verifier) issues the binding.  Pre-fix, a hand-made
+    AdmissionReceipt(VERIFIED) with an invented handbook/reviewer minted scientific_claim=True."""
+
+    def test_invented_structured_receipt_cannot_back_a_verified_law(self):
+        fake = AdmissionReceipt(_record(), VerificationStatus.VERIFIED, reviewer="Dr. Totally Real, PhD")
+        with pytest.raises(ConversionRefusal) as ei:
+            verified_law(receipt=fake)
+        assert ei.value.kind is K.ADMISSION_INVALID
+
+    def test_invented_receipt_does_not_reach_scientific_claim_through_the_pipeline(self):
+        fake = AdmissionReceipt(_record(), VerificationStatus.VERIFIED, reviewer="Dr. Totally Real, PhD")
+        try:
+            law = verified_law(receipt=fake)
+        except ConversionRefusal:
+            return                                  # refused at the law: the strong outcome
+        ex = isomerization_descriptive().to_executable([law], omissions=OMIT)
+        assert ex.scientific_claim is False
+
+
+def _iso_ex(law):
+    return isomerization_descriptive().to_executable([law], omissions=OMIT)
+
+
+class TestWaveB_VerifierOwnsTheBinding:
+    """#6 (continued).  The binding can be neither constructed, copied, pickled, nor loaded from a dict."""
+
+    def test_binding_has_no_public_constructor_copy_or_pickle(self):
+        b = ISO_RECEIPT.binding
+        assert isinstance(b, SourceBinding)
+        with pytest.raises(TypeError):
+            SourceBinding(record_id="x")
+        with pytest.raises(TypeError):
+            dataclasses.replace(b, version="9")
+        for fn in (copy.copy, copy.deepcopy, pickle.dumps):
+            with pytest.raises(TypeError):
+                fn(b)
+
+    def test_binding_is_not_a_constructor_argument_of_the_receipt(self):
+        with pytest.raises(TypeError):
+            AdmissionReceipt(_record(), VerificationStatus.VERIFIED, "r", "", ISO_RECEIPT.binding)
+
+    def test_deserialised_receipt_never_carries_authority(self):
+        d = ISO_RECEIPT.to_dict()
+        d["binding"] = "forged"                              # a hostile dict claims whatever it likes
+        d["inspected"] = True
+        back = AdmissionReceipt.from_dict(d)
+        assert back.binding is None and back.is_inspected is False
+        with pytest.raises(ConversionRefusal) as ei:
+            verified_law(receipt=back)
+        assert ei.value.kind is K.ADMISSION_INVALID
+
+    def test_no_artifact_means_no_receipt(self, tmp_path):
+        with pytest.raises(ConversionRefusal) as ei:
+            SourceStore(tmp_path).issue_receipt("iso", "3rd ed", "iso", **_ISO)
+        assert ei.value.kind is K.PROVENANCE_MISSING
+
+    def test_inspected_store_that_the_policy_does_not_trust_is_not_admitted(self, tmp_path):
+        st = SourceStore(tmp_path)
+        write_source(tmp_path)
+        ex = _iso_ex(st.law_from_source("iso", "3rd ed", "iso"))
+        assert ex.admitted_under(AdmissionPolicy((st,))) is True        # trusted by an explicit policy
+        assert ex.admitted_under(POLICY) is False                       # a different trust root: not admitted
+        assert ex.scientific_claim is False                             # the default policy trusts only DEFAULT_STORE
+        assert DEFAULT_POLICY.stores[0].root.name == "verified_sources"
+        assert ex.to_twocell().label == "SOURCE_DECLARED"               # label never over-claims
+
+    def test_path_traversal_in_source_ids_is_refused(self, tmp_path):
+        with pytest.raises(ConversionRefusal):
+            SourceStore(tmp_path).issue_receipt("../etc", "1", "x", **_ISO)
+
+
+class TestWaveB2_ParameterToSourceBinding:
+    """#8 (i): a correct source for ONE rate must not certify another rate under the same citation."""
+
+    @pytest.mark.parametrize("change", [dict(k_f=9.9e-3), dict(k_r=7.0e-3), dict(k_f_units="m^3 mol^-1 s^-1"),
+                                        dict(validity_T_K=(200.0, 900.0)), dict(validity_T_K=None),
+                                        dict(kinetics="empirical", forward_orders=(1.0, 0.0))])
+    def test_keep_the_receipt_change_a_parameter_and_certification_is_refused(self, change):
+        with pytest.raises(ConversionRefusal) as ei:
+            verified_law(**change)                                       # same receipt, different numbers
+        assert ei.value.kind is K.ADMISSION_INVALID
+
+    def test_replace_on_a_certified_law_cannot_keep_the_certificate(self):
+        law = verified_law()
+        with pytest.raises(ConversionRefusal) as ei:
+            dataclasses.replace(law, k_f=9.9e-3)
+        assert ei.value.kind is K.ADMISSION_INVALID
+
+    def test_store_will_not_issue_for_numbers_the_source_does_not_state(self):
+        with pytest.raises(ConversionRefusal) as ei:
+            STORE.issue_receipt("iso", "3rd ed", "iso", **dict(_ISO, k_f=5.0e-3))
+        assert ei.value.kind is K.SOURCE_MISMATCH
+
+    def test_a_source_for_a_different_reaction_cannot_certify_this_one(self):
+        # the 3rd-ed 'iso' entry is CCO -> COC.  Use it on the REVERSE reaction COC -> CCO: same species, wrong sides.
+        rev = DescriptiveMechanism.from_derivations([adapt_step(ExperimentStep.assembling(A, (B,), (A,)))])
+        with pytest.raises(ConversionRefusal) as ei:
+            rev.to_executable([verified_law()], omissions=OMIT)
+        assert ei.value.kind is K.SOURCE_MISMATCH
+        other = DescriptiveMechanism.from_derivations(
+            [adapt_step(ExperimentStep.assembling(parse_smiles("CCOC(C)=O"),
+                                                  (parse_smiles("CCO"), parse_smiles("CC(=O)O")),
+                                                  (parse_smiles("CCOC(C)=O"), W)))])
+        with pytest.raises(ConversionRefusal):                          # also wrong arity/units -> refused one way or another
+            other.to_executable([verified_law()], omissions=OMIT)
+
+    def test_empirical_orders_are_part_of_what_the_source_certifies(self, tmp_path):
+        st = SourceStore(tmp_path)
+        p = write_source(tmp_path)
+        art = json.loads(p.read_text())
+        art["entries"]["iso"]["kinetics"] = "empirical"
+        art["entries"]["iso"]["forward_orders"] = [1.0, 0.0]
+        art["entries"]["iso"]["reverse_orders"] = [0.0, 1.0]
+        p.write_text(json.dumps(art))
+        law = st.law_from_source("iso", "3rd ed", "iso")
+        with pytest.raises(ConversionRefusal):
+            dataclasses.replace(law, forward_orders=(2.0, 0.0))
+
+
+class TestWaveB2_RevisionAndObsolescence:
+    """#8 (ii): a revision changes the right identity and invalidates an obsolete receipt."""
+
+    def test_superseded_source_stops_certifying_and_evidence_identity_changes(self, tmp_path):
+        st = SourceStore(tmp_path)
+        pol = AdmissionPolicy((st,))
+        write_source(tmp_path, version="1")
+        ex_old = _iso_ex(st.law_from_source("iso", "1", "iso"))
+        assert ex_old.admitted_under(pol) is True
+        write_source(tmp_path, version="2", supersedes="1")              # the curator publishes a superseding edition
+        assert ex_old.admitted_under(pol) is False                       # the obsolete receipt no longer certifies
+        assert ex_old.admission_level_under(pol) is AdmissionLevel.SOURCE_DECLARED
+        ex_new = _iso_ex(st.law_from_source("iso", "2", "iso"))
+        assert ex_new.admitted_under(pol) is True
+        assert ex_new.admission_identities != ex_old.admission_identities        # evidence identity moved
+
+    def test_in_place_edit_of_the_artifact_invalidates_the_issued_receipt(self, tmp_path):
+        st = SourceStore(tmp_path)
+        pol = AdmissionPolicy((st,))
+        p = write_source(tmp_path, version="1")
+        ex = _iso_ex(st.law_from_source("iso", "1", "iso"))
+        art = json.loads(p.read_text())
+        art["title"] = "quietly rewritten"
+        p.write_text(json.dumps(art))                                    # content digest no longer the one bound
+        assert ex.admitted_under(pol) is False
+
+    def test_retracted_source_stops_certifying(self, tmp_path):
+        st = SourceStore(tmp_path)
+        pol = AdmissionPolicy((st,))
+        p = write_source(tmp_path, version="1")
+        ex = _iso_ex(st.law_from_source("iso", "1", "iso"))
+        art = json.loads(p.read_text())
+        art["status"] = "retracted"
+        p.write_text(json.dumps(art))
+        assert ex.admitted_under(pol) is False
+        with pytest.raises(ConversionRefusal):
+            st.law_from_source("iso", "1", "iso")                        # and a retracted source issues nothing new
+
+    def test_an_actually_revised_parameter_moves_model_identity_too(self, tmp_path):
+        st = SourceStore(tmp_path)
+        write_source(tmp_path, version="1", k_f=2.0e-3)
+        write_source(tmp_path, version="2", k_f=3.5e-3)                   # the revision CHANGES the rate
+        a = _iso_ex(st.law_from_source("iso", "1", "iso"))
+        b = _iso_ex(st.law_from_source("iso", "2", "iso"))
+        assert a.model_identity != b.model_identity                       # parameter moved the model...
+        assert a.admission_identities != b.admission_identities           # ...and the evidence (orthogonal, linked)
+        # and the old rate cannot ride the new edition's receipt:
+        with pytest.raises(ConversionRefusal):
+            KineticLaw(2.0e-3, 1.0e-3, True, AdmissionLevel.SOURCE_VERIFIED, "s^-1", "s^-1",
+                       receipt=st.law_from_source("iso", "2", "iso").receipt, validity_T_K=(280.0, 320.0))
+
+    def test_benchmark_validated_comes_only_from_the_artifacts_own_validation_block(self, tmp_path):
+        st = SourceStore(tmp_path)
+        write_source(tmp_path, validation={"benchmark": "stopped-flow, 3 labs", "rel_uncertainty": 0.05})
+        law = st.law_from_source("iso", "3rd ed", "iso", level=AdmissionLevel.BENCHMARK_VALIDATED)
+        assert _iso_ex(law).admission_level_under(AdmissionPolicy((st,))) is AdmissionLevel.BENCHMARK_VALIDATED
+
+
+def _run_one_step(mech, T_K, *, dt=1.0, conc=1.0):
+    from experiments.sandbox_foundation.twocell import State, System, reaction_step
+    S = len(mech.species)
+    sysm = System(mech.species, (1.0, 1.0), (1.0, 1.0), (0.0,) * S, 1.0, 1.0, 0.0, mechanism=mech)
+    n = np.zeros((2, S))
+    n[:, 0] = conc
+    return sysm, State.make(sysm, n, [T_K, T_K]), reaction_step
+
+
+class TestWaveB3_AdmissionTravelsIntoExecution:
+    """#7: the admitted domain survives the float boundary and is re-checked on EVERY reaction transition."""
+
+    def test_the_numerical_mechanism_carries_its_applicability(self):
+        mech = _iso_ex(verified_law()).to_twocell(POLICY)
+        assert mech.applicability is not None
+        assert mech.label == "SOURCE_VERIFIED"
+
+    def test_inside_the_window_runs(self):
+        sysm, st, step = _run_one_step(_iso_ex(verified_law()).to_twocell(POLICY), 300.0)
+        st1, _ = step(sysm, st, 1.0)
+        assert float(st1.n[0, 1]) > 0.0                                  # it actually reacted
+
+    @pytest.mark.parametrize("T", [250.0, 500.0])
+    def test_outside_the_sourced_window_is_refused_not_silently_run(self, T):
+        sysm, st, step = _run_one_step(_iso_ex(verified_law()).to_twocell(POLICY), T)
+        with pytest.raises(AdmissionDomainError):
+            step(sysm, st, 1.0)
+
+    def test_a_changing_temperature_is_rechecked_every_transition(self):
+        from experiments.sandbox_foundation.twocell import run
+        mech = _iso_ex(verified_law()).to_twocell(POLICY)
+        sysm, st, _ = _run_one_step(mech, 300.0)
+        hot = st.evolve(U=np.asarray(sysm.heat_capacity_J_per_K) * 600.0)       # the state heated up mid-campaign
+        assert run(sysm, st, 1.0, 2, sequence=("reaction",)).state.n.sum() > 0   # fine at 300 K
+        with pytest.raises(AdmissionDomainError):
+            run(sysm, hot, 1.0, 2, sequence=("reaction",))                      # same mechanism, now outside window
+
+    def test_a_synthetic_window_is_enforced_too(self):
+        mech = _iso_ex(synthetic_law(validity_T_K=(280.0, 320.0))).to_twocell()
+        sysm, st, step = _run_one_step(mech, 900.0)
+        with pytest.raises(AdmissionDomainError):
+            step(sysm, st, 1.0)
+
+    def test_a_caller_that_supplies_no_temperature_cannot_run_a_windowed_law(self):
+        from experiments.sandbox_foundation.twocell import SolverSettings, reaction_cell
+        mech = _iso_ex(verified_law()).to_twocell(POLICY)
+        with pytest.raises(AdmissionDomainError):
+            reaction_cell(mech, np.array([1.0, 0.0]), 1.0, 1.0, SolverSettings())     # fail closed on T=None
+
+    def test_concentration_cap_from_the_source_is_enforced(self, tmp_path):
+        st = SourceStore(tmp_path)
+        write_source(tmp_path, conc_max=10.0)
+        mech = _iso_ex(st.law_from_source("iso", "3rd ed", "iso")).to_twocell(AdmissionPolicy((st,)))
+        sysm, s0, step = _run_one_step(mech, 300.0, conc=5.0)
+        step(sysm, s0, 1.0)                                                       # 5 mol/m^3 <= 10: fine
+        sysm, s1, step = _run_one_step(mech, 300.0, conc=50.0)
+        with pytest.raises(AdmissionDomainError):
+            step(sysm, s1, 1.0)
+
+    def test_source_superseded_mid_run_refuses_the_next_transition(self, tmp_path):
+        st = SourceStore(tmp_path)
+        pol = AdmissionPolicy((st,))
+        write_source(tmp_path, version="1")
+        mech = _iso_ex(st.law_from_source("iso", "1", "iso")).to_twocell(pol)
+        sysm, s0, step = _run_one_step(mech, 300.0)
+        step(sysm, s0, 1.0)
+        write_source(tmp_path, version="2", supersedes="1")
+        with pytest.raises(AdmissionDomainError):
+            step(sysm, s0, 1.0)                                                   # an obsolete receipt does not certify
+
+    def test_plain_unwindowed_synthetic_mechanism_is_unaffected(self):
+        mech = _iso_ex(synthetic_law()).to_twocell()
+        sysm, st, step = _run_one_step(mech, 900.0)
+        st1, _ = step(sysm, st, 1.0)
+        assert float(st1.n[0, 1]) > 0.0
+        assert mech.label == "SYNTHETIC"                                          # not strengthened
+
+    def test_status_is_never_strengthened_across_the_layers(self):
+        d = isomerization_descriptive().to_executable([declared_law()], omissions=OMIT)
+        assert d.to_twocell(POLICY).label == "SOURCE_DECLARED"
+        hand = ExecutableMechanism(("ethanol", "dimethyl_ether"),
+                                   ((("C", 2), ("H", 6), ("O", 1)),) * 2, (0, 0), np.array([[1], [0]]),
+                                   np.array([[0], [1]]), ("R0",), (verified_law(),), OMIT)
+        assert hand.to_twocell(POLICY).label == "SOURCE_DECLARED"                 # hand-built: verified law capped

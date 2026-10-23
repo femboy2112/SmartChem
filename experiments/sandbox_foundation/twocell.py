@@ -233,6 +233,10 @@ class Mechanism:
     kinetics: str = "elementary"
     rate_law_note: str = ""
     validate: InitVar[bool] = True
+    # Wave B3: an OPTIONAL admitted-domain object (duck-typed: ``assert_applicable(T_K=, conc_mol_m3=)``).  None =
+    # no admission claim to enforce (plain SYNTHETIC mechanism).  When present, reaction_cell consults it on EVERY
+    # reaction transition and FAILS CLOSED -- see mechanism_types.Applicability.
+    applicability: Optional[object] = None
 
     def __post_init__(self, validate):
         reactant = np.array(self.reactant, dtype=float)
@@ -587,7 +591,7 @@ def apply_controller(system: System, state: State, controller, cell: int, T_targ
     return state.evolve(U=U)
 
 
-def reaction_cell(mech: Mechanism, n0: np.ndarray, V: float, dt: float, settings: SolverSettings):
+def reaction_cell(mech: Mechanism, n0: np.ndarray, V: float, dt: float, settings: SolverSettings, *, T_K=None):
     """Integrate one closed cell over dt in extent space (n = n0 + N xi, so E @ (n - n0) = 0 by construction).
     Returns (n1, xi, clamped, clamp_residual).
 
@@ -609,6 +613,9 @@ def reaction_cell(mech: Mechanism, n0: np.ndarray, V: float, dt: float, settings
     max|E @ (clip - pre)| is RETURNED as clamp_residual -- surfaced, never hidden.  A displacement past pos_tol,
     or an overshoot past -pos_tol before any clamp, FAILS CLOSED."""
     mech.require_complete()
+    if mech.applicability is not None:      # Wave B3: re-check the admitted domain on EVERY transition (fail closed;
+        # T_K=None with a windowed law is a refusal, so a caller that cannot supply T cannot run a sourced law)
+        mech.applicability.assert_applicable(T_K=T_K, conc_mol_m3=np.asarray(n0, float) / V)
     R = mech.n_reactions
     if dt == 0.0:
         return np.array(n0), np.zeros(R), False, 0.0
@@ -661,8 +668,9 @@ def reaction_step(system: System, state: State, dt: float, *, cells: Sequence[in
     rep = StepReport("reaction", step, dt, solver={"method": settings.method, "rtol": settings.rtol,
                                                    "atol": settings.atol, "pos_tol": settings.pos_tol,
                                                    "seed": settings.seed})
+    T_cells = state.temperature(system)     # derived from U each step: a changed T is seen by the next transition
     for i in cells:
-        n1, xi, cl, cres = reaction_cell(mech, n[i], system.volumes_m3[i], dt, settings)
+        n1, xi, cl, cres = reaction_cell(mech, n[i], system.volumes_m3[i], dt, settings, T_K=float(T_cells[i]))
         src = n1 - n[i]                     # the ACTUAL accepted transition (incl. any clamp), not the raw N @ xi
         rep.extents[CELL_NAMES[i]] = xi
         rep.clamped = rep.clamped or cl

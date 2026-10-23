@@ -8,7 +8,7 @@ from experiments.sandbox_foundation.mechanism_adapter import (
     AdapterRefusal, Claim, RefusalKind, UnsupportedClaim, adapt_step, derive_inventory)
 from smartchem.category import Molecule
 from smartchem.experiment.step import ExperimentStep
-from smartchem.smiles import parse_smiles
+from smartchem.smiles import parse_smiles, resonance_identity
 
 CH4, O2, CO2, H2O = (parse_smiles(s) for s in ("C", "O=O", "O=C=O", "O"))
 
@@ -197,3 +197,12 @@ def test_plain_monovalent_and_single_site_ions_still_pass():
     from experiments.sandbox_foundation.mechanism_adapter import smiles_claims
     for smi in ("[NH4+]", "[OH-]", "[Mg+2]"):
         assert smiles_claims(smi) == []
+
+
+def test_waveB_identity_key_is_the_one_species_identity_used_by_derivation_and_source_inspection():
+    """The verifier compares a source species to the mechanism on THIS key; the adapter must derive through it."""
+    from experiments.sandbox_foundation.mechanism_adapter import identity_key
+    m = parse_smiles("CCO")
+    assert identity_key(m) == (resonance_identity(m), m.state)
+    d = derive_inventory((m,), (parse_smiles("COC"),))
+    assert identity_key(m) in d.identities and identity_key(parse_smiles("COC")) in d.identities

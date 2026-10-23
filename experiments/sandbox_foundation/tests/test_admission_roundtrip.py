@@ -4,11 +4,15 @@
 and the two identities stay orthogonal: the AUTHORITATIVE model identity moves with chemistry / kinetics, the
 EVIDENCE/ADMISSION identity moves with the source, a display relabel moves neither, and a downgrade from verified
 to synthetic cannot silently disappear.  SYNTHETIC / experimental sandbox."""
+import json
+import tempfile
+from pathlib import Path
+
 import numpy as np
 
 from experiments.sandbox_foundation.mechanism_adapter import adapt_step
 from experiments.sandbox_foundation.mechanism_types import (
-    AdmissionLevel, AdmissionReceipt, DescriptiveMechanism, KineticLaw, SourceRecord, VerificationStatus)
+    AdmissionLevel, AdmissionPolicy, DescriptiveMechanism, KineticLaw, SourceStore)
 from experiments.sandbox_foundation.mesh import MeshState, MeshSystem, chain_mesh
 from experiments.sandbox_foundation.snapshot import PhysicalWorldSnapshot
 from smartchem.experiment.step import ExperimentStep
@@ -21,14 +25,32 @@ EST_STEP = ExperimentStep.assembling(parse_smiles("CCOC(C)=O"), (parse_smiles("C
                                      (parse_smiles("CCOC(C)=O"), W))     # esterification (different chemistry)
 
 
-def _record(version="3rd ed"):
-    return SourceRecord("Imaginary Handbook", version, ("ethanol", "DME"), "s^-1", "298 K ideal",
-                        "elementary unimolecular", "280-320 K")
+def _write(root, rec, version, entry, reactants, products, units, k_f, k_r):
+    Path(root).mkdir(parents=True, exist_ok=True)
+    art = {"record_id": rec, "version": version, "title": f"Imaginary Handbook {version}", "status": "current",
+           "entries": {entry: {
+               "reactants": [{"smiles": x, "count": 1} for x in reactants],
+               "products": [{"smiles": x, "count": 1} for x in products], "kinetics": "elementary",
+               "reversible": True, "k_f": {"value": k_f, "units": units}, "k_r": {"value": k_r, "units": units},
+               "conditions": {"T_K": [280.0, 320.0], "phase": "liquid", "standard_state": "pure liquid, 1 bar"},
+               "assumptions": ["ideal"]}}}
+    (Path(root) / f"{rec}@{version}.json").write_text(json.dumps(art))
 
 
-def _verified_uni(k_f=2.0e-3, receipt=None):
-    return KineticLaw(k_f, 1.0e-3, True, AdmissionLevel.SOURCE_VERIFIED, "s^-1", "s^-1",
-                      receipt=receipt or AdmissionReceipt(_record(), VerificationStatus.VERIFIED))
+# the verifier's source directory: real artifacts, inspected by a SourceStore (a declaration would prove nothing)
+_DIR = Path(tempfile.mkdtemp(prefix="sc_rt_sources_"))
+_write(_DIR, "iso", "3rd ed", "iso", ("CCO",), ("COC",), "s^-1", 2.0e-3, 1.0e-3)
+_write(_DIR, "iso", "4th ed", "iso", ("CCO",), ("COC",), "s^-1", 2.0e-3, 1.0e-3)       # re-issued, same numbers
+_write(_DIR, "iso8", "1", "iso", ("CCO",), ("COC",), "s^-1", 8.0e-3, 1.0e-3)            # a different RATE, same reaction
+_write(_DIR, "est", "1", "est", ("CCO", "CC(=O)O"), ("CCOC(C)=O", "O"), "m^3 mol^-1 s^-1", 2.0e-3, 1.0e-3)
+STORE = SourceStore(_DIR)
+POLICY = AdmissionPolicy((STORE,))
+
+
+def _verified_uni(k_f=2.0e-3, version="3rd ed"):
+    if k_f == 2.0e-3:
+        return STORE.law_from_source("iso", version, "iso")
+    return STORE.law_from_source("iso8", "1", "iso")                    # k_f=8e-3 comes from ITS OWN inspected source
 
 
 def _synthetic_uni():
@@ -37,8 +59,7 @@ def _synthetic_uni():
 
 
 def _verified_bimol():
-    return KineticLaw(2.0e-3, 1.0e-3, True, AdmissionLevel.SOURCE_VERIFIED, "m^3 mol^-1 s^-1", "m^3 mol^-1 s^-1",
-                      receipt=AdmissionReceipt(_record(), VerificationStatus.VERIFIED))
+    return STORE.law_from_source("est", "1", "est")
 
 
 def _ex(step, law):
@@ -47,7 +68,7 @@ def _ex(step, law):
 
 def _snapshot(ex, *, evidence=None, display_hints=None):
     """Full pipeline tail: executable -> twocell -> a 2-cell mesh state -> PhysicalWorldSnapshot."""
-    mech = ex.to_twocell()
+    mech = ex.to_twocell(POLICY)
     S = len(mech.species)
     sysm = MeshSystem(mech.species, (0.0,) * S, chain_mesh([1.0, 1.0], [1.0], [1.0]), mechanism=mech)
     n0 = np.zeros((2, S))
@@ -63,21 +84,22 @@ def test_A4_chemical_identity_change_moves_model_identity():
     assert iso.model_identity != est.model_identity
 
 
-# (2) a changed kinetic parameter changes the model identity (and NOT the evidence identity, same receipt)
+# (2) a changed kinetic parameter changes the model identity (and, a rate coming from its OWN source, the evidence)
 def test_A4_kinetic_parameter_change_moves_model_identity_only():
     slow = _ex(ISO_STEP, _verified_uni(k_f=2.0e-3))
     fast = _ex(ISO_STEP, _verified_uni(k_f=8.0e-3))
     assert slow.model_identity != fast.model_identity
-    assert slow.admission_identities == fast.admission_identities      # same source receipt -> same evidence id
+    # (here the faster rate comes from its OWN inspected source, so the evidence identity moves with it)
+    assert slow.admission_identities != fast.admission_identities
 
 
 # (3) a changed verified source revision changes the evidence identity, NOT the model content
 def test_A4_source_revision_moves_evidence_not_model():
-    r1 = _ex(ISO_STEP, _verified_uni(receipt=AdmissionReceipt(_record("3rd ed"), VerificationStatus.VERIFIED)))
-    r2 = _ex(ISO_STEP, _verified_uni(receipt=AdmissionReceipt(_record("4th ed"), VerificationStatus.VERIFIED)))
+    r1 = _ex(ISO_STEP, _verified_uni(version="3rd ed"))
+    r2 = _ex(ISO_STEP, _verified_uni(version="4th ed"))
     assert r1.model_identity == r2.model_identity
     assert r1.admission_identities != r2.admission_identities
-    m1, m2 = r1.to_twocell(), r2.to_twocell()
+    m1, m2 = r1.to_twocell(POLICY), r2.to_twocell(POLICY)
     assert np.array_equal(m1.N, m2.N) and np.array_equal(m1.E, m2.E)
 
 
@@ -94,8 +116,8 @@ def test_A4_display_label_does_not_change_the_model_digest():
 def test_A4_downgrade_to_synthetic_survives_to_the_twocell_and_snapshot():
     exv = _ex(ISO_STEP, _verified_uni())
     exs = _ex(ISO_STEP, _synthetic_uni())
-    assert exv.to_twocell().label == "SOURCE_VERIFIED"
-    assert exs.to_twocell().label == "SYNTHETIC"                       # the downgrade is carried, not relabelled
+    assert exv.to_twocell(POLICY).label == "SOURCE_VERIFIED"
+    assert exs.to_twocell(POLICY).label == "SYNTHETIC"                       # the downgrade is carried, not relabelled
     sv = _snapshot(exv, evidence={"admission": exv.admission_identities})
     ss = _snapshot(exs, evidence={"admission": exs.admission_identities})
     assert sv.model_digest == ss.model_digest                          # identical physical state...

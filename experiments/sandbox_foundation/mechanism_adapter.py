@@ -112,6 +112,14 @@ def build_E(compositions: Sequence, charges: Sequence) -> tuple:
     return labels, E
 
 
+def identity_key(m: Molecule) -> tuple:
+    """The ONE species-identity key: (resonance_identity, state).  The adapter derives every species key through
+    this, and the source verifier (mechanism_types.SourceStore) derives an artifact's species through the SAME
+    function -- so 'the source's ethanol' and 'the mechanism's ethanol' are compared on one identity, not on a
+    caller-chosen name."""
+    return (resonance_identity(m), m.state)
+
+
 def _hill(comp, charge: int) -> str:
     d = dict(comp)
     order = (["C", "H"] if "C" in d else []) + sorted(k for k in d if not ("C" in d and k in ("C", "H")))
@@ -219,10 +227,9 @@ def derive_inventory(reactants: Sequence, products: Sequence, *, supplied_E=None
     for side, mols, counts in (("reactants", reactants, react_count), ("products", products, prod_count)):
         for m in mols:
             try:
-                ident = resonance_identity(m)
+                key = identity_key(m)
             except Exception as exc:  # noqa: BLE001
                 raise AdapterRefusal(RefusalKind.MALFORMED_INPUT, f"cannot identify {m!r}: {exc}") from exc
-            key = (ident, m.state)
             comp = tuple(sorted((el, int(n)) for el, n in m.formula.items()))
             name_for_claims = _hill(comp, m.charge)
             found = _label_claims(m, name_for_claims)

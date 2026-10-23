@@ -42,8 +42,11 @@ _NEW_CLASS_STEPS = [
 ]
 
 
-def test_oracle_has_seventeen_recognizers():
-    assert len(_RECOGNIZERS) == 17
+def test_oracle_has_twenty_recognizers():
+    # 1.1.0a1: #110 activated acyl transfer (18th) + #111 sulfonate-ester transfer (19th) + #115 Claisen
+    # condensation (20th) -- MINOR coverage expansions; the version-transition golden stays UNMOVED (no corpus
+    # case is a Claisen condensation), so this is a pure coverage add, not a semantic re-freeze.
+    assert len(_RECOGNIZERS) == 20
 
 
 @pytest.mark.parametrize("label,step,expect", _NEW_CLASS_STEPS, ids=[c[0] for c in _NEW_CLASS_STEPS])
@@ -64,8 +67,8 @@ def test_no_cross_poach_exactly_one_recognizer_fires(label, step, _expect):
     assert len(fired) == 1, f"{label} fired {len(fired)} recognizers: {fired}"
 
 
-def test_full_17x_no_cross_poach_matrix():
-    """Every new class's step, run against ALL 17 recognizers, fires exactly its own -- and NO existing class's
+def test_full_19x_no_cross_poach_matrix():
+    """Every new class's step, run against ALL 19 recognizers, fires exactly its own -- and NO existing class's
     recognizer fires on it (the matrix that pins the whole whitelist apart)."""
     for label, step, _ in _NEW_CLASS_STEPS:
         matches = [cname for cname, pred in _RECOGNIZERS if _safe(pred, step)]

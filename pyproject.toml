@@ -39,6 +39,10 @@ dev = [
 # High-accuracy energy oracles. Optional: the categorical core runs without them.
 qc = ["pyscf>=2.4"]
 
+# 2D structure depiction for `smartchem graph ... --format scheme` (the drawn reaction scheme).
+# Optional: without it the scheme degrades to name/formula boxes and every other verb is unaffected.
+depiction = ["rdkit>=2024.3"]
+
 # The decoupled probe-evidence bridge as an installed command, so external consumers
 # (fine-man and the like) get `smartchem-verify-probes` on their PATH after install,
 # matching the CLI's own prog name and its documented `python -m smartchem.evidence` form.

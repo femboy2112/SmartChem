@@ -167,6 +167,70 @@ def whole_fragment_neutral(molecule: Molecule) -> bool:
     return all((nv := _NEUTRAL_VALENCE.get(molecule.atoms[v])) is None or degree[v] <= nv
                for v in range(len(molecule.atoms)))
 
+
+#: Allowed CLOSED-SHELL NEUTRAL valences per element (bond-order-sum).  Fixed-valence organic atoms (H,C,O) have a
+#: single value, so a deviation is a radical/ion; the common multivalent heteroatoms carry their full neutral set
+#: (sulfoxide/sulfone S 4/6, nitro/azide N 5, phosphate P 5), and the halogens are monovalent -- so a genuine
+#: sulfonamide / halogenated / nitro substrate is NOT false-rejected (that would regress claimed coverage), while a
+#: radical/ion/ylide centre (an off-valence atom) still is.  (:data:`_NEUTRAL_VALENCE` stays the heavy-atom-only,
+#: single-value matched-centre table guard 2c uses.)
+_CLOSED_SHELL_VALENCES: dict[str, frozenset] = {
+    "H": frozenset({1}), "C": frozenset({4}), "O": frozenset({2}),
+    "N": frozenset({3, 5}), "S": frozenset({2, 4, 6}), "P": frozenset({3, 5}),
+    "F": frozenset({1}), "Cl": frozenset({1}), "Br": frozenset({1}), "I": frozenset({1}),
+}
+
+
+def is_closed_shell_neutral(molecule: Molecule) -> bool:
+    """A REPRESENTATION-RELATIVE HEURISTIC that is ``True`` for the closed-shell-neutral species it can see.
+
+    SCOPE AND KNOWN BLIND SPOTS (verified by an adversarial probe -- see tests/test_closed_shell_scope.py,
+    issue #105). The model carries NO per-atom formal charge, NO per-atom hydrogen count, and NO spin/electron
+    state -- only the heavy-atom bond graph and the net :attr:`Molecule.charge`. A formal charge or unpaired
+    electron is therefore visible ONLY as a bond-order-sum deviation from an allowed closed-shell valence
+    (:data:`_CLOSED_SHELL_VALENCES`), and only in a representation that exposes it. So this canNOT prove
+    arbitrary closed-shell status; it is reliable only within this bounded scope:
+
+    * EXPLICIT-H (e.g. ``parse_smiles`` output with H present): every atom's bond-order-sum must be an ALLOWED
+      valence. A radical/ion/ylide carbon reads 3 (not in {4}) and is rejected; a genuine closed-shell molecule
+      (sulfonamide S=6, nitroalkene N=5, a halogenated substrate) reads an allowed valence everywhere.
+    * It CORRECTLY rejects: over-valence, a nonzero net charge, and any out-of-table element (a metal, an
+      exotic element) -- honest coverage loss on an out-of-scope substrate, never a false-vouch.
+
+    KNOWN FALSE-ACCEPTS (documented, NOT patchable without the #105 per-atom model):
+    * an even-valence DIRADICAL whose every atom is valence-normal -- molecular O2 (``O=O``, each O at 2 in {2})
+      reads closed-shell; no valence-only rule can see its triplet ground state.
+    * in the no-H / heavy-atom representation, a bracket-no-H radical at an intermediate (<= max) valence --
+      ``O=[N]=O`` and ``[O-][N+]=O`` (N at bond-sum 4, within {3,5}) read closed-shell, because the implicit-H
+      branch assumes H would fill N up to 5 and cannot tell a ``[N]`` (no implicit H) apart from an ``N``.
+    * REPRESENTATION-DEPENDENCE: the same molecule can flip -- nitromethane passes as ``CN(=O)=O`` (N=5) but is
+      rejected as ``C[N+](=O)[O-]`` (N reads 4), since per-atom charge is not carried.
+
+    WHY THIS IS TOLERATED: it is DEFENSE-IN-DEPTH, not the soundness lock. No demonstrated false-VOUCH chains
+    through it -- the single-cut re-derivation, the :class:`ExperimentStep` conservation certificate and the
+    capped-scission neutral/valence-preserving certificate stand between this gate and any recognition, and the
+    blind-spot species do not arise in a re-derivable transform. A SOUND replacement needs the per-atom
+    formal-charge / electron-state model deferred to 2.0 (#105)."""
+    if type(molecule) is not Molecule or getattr(molecule, "charge", 0) != 0:
+        return False
+    atoms = molecule.atoms
+    degree = [0] * len(atoms)
+    for b in molecule.bonds:
+        degree[b.i] += b.order
+        degree[b.j] += b.order
+    explicit_h = "H" in atoms   # parse_smiles makes H explicit; a heavy-atom graph leaves them implicit
+    for v, label in enumerate(atoms):
+        allowed = _CLOSED_SHELL_VALENCES.get(label)
+        if allowed is None:
+            return False                       # out-of-scope element -> fail closed (coverage loss, never a vouch)
+        if explicit_h:
+            if degree[v] not in allowed:
+                return False                   # explicit-H: an off-valence atom is a radical/ion/ylide
+        elif degree[v] > max(allowed):
+            return False                       # implicit-H: only over-valence is a defect (H fill the rest)
+    return True
+
+
 def _synthesis_center(rule: BondRule) -> ReactionCenter:
     """The coordinate-free reaction centre of ``rule`` in the SYNTHESIS (left->right) direction, DERIVED from the
     rule's own edge delta so it TRACKS the rule rather than a hand-typed constant that could silently drift when
@@ -490,6 +554,8 @@ def _reactant_da_disconnects_to(reactant: Molecule, products: tuple[Molecule, ..
         graph = _joined((reactant,))
     except (RuleError, ScissionError, TypeError, ValueError):
         return False
+    if not (is_closed_shell_neutral(reactant) and all(is_closed_shell_neutral(p) for p in products)):
+        return False  # #132 hardening: a radical / charged / ylide partner is not a pericyclic reactant (fail-closed)
     want = Config.of(*products)
     audits, _ = retro_da_disconnections(graph)
     return any(_config(a.witness.target) == want for a in audits)
@@ -650,6 +716,8 @@ def _reactant_alkyne_da_disconnects_to(reactant: Molecule, products: tuple[Molec
         graph = _joined((reactant,))
     except (RuleError, ScissionError, TypeError, ValueError):
         return False
+    if not (is_closed_shell_neutral(reactant) and all(is_closed_shell_neutral(p) for p in products)):
+        return False  # #132 hardening: a radical / charged / ylide partner is not a pericyclic reactant (fail-closed)
     want = Config.of(*products)
     audits, _ = retro_alkyne_da_disconnections(graph)
     return any(_config(a.witness.target) == want for a in audits)
@@ -900,6 +968,8 @@ def _reactant_hetero_da_disconnects_to(family: _HeteroDAFamily, reactant: Molecu
         graph = _joined((reactant,))
     except (RuleError, ScissionError, TypeError, ValueError):
         return False
+    if not (is_closed_shell_neutral(reactant) and all(is_closed_shell_neutral(p) for p in products)):
+        return False  # #132 hardening: a radical / charged / ylide partner is not a pericyclic reactant (fail-closed)
     want = Config.of(*products)
     audits, _ = hetero_da_disconnections(family, graph)
     return any(_config(a.witness.target) == want for a in audits)

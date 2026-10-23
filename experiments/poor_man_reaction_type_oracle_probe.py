@@ -60,7 +60,11 @@ from experiments.poor_man_step_validity_demoter_defer_probe import (
     _resolve, _routes_of, raw_rule_blocks, _FALSE_VOUCHES, _FALSE_EXCLUDES,
 )
 
-FROZEN_HASH = "40b50344d0be9a86752cc47b20dbcd2a10dcb1d65383d169d644d8cbefcca4cf"
+# Re-frozen at 1.5 #115 (Claisen condensation = 20th recognizer): a SANCTIONED MINOR coverage expansion moved the
+# probe's content hash.  validate() still returns True -- all ship invariants hold, crucially false_vouch_count==0
+# -- so this is a sound coverage gain, not a regression (the same re-freeze discipline as the version-transition
+# golden).  Prior 1.1.0a1 value: 40b50344d0be9a86752cc47b20dbcd2a10dcb1d65383d169d644d8cbefcca4cf.
+FROZEN_HASH = "fc2bb69a6561966fa8e6535370c61f532cfb5c0994cdea7e8e854edc0ee2adac"
 
 
 def _routes(tsmi, avail, reags=None):

@@ -1,5 +1,25 @@
 # SmartChem roadmap
 
+> ## ▶ CURRENT STATUS (2026-10-20) — branch only
+> **Branch `feat/chemical-graph-projections`, HEAD `34e1891`; PR #101 (OPEN, DRAFT, base `main`); `__version__` =
+> `1.1.0a1` (dev); CI green on `34e1891` (run `39381019664`).** **Branch only — NO merge to `main`, NO tag, NO
+> release.** `main` (`99fce34`) and the `v1.0.0` tag are unchanged. Pointers: the 1.5 program
+> [`docs/research/V1_5_RELEASE_PROGRAM.md`](docs/research/V1_5_RELEASE_PROGRAM.md); the 2.0 pivot docs being
+> authored this round (may not exist yet): `docs/research/V2_0_PHYSICAL_MECHANISM_CONTRACT.md` and
+> `docs/research/V3_0_VINEGAR_BICARBONATE_FLAGSHIP.md`. The 2026-10-19 block below is kept as-is for history.
+
+> ## ▶ CURRENT STATUS (2026-10-19)
+> **1.0.0 RELEASED** (tag `v1.0.0` = `8345bbb`; `main` = `99fce34`, docs-only past the tag). **Active dev:
+> 1.1.0a1** on `feat/chemical-graph-projections` (PR #101, draft) — the typed chemical-graph/synthesis
+> workbench **+ the first post-1.0 coverage win (#110 activated acyl transfer)**, which graduates the real
+> paracetamol route to `PROCESS_SPECIFIED`. The post-1.0 plan, the 1.1→1.5 ladder, the 1.5 acceptance gates
+> and the explicit 2.0 prerequisites are in
+> [`docs/research/V1_5_RELEASE_PROGRAM.md`](docs/research/V1_5_RELEASE_PROGRAM.md); the 1.0.0→1.1.0a1 semantic
+> transition is proved field-by-field in
+> [`docs/research/V1_1_COVERAGE_EXPANSION_110.md`](docs/research/V1_1_COVERAGE_EXPANSION_110.md). Issues
+> #103–#132 stay OPEN on `main` until PR #101 merges (a branch fix is not a `main` resolution). The historical
+> round-by-round essay below is kept intact for its reasoning.
+
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
 > `verified @ poor-man-tamper-hardening-2026-09-17` (commit `afbf39f`; suite **5050/47/1**). **Re-stamp note:** this
 > header narrative below is the ROUND 47 essay — the tag/suite figures are that round's (historical, like the prose,

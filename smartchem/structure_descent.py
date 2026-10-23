@@ -73,6 +73,7 @@ __all__ = [
     "StructureDecompositionGraph",
     "scission_edges",
     "capped_scissions",
+    "single_cut_capped_scissions",
     "heterolytic_scissions",
     "heterolytic_formula_edges",
     "redox_couples",
@@ -882,6 +883,63 @@ def capped_scissions(
             if not ok:
                 return tuple(sorted(out.values(), key=lambda e: e.digest)), False
 
+    return tuple(sorted(out.values(), key=lambda e: e.digest)), True
+
+
+def single_cut_capped_scissions(
+    reactant: Molecule,
+    reagents: tuple[Molecule, ...],
+    candidate_bonds: tuple[Bond, ...],
+    *,
+    budget: int = 50_000,
+) -> tuple[tuple[CappedScission, ...], bool]:
+    """Enumerate the valence-capped SINGLE-cut rewrites that cut EXACTLY ONE of ``candidate_bonds``.
+
+    A focused, cheaper slice of :func:`capped_scissions`: ``max_reactant_cuts=1`` restricted to a caller-supplied
+    SUBSET of the reactant's bonds, rather than every bond.  It reuses the same certified inner cutter
+    (:func:`_cap_a_cut`) and the same reagent-type deduplication, so every emitted :class:`CappedScission` carries
+    the identical valence/cleave/consume certificate -- the ONLY difference is which bonds are attempted.  A bond in
+    ``candidate_bonds`` that is not a bond of ``reactant`` is skipped.
+
+    This exists for a VERIFIER that only needs the disconnections at specific bonds and must not pay to enumerate
+    (and canonicalise the fragments of) every irrelevant C-H / C-C cut -- e.g. the reaction-TYPE oracle re-deriving
+    an elementary dehydrative condensation, which can only break at an order-1 C-X bond (X the nucleophile).
+    Restricting to those bonds cannot miss a genuine condensation (its formed bond IS such a bond) and adds nothing
+    (the CappedScission certificate still gates every candidate), so it is sound; it is purely a cost pre-filter, the
+    same discipline the Diels-Alder Layer A uses.  Returns ``(edges, complete)`` exactly like :func:`capped_scissions`
+    (``complete`` is ``False`` iff ``budget`` was hit -- a truncation that can only make the verifier MISS a
+    disconnection and demote, never over-admit)."""
+    if type(reactant) is not Molecule:
+        raise TypeError("reactant must be a Molecule")
+    if type(reagents) is not tuple or not reagents or any(type(r) is not Molecule for r in reagents):
+        raise TypeError("reagents must be a non-empty tuple of reagent-TYPE Molecules")
+    if reactant.charge != 0 or any(r.charge != 0 for r in reagents):
+        raise ScissionError(
+            "capped scission currently supports neutral input species only; charged chemistry requires an "
+            "explicit charge-localising rewrite model"
+        )
+    if type(budget) is not int or budget <= 0:
+        raise ValueError("budget must be a positive integer")
+    unique_reagents: dict[str, Molecule] = {}
+    for reagent in reagents:
+        if reagent.bonds:
+            try:
+                key = canonical_digest(reagent.canonical())
+            except NotImplementedError:
+                key = "asgiven:" + canonical_digest(reagent)
+            unique_reagents.setdefault(key, reagent)
+    reagent_types = list(unique_reagents.values())
+    if not reagent_types:
+        return (), True
+    bondset = set(reactant.bonds)
+    out: dict[str, CappedScission] = {}
+    work = 0
+    for b in candidate_bonds:
+        if b not in bondset:
+            continue
+        work, ok = _cap_a_cut(reactant, (b,), reagent_types, out, work, budget)
+        if not ok:
+            return tuple(sorted(out.values(), key=lambda e: e.digest)), False
     return tuple(sorted(out.values(), key=lambda e: e.digest)), True
 
 

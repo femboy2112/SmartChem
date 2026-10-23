@@ -36,7 +36,9 @@ from dataclasses import dataclass, field
 
 from .category import Config, ConservationError, Molecule, Reaction
 from .contracts import Digestible
-from .diels_alder import _NEUTRAL_VALENCE, _match_signature, _synthesis_center, independently_reconstructs
+from .diels_alder import (
+    _NEUTRAL_VALENCE, _match_signature, _synthesis_center, independently_reconstructs, is_closed_shell_neutral,
+)
 from .reaction_center import ReactionCenter
 from .rule_calculus import BondGraph, BondRule, Edge, RewriteWitness, RuleError, enumerate_matches, verify
 from .rule_calculus_bridge import _config, _joined, valence_sane
@@ -254,6 +256,8 @@ def _reactant_rewrites_to(family: _SigmatropicFamily, reactant: Molecule, produc
     fabricated isomer that merely balances mass (every isomer balances mass -- the certificate is load-bearing)."""
     if len(products) != 1:
         return False
+    if not (is_closed_shell_neutral(reactant) and all(is_closed_shell_neutral(p) for p in products)):
+        return False  # #132 hardening: a radical / charged / ylide isomer is not a sigmatropic/electrocyclic species
     want = Config.of(*products)
     for isomer in sigmatropic_rewrites(family, reactant, budget=100000):
         if Config.of(isomer) == want:

@@ -1,4 +1,9 @@
-# SmartChem Architecture (current — 0.9.5)
+# SmartChem Architecture (current — 1.1.0a1 dev; 1.0.0 released)
+
+> Status: **1.0.0 is released** (tag `v1.0.0`); active development is **1.1.0a1** on
+> `feat/chemical-graph-projections` (PR #101). The architecture below is stable across the 1.x series —
+> the compatibility contract is [`COMPATIBILITY.md`](../COMPATIBILITY.md); the post-1.0 plan is
+> [`docs/research/V1_5_RELEASE_PROGRAM.md`](research/V1_5_RELEASE_PROGRAM.md).
 
 A map for reviewing 1.x changes: what each stage owns, what identity it stamps, how it fails, and what "complete"
 means there. History lives in `docs/research/`; this page describes only what the code does today. The stability

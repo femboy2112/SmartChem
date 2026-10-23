@@ -96,17 +96,19 @@ def test_the_center_is_digest_invisible_and_round_trips_through_replay():
     assert step.digest == replayed.digest
 
 
-def test_a_centreless_payload_reconstructs_but_now_fails_closed():
-    # TAMPER-HARDENING-01: an old / nulled-centre payload must still RECONSTRUCT, but recognition no longer falls
-    # back to the whole-molecule census -- a centre-less step is DEMOTED (fail-closed).  This is the polarity that
-    # shuts the R59 fiction tamper channel: a serialized replay whose ``reaction_center`` was stripped can only cost
-    # a vouch (false-UNRECOGNIZED, safe), never mint one (false-VOUCH).
+def test_a_centreless_payload_reconstructs_and_is_recognized_content_deterministically():
+    # ISSUE-126 Phase II: an old / nulled-centre payload still RECONSTRUCTS, and recognition of the condensation
+    # classes RE-DERIVES locality from the molecules rather than reading the (forgeable) carried centre -- so a
+    # genuine etherification is recognized whether or not it carries a centre (CONTENT-DETERMINISM: live == replay).
+    # Nulling the centre can only ever demote a FICTION (the re-derivation cannot reach it), never mint a false-vouch,
+    # so the fiction tamper channel stays shut by the re-derivation itself, not by a centre-presence requirement.
     step = _one("COC", ["CO", "CO"])
     payload = _step_to_payload(step)
-    del payload["reaction_center"]                     # simulate a pre-R58 / tampered replay envelope
+    del payload["reaction_center"]                     # simulate a pre-R58 / tampered (centre-nulled) replay envelope
     revived = _step_from_payload(payload)
     assert revived.reaction_center is None
-    assert recognize_reaction_type(revived) is None    # no census fallback -> demoted
+    assert recognize_reaction_type(revived) == recognize_reaction_type(step)   # live == replay (centre-independent)
+    assert recognize_reaction_type(revived) is not None                        # genuine ether re-derived + vouched
 
 
 def test_the_hand_built_bundled_fake_is_still_demoted_when_centreless():

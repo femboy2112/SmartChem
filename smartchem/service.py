@@ -4763,7 +4763,11 @@ def _step_from_payload(payload) -> "object":
         tuple(_molecule_from_payload(m) for m in payload["products"]),
         tuple(_molecule_from_payload(m) for m in payload["reagents"]),
         _condition_envelope_from_payload(payload["envelope"]),
-        center,
+        center,  # ADVISORY metadata only (ISSUE-126 Phase II): the oracle re-derives locality from the step's own
+        # molecules and never reads this carried centre, so the deserialized centre needs no "trust" to be sound --
+        # recognition on reload is content-deterministic and identical to the live route's.  The replay subsystem's
+        # own _check_verified_admission (``step.reaction_center not in centres``) remains an independent coherence
+        # check on the carried algebra; it is unrelated to the oracle's vouch decision.
     )
 
 

@@ -795,36 +795,35 @@ def test_d26_2_t2_a_consistent_deletion_loads_without_reexecution_and_is_refused
             response_from_payload(payload, require_reexecution=True, **_pins(resp.request))
 
 
-def test_d26_2_t5_a_re_centred_step_demoting_under_the_same_route_digest_is_refused_on_every_load():
-    """T5 / D26.4: ``reaction_center`` is compare=False (outside route.digest) yet feeds readiness. Re-centring the
-    REACTION_VOUCHED methyl-acetate route and honestly re-deriving its readiness + capability DEMOTES it under the SAME
-    route digest; on adf06ae it loaded under every pin (the then-stated D26.4 boundary) and only ``require_reexecution``
-    refused it. X-high D29.1 closes the boundary: the centre must be one the carried algebra assigns."""
-    from smartchem.capability.assess import assess as assess_capability
-    from smartchem.capability.requirements import compile_capability_requirements
-
+def test_d26_2_t5_a_re_centred_step_under_the_same_route_digest_is_refused_on_every_load():
+    """T5 / D29.1: ``reaction_center`` is compare=False (outside route.digest).  ISSUE-126 Phase II makes it ADVISORY
+    -- recognition and readiness RE-DERIVE from the molecules and IGNORE the carried centre, so re-centring a step no
+    longer demotes its readiness (content-determinism; a forged centre can never change a vouch).  What the D29.1
+    admission check still enforces, INDEPENDENTLY of the oracle, is that the centre be one the carried algebra assigns
+    to the step's transform: a re-centred replay (an ``n_components`` the algebra never emits) is REFUSED on every
+    load.  On adf06ae the centre fed readiness and only ``require_reexecution`` refused it; X-high D29.1 refuses it
+    everywhere, and ISSUE-126 Phase II additionally removes the readiness coupling the old boundary rested on."""
     resp = _run("poor-man")
     new = []
-    demoted = 0
+    recentred = 0
     for d in resp.ranked_route_dossiers:
         replay = copy.deepcopy(d.replay_payload)
         centred = [i for i, step in enumerate(replay) if step.get("reaction_center")]
         if d.readiness.tier != "FORMAL_CANDIDATE" and centred:
-            replay[centred[0]]["reaction_center"]["n_components"] = 2
+            replay[centred[0]]["reaction_center"]["n_components"] = 2        # a centre the carried algebra never assigns
             route = _reconstruct_route(replay)
-            assert route.digest == d.route_digest
-            ready = evaluate_route(route, identity_losses=resp.identity_losses)
-            assert tier_rank(ready.tier) < tier_rank(d.readiness.tier)            # a DEMOTION, same route digest
-            demoted += 1
-            d = dc.replace(d, readiness=ready, replay_payload=replay, capability_assessment=assess_capability(
-                resp.request.capability_profile, compile_capability_requirements(route), ready))
+            assert route.digest == d.route_digest                           # the centre stays outside route identity ...
+            # ... and re-deriving readiness from the re-centred replay yields the SAME tier (content-determinism):
+            assert evaluate_route(route, identity_losses=resp.identity_losses).tier == d.readiness.tier
+            recentred += 1
+            d = dc.replace(d, replay_payload=replay)
         new.append(d)
-    assert demoted
+    assert recentred
     routes_ = tuple(_reconstruct_route(d.replay_payload) for d in new)
     frontier = svc._affordability_frontier(routes_, tuple(new))
     payload = response_to_payload(_bypass(resp, ranked_route_dossiers=tuple(new), affordability_frontier=frontier))
-    # the D26.4 boundary CLOSED by X-high D29.1: the centre stays outside route.digest, but it is now one the carried
-    # algebra assigns to the step's transform -- refused on every load, not only under re-execution
+    # D29.1: the centre stays outside route.digest, but it must be one the carried algebra assigns to the step's
+    # transform -- a re-centred replay is refused on every load, independent of the oracle's (unchanged) vouch.
     for kw in (dict(require_verified_admission=True), dict(require_reexecution=True)):
         with pytest.raises(ValueError, match=r"re-centred replay; refused \(D29\.1\)"):
             response_from_payload(copy.deepcopy(payload), **kw, **_pins(resp.request))

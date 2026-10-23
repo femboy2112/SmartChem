@@ -69,7 +69,12 @@ import experiments.poor_man_etherification_recognizer_probe as p57
 import experiments.poor_man_span_local_recognizer_probe as p58
 import experiments.poor_man_n_methylation_recognizer_probe as p60
 
-FROZEN_HASH = "8cdb03a6c3134e00fc6c1e901fc0a084b477f26c1737c272ef735d6ad35596ad"
+# ISSUE-126 Phase II UPDATE (hash re-frozen 8cdb03a6 -> 51cd9f22).  The retired trusted-centre gate is replaced by an
+# independent single-cut RE-DERIVATION of the elementary condensation from the molecules, so recognition is content-
+# deterministic: ``centre_absent_is_rederived`` now measures a genuine centre-less N-alkylation being VOUCHED (and
+# agreeing with its engine-derived centre-carrying twin), where it formerly measured a centre-less step failing closed.
+# The vouch set is otherwise unchanged (0 C-C false-vouch, caffeine kept, kills demote); only the centre-absent cell moved.
+FROZEN_HASH = "51cd9f22f4abe2ee2667de3316b3e22c16d51781269c259f9d5a771a9ad23819"
 
 _NA = "N-alkylation"
 
@@ -279,20 +284,25 @@ def positive_control() -> dict:
 # --------------------------------------------------------------------------------------------------
 # (8) CENTRE-ABSENT FAILS CLOSED (TAMPER-HARDENING-01): a centre-less N-alkylation-shaped step DEMOTES.
 # --------------------------------------------------------------------------------------------------
-def centre_absent_fails_closed() -> dict:
-    # a genuine-looking N-alkylation as a hand-built (centre-less) step: the census would pass, but no centre -> BLOCK.
-    step = _hand_step(["Nc1ccccc1", "CCO"], ["CCNc1ccccc1", "water"], "CCNc1ccccc1")
-    census = _n_alkylation_shape_and_net_change(step)
+def centre_absent_is_rederived() -> dict:
+    # ISSUE-126 Phase II: a genuine centre-less N-alkylation is RE-DERIVED from the molecules and vouched -- recognition
+    # reads no forgeable supplied centre, so the hand-built (centre-less) and the engine-derived (centre-carrying) twin
+    # of the SAME reaction agree (content-determinism).  The bundled/fiction false-vouch direction is pinned by the
+    # soundness probe (0 C-C false-vouch) and the lactide/R55 controls; centre-absence can only ever demote a fiction.
+    centreless = _hand_step(["Nc1ccccc1", "CCO"], ["CCNc1ccccc1", "water"], "CCNc1ccccc1")   # aniline + ethanol
+    centred = _derive_step("CCNc1ccccc1", ["Nc1ccccc1", "CCO"])                              # engine-derived twin
+    census = _n_alkylation_shape_and_net_change(centreless)
 
     class _R:
-        steps = (step,)
+        steps = (centreless,)
 
     return {
-        "reaction_center_is_none": step.reaction_center is None,
+        "reaction_center_is_none": centreless.reaction_center is None,
         "census_would_pass": bool(census),
-        "recognized_class": recognize_reaction_type(step),
-        "demoted": recognize_reaction_type(step) is None,
-        "route_blocked": bool(route_reaction_type_blockers(_R())),
+        "recognized_class": recognize_reaction_type(centreless),
+        "genuine_centreless_vouched": recognize_reaction_type(centreless) is not None,
+        "centred_and_centreless_agree": recognize_reaction_type(centreless) == recognize_reaction_type(centred),
+        "route_unblocked": not bool(route_reaction_type_blockers(_R())),
     }
 
 
@@ -356,7 +366,7 @@ def _payload() -> dict:
     scope = broad_scope()
     census = donor_census_separates()
     pc = positive_control()
-    caf = centre_absent_fails_closed()
+    caf = centre_absent_is_rederived()
     ups = upstream_probes()
     fc = fail_closed_and_disposition()
     return {
@@ -369,14 +379,15 @@ def _payload() -> dict:
         "broad_scope": scope,
         "donor_census_separates": census,
         "positive_control": pc,
-        "centre_absent_fails_closed": caf,
+        "centre_absent_is_rederived": caf,
         "upstream_probes": ups,
         "fail_closed_and_disposition": fc,
         # THE VERDICT: R63 grows the whitelist by generalising N-methylation to N-alkylation onto any non-carbonyl N
         # nucleophile by any alkyl alcohol.  It SERVES the general consumer (a longer-alcohol alkylation now vouched),
         # is SOUND (0 C-C false-VOUCH + both adversary kills demote + amide N disjoint), ADMITS azole N (caffeine
-        # kept) while the aryl-amination fake stays demoted, positively recognizes real N-alkylations, fails closed on
-        # an absent centre, leaves R56/R57/R58/R60 frozen, and is fail-closed + disposition-honest.
+        # kept) while the aryl-amination fake stays demoted, positively recognizes real N-alkylations, RE-DERIVES a
+        # centre-less step content-deterministically (ISSUE-126 Phase II), leaves R56/R57/R58/R60 frozen, and is
+        # fail-closed + disposition-honest.
         "ship_verdict": (
             consumer["served"]
             and sc["cc_false_vouch_count"] == 0
@@ -389,7 +400,8 @@ def _payload() -> dict:
             and scope["all_amide_demoted"]
             and all(census.values())
             and pc["all_recognized"]
-            and caf["reaction_center_is_none"] and caf["demoted"] and caf["route_blocked"]
+            and caf["reaction_center_is_none"] and caf["genuine_centreless_vouched"]
+            and caf["centred_and_centreless_agree"] and caf["route_unblocked"]
             and all(ups.values())
             and fc["no_crash_on_raising_recognizer"] and fc["fake_still_demoted"] and fc["disposition_honest"]
         ),
@@ -405,7 +417,8 @@ def validate() -> bool:
     longer-alcohol alkylation now vouched), the oracle is SOUND (0 C-C false-VOUCH across the frontier AND both
     adversary kills demote -- masked-carbonyl donors, and the aryl-amination fake -- while amide N stays disjoint),
     azole N-alkylation is ADMITTED (caffeine vouched), real N-alkylations are positively recognized, a centre-less
-    step fails closed, R56/R57/R58/R60 stay frozen, and the demoter is fail-closed + disposition-honest."""
+    step is RE-DERIVED content-deterministically (ISSUE-126 Phase II), R56/R57/R58/R60 stay frozen, and the demoter
+    is fail-closed + disposition-honest."""
     p = _payload()
     assert p["consumer_served"]["served"], f"consumer not served: {p['consumer_served']}"
     sc = p["soundness_and_coverage"]
@@ -422,9 +435,10 @@ def validate() -> bool:
     assert scope["all_amide_demoted"], f"an amide N was mis-vouched (not disjoint from acyl): {scope}"
     assert all(p["donor_census_separates"].values()), f"donor census failed to unit-separate: {p['donor_census_separates']}"
     assert p["positive_control"]["all_recognized"], f"a real N-alkylation not recognized: {p['positive_control']}"
-    caf = p["centre_absent_fails_closed"]
-    assert caf["reaction_center_is_none"] and caf["demoted"] and caf["route_blocked"], \
-        f"centre-absent step did not fail closed: {caf}"
+    caf = p["centre_absent_is_rederived"]
+    assert caf["reaction_center_is_none"] and caf["genuine_centreless_vouched"] \
+        and caf["centred_and_centreless_agree"] and caf["route_unblocked"], \
+        f"centre-absent step not re-derived content-deterministically: {caf}"
     assert all(p["upstream_probes"].values()), f"an upstream probe/class regressed: {p['upstream_probes']}"
     fc = p["fail_closed_and_disposition"]
     assert fc["no_crash_on_raising_recognizer"] and fc["fake_still_demoted"] and fc["disposition_honest"], \

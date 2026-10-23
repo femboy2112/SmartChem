@@ -1,0 +1,33 @@
+case             DB        |    pH_ph |   noPair     dpH cls      | withPair     dpH cls      |  closed  NaAc%
+--------------------------------------------------------------------------------------------------------------
+C1               minteq.v4 |   6.9985 |   7.0000  0.0015 AGREE    |   7.0000  0.0015 AGREE    |  0.0000    0.0
+C1               llnl      |   7.0081 |   7.0000  0.0081 AGREE    |   7.0000  0.0081 AGREE    |  0.0000    0.0
+C2               minteq.v4 |   2.8808 |   2.8815  0.0006 AGREE    |   2.8815  0.0006 AGREE    |  0.0000    0.0
+C2               llnl      |   2.8886 |   2.8815  0.0071 AGREE    |   2.8815  0.0071 AGREE    |  0.0000    0.0
+C3               minteq.v4 |   4.6630 |   4.6720  0.0090 AGREE    |   4.6633  0.0002 AGREE    |  0.0087    1.1
+C3               llnl      |   4.6773 |   4.6720  0.0053 AGREE    |   4.6633  0.0140 AGREE    | -0.0087    1.1
+C4               minteq.v4 |   8.7586 |   8.7715  0.0129 AGREE    |   8.7644  0.0057 AGREE    |  0.0071    3.8
+C4               llnl      |   8.7732 |   8.7715  0.0017 AGREE    |   8.7644  0.0088 AGREE    | -0.0071    3.8
+C5               minteq.v4 |   9.0177 |   9.0695  0.0517 DIVERGE  |   9.0406  0.0229 MARGINAL |  0.0288   12.2
+C5               llnl      |   9.0168 |   9.0695  0.0527 DIVERGE  |   9.0406  0.0238 MARGINAL |  0.0288   12.2
+G_CT0.001_Na0    minteq.v4 |   3.9069 |   3.9076  0.0007 AGREE    |   3.9076  0.0007 AGREE    |  0.0000    0.0
+G_CT0.001_Na0    llnl      |   3.9146 |   3.9076  0.0071 AGREE    |   3.9076  0.0071 AGREE    |  0.0000    0.0
+G_CT0.001_Nahalf minteq.v4 |   4.7754 |   4.7756  0.0002 AGREE    |   4.7755  0.0001 AGREE    |  0.0001    0.0
+G_CT0.001_Nahalf llnl      |   4.7897 |   4.7756  0.0141 AGREE    |   4.7755  0.0142 AGREE    | -0.0001    0.0
+G_CT0.001_Naone  minteq.v4 |   7.8659 |   7.8669  0.0011 AGREE    |   7.8668  0.0009 AGREE    |  0.0001    0.1
+G_CT0.001_Naone  llnl      |   7.8823 |   7.8669  0.0153 AGREE    |   7.8668  0.0155 AGREE    | -0.0001    0.1
+G_CT0.01_Na0     minteq.v4 |   3.3871 |   3.3878  0.0006 AGREE    |   3.3878  0.0006 AGREE    |  0.0000    0.0
+G_CT0.01_Na0     llnl      |   3.3951 |   3.3878  0.0073 AGREE    |   3.3878  0.0073 AGREE    |  0.0000    0.0
+G_CT0.01_Nahalf  minteq.v4 |   4.7263 |   4.7276  0.0013 AGREE    |   4.7264  0.0001 AGREE    |  0.0012    0.1
+G_CT0.01_Nahalf  llnl      |   4.7415 |   4.7276  0.0139 AGREE    |   4.7264  0.0151 AGREE    | -0.0012    0.1
+G_CT0.01_Naone   minteq.v4 |   8.3317 |   8.3341  0.0024 AGREE    |   8.3331  0.0014 AGREE    |  0.0011    0.5
+G_CT0.01_Naone   llnl      |   8.3482 |   8.3341  0.0141 AGREE    |   8.3331  0.0151 AGREE    | -0.0011    0.5
+G_CT0.1_Na0      minteq.v4 |   2.8808 |   2.8815  0.0006 AGREE    |   2.8815  0.0006 AGREE    |  0.0000    0.0
+G_CT0.1_Na0      llnl      |   2.8886 |   2.8815  0.0071 AGREE    |   2.8815  0.0071 AGREE    |  0.0000    0.0
+G_CT0.1_Nahalf   minteq.v4 |   4.6630 |   4.6720  0.0090 AGREE    |   4.6633  0.0002 AGREE    |  0.0087    1.1
+G_CT0.1_Nahalf   llnl      |   4.6773 |   4.6720  0.0053 AGREE    |   4.6633  0.0140 AGREE    | -0.0087    1.1
+G_CT0.1_Naone    minteq.v4 |   8.7586 |   8.7715  0.0129 AGREE    |   8.7644  0.0057 AGREE    |  0.0071    3.8
+G_CT0.1_Naone    llnl      |   8.7732 |   8.7715  0.0017 AGREE    |   8.7644  0.0088 AGREE    | -0.0071    3.8
+
+wrote ion_pair_comparison.json (28 rows)
+HEADLINE: worst |dpH| no-pair = 0.0527 (2 DIVERGE) -> with-pair = 0.0238 (0 DIVERGE)

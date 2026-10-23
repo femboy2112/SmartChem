@@ -17,6 +17,7 @@ default promotion, if earned, is a separate auditable commit.
 """
 from __future__ import annotations
 
+from .bond_order_edit import BondOrderEditProvider
 from .diels_alder import (
     AlkyneDielsAlderProvider,
     AzaDieneDielsAlderProvider,
@@ -99,6 +100,24 @@ ALGEBRA_PROFILES: "dict[str, TransformProviderRegistry]" = {
     "certified-decompile-v07": TransformProviderRegistry(
         (HeterolyticScissionProvider(), RedoxHalfReactionProvider())
     ),
+    # CHEM-ALG-01 #114: the capped-scission base + the partial bond-order-edit (de/hydrogenation) family, so the
+    # synthesis-direction hydrogenation route ``precursor + H2 -> reactant`` becomes REACHABLE under an opt-in
+    # algebra.  A clean SUPERSET of the default: every capped route this profile also finds, PLUS the bond-order
+    # family (it is exactly the ``EXT`` registry tests/test_bond_order_edit.py already exercises, now a named,
+    # selectable, reviewed profile).  Coherent for all three ProviderUses (both members support all three), so it
+    # serves route, DAG and decompile searches.
+    #
+    # HONESTY BOUNDARY (bond_order_edit.py:222-223): the bond-order-edit family has NO reaction-type oracle
+    # recognizer, so a hydrogenation route it generates is GENERATED-BUT-DEMOTED -- the readiness layer marks it
+    # ``FORMAL_CANDIDATE`` / "unrecognized", never VOUCHED.  That is the sound behaviour, not a gap: this profile
+    # delivers REACHABILITY (W1/W3), and readiness correctly withholds a reaction vouch absent a recognizer (the
+    # same state the paracetamol-via-Ac2O route held before #110's recognizer graduated it).  Graduating these
+    # routes to REACTION_VOUCHED is a separate, adversary-gated recognizer task (deferred; see V1_5_RELEASE_PROGRAM).
+    #
+    # OPT-IN: this is NOT a default.  DEFAULT_ALGEBRA_PROFILE, LEGACY_MISSING_ALGEBRA_PROFILE,
+    # DEFAULT_ROUTE_ALGEBRA_PROFILE and DEFAULT_TRANSFORM_REGISTRY are all untouched; a default request behaves
+    # byte-for-byte as before.  A default promotion, if ever earned, is a separate auditable commit.
+    "bond-order-edit-v1": TransformProviderRegistry((CappedScissionProvider(), BondOrderEditProvider())),
 }
 
 

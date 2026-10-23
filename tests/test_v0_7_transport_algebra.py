@@ -77,7 +77,11 @@ def test_the_default_algebra_still_serves_all_three_consumers():
 
 # -- the closed profile registry (Course-Correction 2) ----------------------------------------------------------
 def test_profile_registry_is_closed_and_legacy_matches_the_default():
-    assert set(algebra_profile_ids()) == {"legacy-capped-v1", "certified-route-v07", "certified-decompile-v07"}
+    # "bond-order-edit-v1" is the #114 opt-in de/hydrogenation algebra (capped base + bond-order-edit); it is a
+    # profile ADDITION, not a default change -- the three default constants below stay exactly as they were.
+    assert set(algebra_profile_ids()) == {
+        "legacy-capped-v1", "certified-route-v07", "certified-decompile-v07", "bond-order-edit-v1"
+    }
     assert DEFAULT_ALGEBRA_PROFILE == "legacy-capped-v1"
     legacy = resolve_algebra_profile("legacy-capped-v1")
     assert legacy.provider_ids == DEFAULT_TRANSFORM_REGISTRY.provider_ids

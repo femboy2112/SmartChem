@@ -18,11 +18,13 @@ import math
 
 import pytest
 
+from experiments.sandbox_foundation import aqueous_equilibrium as aqmod
 from experiments.sandbox_foundation.aqueous_equilibrium import (
-    AGREEMENT_RTOL, C_REF, DAVIES_A_25C, DAVIES_I_MAX, EXTERNAL_VALIDATION_UNAVAILABLE, KA_ACETIC_25C, KW_25C,
-    NUMERICALLY_UNVERIFIED, OUT_OF_SOURCE_DOMAIN, SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL, SOLVED_WITHIN_IDEAL_MODEL,
-    SOURCE_T_K, SOURCE_T_TOL_K, VERDICTS, AcetateWaterSystem, NumericalVerificationError, OutOfSourceDomainError,
-    SourcedConstant, _verify_admission, reaktoro_benchmark_obligation, solve)
+    AGREEMENT_RTOL, BENCHMARK_AGREEMENT_I_MAX, BEYOND_BENCHMARK_CAVEAT, C_REF, DAVIES_A_25C, DAVIES_I_MAX,
+    EXTERNAL_VALIDATION_UNAVAILABLE, KA_ACETIC_25C, KW_25C, NUMERICALLY_UNVERIFIED, OUT_OF_SOURCE_DOMAIN,
+    SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL, SOLVED_WITHIN_IDEAL_MODEL, SOURCE_T_K, SOURCE_T_TOL_K, VERDICTS,
+    AcetateWaterSystem, NumericalVerificationError, OutOfSourceDomainError, SourcedConstant, _is_molar_standard_state,
+    _verify_admission, reaktoro_benchmark_obligation, solve)
 from experiments.sandbox_foundation.twocell import InvalidParameterError
 
 
@@ -256,3 +258,63 @@ def test_negative_inputs_are_refused():
     for kw in (dict(total_acetic_M=-0.1), dict(total_acetic_M=0.1, sodium_M=-0.01)):
         with pytest.raises(InvalidParameterError):
             AcetateWaterSystem(**kw)
+
+
+# ================================================================================================================
+# Wave A follow-up (evil-morty + PHREEQC honesty defects) -- three claim-honesty repairs, each red-first.
+# ================================================================================================================
+
+# ---- follow-up #1: the header must DISCLOSE the molal-A / molar-I approximation, not deny it -------------------
+def test_followup1_header_discloses_the_molal_A_molar_I_approximation_honestly():
+    # RED on Wave A: its header falsely claimed it "does not silently mix a molal Davies coefficient with a molar
+    # ionic strength".  It does mix them (DAVIES_A_25C.units is molal, applied to a molar ionic strength); the fix
+    # is to state the rho~1 approximation honestly, not to pretend it was removed.
+    doc = aqmod.__doc__.lower()
+    assert "does not silently mix" not in aqmod.__doc__      # the over-claim is gone
+    assert "molal" in doc and "rho" in doc                   # the approximation is named ...
+    assert "ion pair" in doc                                 # ... and the ion-pairing scope limit documented (#3a)
+    # and the coefficient itself really is molal, so the disclosure is not theatre:
+    assert "kg" in DAVIES_A_25C.units and "/l" not in DAVIES_A_25C.units.lower()
+
+
+# ---- follow-up #2: the standard-state units guard is an allowlist/blocklist, correct in BOTH directions --------
+def test_followup2_real_molar_spellings_are_accepted():
+    # RED on Wave A: only the literal word "molar" passed, so these correctly-labelled molar spellings were REFUSED.
+    for units in ("mol/L", "mol dm^-3", "mol/dm^3", "M", "molar (ideal reference)", "mol L^-1"):
+        assert _is_molar_standard_state(units), units
+        good_Ka = SourcedConstant("Ka", 1.75e-5, 1.0e-6, units, 298.15, "a correctly-labelled molar table")
+        AcetateWaterSystem(0.1, Ka=good_Ka)                  # constructs: a valid molar spelling is accepted
+
+
+def test_followup2_molal_string_containing_the_substring_molar_is_still_refused():
+    # RED on Wave A: substring test accepted this because it contains "molar"; the blocklist must veto on "mol/kg".
+    for units in ("molar-labelled but mol/kg molal", "mol/kg (molal)", "mol kg^-1", "molality m (mol per kg)"):
+        assert not _is_molar_standard_state(units), units
+        molal_Ka = SourcedConstant("Ka", 1.75e-5, 1.0e-6, units, 298.15, "a molal table wearing a molar label")
+        with pytest.raises(InvalidParameterError):
+            AcetateWaterSystem(0.1, Ka=molal_Ka)
+
+
+# ---- follow-up #3: the demonstrated benchmark-agreement domain is distinct from the Davies validity domain -----
+def test_followup3_benchmark_domain_is_strictly_inside_the_davies_domain():
+    assert BENCHMARK_AGREEMENT_I_MAX == 0.1                  # the demonstrated PHREEQC-agreement domain is DECLARED
+    assert BENCHMARK_AGREEMENT_I_MAX < DAVIES_I_MAX          # ... and strictly inside the Davies validity domain
+
+
+def test_followup3_result_beyond_benchmark_domain_carries_the_caveat_but_still_solves():
+    # RED on Wave A: no `caveats` field existed; a davies result at I ~ 0.45 (past the ~0.1 M PHREEQC-agreement
+    # domain, where the omitted NaAc ion pair drives |dpH| ~ 0.052) was presented as a bare, unqualified SOLVED.
+    r = solve(AcetateWaterSystem(0.7, sodium_M=0.45, activity_model="davies"))
+    assert r.ionic_strength_M > BENCHMARK_AGREEMENT_I_MAX
+    assert r.ionic_strength_M <= DAVIES_I_MAX                # still inside Davies validity, so it legitimately solves
+    assert r.verdict == SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL
+    assert BEYOND_BENCHMARK_CAVEAT in r.caveats              # ... but it is NOT presented as independently benchmarked
+    assert "ion pair" in BEYOND_BENCHMARK_CAVEAT.lower() and "benchmark" in BEYOND_BENCHMARK_CAVEAT.lower()
+
+
+def test_followup3_result_inside_benchmark_domain_has_no_caveat():
+    # a davies result at I ~ 0.05 is inside the demonstrated agreement domain -> no qualifier, clean SOLVED.
+    r = solve(AcetateWaterSystem(0.1, sodium_M=0.05, activity_model="davies"))
+    assert r.ionic_strength_M <= BENCHMARK_AGREEMENT_I_MAX
+    assert r.verdict == SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL
+    assert r.caveats == ()

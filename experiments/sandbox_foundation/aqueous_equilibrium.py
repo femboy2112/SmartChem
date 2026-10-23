@@ -12,8 +12,13 @@ have).  Four things were quietly lying and have been cut out:
     We now distinguish p[H] (concentration) from pH_activity, declare the reference concentration c_ref explicitly,
     and in a nonideal model the PRIMARY pH is the activity value.  This is a molarity approximation to the
     molality/activity definition with a declared reference concentration -- it does NOT claim exact thermodynamic
-    authority, and it does not silently mix a molal Davies coefficient with a molar ionic strength while calling
-    the result exact.
+    authority.  And one approximation it DOES make is now disclosed rather than denied: the Davies coefficient A is
+    a molal quantity (kg^1/2 mol^-1/2) and it is applied to an ionic strength carried in molar units (mol/L).  That
+    molal-A / molar-I mix is NOT removed -- for dilute aqueous solution the solvent density rho ~ 1 kg/L so molar ~
+    molal and the discrepancy is second-order, which is why the Davies result is honestly flagged
+    SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL and never called exact.  (An earlier draft of this header wrongly claimed
+    the mix had been eliminated; it had not, and pretending otherwise was itself the kind of over-claim this file
+    exists to stamp out.)
   * the 25 C source-temperature restriction only fired for the Davies branch -- ideal mode silently reused 25 C
     Ka/Kw at any temperature.  The restriction is a property of the SOURCED DATA, not of a rendering toggle, so it
     is now enforced for EVERY activity model.
@@ -53,10 +58,21 @@ INDEPENDENT BENCHMARK: Reaktoro is named by the directive as the cross-tool.  It
 environment, so the independent cross-check verdict is permanently EXTERNAL_VALIDATION_UNAVAILABLE and the shipped
 "textbook anchors" are relabelled as equation/implementation VERIFICATION (they were computed from the SAME Ka and
 the SAME ideal approximation -- that is not independent experimental validation).
+
+SCOPE LIMITATION (Wave D, PHREEQC) -- ion pairing is OMITTED: the curated species set has no NaAc(aq) ion pair,
+which the PHREEQC minteq.v4 / llnl databases DO carry.  An independent PHREEQC benchmark agrees with this model's
+Davies activity pH to |dpH| <= 0.015 for ionic strength I <= 0.10 M, then drifts to |dpH| ~ 0.052 by I ~ 0.45 M.
+The cause is the MISSING ion pair, NOT Davies-equation breakdown (I = 0.5 M is the standard Davies limit, so the
+solver legitimately admits up to DAVIES_I_MAX).  Hence two DIFFERENT domains are kept distinct and both honoured:
+the Davies validity domain (DAVIES_I_MAX = 0.5 M, enforced by the admission gate) and the DEMONSTRATED
+independent-agreement domain (BENCHMARK_AGREEMENT_I_MAX ~ 0.1 M).  A result past the agreement domain still solves
+and still earns SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL, but it CARRIES a caveat (SpeciationResult.caveats) saying it
+is beyond the independently-benchmarked region and omits ion pairing.  No NaAc ion pair is fabricated to hide this.
 """
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -111,6 +127,33 @@ DAVIES_FIXED_POINT_TOL = 1e-12  # gamma self-consistency; the fixed point reache
 DAVIES_MAX_ITERS = 100          # the cap is NOT the convergence criterion -- falling through it => unverified
 DAVIES_I_MAX = 0.5              # mol/L; declared upper bound of Davies-equation validity.  Beyond this the model
 #   is out of its domain and the result is NUMERICALLY_UNVERIFIED rather than a quietly-extrapolated activity.
+BENCHMARK_AGREEMENT_I_MAX = 0.1  # mol/L; the DEMONSTRATED independent-benchmark (PHREEQC) agreement domain, where
+#   the Davies activity pH matched to |dpH| <= 0.015.  This is STRICTLY INSIDE DAVIES_I_MAX: the solver still admits
+#   up to 0.5 M, but past 0.1 M the agreement degrades (to ~0.052 pH by 0.45 M) because the NaAc ion pair is omitted,
+#   so a result out here is flagged "not independently benchmarked", NOT silently presented as corroborated.
+BEYOND_BENCHMARK_CAVEAT = (
+    "ionic strength exceeds the demonstrated independent-benchmark agreement domain "
+    "(I <= 0.1 M, |dpH| <= 0.015 vs PHREEQC); the NaAc(aq) ion pair is omitted from the species set, so out here the "
+    "activity pH is Davies-model-only and NOT independently benchmarked (PHREEQC drift reaches ~0.052 pH by 0.45 M)")
+
+# Accepted MOLAR standard-state spellings and the MOLAL tokens that disqualify a units string.  An explicit
+# allowlist/blocklist -- adequate for this curated, fixed species set -- replaces the old `"molar" in units` test,
+# which both wrongly ACCEPTED a molal string that merely contained the substring "molar" and wrongly REFUSED
+# correctly-labelled molar spellings like "mol/L", "M", or "mol dm^-3".  Blocklist wins: a string carrying any molal
+# token is refused even if it also says "molar".
+_MOLAL_UNIT_TOKENS = ("molal", "mol/kg", "mol kg", "mol kg^-1", "mol kg-1", "/kg", "per kg", "mol.kg")
+_MOLAR_UNIT_SUBSTRINGS = ("mol/l", "mol l", "mol/dm", "mol dm", "mol.l", "molar", "molarity")
+
+
+def _is_molar_standard_state(units: str) -> bool:
+    """True iff `units` names a MOLAR (mol/L) standard state.  Molal/per-kg tokens veto first; then an explicit list
+    of molar spellings is accepted, plus the bare molar symbol 'M' as a standalone (case-sensitive) token."""
+    u = units.lower()
+    if any(tok in u for tok in _MOLAL_UNIT_TOKENS):
+        return False
+    if any(sp in u for sp in _MOLAR_UNIT_SUBSTRINGS):
+        return True
+    return re.search(r"\bM\b", units) is not None
 
 
 class OutOfSourceDomainError(InvalidParameterError):
@@ -235,9 +278,9 @@ def _require_constant_at_source_state(const: SourcedConstant, *, role: str) -> N
         raise OutOfSourceDomainError(
             f"the {role} constant is tabulated at {const.T_K} K but this system is anchored at {SOURCE_T_K} K; "
             f"refusing to use an off-temperature record")
-    if "molar" not in const.units.lower():
+    if not _is_molar_standard_state(const.units):
         raise InvalidParameterError(
-            f"the {role} constant units {const.units!r} do not declare the 'molar' concentration basis this model "
+            f"the {role} constant units {const.units!r} do not name the MOLAR (mol/L) standard state this model "
             f"solves in; refusing to silently mix standard states (e.g. a molal constant with molar ionic strength)")
 
 
@@ -283,6 +326,9 @@ class SpeciationResult:
     gamma_monovalent: float               # activity coefficient of a +/-1 ion (1.0 in the ideal model)
     charge_balance_residual: float        # |[Na+]+[H+]-[OH-]-[Ac-]| at the solution (must be ~0)
     davies_iterations: int                # fixed-point iterations actually taken (0 for ideal); transparency, not fluff
+    caveats: tuple = ()                   # honest qualifiers on an ADMITTED result (e.g. beyond the demonstrated
+    #   independent-benchmark domain / ion-pairing omitted).  Empty = no qualifier; the verdict is the claim, these
+    #   are the asterisks on it.  A result with the benchmark caveat is still SOLVED_*, just not corroborated out there.
 
 
 def _cubic_positive_root(Ka: float, Kw: float, C_T: float, Na: float) -> float:
@@ -429,13 +475,18 @@ def solve(system: AcetateWaterSystem, *, tol: float = DAVIES_FIXED_POINT_TOL) ->
     pH_concentration = -math.log10(h / c_ref)              # p[H]: a molarity number, honestly labelled
     pH_activity = -math.log10(gamma * h / c_ref)           # activity-based: the IUPAC-style value
     pH = pH_activity if system.activity_model == "davies" else pH_concentration
+    # admitted, but is it still inside the region an INDEPENDENT tool corroborated?  Beyond ~0.1 M the omitted NaAc
+    # ion pair matters (PHREEQC drift), so flag it -- the verdict stays SOLVED_*, the caveat does the honest work.
+    caveats = ()
+    if math.isfinite(ionic) and ionic > BENCHMARK_AGREEMENT_I_MAX:
+        caveats = (BEYOND_BENCHMARK_CAVEAT,)
     return SpeciationResult(
         pH=pH, pH_concentration=pH_concentration, pH_activity=pH_activity, c_ref_M=c_ref, verdict=verdict,
         h_plus_M=h, oh_minus_M=oh, hac_M=hac, ac_minus_M=ac,
         ionic_strength_M=ionic, activity_model=system.activity_model,
         solver_agreement_residual=abs(h1 - h2), gamma_monovalent=gamma,
         charge_balance_residual=abs(_charge_balance_residual(h, Ka_c, Kw_c, C_T, Na)),
-        davies_iterations=davies_iterations)
+        davies_iterations=davies_iterations, caveats=caveats)
 
 
 # --------------------------------------------------------------------------------- the independent-benchmark obligation

@@ -263,4 +263,10 @@ is an exact-SHA CI re-run on a pushed branch, which is held for explicit authori
 
 ## 15. Final SHA + CI
 
-(Filled at push time, under authorization.)
+Pushed 2026-10-23 under explicit user authorization — the single outward step of this round. Merge, tag, and release remain unauthorized.
+
+**A — feature branch.** `feat/chemical-graph-projections` advanced `1d67401 → 7ddb404` as a pure fast-forward (no force). Hosted CI run `39897481870` (event `pull_request`, head SHA `7ddb404`) concluded **success** — all 9 jobs green: `test (3.10)`, `test (3.12)`, `Sandbox foundation (experimental) (3.10)`, `Sandbox foundation (experimental) (3.12)`, `Wheel install matrix (3.10 / 3.11 / 3.12 / 3.13)`, `Optional PySCF backend (smoke)`.
+
+**B — production candidate.** `pr101/production-1-1-rc` @ `0dde33a` pushed as a new branch (no force). CI run `39897599474` (event `workflow_dispatch` — `ci.yml` auto-triggers only on push-to-`main` / any PR / dispatch, so a bare branch push needs the manual dispatch) concluded **success** — 7 jobs green: `test (3.10)`, `test (3.12)`, `Wheel install matrix (3.10 / 3.11 / 3.12 / 3.13)`, `Optional PySCF backend (smoke)`. The candidate carries no "Sandbox foundation" jobs: it is built from the production prefix that predates `experiments/sandbox_foundation/`, so its `ci.yml` never defined them. The 2-job difference from A is expected, not a gap.
+
+Prior pushed CI-green baseline: Round IV `1d67401`, run `39740729751`.

@@ -9,7 +9,7 @@ obligation.** Supersedes nothing: `V1_0_RELEASE_GATE.md` and the `v1.0.0` tag re
 |---|---|---|
 | `v1.0.0` (published release) | `8345bbb` | the stable 1.0 record; `git diff v1.0.0 -- smartchem/` vs `origin/main` is empty |
 | `origin/main` | `99fce34` | 5 commits past the tag, all docs/launch — semantically ≡ `v1.0.0` |
-| `feat/chemical-graph-projections` (PR #101, draft) | `34e1891` (#114) | this program's development branch (P0 + Waves A/B/C + CI OOM-fix + Wave D #114 at HEAD); `__version__ = 1.1.0a1` |
+| `feat/chemical-graph-projections` (PR #101, draft) | HEAD `1d67401`; production prefix `34e1891` (#114) **+ `cf3d942`** (#115) | development branch; `__version__ = 1.1.0a1`. Production 1.1 lane = `main..34e1891` + the single #115 commit `cf3d942` (**20th** class); everything after `34e1891` (bar `cf3d942`) is Round III/IV `experiments/sandbox_foundation/` + docs with ZERO `smartchem/` impact |
 
 ## 1. Scientific authority model (invariant across the whole 1.x series — never relaxed)
 
@@ -46,7 +46,7 @@ them says so.
   (phenol) deferred to #105. A second, independent adversarial pass found no false-vouch. `Verified` (bench 15/15,
   false-vouch 0; the three kills retained as permanent controls; CI required jobs green on `22ea54e`).
 * **#114 bond-order-edit (de/hydrogenation) family behind the opt-in `bond-order-edit-v1` profile** — a REACHABILITY
-  gain, **not** a 20th recognizer (the oracle count stays 19). The already-sound `BondOrderEditProvider` (raise one
+  gain, **not** a recognizer (#114 adds no oracle class — the count was 19 at #114; #115 later makes it 20). The already-sound `BondOrderEditProvider` (raise one
   heavy–heavy bond by one order, shed H₂; construction certificate + W1 descent) is now reachable through a NAMED,
   reviewed, selectable algebra profile (capped-scission base + bond-order-edit) instead of only a hand-built test
   registry. The synthesis-direction hydrogenation route `unsaturated + H₂ → saturated` becomes REACHABLE under the
@@ -56,6 +56,14 @@ them says so.
   (the state paracetamol-via-Ac₂O held before #110). An evil-morty pass (1,200+ steps, attribution-theft surface)
   plus an independent end-to-end sweep found 0 false-vouch, 0 internal-error leak, 0 default perturbation, 0 crash.
   `Verified` (profile test 32/32; bench reachable 4/4, false-vouch 0).
+* **#115 Claisen condensation (1,3-dicarbonyl) family** — the **20th** recognized class (`cf3d942`), the first
+  production-chemistry feature since Round II. Content-deterministic, mirroring #110/#111: shape + closed-shell
+  gates, a functional-type census, a single-cut capped re-derivation, and a load-bearing ORIENTATION witness (the
+  flipped acyl/α cap is the butanone fiction). **Problem-A type-validity ONLY**; the stoichiometric base / enolate
+  activation is Problem B (#107), deferred. no-false-VOUCH proven against the named fictions
+  (`tests/test_claisen_condensation_115.py`); the version-transition golden is UNMOVED (a pure MINOR coverage add,
+  no `semantic_digest` move, no default flip). `Verified` on branch (adversary-tested; honest boundary: empirical,
+  not a proof). **Oracle recognizer count 19 → 20.** Branch-only — NOT on `main`, NOT released.
 * **Typed chemical graph projection + named synthesis schemes** — DOT/Mermaid/SVG, offline HTML, optional
   RDKit depiction, route/DAG ensembles (#128/#129 family-naming + completeness honesty on the branch).
 * **Soundness fixes on the branch (OPEN on main — see §6):** #124 cyclic-refusal, #126 forged-centre retired,
@@ -65,8 +73,8 @@ them says so.
 
 | rung | theme | issues | owner modules | why this order |
 |---|---|---|---|---|
-| **1.1** (this branch) | graph workbench + first coverage wins | graph PR #101, #110, **#111**, **#114**, #124/#126/#128/#129/#131/#132 | `graph_projection`, `depiction`, `reaction_type_oracle`, `readiness`, `algebra_profiles` | highest return: a trustworthy workbench + two real recognition wins (18th/19th classes) + the first opt-in operator profile (#114) |
-| **1.2** | cheap RECOGNITION wins (no new generators) | ~~#111~~ (landed early on 1.1), #112 SN2, #115 Claisen-lock | `reaction_type_oracle` | recognition is cheaper + lower-risk than generation; max coverage per rule |
+| **1.1** (this branch) | graph workbench + first coverage wins | graph PR #101, #110, **#111**, **#115**, **#114**, #124/#126/#128/#129/#131/#132 | `graph_projection`, `depiction`, `reaction_type_oracle`, `readiness`, `algebra_profiles` | highest return: a trustworthy workbench + three real recognition wins (18th/19th/**20th** classes) + the first opt-in operator profile (#114) |
+| **1.2** | cheap RECOGNITION wins (no new generators) | ~~#111~~ (landed early on 1.1), #112 SN2, ~~#115 Claisen~~ (landed early on 1.1 as the 20th class) | `reaction_type_oracle` | recognition is cheaper + lower-risk than generation; max coverage per rule |
 | **1.3** | contained OPERATOR families w/ transformation certificates | ~~#114 hydrogenation~~ (landed early as the `bond-order-edit-v1` opt-in profile on 1.1), #116 elimination, #117 enolate C–C | `transform_provider`, `bond_order_edit` | each family ships a conservation + locality certificate, opt-in, no default-flip |
 | **1.4** | bounded SEARCH + sound lateral capability | #104 W1 redesign, #124/#125 arity, #123 opt-in finite lateral | `routes`, `lateral_search`, `structure_descent` | an opt-in, finite, SOUND lateral search; fusion into `search_routes` stays deferred |
 | **1.5** | evidence/capability hardening + release | #107 catalyst ledger, #109 latent-fiction audit | `catalyst_availability`, capability layer | consolidation; the 1.5 acceptance gates (§4) must all be green |
@@ -152,15 +160,16 @@ scripts/run_suite.sh
 * A complete bounded search is complete only within the declared grammar; absence of a route is never
   evidence of absence.
 
-## Issue-state reconciliation (2026-10-20, graceful-pivot round)
+## Issue-state reconciliation (2026-10-20, graceful-pivot round; **reconciled 2026-10-22** to the 20-class state — #115 added via `cf3d942`, branch HEAD `1d67401`)
 
-Checked against `git log main..HEAD` (branch HEAD `34e1891`; `main` = `99fce34`). Every "branch" row below is
+Checked against `git log main..HEAD` (branch HEAD now `1d67401`, Round IV; the production prefix is `34e1891` **+ `cf3d942`**; `main` = `99fce34`). Every "branch" row below is
 absent from `main`.
 
 | Issue | What | Where it landed | On `main`? |
 |---|---|---|---|
 | #110 | Activated acyl transfer (18th recognizer) | branch, `cb79877` (MINOR-boundary declaration `2f9bd11`) | No |
 | #111 | Alkyl sulfonate-ester transfer (19th recognizer) | branch, `22ea54e` | No |
+| #115 | Claisen condensation (20th recognizer) | branch, `cf3d942` | No |
 | #114 | Opt-in `bond-order-edit-v1` de/hydrogenation profile | branch, `34e1891` — a REACHABILITY gain, deliberately NOT a 20th recognizer (oracle count stays 19); the hydrogenation RECOGNITION gap stays open/deferred | No |
 | #105 | Per-atom formal charge (sound fix for `is_closed_shell_neutral` scope) | DEFERRED to 2.0 (`docs/research/V2_0_PHYSICAL_MECHANISM_CONTRACT.md`, being authored this round); branch only documents the scope (`415c5d5`) | No |
 | #130 | Configuration-aware identity | DEFERRED to 2.0 (same contract doc) | No |

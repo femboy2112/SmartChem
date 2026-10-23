@@ -318,3 +318,105 @@ def test_followup3_result_inside_benchmark_domain_has_no_caveat():
     assert r.ionic_strength_M <= BENCHMARK_AGREEMENT_I_MAX
     assert r.verdict == SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL
     assert r.caveats == ()
+
+
+# ================================================================================================================
+# Round VI "The Salt Bridge" -- the NaAc(aq) ion pair, OPT-IN (default off), closing the documented C5 divergence.
+# Red-first: the include_ion_pair path, the na_plus_M / naac_M result fields, and K_NAAC_ION_PAIR_25C do not yet
+# exist, so every assertion below fails on the current module.  The new names are referenced module-qualified
+# (aqmod.*) and via the new kwarg so that ONLY these tests go red, not the whole file's import.
+# ================================================================================================================
+
+# committed PHREEQC-with-pair reference pH at C5 (C_T=0.45, Na=0.45), molar-matched, from comparison_stdout.txt:
+_PHREEQC_C5_MINTEQ = 9.0177   # minteq.v4 (NaAc log_k -0.18, NIST46.4); the independent tool INCLUDES the ion pair
+
+
+def test_ion_pair_sourced_constant_carries_nist_provenance():
+    k = aqmod.K_NAAC_ION_PAIR_25C
+    assert k.status == "SOURCED" and k.value > 0 and k.uncertainty > 0 and k.source.strip()
+    assert abs(math.log10(k.value) - (-0.18)) < 0.01        # logK = -0.18 (K ~ 0.661 L/mol)
+    assert "nist" in k.source.lower() or "46" in k.source    # the NIST-selected (NIST46.4) lineage is cited
+
+
+def test_ion_pair_default_off_is_identical_to_the_base_model():
+    # the opt-in must not perturb the default: include_ion_pair defaults False, and an explicit False == omitting it.
+    base = solve(AcetateWaterSystem(0.1, sodium_M=0.05, activity_model="davies"))
+    off = solve(aqmod.AcetateWaterSystem(0.1, sodium_M=0.05, activity_model="davies", include_ion_pair=False))
+    assert base.pH == off.pH == pytest.approx(4.67201, abs=1e-5)   # the Wave A activity-pH pin is untouched
+
+
+def test_ion_pair_closes_the_pair_attributable_half_of_the_c5_divergence():
+    # The documented ~0.052 pH divergence vs PHREEQC-with-pair at C5 splits into the omitted-NaAc-pair effect (~half)
+    # and the Davies-vs-WATEQ-DH activity-model + molal/molar difference (~half), which the pair does NOT touch.
+    # Adding the pair must close the pair half: lower the pH toward PHREEQC and cut the gap by a clear margin.  We do
+    # NOT claim it reaches AGREE (0.02) -- that would require also matching PHREEQC's activity model (a different,
+    # unmade change).  Honest target: a clear majority of the pair-attributable part, pH lowered, a real pair formed.
+    no_pair = solve(AcetateWaterSystem(0.45, sodium_M=0.45, activity_model="davies"))
+    with_pair = solve(aqmod.AcetateWaterSystem(0.45, sodium_M=0.45, activity_model="davies", include_ion_pair=True))
+    gap_no = abs(no_pair.pH - _PHREEQC_C5_MINTEQ)
+    gap_with = abs(with_pair.pH - _PHREEQC_C5_MINTEQ)
+    assert gap_no > 0.045                                   # the documented omission (~0.052)
+    assert with_pair.pH < no_pair.pH                        # the pair lowers pH (locks free Ac- -> less hydrolysis)
+    assert gap_with < 0.65 * gap_no                         # a clear majority of the pair-attributable gap is closed
+    assert with_pair.naac_M > 0.0                           # a neutral NaAc population genuinely forms
+    assert with_pair.na_plus_M < 0.45                       # ... so free Na+ is below the total added sodium
+
+
+def test_ion_pair_sodium_and_acetate_mass_balances_both_close():
+    r = solve(aqmod.AcetateWaterSystem(0.45, sodium_M=0.45, activity_model="davies", include_ion_pair=True))
+    assert abs((r.na_plus_M + r.naac_M) - 0.45) <= 1e-9              # NEW: total sodium = free Na+ + paired NaAc
+    assert abs((r.hac_M + r.ac_minus_M + r.naac_M) - 0.45) <= 1e-9   # total acetate now includes the pair
+    # charge balance EXCLUDES the neutral pair: Na+ + H+ == OH- + Ac-
+    assert abs((r.na_plus_M + r.h_plus_M) - (r.oh_minus_M + r.ac_minus_M)) <= 1e-9
+
+
+def test_ion_pair_two_independent_routes_agree():
+    r = solve(aqmod.AcetateWaterSystem(0.45, sodium_M=0.45, activity_model="davies", include_ion_pair=True))
+    assert r.verdict == SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL
+    assert r.solver_agreement_residual <= AGREEMENT_RTOL * max(1.0, r.h_plus_M)   # two routes still cross-check
+
+
+def test_ion_pair_is_negligible_at_low_ionic_strength():
+    # at C3 (I ~ 0.05) only a few percent of Na is paired, so the pH barely moves off the base result.
+    base = solve(AcetateWaterSystem(0.1, sodium_M=0.05, activity_model="davies"))
+    with_pair = solve(aqmod.AcetateWaterSystem(0.1, sodium_M=0.05, activity_model="davies", include_ion_pair=True))
+    assert with_pair.pH <= base.pH + 1e-9                   # pair lowers pH (weakly) ...
+    assert (base.pH - with_pair.pH) < 0.02                  # ... but only slightly: still AGREE-scale at low I
+
+
+def test_ion_pair_admission_still_fails_closed_beyond_davies_domain():
+    # the opt-in path must inherit the same fail-closed admission: I > DAVIES_I_MAX is refused, not extrapolated.
+    with pytest.raises(NumericalVerificationError) as ei:
+        solve(aqmod.AcetateWaterSystem(0.6, sodium_M=0.6, activity_model="davies", include_ion_pair=True))
+    assert ei.value.verdict == NUMERICALLY_UNVERIFIED
+
+
+def test_ion_pair_admits_basic_excess_base_regime_no_route2_cancellation():
+    # RED (evil-morty Finding 1): Route 2's h_of_a used 0.5*(-b + sqrt(b^2 + 4*Kw_c)) with b = na_plus - a.  When the
+    # solution is basic (free Na+ > free Ac-, b > 0, b^2 >> 4*Kw_c) that subtracts two near-equal large numbers --
+    # catastrophic cancellation -- so route 2's [H+] carried a large relative error, the two routes disagreed past
+    # AGREEMENT_RTOL, and the pair path REFUSED every basic Na > C_T case the base model solves cleanly (exactly the
+    # excess-base regime where hydrolysis-suppressing pairing matters).  The cancellation-free conjugate branch
+    # 2*Kw_c/(b + sqrt(...)) for b > 0 fixes it: these must now ADMIT, with the two independent routes agreeing.
+    for CT, Na in [(0.1, 0.12), (0.1, 0.2), (0.1, 0.4), (0.2, 0.21), (0.45, 0.46)]:
+        base = solve(AcetateWaterSystem(CT, sodium_M=Na, activity_model="davies"))
+        assert base.verdict == SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL, (CT, Na)   # base always solved these
+        pair = solve(aqmod.AcetateWaterSystem(CT, sodium_M=Na, activity_model="davies", include_ion_pair=True))
+        assert pair.verdict == SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL, (CT, Na)   # pair must no longer refuse
+        assert pair.solver_agreement_residual <= AGREEMENT_RTOL * max(1.0, pair.h_plus_M)   # routes agree now
+        assert abs((pair.na_plus_M + pair.naac_M) - Na) <= 1e-8 * max(1.0, Na)   # sodium conserved
+        assert pair.naac_M > 0.0 and pair.na_plus_M < Na                         # a real pair formed
+        assert abs(pair.pH - base.pH) < 0.3                                      # same solution, modestly shifted
+
+
+def test_ion_pair_with_no_sodium_or_no_acetate_reduces_to_base():
+    # no Na+ -> nothing to pair; no acetate -> nothing to pair.  Either way the pair path must equal the base result
+    # byte-for-byte (it takes the same base solver branch).  Regimes chosen to be well-conditioned: (0.1,0.0) is
+    # acidic davies; (0.0,0.1) pure NaOH is the deep-basic (pH~13) oh=Kw/h conditioning corner, so it is checked
+    # under the IDEAL model (proven admissible by test_a3_adversarial_regimes) rather than davies -- the corner's
+    # charge-closure limit is a pre-existing base-path numerical issue, orthogonal to the ion pair, not papered over.
+    for CT, Na, model in [(0.1, 0.0, "davies"), (0.0, 0.1, "ideal")]:
+        base = solve(AcetateWaterSystem(CT, sodium_M=Na, activity_model=model))
+        pair = solve(aqmod.AcetateWaterSystem(CT, sodium_M=Na, activity_model=model, include_ion_pair=True))
+        assert pair.pH == pytest.approx(base.pH, abs=1e-12), (CT, Na, model)
+        assert pair.naac_M == pytest.approx(0.0, abs=1e-15)

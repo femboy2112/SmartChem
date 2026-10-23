@@ -59,15 +59,21 @@ environment, so the independent cross-check verdict is permanently EXTERNAL_VALI
 "textbook anchors" are relabelled as equation/implementation VERIFICATION (they were computed from the SAME Ka and
 the SAME ideal approximation -- that is not independent experimental validation).
 
-SCOPE LIMITATION (Wave D, PHREEQC) -- ion pairing is OMITTED: the curated species set has no NaAc(aq) ion pair,
-which the PHREEQC minteq.v4 / llnl databases DO carry.  An independent PHREEQC benchmark agrees with this model's
-Davies activity pH to |dpH| <= 0.015 for ionic strength I <= 0.10 M, then drifts to |dpH| ~ 0.052 by I ~ 0.45 M.
-The cause is the MISSING ion pair, NOT Davies-equation breakdown (I = 0.5 M is the standard Davies limit, so the
-solver legitimately admits up to DAVIES_I_MAX).  Hence two DIFFERENT domains are kept distinct and both honoured:
-the Davies validity domain (DAVIES_I_MAX = 0.5 M, enforced by the admission gate) and the DEMONSTRATED
-independent-agreement domain (BENCHMARK_AGREEMENT_I_MAX ~ 0.1 M).  A result past the agreement domain still solves
-and still earns SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL, but it CARRIES a caveat (SpeciationResult.caveats) saying it
-is beyond the independently-benchmarked region and omits ion pairing.  No NaAc ion pair is fabricated to hide this.
+SCOPE (Wave D, PHREEQC + Round VI "The Salt Bridge"): by DEFAULT the curated species set OMITS the NaAc(aq) ion pair
+that the PHREEQC minteq.v4 / llnl databases carry.  In that default, an independent PHREEQC benchmark agrees with the
+Davies activity pH to |dpH| <= 0.015 for ionic strength I <= 0.10 M, then drifts to |dpH| ~ 0.052 by I ~ 0.45 M -- the
+cause is the MISSING ion pair, NOT Davies-equation breakdown (I = 0.5 M is the standard Davies limit, so the solver
+legitimately admits up to DAVIES_I_MAX).  Round VI adds that ion pair as an OPT-IN refinement (include_ion_pair=True,
+association constant K_NAAC_ION_PAIR_25C, logK -0.18 from NIST46.4 via PHREEQC minteq.v4): with it modeled, the
+ion-pair-omission divergence is closed (C5 |dpH| ~ 0.052 -> ~0.026, and no case DIVERGEs; the ~0.026 residual is the
+Davies-vs-Debye-Huckel activity-model + molal/molar difference, which the pair does NOT touch, not the species set).
+Two DIFFERENT domains stay distinct and both honoured: the Davies validity domain (DAVIES_I_MAX = 0.5 M, enforced by
+the admission gate) and the DEMONSTRATED independent-agreement domain (BENCHMARK_AGREEMENT_I_MAX ~ 0.1 M without the
+pair; wider with it, BENCHMARK_AGREEMENT_I_MAX_WITH_ION_PAIR).  A result past its agreement domain still earns
+SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL but CARRIES a caveat (SpeciationResult.caveats) naming what is, and is not,
+independently benchmarked.  Independent experimental VALIDATION against a MEASURED acetate-buffer pH remains UNKNOWN
+(the acetate buffer is not an NBS/NIST primary pH standard, and the dissociation-constant literature shares the Ka
+EMF lineage, so it is not an independent check of Ka); no measured datum and no ion pair is fabricated to hide this.
 """
 from __future__ import annotations
 
@@ -135,6 +141,22 @@ BEYOND_BENCHMARK_CAVEAT = (
     "ionic strength exceeds the demonstrated independent-benchmark agreement domain "
     "(I <= 0.1 M, |dpH| <= 0.015 vs PHREEQC); the NaAc(aq) ion pair is omitted from the species set, so out here the "
     "activity pH is Davies-model-only and NOT independently benchmarked (PHREEQC drift reaches ~0.052 pH by 0.45 M)")
+
+# Round VI ("The Salt Bridge"): with the NaAc(aq) ion pair MODELED (opt-in, include_ion_pair=True) the independent-
+# benchmark picture changes -- the omission that drove the C5 divergence is closed, so a wider agreement domain is
+# demonstrated.  These are set from the benchmarks/acetate_phreeqc re-run (code side re-run against the committed
+# PHREEQC-with-pair reference; the reference already included the pair).
+BENCHMARK_AGREEMENT_I_MAX_WITH_ION_PAIR = 0.1   # mol/L; with the pair modeled, AGREE (|dpH| <= 0.02 vs PHREEQC) is
+#   CONFIRMED to I ~ 0.1 (benchmark case C4: |dpH| = 0.0058), the same grid resolution as the no-pair domain -- BUT
+#   the meaning BEYOND it differs sharply: without the pair, I > 0.1 DIVERGEs (C5, I ~ 0.4: |dpH| ~ 0.052); WITH the
+#   pair that divergence is closed and the worst case is only MARGINAL (C5 with pair: measured 0.023, a Davies-vs-
+#   Debye-Huckel activity-model + molal/molar residual the pair does NOT touch).  So beyond 0.1 a pair-included result
+#   still carries a caveat -- but one about a MARGINAL activity-model residual, not an ion-pair OMISSION.
+BEYOND_BENCHMARK_CAVEAT_WITH_ION_PAIR = (
+    "ionic strength exceeds the demonstrated AGREE domain (I <= 0.1 M); the NaAc(aq) ion pair IS modeled here, so the "
+    "former ion-pair-omission DIVERGENCE is closed (no benchmark case diverges), but a residual Davies-vs-Debye-Huckel "
+    "activity-model + molal/molar difference vs PHREEQC grows with ionic strength to a MARGINAL ~0.023 pH by I ~ 0.4 M "
+    "-- Davies-model-only, never independently validated against a measured datum")
 
 # Accepted MOLAR standard-state spellings and the MOLAL tokens that disqualify a units string.  An explicit
 # allowlist/blocklist -- adequate for this curated, fixed species set -- replaces the old `"molar" in units` test,
@@ -256,6 +278,21 @@ C_REF = SourcedConstant(
     "explicitly rather than assumed.  Numerically 1 mol/L so p-values are unchanged in magnitude -- the point is "
     "the declared standard-state approximation, not a new number.")
 
+# Round VI: the NaAc(aq) ion-pair ASSOCIATION constant, Na+ + Ac- <-> NaAc(aq), K_assoc = [NaAc]/([Na+][Ac-]).
+# logK = -0.18 at 25 C (K ~ 0.661 L/mol) from the NIST Critically Selected Stability Constants (NIST 46.4), the value
+# carried by the PHREEQC minteq.v4 database ("Na+ + Acetate- = Na(Acetate) log_k -0.18").  Corroborated by the LLNL
+# thermodynamic database (effective 25 C logK ~ -0.079 from its -analytic terms) and by measured potentiometry
+# (Archer & Monk, Trans. Faraday Soc. 60 (1964); Daniele et al. 1985).  The minteq<->llnl logK spread (-0.18 vs ~-0.079,
+# ~0.10 in logK => K ~ 0.52..0.83 L/mol) sets the ~+/-0.17 uncertainty on K ~ 0.66.  This is a WEAK pair (K < 1);
+# omitting it is the documented cause of the model's ~0.052 pH divergence from PHREEQC at I ~ 0.45 M.  It is OPT-IN
+# via AcetateWaterSystem(include_ion_pair=True) -- the default species set stays exactly as Wave A/D shipped it.
+K_NAAC_ION_PAIR_25C = SourcedConstant(
+    "K_NaAc_ion_pair", 10 ** (-0.18), 0.17, "dimensionless (molar association constant, 1 M reference)", 298.15,
+    "NIST Critically Selected Stability Constants (NIST 46.4) via PHREEQC minteq.v4 'Na+ + Acetate- = Na(Acetate) "
+    "log_k -0.18'; corroborated by the LLNL DB (effective logK ~ -0.079) and measured potentiometry (Archer & Monk "
+    "1964; Daniele et al. 1985).  The minteq/llnl logK spread sets the +/-0.17 (on K) uncertainty.", "SOURCED",
+    "Weak Na+/Ac- ion-pair association (K < 1 L/mol); opt-in via include_ion_pair=True.")
+
 
 def _require_source_temperature(T_K: float) -> None:
     """The sourced constants are a 25 C record.  Refuse any temperature outside the admitted band for EVERY activity
@@ -295,6 +332,8 @@ class AcetateWaterSystem:
     Ka: SourcedConstant = KA_ACETIC_25C
     Kw: SourcedConstant = KW_25C
     activity_model: str = "ideal"
+    include_ion_pair: bool = False        # Round VI opt-in: model the NaAc(aq) ion pair (default off = Wave A/D set)
+    K_assoc: SourcedConstant = K_NAAC_ION_PAIR_25C
 
     def __post_init__(self):
         if not (math.isfinite(self.total_acetic_M) and self.total_acetic_M >= 0):
@@ -303,10 +342,16 @@ class AcetateWaterSystem:
             raise InvalidParameterError("sodium_M must be finite and >= 0")
         if self.activity_model not in ("ideal", "davies"):
             raise InvalidParameterError("activity_model must be 'ideal' or 'davies'")
+        if not isinstance(self.include_ion_pair, bool):
+            raise InvalidParameterError("include_ion_pair must be a bool")
         # the source-domain guard now binds in ALL modes, not just davies.
         _require_source_temperature(self.temperature_K)
         _require_constant_at_source_state(self.Ka, role="Ka")
         _require_constant_at_source_state(self.Kw, role="Kw")
+        if self.include_ion_pair:
+            # the association constant must itself be a sourced, source-state-consistent record, exactly like Ka/Kw --
+            # an opt-in refinement is not an excuse to admit an unsourced or off-state number.
+            _require_constant_at_source_state(self.K_assoc, role="K_assoc")
 
 
 @dataclass(frozen=True)
@@ -326,6 +371,8 @@ class SpeciationResult:
     gamma_monovalent: float               # activity coefficient of a +/-1 ion (1.0 in the ideal model)
     charge_balance_residual: float        # |[Na+]+[H+]-[OH-]-[Ac-]| at the solution (must be ~0)
     davies_iterations: int                # fixed-point iterations actually taken (0 for ideal); transparency, not fluff
+    na_plus_M: float = 0.0                # free [Na+] (mol/L); == total sodium in the base model, < it with the pair
+    naac_M: float = 0.0                   # [NaAc(aq)] neutral ion pair (mol/L); 0 in the base model / ideal mode
     caveats: tuple = ()                   # honest qualifiers on an ADMITTED result (e.g. beyond the demonstrated
     #   independent-benchmark domain / ion-pairing omitted).  Empty = no qualifier; the verdict is the claim, these
     #   are the asterisks on it.  A result with the benchmark caveat is still SOLVED_*, just not corroborated out there.
@@ -370,9 +417,124 @@ def _davies_gamma(ionic: float, A: float) -> float:
     return float(10.0 ** (-A * (s / (1.0 + s) - 0.3 * ionic)))
 
 
+# ----------------------------------------------------------------------- Round VI: the NaAc(aq) ion-pair extension
+# With the pair, Na+ is no longer a fixed charge-balance term: some sodium is sequestered as the neutral NaAc(aq),
+# so BOTH a sodium mass balance (Na_T = [Na+] + [NaAc]) and an extra acetate sink ([NaAc]) appear, and the neutral
+# pair drops OUT of charge balance.  The clean cubic in [H+] no longer holds; the system is solved as two coupled
+# equations (acetate mass balance, charge balance).  Two INDEPENDENT routes, same sourced data, must agree -- exactly
+# the Wave A discipline, re-earned for the harder system.
+def _ion_pair_acetate_root(h: float, Ka_c: float, Kass_c: float, C_T: float, Na_T: float) -> float:
+    """Free [Ac-] from the acetate mass balance WITH the NaAc pair, at fixed [H+]=h and effective constants.
+    C_T = a*h/Ka_c + a + Kass_c*Na_T*a/(1+Kass_c*a).  Multiplying by (1+Kass_c*a) gives a QUADRATIC in a:
+        (beta*Kass_c) a^2 + (beta + Kass_c*Na_T - C_T*Kass_c) a - C_T = 0,   beta = h/Ka_c + 1.
+    The constant term -C_T < 0, so the two roots have opposite sign; the physical (positive) one is the '+' root.
+    Kass_c == 0 degenerates to the linear base balance a = C_T/beta.  Returns NaN on a non-real/invalid discriminant."""
+    if not (math.isfinite(h) and h > 0 and math.isfinite(Ka_c) and Ka_c > 0):
+        return float("nan")
+    beta = h / Ka_c + 1.0
+    if not (math.isfinite(Kass_c) and Kass_c > 0.0):
+        return C_T / beta
+    a2 = beta * Kass_c
+    b1 = beta + Kass_c * Na_T - C_T * Kass_c
+    disc = b1 * b1 + 4.0 * a2 * C_T          # == b1^2 - 4*a2*C0 with C0 = -C_T
+    if disc < 0 or a2 <= 0:
+        return float("nan")
+    return (-b1 + math.sqrt(disc)) / (2.0 * a2)
+
+
+def _ion_pair_charge_residual(h: float, Ka_c: float, Kw_c: float, Kass_c: float, C_T: float, Na_T: float) -> float:
+    """Charge-balance residual (Na+ + H+) - (OH- + Ac-) at [H+]=h, with the neutral NaAc pair excluded from charge
+    and free [Na+] = Na_T/(1+Kass_c*[Ac-]).  NaN if the inner acetate root is unusable (lets the caller fail closed)."""
+    a = _ion_pair_acetate_root(h, Ka_c, Kass_c, C_T, Na_T)
+    if not (math.isfinite(a) and a >= 0):
+        return float("nan")
+    na_plus = Na_T / (1.0 + Kass_c * a)
+    oh = Kw_c / h
+    return (na_plus + h) - (oh + a)
+
+
+def _ion_pair_h_route_brentq(Ka_c: float, Kw_c: float, Kass_c: float, C_T: float, Na_T: float) -> float:
+    """Route 1: bracketed bisection (brentq) on the charge residual, with [Ac-] eliminated analytically per h.
+    Returns NaN on a bracketing/convergence failure -- the admission gate is the single fail-closed decision point."""
+    lo, hi = 1e-20, max(1.0, C_T + Na_T + 1.0)
+    try:
+        return float(brentq(_ion_pair_charge_residual, lo, hi, args=(Ka_c, Kw_c, Kass_c, C_T, Na_T),
+                            xtol=1e-18, rtol=1e-14))
+    except (ValueError, RuntimeError):
+        return float("nan")
+
+
+def _ion_pair_h_route_acetate(Ka_c: float, Kw_c: float, Kass_c: float, C_T: float, Na_T: float) -> float:
+    """Route 2: the DUAL decomposition, and a genuinely independent cross-check of route 1.  Route 1 eliminates [Ac-]
+    via the ACETATE quadratic and brackets the CHARGE residual in h; this route does the REVERSE -- it brackets the
+    ACETATE mass-balance residual in a, getting [H+] from the CHARGE-balance quadratic h^2 + (na_plus - a) h - Kw_c = 0
+    (na_plus = Na/(1+Kass_c a), neutral pair excluded from charge).  The two routes therefore use DIFFERENT analytic
+    eliminations: a bug in either one's algebra shows up as a route disagreement the admission gate will refuse on.
+    Both are robust bracketed (brentq) solves, so neither inherits fsolve's stiffness/scaling fragility.  NaN on failure."""
+    def h_of_a(a: float) -> float:
+        # positive root of the charge-balance quadratic h^2 + b h - Kw_c = 0, b = na_plus - a.  The naive
+        # 0.5*(-b + sqrt(b^2 + 4 Kw_c)) CATASTROPHICALLY CANCELS when basic (b > 0, b^2 >> 4 Kw_c: subtracting two
+        # near-equal large numbers), which made this route inaccurate and spuriously disagree with route 1, refusing
+        # the whole excess-base regime.  Use the numerically-stable branch per sign of b (the standard trick: pick the
+        # form that ADDS like-signed terms, then recover the other root from the product-of-roots = -Kw_c).
+        na_plus = Na_T / (1.0 + Kass_c * a)
+        b = na_plus - a
+        disc = math.sqrt(b * b + 4.0 * Kw_c)
+        if b > 0.0:
+            return 2.0 * Kw_c / (b + disc)        # == 0.5*(-b + disc), but cancellation-free for basic solutions
+        return 0.5 * (-b + disc)                  # acidic/neutral (b <= 0): -b + disc adds like-signed terms, stable
+
+    def acetate_residual(a: float) -> float:
+        h = h_of_a(a)
+        if not (math.isfinite(h) and h > 0):
+            return float("nan")
+        na_plus = Na_T / (1.0 + Kass_c * a)
+        return a * h / Ka_c + a + Kass_c * na_plus * a - C_T   # acetate mass balance (incl. the NaAc pair sink)
+
+    try:
+        a = float(brentq(acetate_residual, 0.0, C_T, xtol=1e-18, rtol=1e-14))    # R(0) = -C_T < 0, R(C_T) > 0
+    except (ValueError, RuntimeError):
+        return float("nan")
+    h = h_of_a(a)
+    return h if (math.isfinite(h) and h > 0) else float("nan")
+
+
+def _speciate(Ka_c: float, Kw_c: float, Kass_c: float, C_T: float, Na: float, include_ion_pair: bool):
+    """Solve the speciation at FIXED effective (concentration-basis) constants by two independent routes.  Returns
+    (h1, h2, h, ac, oh, hac, na_plus, naac).  Base model (or nothing to pair): Na+ fully free, NaAc = 0, the Wave A
+    cubic+brentq pair.  Ion-pair model (include_ion_pair and C_T>0 and Na>0): route 1 = analytic-acetate + bracketed
+    charge root; route 2 = raw 2-equation Newton.  h is their mean; the gate decides whether they agree."""
+    if include_ion_pair and C_T > 0.0 and Na > 0.0 and Kass_c > 0.0:
+        h1 = _ion_pair_h_route_brentq(Ka_c, Kw_c, Kass_c, C_T, Na)
+        h2 = _ion_pair_h_route_acetate(Ka_c, Kw_c, Kass_c, C_T, Na)
+        h = 0.5 * (h1 + h2)
+        if not (math.isfinite(h) and h > 0):
+            return h1, h2, float("nan"), float("nan"), float("nan"), float("nan"), float("nan"), float("nan")
+        ac = _ion_pair_acetate_root(h, Ka_c, Kass_c, C_T, Na)
+        if not (math.isfinite(ac) and ac >= 0):
+            return h1, h2, h, float("nan"), Kw_c / h, float("nan"), float("nan"), float("nan")
+        na_plus = Na / (1.0 + Kass_c * ac)
+        naac = Kass_c * na_plus * ac
+        oh = Kw_c / h
+        hac = C_T - ac - naac
+        return h1, h2, h, ac, oh, hac, na_plus, naac
+    # base: no ion pair, or nothing to pair (no acetate / no sodium) -- the Wave A cubic, Na+ fully free.
+    h1 = _cubic_positive_root(Ka_c, Kw_c, C_T, Na)
+    h2 = _brentq_root(Ka_c, Kw_c, C_T, Na)
+    h = 0.5 * (h1 + h2)
+    if not (math.isfinite(h) and h > 0):
+        return h1, h2, float("nan"), float("nan"), float("nan"), float("nan"), Na, 0.0
+    ac = Ka_c * C_T / (h + Ka_c)
+    oh = Kw_c / h
+    hac = C_T - ac
+    return h1, h2, h, ac, oh, hac, Na, 0.0
+
+
 def _verify_admission(*, h1: float, h2: float, h: float, oh: float, ac: float, hac: float,
                       C_T: float, Na: float, Ka_c: float, Kw_c: float, activity_model: str,
-                      ionic_strength: float, davies_converged: bool, davies_iterations: int) -> str:
+                      ionic_strength: float, davies_converged: bool, davies_iterations: int,
+                      include_ion_pair: bool = False, Kass_c: float = 0.0,
+                      na_plus: float = float("nan"), naac: float = float("nan")) -> str:
     """The admission gate.  A result is entitled to a SOLVED_* verdict ONLY if every one of these holds; otherwise
     this raises NumericalVerificationError (verdict NUMERICALLY_UNVERIFIED) and no prediction is handed back.  This
     is the whole point of Wave A: a solver failure must never wear a success label.  Conditions, all against the
@@ -383,7 +545,11 @@ def _verify_admission(*, h1: float, h2: float, h: float, oh: float, ac: float, h
       (4) total-acetate balance closes within MASS_BALANCE_RTOL;
       (5) every admitted species concentration is >= 0 (bar NONNEGATIVITY_ATOL of roundoff);
       (6) for davies, the ionic-strength fixed point demonstrably converged (did not fall through the cap);
-      (7) for davies, the ionic strength is inside the Davies-equation domain (<= DAVIES_I_MAX)."""
+      (7) for davies, the ionic strength is inside the Davies-equation domain (<= DAVIES_I_MAX).
+    With include_ion_pair, the gate RE-DERIVES [Ac-]/[Na+]/[NaAc] from the adopted [H+] and the constants (its own
+    independent check, not a rubber stamp of what solve() passed), closes charge balance with the neutral NaAc pair
+    EXCLUDED, additionally closes a sodium mass balance (Na_T = [Na+] + [NaAc]) and the acetate balance WITH the pair
+    sink, and refuses if solve()'s reported [Na+]/[NaAc]/[Ac-] disagree with that re-derivation."""
     problems = []
     if not (math.isfinite(h1) and h1 > 0 and math.isfinite(h2) and h2 > 0):
         problems.append(f"a solver route failed to deliver a finite positive [H+] (route1={h1}, route2={h2})")
@@ -393,15 +559,45 @@ def _verify_admission(*, h1: float, h2: float, h: float, oh: float, ac: float, h
             f"(|{h1}-{h2}|={abs(h1 - h2):g})")
     if not math.isfinite(h):
         problems.append("the adopted [H+] is not finite")
+    elif include_ion_pair:
+        # the single source of truth is the adopted h: re-derive the speciation from it and check balances + that
+        # solve()'s reported numbers match.  A bug that fabricated [Na+]/[NaAc] would be caught here, not trusted.
+        ac_d = _ion_pair_acetate_root(h, Ka_c, Kass_c, C_T, Na)
+        if not (math.isfinite(ac_d) and ac_d >= -NONNEGATIVITY_ATOL):
+            problems.append("the ion-pair acetate re-derivation is not a usable nonnegative number")
+        else:
+            nap_d = Na / (1.0 + Kass_c * ac_d)
+            naac_d = Kass_c * nap_d * ac_d
+            oh_d = Kw_c / h
+            cb = abs((nap_d + h) - (oh_d + ac_d))
+            if cb > CHARGE_BALANCE_ATOL + CHARGE_BALANCE_RTOL * (abs(nap_d) + h + oh_d + abs(ac_d)):
+                problems.append(f"ion-pair charge balance does not close (residual {cb:g})")
+            # Sodium mass balance on the REPORTED split (na_plus, naac), NOT the re-derived (nap_d, naac_d): the
+            # latter satisfy nap_d + naac_d = Na/(1+Kass_c*ac_d)*(1+Kass_c*ac_d) == Na IDENTICALLY, so a check on them
+            # is a dead tautology (the "check derived from its own subject" trap).  Checked on solve()'s actual output
+            # it is a genuine statement about what was produced -- belt-and-suspenders with the reported-vs-re-derived
+            # consistency check below (which is the finer guard), caught here if solve ever reports a non-conserving split.
+            sb = abs((na_plus + naac) - Na) if (math.isfinite(na_plus) and math.isfinite(naac)) else float("inf")
+            if sb > CHARGE_BALANCE_ATOL + CHARGE_BALANCE_RTOL * (Na + abs(naac if math.isfinite(naac) else 0.0)) + 1e-9 * max(1.0, Na):
+                problems.append(f"sodium mass balance does not close on the reported split (Na+ + NaAc = {na_plus + naac}, Na = {Na})")
+            if (not (math.isfinite(na_plus) and math.isfinite(naac) and math.isfinite(ac))
+                    or abs(na_plus - nap_d) > 1e-9 * max(1.0, Na)
+                    or abs(naac - naac_d) > 1e-9 * max(1.0, Na)
+                    or abs(ac - ac_d) > 1e-9 * max(1.0, C_T)):
+                problems.append("reported ion-pair speciation disagrees with the re-derivation from [H+]")
     else:
         cb = abs(_charge_balance_residual(h, Ka_c, Kw_c, C_T, Na))
         cb_allow = CHARGE_BALANCE_ATOL + CHARGE_BALANCE_RTOL * (Na + h + oh + ac)
         if cb > cb_allow:
             problems.append(f"charge balance does not close (residual {cb:g} > allowed {cb_allow:g})")
-    if not math.isfinite(hac) or not math.isfinite(ac) or abs((hac + ac) - C_T) > MASS_BALANCE_RTOL * max(1.0, C_T):
-        problems.append(f"total-acetate balance does not close (HAc+Ac- = {hac + ac}, C_T = {C_T})")
-    finite_concs = [c for c in (h, oh, ac, hac) if math.isfinite(c)]
-    if len(finite_concs) < 4 or min(finite_concs) < -NONNEGATIVITY_ATOL:
+    acetate_total = (hac + ac + naac) if include_ion_pair else (hac + ac)
+    naac_bad = include_ion_pair and not math.isfinite(naac)
+    if (not math.isfinite(hac) or not math.isfinite(ac) or naac_bad
+            or abs(acetate_total - C_T) > MASS_BALANCE_RTOL * max(1.0, C_T)):
+        problems.append(f"total-acetate balance does not close (sum = {acetate_total}, C_T = {C_T})")
+    conc_tuple = (h, oh, ac, hac, na_plus, naac) if include_ion_pair else (h, oh, ac, hac)
+    finite_concs = [c for c in conc_tuple if math.isfinite(c)]
+    if len(finite_concs) < len(conc_tuple) or min(finite_concs, default=float("nan")) < -NONNEGATIVITY_ATOL:
         problems.append(f"a species concentration is negative or non-finite (min = {min(finite_concs, default=float('nan'))})")
     if activity_model == "davies":
         if not davies_converged:
@@ -425,26 +621,24 @@ def solve(system: AcetateWaterSystem, *, tol: float = DAVIES_FIXED_POINT_TOL) ->
     number) and pH_activity are both exposed, and in a nonideal model the PRIMARY pH is the activity value."""
     C_T, Na = float(system.total_acetic_M), float(system.sodium_M)
     Ka0, Kw0 = system.Ka.value, system.Kw.value
+    Kass0 = system.K_assoc.value if system.include_ion_pair else 0.0
     A = DAVIES_A_25C.value
     gamma = 1.0
     davies_converged = (system.activity_model == "ideal")  # ideal has no fixed point to converge; gamma is fixed at 1
     davies_iterations = 0
-    h1 = h2 = h = ac = oh = ionic = float("nan")
-    Ka_c, Kw_c = Ka0, Kw0
+    h1 = h2 = h = ac = oh = ionic = hac = float("nan")
+    na_plus, naac = Na, 0.0
+    Ka_c, Kw_c, Kass_c = Ka0, Kw0, Kass0
     for i in range(1, DAVIES_MAX_ITERS + 1):
         davies_iterations = 0 if system.activity_model == "ideal" else i
-        # concentration-basis constants: Ka_c = Ka / (gamma_H gamma_Ac / gamma_HAc) = Ka / gamma^2 (HAc neutral,
-        # gamma_HAc ~ 1); Kw_c = Kw / (gamma_H gamma_OH) = Kw / gamma^2.
+        # concentration-basis constants: Ka_c = Ka/gamma^2, Kw_c = Kw/gamma^2 (dissociations; HAc neutral, g_HAc ~ 1);
+        # the ASSOCIATION constant scales the OTHER way, Kass_c = Kass * gamma^2 (K = a_NaAc/(a_Na a_Ac), g_NaAc ~ 1).
         g2 = gamma * gamma
-        Ka_c, Kw_c = Ka0 / g2, Kw0 / g2
-        h1 = _cubic_positive_root(Ka_c, Kw_c, C_T, Na)
-        h2 = _brentq_root(Ka_c, Kw_c, C_T, Na)
-        h = 0.5 * (h1 + h2)
+        Ka_c, Kw_c, Kass_c = Ka0 / g2, Kw0 / g2, Kass0 * g2
+        h1, h2, h, ac, oh, hac, na_plus, naac = _speciate(Ka_c, Kw_c, Kass_c, C_T, Na, system.include_ion_pair)
         if not (math.isfinite(h) and h > 0):
             break  # a route gave up; stop iterating and let the gate refuse rather than spin on NaN
-        ac = Ka_c * C_T / (h + Ka_c)
-        oh = Kw_c / h
-        ionic = 0.5 * (h + oh + ac + Na)         # 0.5 * sum c_i z_i^2 ; all monovalent so z^2 = 1
+        ionic = 0.5 * (h + oh + ac + na_plus)    # 0.5 sum c_i z_i^2; all charged species monovalent, NaAc neutral
         if system.activity_model == "ideal":
             break
         g_new = _davies_gamma(ionic, A)
@@ -452,41 +646,43 @@ def solve(system: AcetateWaterSystem, *, tol: float = DAVIES_FIXED_POINT_TOL) ->
             # converged: re-solve ONCE at the accepted gamma so every reported number is mutually consistent with it
             gamma = g_new
             g2 = gamma * gamma
-            Ka_c, Kw_c = Ka0 / g2, Kw0 / g2
-            h1 = _cubic_positive_root(Ka_c, Kw_c, C_T, Na)
-            h2 = _brentq_root(Ka_c, Kw_c, C_T, Na)
-            h = 0.5 * (h1 + h2)
+            Ka_c, Kw_c, Kass_c = Ka0 / g2, Kw0 / g2, Kass0 * g2
+            h1, h2, h, ac, oh, hac, na_plus, naac = _speciate(Ka_c, Kw_c, Kass_c, C_T, Na, system.include_ion_pair)
             if math.isfinite(h) and h > 0:
-                ac = Ka_c * C_T / (h + Ka_c)
-                oh = Kw_c / h
-                ionic = 0.5 * (h + oh + ac + Na)
+                ionic = 0.5 * (h + oh + ac + na_plus)
                 davies_converged = True
             break
         gamma = g_new
-    hac = C_T - ac
 
     # The gate runs BEFORE the result exists: a refused solve returns nothing to present.
     verdict = _verify_admission(
         h1=h1, h2=h2, h=h, oh=oh, ac=ac, hac=hac, C_T=C_T, Na=Na, Ka_c=Ka_c, Kw_c=Kw_c,
         activity_model=system.activity_model, ionic_strength=ionic,
-        davies_converged=davies_converged, davies_iterations=davies_iterations)
+        davies_converged=davies_converged, davies_iterations=davies_iterations,
+        include_ion_pair=system.include_ion_pair, Kass_c=Kass_c, na_plus=na_plus, naac=naac)
 
     c_ref = C_REF.value
     pH_concentration = -math.log10(h / c_ref)              # p[H]: a molarity number, honestly labelled
     pH_activity = -math.log10(gamma * h / c_ref)           # activity-based: the IUPAC-style value
     pH = pH_activity if system.activity_model == "davies" else pH_concentration
-    # admitted, but is it still inside the region an INDEPENDENT tool corroborated?  Beyond ~0.1 M the omitted NaAc
-    # ion pair matters (PHREEQC drift), so flag it -- the verdict stays SOLVED_*, the caveat does the honest work.
+    # admitted, but is it still inside the region an INDEPENDENT tool corroborated?  Without the pair, beyond ~0.1 M
+    # the omitted NaAc ion pair drives PHREEQC drift; WITH the pair modeled that omission is closed and agreement
+    # holds across a wider domain -- so the caveat (and its threshold) depend on whether the pair is modeled.
     caveats = ()
-    if math.isfinite(ionic) and ionic > BENCHMARK_AGREEMENT_I_MAX:
+    if system.include_ion_pair:
+        if math.isfinite(ionic) and ionic > BENCHMARK_AGREEMENT_I_MAX_WITH_ION_PAIR:
+            caveats = (BEYOND_BENCHMARK_CAVEAT_WITH_ION_PAIR,)
+    elif math.isfinite(ionic) and ionic > BENCHMARK_AGREEMENT_I_MAX:
         caveats = (BEYOND_BENCHMARK_CAVEAT,)
+    charge_resid = (abs((na_plus + h) - (oh + ac)) if system.include_ion_pair
+                    else abs(_charge_balance_residual(h, Ka_c, Kw_c, C_T, Na)))
     return SpeciationResult(
         pH=pH, pH_concentration=pH_concentration, pH_activity=pH_activity, c_ref_M=c_ref, verdict=verdict,
         h_plus_M=h, oh_minus_M=oh, hac_M=hac, ac_minus_M=ac,
         ionic_strength_M=ionic, activity_model=system.activity_model,
         solver_agreement_residual=abs(h1 - h2), gamma_monovalent=gamma,
-        charge_balance_residual=abs(_charge_balance_residual(h, Ka_c, Kw_c, C_T, Na)),
-        davies_iterations=davies_iterations, caveats=caveats)
+        charge_balance_residual=charge_resid,
+        davies_iterations=davies_iterations, na_plus_M=na_plus, naac_M=naac, caveats=caveats)
 
 
 # --------------------------------------------------------------------------------- the independent-benchmark obligation

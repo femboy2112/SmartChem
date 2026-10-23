@@ -337,10 +337,18 @@ class Mechanism:
                     raise MissingKineticParameter(f"reaction {r}: {nm} not supplied; rate is UNKNOWN (never silently 0)")
                 _check_pos(v, f"reaction {r} {nm}", strict=False)
 
-    def rate_vector(self, c: np.ndarray) -> np.ndarray:
-        """Per-reaction mass-action rate, mol/(m^3 s), on c clipped to >= 0.  Kinetic orders are the
-        reactant/product COMPLEX multiplicities (elementary) or the explicit empirical orders -- never the net
-        column, so a catalyst (net 0) and an autocatalyst (shared product) keep their rate dependence."""
+    def require_admitted(self, *, T_K=None, conc_mol_m3=None) -> None:
+        """THE one admission gate (Wave B follow-up).  A mechanism that CARRIES an Applicability claims
+        SOURCE_VERIFIED science, so EVERY prediction-grade numeric read must enforce it -- not just reaction_cell.
+        Fails closed (AdmissionDomainError): retracted/untrusted source (needs no T), a windowed law with no T,
+        T outside the window, or a concentration above the cap.  A PLAIN mechanism (applicability None) has no
+        verified claim, so this is a no-op and its diagnostics are unchanged."""
+        if self.applicability is not None:
+            self.applicability.assert_applicable(T_K=T_K, conc_mol_m3=conc_mol_m3)
+
+    def _rate_vector_unchecked(self, c: np.ndarray) -> np.ndarray:
+        """Raw mass-action kernel, NO admission check.  Private: only for a caller that has ALREADY gated the
+        transition (reaction_cell gates once up front, then the ODE hammers this)."""
         self.require_complete()
         c = np.clip(np.asarray(c, dtype=float), 0.0, None)
         r = np.empty(self.n_reactions)
@@ -350,9 +358,18 @@ class Mechanism:
                 r[j] -= rate.k_r * np.prod(c ** self.order_r[:, j])
         return r
 
-    def source_density(self, c: np.ndarray) -> np.ndarray:
-        """Stoichiometric source N @ r, mol/(m^3 s)."""
-        return self.N @ self.rate_vector(c)
+    def rate_vector(self, c: np.ndarray, T_K=None) -> np.ndarray:
+        """Per-reaction mass-action rate, mol/(m^3 s), on c clipped to >= 0.  Kinetic orders are the
+        reactant/product COMPLEX multiplicities (elementary) or the explicit empirical orders -- never the net
+        column, so a catalyst (net 0) and an autocatalyst (shared product) keep their rate dependence.
+        ADMISSION: if the mechanism carries an Applicability, T_K (K) is required for a windowed law and is
+        checked, exactly as reaction_cell does; refuses (AdmissionDomainError) otherwise.  Plain mechanisms: unchanged."""
+        self.require_admitted(T_K=T_K, conc_mol_m3=np.asarray(c, dtype=float))
+        return self._rate_vector_unchecked(c)
+
+    def source_density(self, c: np.ndarray, T_K=None) -> np.ndarray:
+        """Stoichiometric source N @ r, mol/(m^3 s).  Same admission gate as rate_vector (T_K optional for plain)."""
+        return self.N @ self.rate_vector(c, T_K)
 
     def extent_bounds(self, n: np.ndarray, j: int) -> tuple:
         """(xi_min, xi_max) keeping every amount >= 0 for reaction j alone (limiting-reactant caps)."""
@@ -621,7 +638,7 @@ def reaction_cell(mech: Mechanism, n0: np.ndarray, V: float, dt: float, settings
         return np.array(n0), np.zeros(R), False, 0.0
 
     def f(_t, xi):
-        return V * mech.rate_vector((n0 + mech.N @ xi) / V)
+        return V * mech._rate_vector_unchecked((n0 + mech.N @ xi) / V)   # gated once above
 
     sol = solve_ivp(f, (0.0, dt), np.zeros(R), method=settings.method, rtol=settings.rtol, atol=settings.atol)
     if not sol.success:

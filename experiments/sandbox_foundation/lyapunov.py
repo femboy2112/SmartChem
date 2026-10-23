@@ -103,9 +103,12 @@ def diffusion_dissipation_rate(system: System, state: State) -> float:
     return float(-np.sum(contrib))
 
 
-def _forward_reverse_rates(mech, c: np.ndarray):
-    """(v_f, v_r) per reaction at concentration c (>=0 clip), both mol/(m^3 s).  v_r = 0 for an irreversible step."""
+def _forward_reverse_rates(mech, c: np.ndarray, T_K=None):
+    """(v_f, v_r) per reaction at concentration c (>=0 clip), both mol/(m^3 s).  v_r = 0 for an irreversible step.
+    Admission-gated like Mechanism.rate_vector: a mechanism carrying an Applicability needs T_K and is refused
+    (AdmissionDomainError) out of window / retracted; a plain mechanism is unaffected."""
     mech.require_complete()
+    mech.require_admitted(T_K=T_K, conc_mol_m3=np.asarray(c, float))
     c = np.clip(np.asarray(c, float), 0.0, None)
     R = mech.n_reactions
     v_f = np.empty(R)
@@ -117,14 +120,14 @@ def _forward_reverse_rates(mech, c: np.ndarray):
     return v_f, v_r
 
 
-def is_detailed_balance_equilibrium(system: System, c_star, *, tol: float = 1e-9) -> bool:
+def is_detailed_balance_equilibrium(system: System, c_star, *, tol: float = 1e-9, T_K=None) -> bool:
     """True iff c_star is a positive detailed-balanced equilibrium of the mechanism: v_f,j(c*) = v_r,j(c*) for
     every reversible reaction (the hypothesis C1 needs).  No mechanism / an irreversible step -> False."""
     cs = _check_c_star(system, c_star)
     mech = system.mechanism
     if mech is None or not all(r.reversible for r in mech.rates):
         return False
-    v_f, v_r = _forward_reverse_rates(mech, cs)
+    v_f, v_r = _forward_reverse_rates(mech, cs, T_K)
     scale = np.maximum(np.abs(v_f), np.abs(v_r))
     scale = np.where(scale == 0.0, 1.0, scale)
     return bool(np.all(np.abs(v_f - v_r) / scale <= tol))
@@ -145,14 +148,15 @@ def reaction_dissipation_rate(system: System, state: State, c_star) -> float:
             "complex multiplicities); an empirical rate law needs a SEPARATELY derived generalization and is "
             "refused here. Applying -(v_f-v_r)log(v_f/v_r) with supplied empirical orders makes the closed form "
             "disagree with the true grad(Phi).(N@r) and can INVERT the sign of dPhi/dt")
-    if not is_detailed_balance_equilibrium(system, cs):
-        raise ValueError("reaction_dissipation_rate requires a detailed-balanced c_star (v_f(c*) = v_r(c*)); "
-                         "without it Phi is not a Lyapunov function -- certify K with check_detailed_balance first")
     V = np.asarray(system.volumes_m3, float)
     c = state.concentration(system)                      # (2, S)
+    Tc = state.temperature(system)                       # (2,) per-cell T feeds the admission gate
+    if not is_detailed_balance_equilibrium(system, cs, T_K=float(Tc[0])):
+        raise ValueError("reaction_dissipation_rate requires a detailed-balanced c_star (v_f(c*) = v_r(c*)); "
+                         "without it Phi is not a Lyapunov function -- certify K with check_detailed_balance first")
     total = 0.0
     for cell in range(2):
-        v_f, v_r = _forward_reverse_rates(mech, c[cell])
+        v_f, v_r = _forward_reverse_rates(mech, c[cell], float(Tc[cell]))
         with np.errstate(divide="ignore", invalid="ignore"):
             lr = np.log(v_f) - np.log(v_r)
         d = v_f - v_r
@@ -176,7 +180,7 @@ def dPhi_dt_chain_rule(system: System, state: State, c_star) -> float:
     # reaction source N @ r is already a concentration rate mol/(m^3 s)
     if system.mechanism is not None:
         for cell in range(2):
-            dcdt[cell] += system.mechanism.source_density(c[cell])
+            dcdt[cell] += system.mechanism.source_density(c[cell], float(state.temperature(system)[cell]))
     with np.errstate(divide="ignore", invalid="ignore"):
         grad = np.log(c / cs[None, :])                   # h'(c) = log(c/c*)
     return float(np.sum(V[:, None] * grad * dcdt))

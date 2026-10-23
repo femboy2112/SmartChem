@@ -158,6 +158,28 @@ independent cross-tool) is ABSENT and NOT installed into the baseline; its bench
   anchor) is a scoped follow-up, deliberately NOT bundled with the #115 soundness work. The
   `poor_man_reaction_type_oracle_probe` hash DID move deterministically for #115 (`40b50344 -> fc2bb69a`, reproduced
   across two independent runs) because that probe's sweep genuinely re-recognizes a Claisen route.
+- **[Round V correction, 2026-10-22 -- forensic instrument REFUTES the cause above.]** The OBSERVED claim
+  that `total_frontier_routes` varies run-to-run as a `_REDERIVE_CACHE` warm-cache ordering effect does NOT
+  survive a proper instrument. A read-only forensic sweep (fresh + warm processes; PYTHONHASHSEED 0/1/2/3/
+  unset; target order permuted; `_REDERIVE_CACHE` + `ENUMERATION_CACHE` cleared per target; ~25 runs) found
+  the count STABLE at 29 in every run, with identical per-target route / frontier / `result_digest`. Three
+  counterfactual interventions (forcing the oracle verdict False, then True, then `_RECOGNIZERS=()`) proved
+  `_REDERIVE_CACHE` CANNOT move the count -- it touches only dispositions and the affordability frontier
+  (`result_digest` + 3 targets' frontier membership), never route membership or the count -- so the
+  documented cause is **REFUTED** (Verified by intervention). An atom-order key-sufficiency fuzz (1062
+  relabelings, 87 keys) found zero mismatches: the cache key is not under-specified for atom order. The hash
+  values the original observation saw are consistent with sampling across MID-ROUND CODE STATES -- a
+  DETERMINISTIC effect, e.g. `git archive cf3d942` yields `150d30cd` because the probe's `acyl_unregressed`
+  section embeds `p56.content_hash()==FROZEN_HASH`, while HEAD yields `6d783d59` after `35928b6` re-froze --
+  NOT run-to-run nondeterminism (Conjectured: the original note recorded no values or commits, so it is
+  unprovable in retrospect). Residual latent risk: `soundness_and_coverage`'s `except Exception: continue`
+  (probe lines ~155/160) is the ONE place a transient compilation/reconstruct failure could silently shrink
+  the count under real memory pressure (NOT exercised in the sweep). RESOLUTION: do NOT change the
+  `_REDERIVE_CACHE` key and do NOT delete the count (both would be motion without cause); instead make the
+  probe attributable (add `skipped_compilations`, `reconstruct_failures`, a per-target count map) and freeze
+  an ORDER-INVARIANT digest alongside the count, so any future wobble names itself. The live probe comment
+  (`poor_man_etherification_recognizer_probe.py:65-67`) that calls this "pre-existing route-count
+  nondeterminism" is corrected by that same change.
 
 ## 9. Round IV falsification checklist (14 items)
 

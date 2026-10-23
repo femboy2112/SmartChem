@@ -15,8 +15,12 @@ for c in co:
         dp=abs(d['pH_activity']-p['pH'])
         m=p['molarity']
         e=lambda a,b:(abs(a-b)/b*100 if b>0 else float('nan'))
-        dH=e(d['h'],m['H+']); dAc=e(d['ac'],m['Acetate-']) if c['CT']>0 else float('nan'); dHA=e(d['hac'],m[HAC[db]]) if c['CT']>0 else float('nan')
-        rows.append(dict(case=c['case'],CT=c['CT'],Na=c['Na'],db=db,I_ph=p['I_molal'],I_code=d['I'],pH_ph=p['pH'],pH_ph_kgw=pk['pH'],pH_code=d['pH_activity'],dpH=dp,cls=cls(dp),dH=dH,dAc=dAc,dHAc=dHA,
-                         gamma_code=d['gamma'],gamma_H_ph=p['gamma']['H+'],gamma_Ac_ph=p['gamma'].get('Acetate-'),NaAc_pair_frac=(p['molarity'].get('Na(Acetate)',p['molarity'].get('NaAcetate',0))/c['CT'] if c['CT']>0 else 0)))
+        # No acetate in the glass means no acetate relative-error to speak of: emit None (a JSON null that
+        # survives strict cross-language parsers), not a bare NaN that only Python's permissive loader tolerates.
+        dH=e(d['h'],m['H+']); dAc=e(d['ac'],m['Acetate-']) if c['CT']>0 else None; dHA=e(d['hac'],m[HAC[db]]) if c['CT']>0 else None
+        row=dict(case=c['case'],CT=c['CT'],Na=c['Na'],db=db,I_ph=p['I_molal'],I_code=d['I'],pH_ph=p['pH'],pH_ph_kgw=pk['pH'],pH_code=d['pH_activity'],dpH=dp,cls=cls(dp),dH=dH,dAc=dAc,dHAc=dHA,
+                 gamma_code=d['gamma'],gamma_H_ph=p['gamma']['H+'],gamma_Ac_ph=p['gamma'].get('Acetate-'),NaAc_pair_frac=(p['molarity'].get('Na(Acetate)',p['molarity'].get('NaAcetate',0))/c['CT'] if c['CT']>0 else 0))
+        if c['CT']==0: row['rel_err_undefined_reason']="REFERENCE_SPECIES_ABSENT"   # name the diagnosis; absent otherwise, so CT>0 rows stay byte-identical
+        rows.append(row)
         print("%-16s %6g %6g | %-9s %8.4f | %8.4f %8.4f %8.4f %8s | %7.2f %7.2f %7.2f | g_code=%.4f g_H,ph=%.4f"%(c['case'],c['CT'],c['Na'],db,p['I_molal'],p['pH'],d['pH_activity'],dp,cls(dp),dH,dAc,dHA,d['gamma'],p['gamma']['H+']))
-json.dump(rows,open('comparison_table.json','w'),indent=1)
+json.dump(rows,open('comparison_table.json','w'),indent=1,allow_nan=False)   # reject any future nonfinite loudly at export rather than writing a token no other parser reads

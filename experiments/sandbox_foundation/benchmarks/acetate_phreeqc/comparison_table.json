@@ -12,12 +12,13 @@
   "dpH": 0.0015000030674388043,
   "cls": "AGREE",
   "dH": 0.04937817278797092,
-  "dAc": NaN,
-  "dHAc": NaN,
+  "dAc": null,
+  "dHAc": null,
   "gamma_code": 0.9996295284090317,
   "gamma_H_ph": 0.9996281411635123,
   "gamma_Ac_ph": null,
-  "NaAc_pair_frac": 0
+  "NaAc_pair_frac": 0,
+  "rel_err_undefined_reason": "REFERENCE_SPECIES_ABSENT"
  },
  {
   "case": "C1",
@@ -32,12 +33,13 @@
   "dpH": 0.008079724280832146,
   "cls": "AGREE",
   "dH": 1.878032533531835,
-  "dAc": NaN,
-  "dHAc": NaN,
+  "dAc": null,
+  "dHAc": null,
   "gamma_code": 0.9996295284090317,
   "gamma_H_ph": 0.9996314273522271,
   "gamma_Ac_ph": null,
-  "NaAc_pair_frac": 0
+  "NaAc_pair_frac": 0,
+  "rel_err_undefined_reason": "REFERENCE_SPECIES_ABSENT"
  },
  {
   "case": "C2",

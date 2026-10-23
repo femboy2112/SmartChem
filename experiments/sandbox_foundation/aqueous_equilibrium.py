@@ -291,7 +291,10 @@ K_NAAC_ION_PAIR_25C = SourcedConstant(
     "NIST Critically Selected Stability Constants (NIST 46.4) via PHREEQC minteq.v4 'Na+ + Acetate- = Na(Acetate) "
     "log_k -0.18'; corroborated by the LLNL DB (effective logK ~ -0.079) and measured potentiometry (Archer & Monk "
     "1964; Daniele et al. 1985).  The minteq/llnl logK spread sets the +/-0.17 (on K) uncertainty.", "SOURCED",
-    "Weak Na+/Ac- ion-pair association (K < 1 L/mol); opt-in via include_ion_pair=True.")
+    "Weak Na+/Ac- ion-pair association (K < 1 L/mol); opt-in via include_ion_pair=True.  B2 (Round VII): the +/-0.17 "
+    "is a BETWEEN-DATABASE / MODEL-VARIATION spread (minteq logK -0.18 vs llnl ~-0.079), NOT a statistical 1-sigma "
+    "measurement uncertainty -- the two source values + provenance are retained in `source` rather than collapsed "
+    "into an unearned confidence interval; propagate it as model-form variation, not a Gaussian sigma.")
 
 
 def _require_source_temperature(T_K: float) -> None:
@@ -439,7 +442,14 @@ def _ion_pair_acetate_root(h: float, Ka_c: float, Kass_c: float, C_T: float, Na_
     disc = b1 * b1 + 4.0 * a2 * C_T          # == b1^2 - 4*a2*C0 with C0 = -C_T
     if disc < 0 or a2 <= 0:
         return float("nan")
-    return (-b1 + math.sqrt(disc)) / (2.0 * a2)
+    # B5 (Round VII): the positive root (-b1 + sqrt(disc))/(2 a2) subtracts two near-equal large numbers when b1 > 0
+    # (the dilute-acetate regime 4 a2 C_T << b1^2), losing precision -- measured relerr ~3e-8 by C_T ~ 1e-7 and
+    # growing as C_T -> 0, within ~30x of the AGREEMENT_RTOL route-agreement gate.  The algebraically identical
+    # cancellation-free CONJUGATE form 2 C_T/(b1 + sqrt(disc)) adds like-signed terms for b1 > 0 (product-of-roots =
+    # -C_T/a2, so the positive root equals this); the b1 <= 0 branch already adds like-signed terms.  (This is the
+    # ACETATE-root analogue of the Round VI h_of_a fix -- a DIFFERENT cancellation, in route 1's inner elimination.)
+    sq = math.sqrt(disc)
+    return 2.0 * C_T / (b1 + sq) if b1 > 0.0 else (-b1 + sq) / (2.0 * a2)
 
 
 def _ion_pair_charge_residual(h: float, Ka_c: float, Kw_c: float, Kass_c: float, C_T: float, Na_T: float) -> float:

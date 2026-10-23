@@ -120,5 +120,5 @@ def test_contract_is_version_independent():
     blob = json.dumps(build_contract(), sort_keys=True)
     assert smartchem.__version__ not in blob
     # and specifically none of the release-arc versions should ever appear in the surface
-    for v in ("0.9.5a1", "1.0.0rc1", "1.0.0", "1.1.0a1"):
+    for v in ("0.9.5a1", "1.0.0rc1", "1.0.0", "1.1.0a1", "1.1.0"):
         assert v not in blob, f"version {v!r} leaked into the public-contract surface"

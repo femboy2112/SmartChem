@@ -145,7 +145,9 @@ scripts/run_suite.sh
   added class. The profile is opt-in — promoting it toward a default would first need a measured search-cost blast
   radius (its H₂-shedding edges widen branching on large saturated substrates: bounded, never a hang, not yet
   measured at scale).
-* RDKit = dev-only oracle; it never changes a verdict. The committed baseline runs without it.
+* RDKit is optional and never changes a verdict: a dev-only identity oracle (CIP cross-checks, uninstalled from the
+  committed baseline) and a runtime depiction backend behind the `depiction` extra (drawn schemes degrade to a
+  name/formula label without it). The committed baseline runs without it.
 * Procedure-source evidence proves arithmetic/placement, not subject binding (deferred, §5).
 * A complete bounded search is complete only within the declared grammar; absence of a route is never
   evidence of absence.

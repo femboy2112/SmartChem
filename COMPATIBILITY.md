@@ -224,8 +224,13 @@ reads a payload-supplied path — recompile locally from the file).
 
 ## 8. Optional backends
 
-* **RDKit** is a development-only oracle; the committed baseline runs without it and its tests skip. It never changes a
-  verdict.
+* **RDKit** is optional, never required, and never changes a verdict. It serves two roles, both import-guarded so the
+  committed baseline runs without it: a *development* identity oracle (the CIP cross-checks `importorskip`-skip when it
+  is absent, and it is uninstalled from the committed baseline), and a *runtime* structure-depiction backend behind the
+  `depiction` extra (`pip install smartchem[depiction]`) for `smartchem graph … --format scheme`. Without the depiction
+  backend the drawn scheme degrades to a readable name/formula label and every other verb is unaffected; a depiction is
+  a picture of the engine's own atom/bond graph (built from it directly, never via a SMILES round-trip) and asserts no
+  chemistry the engine did not already hold.
 * **PySCF** (`pip install smartchem[qc]`) is an optional high-accuracy energy oracle; the categorical core, the route
   compiler and the capability compiler run without it, and its presence does not change a route, readiness or
   capability verdict.

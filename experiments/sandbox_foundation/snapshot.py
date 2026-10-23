@@ -145,7 +145,30 @@ def _view(store: tuple) -> np.ndarray:
 
 
 # --------------------------------------------------------------------------------------------- the run receipt
-_TRUSTED = object()   # module-private sentinel: only the factories below can stamp `admitted`
+def _is_real(x) -> bool:
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+
+
+def numerics_verified(numerics) -> bool:
+    """The ONE pure verdict on a numerics block (a Mapping, frozen or plain/JSON).  Fail-closed on everything odd:
+    wrong container types, no tolerance, a missing / None / bool / non-finite residual, a bool / non-finite / negative
+    tolerance, a non-converged status.  Shared by `ModelRunReceipt` and the frame validator, so a renderer re-derives
+    exactly the verdict the simulator would."""
+    if not isinstance(numerics, Mapping) or numerics.get("convergence_status") not in _CONVERGED_OK:
+        return False
+    tol, res = numerics.get("tolerances"), numerics.get("residuals")
+    if not isinstance(tol, Mapping) or not isinstance(res, Mapping) or not tol:
+        return False
+    for k, t in tol.items():
+        r = res.get(k)
+        if not _is_real(r) or not _is_real(t) or t < 0 or r > t:
+            return False
+    return True
+
+
+def trust_label(admitted: bool, level: str, verified: bool) -> str:
+    a = "ADMITTED" if admitted else f"UNADMITTED({level})"
+    return f"{a}+{'NUMERICS-VERIFIED' if verified else 'NUMERICS-UNVERIFIED'}"
 
 
 class ModelRunReceipt:
@@ -155,26 +178,30 @@ class ModelRunReceipt:
     admission        `admission_level`, `law_levels`, `admission_identities`, `admitted`  (the EVIDENCE side)
     numerics         `numerics`: solver, convergence_status, tolerances{name: tol}, residuals{name: value|None}, notes
 
-    `admitted` is True ONLY when a trusted factory (`from_executable`) derived it from an ExecutableMechanism under an
-    AdmissionPolicy; the public constructor can record a DECLARED level but never sets `admitted` (a label is not a
-    binding).  `numerically_verified` is COMPUTED: the convergence status must be CONVERGED / NOT_ITERATIVE, there must
-    be at least one tolerance, and EVERY tolerance must have a finite residual <= it -- a missing (None) residual FAILS
-    CLOSED.  What 'numerically verified' does NOT mean: it certifies the listed residuals (conservation, positivity,
-    passivity), NOT a truncation-error bound against the exact solution of the underlying PDE."""
+    `admitted` is True ONLY when a trusted classmethod (`from_executable`) MINTS it from an ExecutableMechanism under an
+    AdmissionPolicy.  The public constructor has NO stamp parameters at all (same pattern as SourceBinding: no public
+    door, a private `_mint`), so it can record a DECLARED level but can never set `admitted` -- and there is no
+    sentinel to import (a label is not a binding).  Conceded limit: `object.__setattr__` on a finished object is
+    possible in Python; that is not cryptographic and not claimed to be.
+
+    `numerically_verified` is COMPUTED by `numerics_verified`: status CONVERGED / NOT_ITERATIVE, at least one
+    tolerance, and EVERY tolerance a finite non-negative real with a finite real residual <= it; a missing / None /
+    bool / non-finite residual or tolerance FAILS CLOSED.  A NaN residual is ACCEPTED by this constructor (the verdict
+    is then False); the construction-time REFUSAL only fires when the receipt enters a PhysicalWorldSnapshot
+    (canonical JSON uses allow_nan=False).  What 'numerically verified' does NOT mean: it certifies the listed
+    residuals (conservation, positivity, passivity), NOT a truncation-error bound against the exact PDE solution."""
 
     __slots__ = ("_model_identity", "_level", "_admitted", "_derived", "_law_levels", "_adm_ids", "_numerics")
 
     def __init__(self, model_identity: str, numerics: Mapping, *, admission_level="SYNTHETIC", law_levels=(),
-                 admission_identities=(), _stamp=None, _admitted=False, _derived=False):
+                 admission_identities=()):
         if not isinstance(model_identity, str) or not model_identity:
             raise ValueError("model_identity must be a non-empty string")
         level = AdmissionLevel(admission_level).value          # unknown level -> ValueError, not a free-form label
-        if _stamp is not _TRUSTED:                             # public path: a DECLARATION, never an authority
-            _admitted, _derived = False, False
         object.__setattr__(self, "_model_identity", model_identity)
         object.__setattr__(self, "_level", level)
-        object.__setattr__(self, "_admitted", bool(_admitted))
-        object.__setattr__(self, "_derived", bool(_derived))
+        object.__setattr__(self, "_admitted", False)           # the public path is a DECLARATION, never an authority
+        object.__setattr__(self, "_derived", False)
         object.__setattr__(self, "_law_levels", tuple(AdmissionLevel(x).value for x in law_levels))
         object.__setattr__(self, "_adm_ids", _deep_freeze([list(x) if isinstance(x, (tuple, list)) else x
                                                            for x in admission_identities]))
@@ -188,20 +215,26 @@ class ModelRunReceipt:
 
     # -- trusted factories ---------------------------------------------------------------------------
     @classmethod
+    def _mint(cls, model_identity, numerics, *, admitted: bool, **kw) -> "ModelRunReceipt":
+        """The ONLY place the admitted/derived stamp is written (private; the public __init__ cannot reach it)."""
+        obj = cls(model_identity, numerics, **kw)
+        object.__setattr__(obj, "_admitted", bool(admitted))
+        object.__setattr__(obj, "_derived", True)
+        return obj
+
+    @classmethod
     def from_executable(cls, executable, policy, numerics) -> "ModelRunReceipt":
         """DERIVE the admission side from an ExecutableMechanism under `policy` (the trusted path)."""
-        return cls(executable.model_identity, numerics,
-                   admission_level=executable.admission_level_under(policy).value,
-                   law_levels=[lv.value for lv in executable.law_levels(policy)],
-                   admission_identities=executable.admission_identities,
-                   _stamp=_TRUSTED, _admitted=executable.admitted_under(policy), _derived=True)
+        return cls._mint(executable.model_identity, numerics, admitted=executable.admitted_under(policy),
+                         admission_level=executable.admission_level_under(policy).value,
+                         law_levels=[lv.value for lv in executable.law_levels(policy)],
+                         admission_identities=executable.admission_identities)
 
     @classmethod
     def unadmitted_transport(cls, model_identity: str, numerics: Mapping) -> "ModelRunReceipt":
         """A passive-transport-only model with caller-declared conductances: NO kinetic mechanism is admitted, so the
         derived verdict is SYNTHETIC / not admitted (derived, not merely declared)."""
-        return cls(model_identity, numerics, admission_level="SYNTHETIC", law_levels=(), admission_identities=(),
-                   _stamp=_TRUSTED, _admitted=False, _derived=True)
+        return cls._mint(model_identity, numerics, admitted=False, admission_level="SYNTHETIC")
 
     # -- reads -----------------------------------------------------------------------------------------
     model_identity = property(lambda self: self._model_identity)
@@ -214,19 +247,7 @@ class ModelRunReceipt:
 
     @property
     def numerically_verified(self) -> bool:
-        n = self._numerics
-        if n.get("convergence_status") not in _CONVERGED_OK:
-            return False
-        tol, res = n.get("tolerances") or {}, n.get("residuals") or {}
-        if not tol:
-            return False
-        for k, t in tol.items():
-            r = res.get(k)
-            if r is None or isinstance(r, bool) or not isinstance(r, (int, float)):
-                return False                       # a missing / non-numeric residual cannot certify anything
-            if not (math.isfinite(r) and math.isfinite(t) and r <= t):
-                return False
-        return True
+        return numerics_verified(self._numerics)
 
     @property
     def scientific_measurement(self) -> bool:
@@ -235,9 +256,7 @@ class ModelRunReceipt:
 
     @property
     def label(self) -> str:
-        a = "ADMITTED" if self._admitted else f"UNADMITTED({self._level})"
-        n = "NUMERICS-VERIFIED" if self.numerically_verified else "NUMERICS-UNVERIFIED"
-        return f"{a}+{n}"
+        return trust_label(self._admitted, self._level, self.numerically_verified)
 
     # -- digest parts (model side vs evidence side stay orthogonal) -----------------------------------
     def model_part(self):
@@ -258,6 +277,30 @@ def absent_receipt_dict() -> dict:
     """What a frame says when NO receipt travelled with the state: unadmitted, unverified -- never silent."""
     return {"present": False, "admitted": False, "numerically_verified": False, "scientific_measurement": False,
             "label": "NO-RECEIPT(UNADMITTED+NUMERICS-UNVERIFIED)"}
+
+
+def _digests(schema, species, vol, amt, mask, units, tick, time_s, cons, numunc, boundary, unsupported, rcpt_model,
+             evidence, rcpt_adm) -> tuple:
+    """The SINGLE definition of (model_digest, evidence_digest).  The snapshot calls it over its stores; the frame
+    validator calls it over a frame's content (`compute_digests`), so the two cannot drift apart."""
+    model = _canon(schema, species, vol, amt, mask, units, tick, time_s, cons, numunc, boundary, unsupported,
+                   rcpt_model)
+    return model, _canon(schema, evidence, rcpt_adm)
+
+
+def compute_digests(*, schema_version, species, cell_volumes_m3, amounts_mol, valid_mask, units, model_tick,
+                    physical_time_s, conservation_diagnostics, numerical_uncertainty, boundary_material, unsupported,
+                    evidence, receipt_model_part, receipt_admission_part) -> tuple:
+    """Recompute (model_digest, evidence_digest) from PLAIN content (what a frame carries).  Masked amounts are
+    canonical 0.0 (see PhysicalWorldSnapshot), so a null in a frame reconstructs to the exact stored value."""
+    mask = np.asarray(valid_mask, dtype=bool)
+    amt = np.where(mask, np.asarray(amounts_mol, dtype=float), 0.0)
+    return _digests(
+        str(schema_version), tuple(species), _store_array(np.asarray(cell_volumes_m3, dtype=float), float),
+        _store_array(amt, float), _store_array(mask, bool), _deep_freeze(units), int(model_tick),
+        float(physical_time_s), _deep_freeze(conservation_diagnostics), _deep_freeze(numerical_uncertainty),
+        _deep_freeze(tuple(boundary_material)), _deep_freeze(unsupported), _deep_freeze(receipt_model_part),
+        _deep_freeze(evidence), _deep_freeze(receipt_admission_part))
 
 
 # --------------------------------------------------------------------------------------------- the snapshot
@@ -296,6 +339,7 @@ class PhysicalWorldSnapshot:
             raise ValueError("cell volumes must be finite and > 0")
         if np.any(~np.isfinite(amt) & mask):
             raise ValueError("a cell/species marked valid carries a non-finite amount")
+        amt = np.where(mask, amt, 0.0)     # a MASKED amount is not authoritative content: canonical 0.0 (frame emits null)
         unsupported = dict(unsupported_quantities or {})
         illus = dict(illustration or {})
         clash = (set(unsupported) | set(illus)) & ({"amount_mol", "concentration_mol_per_m3"} | set(species))
@@ -328,10 +372,10 @@ class PhysicalWorldSnapshot:
         SAME immutable stores the properties hand out -- so a consumer's mutated copy can never desynchronise it."""
         rcpt_m = self._receipt.model_part() if self._receipt is not None else None
         rcpt_a = self._receipt.admission_part() if self._receipt is not None else None
-        model = _canon(self._schema_version, self._species, self._vol, self._amt, self._mask, self._units,
-                       self._model_tick, self._physical_time_s, self._conservation_diagnostics,
-                       self._numerical_uncertainty, self._boundary_material, self._unsupported, rcpt_m)
-        return model, _canon(self._schema_version, self._evidence, rcpt_a)
+        return _digests(self._schema_version, self._species, self._vol, self._amt, self._mask, self._units,
+                        self._model_tick, self._physical_time_s, self._conservation_diagnostics,
+                        self._numerical_uncertainty, self._boundary_material, self._unsupported, rcpt_m,
+                        self._evidence, rcpt_a)
 
     def verify_integrity(self) -> bool:
         """Re-derive both digests from the stored content.  False means the object was tampered with at the object

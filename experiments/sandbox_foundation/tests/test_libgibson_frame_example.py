@@ -409,3 +409,114 @@ def test_RF_F4_15_control_enters_only_through_the_model_command_api_and_is_recor
     assert "run" not in frame and not hasattr(snap, "run")
     ok, _ = membrane_world()
     assert tuple(ok.valves) == (1.0, 0.0)                                    # the world factory is not mutated by running
+
+
+# ======================================================================================================
+# Wave F follow-up -- F-1 (trust/digests bound to the receipt), F-2 (typed refusal, never KeyError).
+# ======================================================================================================
+def _demo_frame(ticks=2):
+    run = ModelRun(*membrane_world(), 20.0)
+    for _ in range(ticks):
+        run.advance()
+    return to_frame(run.snapshot(), run.interfaces)
+
+
+def _admitted_frame():
+    """A genuinely ADMITTED+verified frame: the receipt minted by from_executable, spliced onto a real snapshot."""
+    from experiments.sandbox_foundation.snapshot import ModelRunReceipt, PhysicalWorldSnapshot
+    from experiments.sandbox_foundation.tests.test_snapshot import _verified_executable
+    verified, _, policy = _verified_executable()
+    run = ModelRun(*membrane_world(), 20.0)
+    run.advance()
+    base = run.snapshot()
+    rec = ModelRunReceipt.from_executable(verified, policy, base.receipt.numerics)
+    snap = PhysicalWorldSnapshot(
+        base.species, base.cell_volumes_m3, base.amounts_mol, base.valid_mask, base.units, base.model_tick,
+        base.physical_time_s, base.conservation_diagnostics, base.numerical_uncertainty, base.boundary_material,
+        base.evidence, base.display_hints, receipt=rec, illustration=base.illustration,
+        unsupported_quantities=base.unsupported_quantities)
+    return to_frame(snap, run.interfaces)
+
+
+def test_RF_F1_genuine_frames_validate_clean_including_a_really_admitted_one():
+    assert validate_frame(_demo_frame()) == []
+    f = _admitted_frame()
+    assert f["trust"]["scientific_measurement"] is True and validate_frame(f) == []
+    screen = HeadlessPresenter().render(json.dumps(f))
+    assert "NOT A VALIDATED MEASUREMENT" not in screen and "ADMITTED+NUMERICS-VERIFIED" in screen
+
+
+def test_RF_F1_RED_a_forged_trust_block_on_an_unadmitted_receipt_is_caught_and_never_shown_as_validated():
+    f = _demo_frame()
+    assert f["receipt"]["admitted"] is False
+    f["trust"] = {"label": "ADMITTED+NUMERICS-VERIFIED", "admitted": True, "numerically_verified": True,
+                  "scientific_measurement": True}                  # overwrite ONLY the trust block
+    probs = validate_frame(f)
+    assert any("trust" in p for p in probs)                        # the binding is enforced
+    with pytest.raises(FrameContractError):
+        HeadlessPresenter().render(json.dumps(f))                  # strict presenter refuses
+    screen = HeadlessPresenter().render(json.dumps(f), strict=False)
+    assert "NOT A VALIDATED MEASUREMENT" in screen                 # verdict from the RECEIPT, not the forged block
+    assert "CONTRACT VIOLATIONS" in screen
+
+
+@pytest.mark.parametrize("forge", [
+    lambda f: f["receipt"].update(numerically_verified=True, scientific_measurement=True),   # receipt flags vs numerics
+    lambda f: f["receipt"]["numerics"]["residuals"].update(conservation_abs_mol=5.0),        # verdict vs residuals
+    lambda f: f["receipt"].update(admitted=True),                                           # admitted w/o derivation/level
+    lambda f: f["receipt"].update(admitted=True, admission_derived=True),                   # ... w/o a verified level
+    lambda f: f["receipt"].update(label="ADMITTED+NUMERICS-VERIFIED"),
+    lambda f: f.update(model_digest="0" * 64),
+    lambda f: f.update(evidence_digest="f" * 64),
+    lambda f: f["fields"]["X"]["amount_mol"].__setitem__(0, 1.0),                           # state edited, digest stale
+    lambda f: f["geometry"]["boundary_material"].__setitem__(0, "inert wall"),
+    lambda f: f["receipt"].update(model_identity="other"),
+    lambda f: f["evidence"].update(admission="SOURCE_VERIFIED"),
+])
+def test_RF_F1_every_unmoored_claim_is_flagged_digest_and_verdict_are_recomputed(forge):
+    f = _demo_frame()
+    forge(f)
+    assert validate_frame(f) != []
+    with pytest.raises(FrameContractError):
+        HeadlessPresenter().render(json.dumps(f))
+
+
+def test_RF_F1_a_forged_trust_on_a_no_receipt_frame_is_caught_too():
+    snap, ifc = example_snapshot()
+    f = to_frame(snap, ifc)
+    assert validate_frame(f) == []
+    f["trust"].update(admitted=True, scientific_measurement=True, numerically_verified=True)
+    assert any("trust" in p for p in validate_frame(f))
+
+
+def test_RF_F1_digest_recompute_covers_masked_cells_and_round_trips_through_json():
+    snap, ifc = example_snapshot()                                   # has a MASKED cell (null in the frame)
+    f = json.loads(json.dumps(to_frame(snap, ifc)))
+    assert validate_frame(f) == []
+
+
+@pytest.mark.parametrize("damage", [
+    lambda f: f["fields"]["X"].pop("kinds"),
+    lambda f: f["fields"]["X"]["kinds"].pop("amount_mol"),
+    lambda f: f["fields"]["X"].pop("amount_mol"),
+    lambda f: f["fields"]["X"]["kinds"].update(concentration_mol_per_m3=[]),
+    lambda f: f.pop("fields"),
+    lambda f: f.pop("geometry"),
+    lambda f: f["receipt"].pop("numerics"),
+    lambda f: f.update(receipt=None),
+    lambda f: f.update(fields={"X": None}),
+    lambda f: f.update(species=None),
+    lambda f: f.pop("invalid_mask"),
+])
+def test_RF_F2_a_malformed_frame_is_a_typed_refusal_never_a_bare_keyerror(damage):
+    f = _demo_frame()
+    damage(f)
+    probs = validate_frame(f)                                         # must RETURN problems, not raise KeyError
+    assert probs != []
+    with pytest.raises(FrameContractError):
+        HeadlessPresenter().render(json.dumps(f))
+    with pytest.raises(FrameContractError):
+        measurements(f)
+    for junk in ("[]", "3", "null"):
+        with pytest.raises(FrameContractError):
+            HeadlessPresenter().render(junk)

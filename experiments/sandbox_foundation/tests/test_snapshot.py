@@ -324,3 +324,39 @@ def test_RF_F4_verify_integrity_detects_an_object_level_tamper():
     from experiments.sandbox_foundation.snapshot import _store_array
     object.__setattr__(snap, "_amt", _store_array(np.array([[999.0]]), float))   # bypasses __setattr__ on purpose
     assert snap.verify_integrity() is False                       # python cannot forbid it; a consumer CAN detect it
+
+
+# ======================================================================================================
+# Wave F follow-up -- F-3 (un-forgeable stamp) and F-4 (tolerance type guard).
+# ======================================================================================================
+def test_RF_F3_the_public_constructor_has_no_stamp_kwargs_and_the_sentinel_is_gone():
+    import experiments.sandbox_foundation.snapshot as snapmod
+    assert not hasattr(snapmod, "_TRUSTED")                      # nothing to import-and-replay
+    for kw in ({"_stamp": object()}, {"_admitted": True}, {"_derived": True}):
+        with pytest.raises(TypeError):
+            ModelRunReceipt("m", _num(), **kw)
+    # the one legitimate door is the classmethod mint, which still works
+    verified, _, policy = _verified_executable()
+    assert ModelRunReceipt.from_executable(verified, policy, _num()).admitted is True
+
+
+def test_RF_F4_a_bad_tolerance_fails_closed_symmetrically_with_the_residual():
+    for bad in (True, float("nan"), float("inf"), -1.0, "1e-12", None):
+        r = ModelRunReceipt("m", _num(tolerances={"cons": bad, "pos": 0.0}))     # constructs fine ...
+        assert r.numerically_verified is False                                    # ... and never certifies, never crashes
+    assert ModelRunReceipt("m", _num(tolerances=[1, 2])).numerically_verified is False      # not a mapping
+    assert ModelRunReceipt("m", _num(residuals="oops")).numerically_verified is False
+
+
+def test_RF_F4_nan_residual_receipt_constructs_but_the_snapshot_refuses_it():
+    r = ModelRunReceipt("m", _num(residuals={"cons": float("nan"), "pos": 0.0}))   # the receipt ACCEPTS a NaN residual
+    assert r.numerically_verified is False                                          # ... verdict is fail-closed False
+    with pytest.raises(ValueError):                                                 # refusal fires on entering a snapshot
+        _snap_with(r)
+
+
+def test_RF_F1_masked_amounts_are_canonical_zero_so_the_frame_can_recompute_the_digest():
+    a = PhysicalWorldSnapshot(("A",), [1.0], np.array([[7.0]]), np.array([[False]]), {}, 0, 0.0)
+    b = PhysicalWorldSnapshot(("A",), [1.0], np.array([[np.nan]]), np.array([[False]]), {}, 0, 0.0)
+    assert a.model_digest == b.model_digest                      # a masked value is not authoritative content
+    assert float(a.amounts_mol[0, 0]) == 0.0

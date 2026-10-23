@@ -30,9 +30,10 @@ import math
 import numpy as np
 
 from experiments.sandbox_foundation.interface import Apparatus, three_chamber_membrane, transport
+from experiments.sandbox_foundation.mechanism_types import AdmissionLevel
 from experiments.sandbox_foundation.snapshot import (
     MEASUREMENT_KINDS, ModelRunReceipt, PhysicalWorldSnapshot, QuantityKind, _canon, absent_receipt_dict,
-    ascii_render)
+    ascii_render, compute_digests, numerics_verified, trust_label)
 
 K = QuantityKind
 
@@ -121,6 +122,7 @@ def to_frame(snap: PhysicalWorldSnapshot, interfaces) -> dict:
         "units": dict(snap.units),
         "conservation_diagnostics": _jsonify_plain(snap.conservation_diagnostics),
         "numerical_uncertainty": _jsonify_plain(snap.numerical_uncertainty),
+        "evidence": _jsonify_plain(snap.evidence),   # carried so a renderer can recompute evidence_digest
         "display_hints": dict(snap.display_hints),    # renderer-neutral cosmetics (excluded from model_digest)
     }
 
@@ -135,11 +137,52 @@ def _jsonify_plain(obj):
     return obj
 
 
-def validate_frame(frame: dict) -> list:
-    """The typing contract a renderer can enforce.  Returns a list of problems (empty = contract holds)."""
+_RECEIPT_REQUIRED = ("present", "admitted", "numerically_verified", "scientific_measurement", "label")
+_RECEIPT_PRESENT_REQUIRED = ("model_identity", "admission_level", "admission_derived", "law_levels",
+                             "admission_identities", "numerics")
+
+
+def derive_trust(frame) -> dict:
+    """The trust verdict RE-DERIVED from the frame's receipt alone -- never read from the carried `trust` block.
+    numerically_verified is recomputed from receipt['numerics'] (tolerances vs residuals); admitted is the receipt's
+    own admission stamp, honoured only if it is internally coherent (derived, and at a SOURCE_VERIFIED-or-better level).
+    Anything malformed or absent derives to the safe side: unadmitted / unverified."""
+    try:
+        r = frame["receipt"]
+        if r.get("present") is not True:
+            return {"label": absent_receipt_dict()["label"], "admitted": False, "numerically_verified": False,
+                    "scientific_measurement": False}
+        verified = numerics_verified(r.get("numerics"))
+        level = r.get("admission_level")
+        admitted = (r.get("admitted") is True and r.get("admission_derived") is True and level in (
+            AdmissionLevel.SOURCE_VERIFIED.value, AdmissionLevel.BENCHMARK_VALIDATED.value))
+        return {"label": trust_label(admitted, str(level), verified), "admitted": admitted,
+                "numerically_verified": verified, "scientific_measurement": admitted and verified}
+    except (KeyError, TypeError, AttributeError, IndexError, ValueError):
+        return {"label": "UNREADABLE-RECEIPT(UNADMITTED+NUMERICS-UNVERIFIED)", "admitted": False,
+                "numerically_verified": False, "scientific_measurement": False}
+
+
+def validate_frame(frame) -> list:
+    """The contract a renderer can ENFORCE.  Returns a list of problems (empty = contract holds); NEVER raises on a
+    malformed frame (a missing key is a contract violation, reported as one).  It checks (1) the 4-way typing, (2) that
+    the carried `trust` block, the receipt's own derived flags and the model/evidence digests are all BOUND to the
+    receipt and the frame's content -- recomputed here, not believed.  Honest limit: the digests are unkeyed hashes, so
+    this detects an inconsistent or partially-edited frame, not a forger who rewrites receipt AND recomputes digests."""
+    try:
+        return _validate(frame)
+    except (KeyError, TypeError, AttributeError, IndexError, ValueError) as exc:
+        return [f"malformed frame: {type(exc).__name__}: {exc}"]
+
+
+def _validate(frame) -> list:
+    if not isinstance(frame, dict):
+        return [f"frame must be a JSON object, got {type(frame).__name__}"]
     bad = []
     legal = {k.value for k in K}
-    for need in ("receipt", "trust", "quantity_kinds", "fields", "unsupported", "illustration"):
+    for need in ("receipt", "trust", "quantity_kinds", "fields", "unsupported", "illustration", "geometry",
+                 "species", "invalid_mask", "evidence", "units", "conservation_diagnostics", "numerical_uncertainty",
+                 "model_digest", "evidence_digest", "schema_version", "model_tick", "physical_time_s"):
         if need not in frame:
             bad.append(f"frame lacks {need!r}")
     if bad:
@@ -147,11 +190,19 @@ def validate_frame(frame: dict) -> list:
     for nm, kind in frame["quantity_kinds"].items():
         if kind not in legal or kind in (K.UNSUPPORTED.value, K.ILLUSTRATION.value):
             bad.append(f"quantity_kinds[{nm!r}]={kind!r} is not a measurement kind")
-    for nm, fld in frame["fields"].items():
-        for q, vals in ((q, fld[q]) for q in ("amount_mol", "concentration_mol_per_m3")):
-            kinds = fld["kinds"][q]
-            if len(kinds) != len(vals):
-                bad.append(f"{nm}.{q}: kinds/values length mismatch")
+    species, mask = frame["species"], frame["invalid_mask"]
+    for nm in species:
+        fld = frame["fields"].get(nm)
+        if not isinstance(fld, dict) or not isinstance(fld.get("kinds"), dict):
+            bad.append(f"fields[{nm!r}] must be an object with a 'kinds' object")
+            continue
+        for q in ("amount_mol", "concentration_mol_per_m3"):
+            if q not in fld or q not in fld["kinds"]:
+                bad.append(f"fields[{nm!r}] lacks {q!r} values or kinds")
+                continue
+            vals, kinds = fld[q], fld["kinds"][q]
+            if not isinstance(vals, list) or not isinstance(kinds, list) or len(kinds) != len(vals):
+                bad.append(f"{nm}.{q}: kinds/values must be equal-length lists")
                 continue
             for i, (k, v) in enumerate(zip(kinds, vals)):
                 if k not in legal:
@@ -169,9 +220,60 @@ def validate_frame(frame: dict) -> list:
     for nm, q in frame["illustration"].items():
         if q.get("kind") != K.ILLUSTRATION.value or q.get("measurement") is not False:
             bad.append(f"illustration[{nm!r}] must be kind ILLUSTRATION with measurement=false")
-    if frame["trust"].get("scientific_measurement") and not (
-            frame["trust"].get("admitted") and frame["trust"].get("numerically_verified")):
-        bad.append("trust claims scientific_measurement without admitted AND numerically_verified")
+    if bad:                                   # the binding checks below assume a structurally sound frame
+        return bad
+
+    # ---- (2a) receipt shape + the receipt's own flags re-derived from its numerics ---------------------------
+    r = frame["receipt"]
+    if not isinstance(r, dict) or any(k not in r for k in _RECEIPT_REQUIRED):
+        return ["receipt is missing or malformed"]
+    derived = derive_trust(frame)
+    if r["present"] is True:
+        if any(k not in r for k in _RECEIPT_PRESENT_REQUIRED):
+            return ["receipt claims present but lacks its identity/admission/numerics fields"]
+        if r["admitted"] is True and not derived["admitted"]:
+            bad.append("receipt claims admitted but is not coherent (needs admission_derived and a "
+                       "SOURCE_VERIFIED+ level)")
+        if r["numerically_verified"] != derived["numerically_verified"]:
+            bad.append("receipt.numerically_verified disagrees with its own numerics (recomputed)")
+        if r["scientific_measurement"] != derived["scientific_measurement"]:
+            bad.append("receipt.scientific_measurement disagrees with admitted AND numerically_verified (recomputed)")
+        if r["label"] != derived["label"]:
+            bad.append("receipt.label disagrees with the recomputed verdict")
+    elif r != absent_receipt_dict():
+        bad.append("an absent receipt must read exactly as the explicit unadmitted/unverified one")
+
+    # ---- (2b) the carried trust block must EQUAL the receipt-derived verdict ----------------------------------
+    if frame["trust"] != derived:
+        bad.append(f"trust block {frame['trust']!r} is not the verdict derived from the receipt {derived!r}")
+
+    # ---- (2c) masks, then both digests recomputed from the frame's own content ------------------------------
+    C = len(frame["geometry"]["cell_volumes_m3"])
+    if len(mask) != C or any(len(row) != len(species) for row in mask):
+        return bad + ["invalid_mask shape disagrees with cells x species"]
+    for s, nm in enumerate(species):
+        for q in ("amount_mol", "concentration_mol_per_m3"):
+            for i, k in enumerate(frame["fields"][nm]["kinds"][q]):
+                if (k == K.UNSUPPORTED.value) != bool(mask[i][s]):
+                    bad.append(f"{nm}.{q}[{i}]: kind disagrees with invalid_mask")
+    if bad:
+        return bad
+    amt = [[frame["fields"][nm]["amount_mol"][i] for nm in species] for i in range(C)]
+    amt = [[0.0 if v is None else v for v in row] for row in amt]
+    model, evid = compute_digests(
+        schema_version=frame["schema_version"], species=species, cell_volumes_m3=frame["geometry"]["cell_volumes_m3"],
+        amounts_mol=amt, valid_mask=[[not m for m in row] for row in mask], units=frame["units"],
+        model_tick=frame["model_tick"], physical_time_s=frame["physical_time_s"],
+        conservation_diagnostics=frame["conservation_diagnostics"], numerical_uncertainty=frame["numerical_uncertainty"],
+        boundary_material=frame["geometry"]["boundary_material"],
+        unsupported={nm: q["unit"] for nm, q in frame["unsupported"].items()}, evidence=frame["evidence"],
+        receipt_model_part=(["receipt-model", r["model_identity"], r["numerics"]] if r["present"] is True else None),
+        receipt_admission_part=(["receipt-admission", r["admission_level"], r["admitted"], r["admission_derived"],
+                                 r["law_levels"], r["admission_identities"]] if r["present"] is True else None))
+    if frame["model_digest"] != model:
+        bad.append("model_digest does not match the frame's authoritative content (recomputed)")
+    if frame["evidence_digest"] != evid:
+        bad.append("evidence_digest does not match the frame's evidence + receipt admission (recomputed)")
     return bad
 
 
@@ -210,14 +312,29 @@ class HeadlessPresenter:
     write back.  It refuses a frame that breaks the typing contract, banners anything not a validated measurement, and
     draws illustration with a visibly different glyph set (never as a number)."""
 
-    def render(self, frame_text: str) -> str:
-        frame = json.loads(frame_text)
+    def render(self, frame_text: str, *, strict: bool = True) -> str:
+        """strict (default): refuse any frame that breaks the contract.  strict=False: draw it anyway but with the
+        banner FORCED on and the violations listed.  Either way validated-vs-not is decided from the RECEIPT-derived
+        verdict (`derive_trust`), never from the frame's carried `trust` block."""
+        try:
+            frame = json.loads(frame_text)
+        except (TypeError, ValueError) as exc:
+            raise FrameContractError(f"frame is not valid JSON text: {exc}") from exc
         problems = validate_frame(frame)
-        if problems:
+        if problems and strict:
             raise FrameContractError("; ".join(problems))
-        t = frame["trust"]
+        try:
+            return self._draw(frame, problems)
+        except (KeyError, TypeError, AttributeError, IndexError, ValueError) as exc:
+            raise FrameContractError(f"frame is not drawable: {type(exc).__name__}: {exc}") from exc
+
+    @staticmethod
+    def _draw(frame: dict, problems: list) -> str:
+        t = derive_trust(frame)
         lines = [f"tick {frame['model_tick']}  t={frame['physical_time_s']:g} s  [{t['label']}]"]
-        if not t["scientific_measurement"]:
+        if problems:
+            lines.append("  !! CONTRACT VIOLATIONS: " + "; ".join(problems))
+        if problems or not t["scientific_measurement"]:
             lines.append("  ** SIMULATED STATE -- NOT A VALIDATED MEASUREMENT (unadmitted or numerics unverified) **")
         g = frame["geometry"]
         for i in range(g["n_cells"]):

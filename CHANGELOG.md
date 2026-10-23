@@ -9,6 +9,69 @@ This file summarises the finite chemical-compiler release arc. The exhaustive pe
 
 ---
 
+## [1.1.0] — 2026-10-23
+
+**Minor release: wider chemical recognition and a graph/synthesis workbench, under an unchanged 1.x machine
+contract.** From 1.0.0 the stable wire schema ids, `semantic_digest`, route digests, the verdict vocabulary and the
+readiness/capability semantics are **byte-invariant**; only the declared version-bound identity moves
+(`result_digest`, `tool_version`, the implementation digest, the `--version` banner). The transition is proved
+field-by-field — see *Compatibility* below.
+
+### Added — reaction-type coverage (17 → 20 recognized classes)
+
+The reaction-type oracle is a readiness-layer **demoter** (it never generates routes and never changes a search
+identity); a new recognizer can only clear a `reaction_type: not recognized` obligation on a route that already
+exists, widening coverage in the promotion direction (COMPATIBILITY §7).
+
+- **#110 activated acyl transfer** (18th) — `anhydride/acyl-halide + R-OH/R-NH/R-SH -> ester/amide/thioester +
+  acid/HX`. Graduates the real paracetamol route (4-aminophenol + acetic anhydride) from `FORMAL_CANDIDATE` to
+  `PROCESS_SPECIFIED`. Forensic record:
+  [`V1_1_COVERAGE_EXPANSION_110.md`](docs/research/V1_1_COVERAGE_EXPANSION_110.md).
+- **#111 alkyl sulfonate-ester transfer** (19th) — `sulfonyl halide + R-OH -> sulfonate ester + HX` (alkyl-O only;
+  aryl-O deferred).
+- **#115 Claisen condensation** (20th) — `ester/ketone + ester/carbonate -> 1,3-dicarbonyl + alcohol`
+  (type-validity only; the stoichiometric enolate base is #107). Distinct from the Claisen [3,3] sigmatropic
+  rearrangement, which remains a separate recognizer. #111/#115 independent before/after:
+  [`V1_1_COVERAGE_EXPANSION_111_115.md`](docs/research/V1_1_COVERAGE_EXPANSION_111_115.md).
+
+Each class ships its no-false-vouch adversarial corpus (cross-poach, forged-centre and per-guard mutation
+controls); the cardinal "coverage loss, never a false vouch" invariant holds.
+
+### Added — chemical-graph / synthesis workbench
+
+- A new **`smartchem graph`** CLI verb and the `graph_projection` / `graph_cli` modules — a typed, additive,
+  non-contract projection surface (its own `smartchem/graph-projection-v0a1` schema id; it does not
+  touch the stable compiler wire).
+- An optional **`depiction`** extra (`pip install smartchem[depiction]`, RDKit) that draws a reaction scheme for
+  `smartchem graph … --format scheme`; without it the scheme degrades to a readable name/formula label. A
+  depiction is built from the engine's own atom/bond graph, asserts no chemistry the engine did not already hold,
+  and never changes a verdict.
+- An opt-in **`bond-order-edit-v1`** algebra profile (#114): reachability only, its routes demoted to
+  `FORMAL_CANDIDATE`; not a default and not a recognizer.
+
+### Fixed / hardened
+
+- #124 refuses an ancestor-as-leaf cyclic route dependency; #126 retires the forged-centre vouch (recognition is
+  content-deterministic, never caller-settable); #131 typed recognition outcomes; #132 pericyclic
+  content-determinism. `single_cut_capped_scissions` added in `structure_descent.py`.
+
+### Compatibility
+
+- **No change** to any stable wire schema id, `semantic_digest`, request digest, route digest, verdict vocabulary,
+  or readiness/capability meaning. Verified: the version-independent fingerprint and the public-contract freeze
+  both report **NO DRIFT**; the version transition moves **only** the declared tool-version-bound fields
+  (`experiments/v1_0_version_transition.py`, `tests/test_v1_0_version_transition.py`).
+- The paracetamol-class readiness promotion (#110) is a declared MINOR coverage move that rides the readiness
+  layer under an unchanged `semantic_digest`. **Pin requests and verdicts, not `result_digest`, across the
+  upgrade** (COMPATIBILITY §2.2).
+- Optional backends never change a verdict. RDKit is now additionally a runtime `depiction` extra (previously
+  dev-only); the core still runs on `numpy` + `scipy` alone. Supported Python **3.10–3.13**.
+- **This release does not ship a validated physics sandbox.** The experimental 2.0 physicalization work is tracked
+  on a separate research branch and is NOT part of the installed 1.1 package.
+
+The exact release gate — merged-`main` SHA, hosted CI run, full-suite counts and artifact SHA-256 — is
+[`V1_1_RELEASE_GATE.md`](docs/research/V1_1_RELEASE_GATE.md).
+
 ## [1.0.0] — 2026-10-02
 
 **Stable promotion from `1.0.0rc1`. No compiler-semantic change.** The chemical-compiler semantics — identity,
@@ -110,5 +173,6 @@ Verification work is **budgeted in deterministic units** (`VerificationBudget`);
 - clean-install matrix exercised across Python **3.10 / 3.11 / 3.12 / 3.13**, wheel and sdist, with no source tree on
   `sys.path`.
 
+[1.1.0]: https://github.com/femboy2112/SmartChem/releases/tag/v1.1.0
 [1.0.0]: https://github.com/femboy2112/SmartChem/releases/tag/v1.0.0
 [1.0.0rc1]: https://github.com/femboy2112/SmartChem/tree/release/1.0.0

@@ -63,8 +63,13 @@ from experiments.poor_man_step_validity_demoter_defer_probe import _resolve, _ro
 import experiments.poor_man_reaction_type_oracle_probe as p56
 
 # UNCHANGED by 1.5 #115: #115 is a reaction-type DEMOTER (it never changes route GENERATION), so this probe's
-# payload does not deterministically move.  (An earlier transient read suggested a change; it was the pre-existing
-# route-count nondeterminism documented in PHYSICALIZATION_ROUND_IV_2026-10-22.md section 8, not a #115 effect.)
+# payload does not move for #115.  (An earlier transient read suggested a change; a Round V forensic instrument
+# REFUTED the "route-count nondeterminism" theory -- total_frontier_routes is stable at 29 across fresh/warm
+# processes, seeds, and target order, and the _REDERIVE_CACHE provably cannot move the count.  The differing hashes
+# were a DETERMINISTIC code-state effect across mid-round commits (cf3d942 -> 150d30cd via the p56 sub-hash; HEAD
+# 6d783d59 after 35928b6), NOT run-to-run flakiness.  See PHYSICALIZATION_ROUND_IV_2026-10-22.md section 8 + its
+# Round V correction.  Residual latent risk: the silent `except Exception: continue` below could shrink the count
+# unseen under real memory pressure -- attribution counters are a recorded follow-up.)
 FROZEN_HASH = "6d783d59b1f50a36eb106a10b510e545f9e3895ef55fafcf1f95fad59fdcffda"
 
 _ETHER_CLASS = "etherification"

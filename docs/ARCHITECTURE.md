@@ -1,4 +1,9 @@
-# SmartChem Architecture (current — 0.9.5)
+# SmartChem Architecture (current — 1.1.0)
+
+> Status: **1.1.0** — the chemical-graph / synthesis-coverage release (the reaction-type oracle grows 17 → 20
+> recognizers); 1.0.0 remains tagged `v1.0.0`. The architecture below is stable across the 1.x series —
+> the compatibility contract is [`COMPATIBILITY.md`](../COMPATIBILITY.md); the post-1.0 plan is
+> [`docs/research/V1_5_RELEASE_PROGRAM.md`](research/V1_5_RELEASE_PROGRAM.md).
 
 A map for reviewing 1.x changes: what each stage owns, what identity it stamps, how it fails, and what "complete"
 means there. History lives in `docs/research/`; this page describes only what the code does today. The stability

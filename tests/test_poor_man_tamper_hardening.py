@@ -198,8 +198,10 @@ def test_a_thin_transport_load_without_verified_admission_still_loads():
     response_from_payload(thin)                                       # bare load: no verified admission -> no refusal
 
 
-def test_centre_absent_acyl_and_ether_now_fail_closed():
-    # PIECE 2: a centre-less acyl or ether step demotes (was census-vouched); centre-carrying forms still vouch.
+def test_centre_absent_condensation_is_rederived_not_census_trusted():
+    # ISSUE-126 Phase II: recognition RE-DERIVES locality from the molecules, so a genuine acyl/ether condensation is
+    # recognized whether or not it carries a centre (content-determinism) -- while a bundled FICTION stays demoted
+    # (the single-cut re-derivation cannot reach it), so centre-absence can never mint a false-vouch.
     water = structure_by_name("water").molecule
 
     def hand(r, p, t):
@@ -210,8 +212,14 @@ def test_centre_absent_acyl_and_ether_now_fail_closed():
         return ExperimentStep(STEP_SCHEMA, target=tt, reactants=rs, products=ps,
                               reagents=(), envelope=ConditionEnvelope.unknown())
 
-    assert recognize_reaction_type(hand(["CC(=O)O", "CO"], ["CC(=O)OC", "water"], "CC(=O)OC")) is None
-    assert recognize_reaction_type(hand(["CO", "CO"], ["COC", "water"], "COC")) is None
+    # genuine centre-less condensations are now RE-DERIVED and vouched (was demoted under the retired trusted-centre)
+    assert recognize_reaction_type(hand(["CC(=O)O", "CO"], ["CC(=O)OC", "water"], "CC(=O)OC")) is not None
+    assert recognize_reaction_type(hand(["CO", "CO"], ["COC", "water"], "COC")) is not None
+    # a bundled FICTION with no centre stays demoted: the lactide double condensation needs TWO cuts, so the
+    # single-cut re-derivation can never reach it -- the forged-centre false-vouch route is closed by re-derivation.
+    assert recognize_reaction_type(hand(["CC(O)C(=O)O", "CC(O)C(=O)O"],
+                                        ["CC1OC(=O)C(C)OC1=O", "water", "water"], "CC1OC(=O)C(C)OC1=O")) is None
+    # engine-derived centre-carrying forms still vouch
     assert probe._recognized(probe._derive_step("CC(=O)OC", ["CC(=O)O", "CO"])) is not None
     assert probe._recognized(probe._derive_step("COC", ["CO", "CO"])) is not None
 

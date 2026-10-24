@@ -115,21 +115,23 @@ def test_a_hand_built_sigmatropic_route_is_vouched_not_demoted(family, substrate
     assert route_reaction_type_blockers(route) == ()
 
 
-# --- soundness: Layer A re-derivation, Layer C fail-closed, and no cross-poach ---
+# --- soundness: the re-derivation is the sole gate, content-deterministic, and no cross-poach ---
 
-def test_layer_a_refuses_a_non_sigmatropic_isomerization_even_with_a_spoofed_center():
+def test_the_re_derivation_refuses_a_non_sigmatropic_isomerization_even_with_a_spoofed_center():
     # 1-hexene -> cyclohexane balances (both C6H12) and is a 1->1 "isomerization", but it is NOT a [3,3] shift.
-    # Handed the Cope centre adversarially, Layer A's re-derivation still refuses it (fail-closed).
+    # Handed the Cope centre adversarially, the re-derivation still refuses it (fail-closed; the centre is ignored).
     spoofed = SimpleNamespace(reactants=(parse_smiles("C=CCCCC"),), products=(parse_smiles("C1CCCCC1"),),
                               reaction_center=COPE.center)
     assert _cope_rearrangement(spoofed) is False
 
 
-def test_layer_c_blocks_a_genuine_shape_with_no_readable_center():
+def test_genuine_centreless_sigmatropic_is_recognized_content_deterministically():
+    # ISSUE-132: a genuine Claisen step with NO readable centre is RECOGNIZED by the re-derivation alone -- the
+    # forgeable centre is never read.  (Was fail-closed demoted under the retired Layer-C centre gate.)
     genuine = rewrite_edges(CLAISEN, parse_smiles("C=CCCC=O"))[0]
     centreless = SimpleNamespace(reactants=tuple(genuine.products), products=(genuine.reactant,),
                                  reaction_center=None)
-    assert _claisen_rearrangement(centreless) is False
+    assert _claisen_rearrangement(centreless) is True
 
 
 def test_cope_and_claisen_do_not_cross_poach_and_da_shapes_do_not_either():

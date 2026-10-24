@@ -102,13 +102,15 @@ def test_the_aryl_amination_fake_is_demoted():
     assert adv["recognized_class"] is None
 
 
-def test_centre_less_general_alkylation_fails_closed_and_o_alkylation_is_not_n():
-    # R63 SUPERSESSION: general N-alkylation by a longer alcohol IS now admitted (see the R63 probe) -- but only for
-    # a CENTRE-CARRYING step.  This hand-built (centre-LESS) ethanol case still demotes, because a VOUCH requires a
-    # readable reaction centre (TAMPER-HARDENING-01), not because ethanol is forbidden.
-    adv = probe.adversarial_must_demote()["general_n_ethylation"]
-    assert adv["not_vouched_as_n_methylation"] is True
-    # and O-alkylation to anisole is genuinely a different class (O, not N) -- must stay demoted regardless.
+def test_centre_less_general_alkylation_is_rederived_and_o_alkylation_is_not_n():
+    # ISSUE-126 Phase II: a genuine centre-less general N-ethylation (ethanol + ammonia -> ethylamine + water) is now
+    # RE-DERIVED from the molecules and VOUCHED as N-alkylation -- recognition reads no forgeable centre, so the
+    # retired "centre-less fails closed" behaviour is gone (this is a real N-alkylation, correctly recognized).
+    from smartchem.experiment.reaction_type_oracle import recognize_reaction_type
+    centreless = probe._hand_step(["CCO", "N"], ["CCN", "water"], "CCN")
+    assert centreless.reaction_center is None
+    assert recognize_reaction_type(centreless) is not None   # genuine N-alkylation, re-derived
+    # O-alkylation to anisole is genuinely a different class (O, not N) -- must stay demoted regardless of centre.
     assert probe.adversarial_must_demote()["o_methylation_anisole"]["not_vouched_as_n_methylation"] is True
 
 

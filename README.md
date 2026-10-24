@@ -15,8 +15,8 @@ unearned answer.
 
 </div>
 
-> **Current release: [v1.0.0 — Stable Chemical Compiler](https://github.com/femboy2112/SmartChem/releases/tag/v1.0.0)**
-> (2026-10-03). Python 3.10–3.13, MIT. Distributed as **GitHub source + a release
+> **Current release: [v1.1.0 — Chemical-Graph & Synthesis Coverage](https://github.com/femboy2112/SmartChem/releases/tag/v1.1.0)**
+> (2026-10-23). Python 3.10–3.13, MIT. Distributed as **GitHub source + a release
 > wheel/sdist** (with `SHA256SUMS` and a reproducibility manifest) — it is **not**
 > published to PyPI. See the [changelog](CHANGELOG.md) and [install](#install) below.
 
@@ -89,7 +89,7 @@ positive-frequency passive-RLC interpretations.
 SmartChem is not on PyPI. Install the released wheel directly from GitHub:
 
 ```bash
-pip install https://github.com/femboy2112/SmartChem/releases/download/v1.0.0/smartchem-1.0.0-py3-none-any.whl
+pip install https://github.com/femboy2112/SmartChem/releases/download/v1.1.0/smartchem-1.1.0-py3-none-any.whl
 ```
 
 Or from a clone (editable, with the dev extras):
@@ -107,7 +107,7 @@ The core needs only `numpy` and `scipy`. The PySCF quantum-chemistry backend is 
 ## Quickstart
 
 ```bash
-smartchem --version                       # smartchem 1.0.0
+smartchem --version                       # smartchem 1.1.0
 
 # Resolve an identity and plan from a name / formula / SMILES:
 python -m smartchem plan 'smiles:CO'
@@ -221,6 +221,7 @@ treating each newly discovered frontier as the next release boundary:
 0.9 capability compiler          merged
 0.9.5 coverage/adversarial RC    merged
 1.0.0 stable semantics           stable release
+1.1.0 chemical-graph + 20 classes stable release
 ```
 
 The **stopping rule is explicit**: the 1.0 line freezes the public machine semantics —
@@ -237,12 +238,15 @@ the ranked next-steps, deliberate non-goals, and tracked debt live in
 
 ## Status & verification
 
-The 1.0.0 production tree is **compiler-semantically and version-independent-fingerprint
-identical** to the reviewed release candidate — only the declared version-bound identity
-moved (the `__version__` bump and its version-bound CLI goldens). The stable release re-ran
-the full hosted CI at `8345bbb`
-([run `37083985662`](https://github.com/femboy2112/SmartChem/actions/runs/37083985662), all
-7 jobs green):
+SmartChem 1.1.0 widens the reaction-type oracle to **20 recognized classes** (17 at 1.0.0:
+#110 activated acyl transfer, #111 sulfonate-ester transfer, #115 Claisen condensation) and
+adds the chemical-graph / synthesis workbench and the `smartchem graph` verb, with **no change
+to the stable 1.x machine semantics** — the wire schema ids, `semantic_digest`, verdict
+vocabulary and route digests are byte-invariant; only the version-bound `result_digest` /
+`tool_version` / implementation digest move (proved field-by-field in the two
+`V1_1_COVERAGE_EXPANSION_*` records under `docs/research/`). The exact release gate —
+merged-`main` SHA, hosted CI run, full-suite counts and artifact SHA-256 — is recorded in
+[`V1_1_RELEASE_GATE.md`](docs/research/V1_1_RELEASE_GATE.md); the hosted CI runs seven jobs:
 
 - `test (3.10)` and `test (3.12)` run the OOM-safe suite via `scripts/run_suite.sh` with the
   optional RDKit and PySCF backends **absent**;
@@ -250,20 +254,16 @@ the full hosted CI at `8345bbb`
   it byte-identical to source;
 - a PySCF smoke job runs with PySCF 2.14.0 **present**.
 
-The reviewed-RC run `37071540287` recorded the baseline counts:
-
-```text
-test (3.10), test (3.12):   7482 passed, 84 skipped, 0 xfailed   (7566 collected, 0 failed)
-PySCF smoke (-m "not slow"): 7523 passed, 33 skipped, 14 deselected
-```
+The full-suite and PySCF-smoke counts for this release are recorded in
+[`V1_1_RELEASE_GATE.md`](docs/research/V1_1_RELEASE_GATE.md).
 
 There are **no xfails** — the last strict xfail (parallel interchange) was discharged by
 PR #79. Skips are environment-honest and never reported as passed: RDKit-gated CIP checks
-run only when the dev-only RDKit oracle is present, and the PySCF integration tests run only
+run only when the RDKit identity oracle is present, and the PySCF integration tests run only
 when that stack is present. On a memory-constrained box the monolithic `pytest` run is
 OOM-killed, so `scripts/run_suite.sh` (short-lived batched processes) is the maintained
 full-suite runner. The official artifacts rebuild exactly via
-`scripts/build_release.py --ref v1.0.0`.
+`scripts/build_release.py --ref v1.1.0`.
 
 Reproduce locally:
 

@@ -8,6 +8,11 @@ DURABLE half: it freezes the VERSION-INDEPENDENT projection of a representative 
 ``tool_version`` / ``result_digest`` stripped) and fails the build the instant a SEMANTIC field moves -- a verdict,
 a route digest, a readiness tier, a schema id, a capability assessment.  A pure version bump leaves it silent; that
 is exactly why it survives rc1 -> 1.0.0 with no edit.
+
+The golden is a LIVING regression anchor for the current 1.x baseline: a sanctioned MINOR coverage
+expansion re-freezes it (``--write-golden``) with a field-by-field human sign-off, and every prior baseline
+stays recoverable at its release tag.  It was re-frozen at 1.1.0a1 for the #110 (activated acyl transfer)
+expansion; that transition is proved field-by-field in docs/research/V1_1_COVERAGE_EXPANSION_110.md.
 """
 from __future__ import annotations
 

@@ -1,5 +1,20 @@
 # SmartChem roadmap
 
+> ## ▶ CURRENT STATUS (2026-10-23)
+> **1.1.0 — the chemical-graph / synthesis-coverage release.** The reaction-type oracle grows **17 → 20 classes**
+> (#110 activated acyl transfer, #111 sulfonate-ester transfer, #115 Claisen condensation) and gains the typed
+> chemical-graph / synthesis workbench and the `smartchem graph` verb, cut from the production prefix on
+> `release/1.1.0` with **no change to the stable 1.x machine semantics**; it graduates the real paracetamol route
+> to `PROCESS_SPECIFIED`. 1.0.0 remains tagged `v1.0.0` = `8345bbb`. The post-1.0 plan, the 1.1→1.5 ladder, the 1.5 acceptance gates
+> and the explicit 2.0 prerequisites are in
+> [`docs/research/V1_5_RELEASE_PROGRAM.md`](docs/research/V1_5_RELEASE_PROGRAM.md); the 1.0.0→1.1 coverage
+> transitions are proved field-by-field in
+> [`V1_1_COVERAGE_EXPANSION_110.md`](docs/research/V1_1_COVERAGE_EXPANSION_110.md) and
+> [`V1_1_COVERAGE_EXPANSION_111_115.md`](docs/research/V1_1_COVERAGE_EXPANSION_111_115.md), gated by
+> [`V1_1_RELEASE_GATE.md`](docs/research/V1_1_RELEASE_GATE.md). Issues
+> #103–#132 stay OPEN on `main` until PR #101 merges (a branch fix is not a `main` resolution). The historical
+> round-by-round essay below is kept intact for its reasoning.
+
 > **The single source of truth for what is done, what is queued, and what is deliberately not being built.**
 > `verified @ poor-man-tamper-hardening-2026-09-17` (commit `afbf39f`; suite **5050/47/1**). **Re-stamp note:** this
 > header narrative below is the ROUND 47 essay — the tag/suite figures are that round's (historical, like the prose,

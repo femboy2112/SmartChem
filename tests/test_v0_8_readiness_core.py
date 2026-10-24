@@ -68,8 +68,13 @@ def _isopentyl_acetate_step() -> ExperimentStep:
 
 
 def _paracetamol_anhydride_step():
-    """Row 2: the non-monotonic exemplar -- sourced + workup-described, but reaction-type UNRECOGNIZED
-    (anhydride transacylation emits acetic acid, not water; outside the 17-class oracle)."""
+    """Row 2: paracetamol <- 4-aminophenol + acetic anhydride (acetic acid co-product).
+
+    HISTORY: through v1.0.0 this step was the non-monotonic exemplar -- sourced + workup-described but
+    reaction-type UNRECOGNIZED (anhydride transacylation was outside the 17-class oracle). The 1.1.0a1 MINOR
+    coverage expansion (#110, activated acyl transfer) now RECOGNIZES exactly this family, so the step
+    GRADUATES the full readiness ladder to PROCESS_SPECIFIED. The weakest-link-cap LAW it used to witness is
+    preserved by ``test_reaction_type_gate_caps_the_ladder_even_with_a_complete_procedure`` below."""
     result = search_routes(
         _mol("paracetamol"), reagents=(_mol("water"), _mol("acetic acid")),
         available=(_mol("4-aminophenol"),), max_depth=2,
@@ -136,22 +141,57 @@ def test_methyl_salicylate_is_conditions_supported_with_unknown_process_and_work
 
 # --- row 2: the non-monotonicity exemplar (paracetamol + acetic anhydride) --------------------
 
-def test_paracetamol_anhydride_step_is_non_monotonic_load_bearing_orthogonality():
+def test_paracetamol_anhydride_step_graduates_to_process_specified_under_110():
+    """1.1.0a1 paracetamol-litmus WIN (the regression anchor against DE-promotion).
+
+    Through v1.0.0 this step was held at FORMAL_CANDIDATE SOLELY by an unrecognized reaction type -- every
+    other obligation (conditions, process, workup, sourced procedure) was already SATISFIED. The #110
+    recognizer (activated acyl transfer) now clears that single blocking link, and the weakest-link ladder
+    climbs all the way to PROCESS_SPECIFIED. This is a MINOR COVERAGE EXPANSION, proved field-by-field in
+    docs/research/V1_1_COVERAGE_EXPANSION_110.md to ride under an UNCHANGED semantic_digest (COMPATIBILITY.md
+    sec 7): the route's steps are identical to v1.0.0 (same route_digest); only its recognition moved."""
     step = _paracetamol_anhydride_step()
     readiness = evaluate_step(step)
-    # the load-bearing assertion: BOTH must hold at once.
+    # the reaction type is now RECOGNIZED as activated acyl transfer (#110) -- not minted, re-derived.
+    assert readiness.reaction_type is ObligationStatus.SATISFIED
+    assert readiness.reaction_class_name == recognize_reaction_type(step)
+    assert "activated acyl transfer" in (readiness.reaction_class_name or "")
+    # every other obligation was already satisfied at v1.0.0 -- clearing reaction_type alone lifts the tier
+    # to the TOP rung, which is exactly why this is a one-rule coverage expansion, not a gate relaxation.
     assert readiness.conditions is ObligationStatus.SATISFIED
-    assert readiness.reaction_type is ObligationStatus.UNSATISFIED
-    assert readiness.reaction_class_name is None
-    # the coarse tier is capped by the weaker axis -- conditions being SATISFIED does not leak upward.
-    assert readiness.tier == FORMAL_CANDIDATE
-    assert any("reaction_type" in o for o in readiness.open_obligations)
-    # 0.8 Round II, one rung higher: this step now carries a COMPLETE, SOURCED procedure, so BOTH
-    # process AND workup_isolation are visibly SATISFIED -- yet the coarse tier is STILL FORMAL_CANDIDATE
-    # because reaction_type is unrecognized. Richer evidence, unmoved tier: the non-monotonicity, sharpened.
     assert readiness.process is ObligationStatus.SATISFIED
     assert readiness.workup_isolation is ObligationStatus.SATISFIED
     assert readiness.provenance  # conditions=SATISFIED and the procedure's own citation
+    assert readiness.tier == PROCESS_SPECIFIED
+    assert not any("reaction_type" in o for o in readiness.open_obligations)
+
+
+def test_reaction_type_gate_caps_the_ladder_even_with_a_complete_procedure(monkeypatch):
+    """The weakest-link-cap LAW, preserved after #110 retired its natural (paracetamol) witness.
+
+    reaction_type UNSATISFIED caps the coarse tier at FORMAL_CANDIDATE no matter how rich the OTHER axes are:
+    recognized-reaction-type is a strictly separate obligation that a complete, sourced procedure can NEVER
+    substitute for (the non-monotonicity -- COMPATIBILITY sec 2.1 ladder is cumulative + weakest-link). We
+    witness it on the RICHEST fixture there is -- the isopentyl-acetate step that otherwise reaches
+    PROCESS_SPECIFIED -- by forcing its reaction type unrecognized at the oracle boundary. If a future change
+    ever let conditions/process evidence leak upward past an unrecognized reaction type, this fails."""
+    import smartchem.experiment.reaction_type_oracle as _oracle
+
+    step = _isopentyl_acetate_step()
+    # sanity: unpatched, this richest step reaches the TOP rung.
+    assert evaluate_step(step).tier == PROCESS_SPECIFIED
+    # force the reaction type unrecognized at the single oracle boundary readiness re-imports per call.
+    monkeypatch.setattr(_oracle, "recognize_reaction_type", lambda _s: None)
+    readiness = evaluate_step(step)
+    assert readiness.reaction_type is ObligationStatus.UNSATISFIED
+    assert readiness.reaction_class_name is None
+    # rich evidence on every OTHER axis is unchanged and visibly SATISFIED ...
+    assert readiness.conditions is ObligationStatus.SATISFIED
+    assert readiness.process is ObligationStatus.SATISFIED
+    assert readiness.workup_isolation is ObligationStatus.SATISFIED
+    # ... yet the tier is capped at FORMAL_CANDIDATE: no upward leak past the reaction-type gate.
+    assert readiness.tier == FORMAL_CANDIDATE
+    assert any("reaction_type" in o for o in readiness.open_obligations)
 
 
 # --- row 1: Diels-Alder (reaction-vouched, conditions unknown) ---------------------------------
@@ -175,7 +215,11 @@ def test_declared_but_unsourced_envelope_is_conditions_unsatisfied():
     readiness = evaluate_step(step)
     assert step.envelope.is_declared and not step.envelope.is_sourced
     assert readiness.conditions is ObligationStatus.UNSATISFIED
-    assert readiness.tier == FORMAL_CANDIDATE  # esterification is recognized, but that's not this test's point
+    # ISSUE-126 Phase II: this centre-less esterification is now RE-DERIVED + recognized (content-determinism), so
+    # reaction_type is SATISFIED and the tier reaches REACTION_VOUCHED; the unsourced envelope leaves conditions
+    # UNSATISFIED, which stops the ladder there -- the point of this test (it formerly stopped at FORMAL_CANDIDATE
+    # only because the centre-less step was demoted-as-unrecognized, an artifact the re-derivation removes).
+    assert readiness.tier == REACTION_VOUCHED
     assert any("conditions" in o for o in readiness.open_obligations)
 
 
@@ -258,8 +302,12 @@ def test_isopentyl_acetate_reaches_process_specified():
 
 
 def test_process_specified_stays_below_for_the_controls():
-    # methyl salicylate (no procedure) and Diels-Alder (no declared conditions) never reach the top rung.
-    for builder in (_methyl_salicylate_step, _paracetamol_anhydride_step, _diels_alder_step):
+    # methyl salicylate (no preparative procedure) and Diels-Alder (no declared conditions) never reach the
+    # top rung. NOTE: the paracetamol-anhydride step was a control here through v1.0.0; the 1.1.0a1 #110
+    # coverage expansion legitimately GRADUATED it to PROCESS_SPECIFIED (see
+    # test_paracetamol_anhydride_step_graduates_to_process_specified_under_110), so it is no longer a
+    # below-the-top control. The two that remain are still capped by a genuinely-missing obligation.
+    for builder in (_methyl_salicylate_step, _diels_alder_step):
         readiness = evaluate_step(builder())
         assert readiness.tier != PROCESS_SPECIFIED
 

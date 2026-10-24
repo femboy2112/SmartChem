@@ -3,8 +3,9 @@ consumes the SAME shared readiness evaluator as the service transport, honestly,
 
 The whole point: before this round, ``RouteDossier.readiness`` was a hard-coded ``FORMAL_CANDIDATE``
 wall (``ProcedureReadiness.FORMAL_CANDIDATE``, always, no matter what the route actually carried).
-These tests build REAL routes -- one hand-assembled with sourced conditions but no reaction centre
-(the paracetamol-anhydride non-monotonic case the plan calls out: best-sourced, worst-recognized),
+These tests build REAL routes -- one hand-assembled with sourced conditions but a genuinely UNRECOGNIZED
+reaction (decarboxylation: best-sourced, worst-recognized -- the non-monotonicity witness; it was the
+paracetamol-anhydride step until the 1.1.0a1 #110 recognizer vouched that, see test_v0_8_readiness_core.py),
 and one generator-derived via the PROMOTED default (certified-route-v07) algebra so it actually carries
 a ``reaction_center`` and gets oracle-VOUCHED -- and check the dossier's derived tier/obligations/render
 agree with ``smartchem.experiment.readiness.evaluate_route`` called directly on the same route.
@@ -31,10 +32,13 @@ from smartchem.structure import structure_by_name
 
 _CERTIFIED = resolve_algebra_profile(DEFAULT_ROUTE_ALGEBRA_PROFILE)
 
-AMP = parse_smiles("Nc1ccc(O)cc1")
-ANH = parse_smiles("CC(=O)OC(=O)C")
-PARA = parse_smiles("CC(=O)Nc1ccc(O)cc1")
-ACOH = parse_smiles("CC(=O)O")
+# A genuinely-UNRECOGNIZED reaction for the non-monotonicity witness: pyruvic-acid decarboxylation
+# (CC(=O)C(=O)O -> CC=O + CO2) is conserving but matches NONE of the 18 oracle classes. Through v1.0.0 this
+# witness was the paracetamol anhydride-acetylation step; the 1.1.0a1 #110 activated-acyl-transfer recognizer
+# now VOUCHES that step (it graduates -- test_v0_8_readiness_core.py), so it was swapped for one still unrecognized.
+PYRUVIC = parse_smiles("CC(=O)C(=O)O")
+ACETALDEHYDE = parse_smiles("CC=O")
+CO2 = parse_smiles("O=C=O")
 
 
 def _sourced_env() -> ConditionEnvelope:
@@ -52,11 +56,13 @@ def _sourced_env() -> ConditionEnvelope:
 
 
 def _sourced_but_unrecognized_route() -> ExperimentRoute:
-    """The paracetamol anhydride-acetylation step: hand-assembled, sourced conditions, NO
-    ``reaction_center`` -- the plan's own non-monotonicity witness (best-sourced, worst-recognized).
+    """A sourced but genuinely-UNRECOGNIZED step -- pyruvic-acid decarboxylation (conserving, matching none
+    of the 18 oracle classes), hand-assembled with sourced conditions. The non-monotonicity witness:
+    best-sourced, worst-recognized -> the tier is capped at FORMAL_CANDIDATE by the unrecognized reaction
+    type even though conditions are SATISFIED.
     """
     return ExperimentRoute.of(ExperimentStep.assembling(
-        PARA, (AMP, ANH), (PARA, ACOH), reagents=(ANH,), envelope=_sourced_env(),
+        ACETALDEHYDE, (PYRUVIC,), (ACETALDEHYDE, CO2), envelope=_sourced_env(),
     ))
 
 

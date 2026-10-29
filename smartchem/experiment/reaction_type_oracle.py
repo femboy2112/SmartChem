@@ -1133,6 +1133,143 @@ def _electrocyclization_6pi(step) -> bool:
 #: 14 pericyclic classes are locked apart by their per-family guarded RE-DERIVATION alone (ISSUE-132: no centre is
 #: read; the 14x14 identity matrix in PERICYCLIC-LAYER-A-FUZZ-132 pins no cross-poach), so none can poach another's
 #: steps.
+def _is_dihydrogen(mol) -> bool:
+    """True iff ``mol`` is neutral dihydrogen H2 (the pair a hydrogenation consumes)."""
+    atoms = getattr(mol, "atoms", ())
+    return len(atoms) == 2 and all(a == "H" for a in atoms) and getattr(mol, "charge", 0) == 0
+
+
+def _is_conjugated_ring_system(mol) -> bool:
+    """Fail-closed proxy for an aromatic / conjugated-RING species: the (connected) molecule is CYCLIC
+    (|bonds| >= |atoms|) AND carries >= 2 multiple (order >= 2) bonds. Benzene (3 ring doubles) and the
+    cyclohexadienes (2) match; an ISOLATED ring double (cyclohexene) and an ACYCLIC polyene (butadiene)
+    do not. Used to DEFER aromatic-ring bond-order reductions: an aromatic ring does not partial-
+    hydrogenate as a clean single-H2 step (the Kekule-edit fiction #114's adversary flagged)."""
+    atoms = getattr(mol, "atoms", ())
+    bonds = getattr(mol, "bonds", ())
+    if len(bonds) < len(atoms):  # a tree (|E| = |V|-1) is acyclic
+        return False
+    return sum(1 for b in bonds if getattr(b, "order", 1) >= 2) >= 2
+
+
+def _reduce_one_unsaturation(mol, a: int, b: int):
+    """The candidate PRECURSOR obtained from ``mol`` by raising the heavy-heavy bond ``(a, b)`` one order and
+    removing one explicit H from EACH endpoint -- the exact graph-inverse of adding H2 across one unsaturation.
+    Returns the canonical :class:`Molecule`, or ``None`` if an endpoint has no strippable H, if ``(a, b)`` is not
+    a bond, or if the result will not materialise (disconnected / malformed).
+
+    This reads ONLY ``mol``: it is the STRUCTURALLY-INDEPENDENT recognition witness, deliberately NOT a call into
+    the ``bond_order_edit`` family enumerator -- manifest G3 (provider locality) forbids the oracle from naming a
+    family enumerator, and the family regenerating its own precursor would be self-agreement, not independent
+    evidence (#114 CI repair). Note the rewrite is VALENCE-PRESERVING by construction (-1 H, +1 bond order = net
+    zero at each endpoint), so it can never mint a hypervalent fiction out of a valence-sane product."""
+    from ..category import Bond, Molecule
+    atoms = mol.atoms
+    key = (min(a, b), max(a, b))
+    if not any((min(x.i, x.j), max(x.i, x.j)) == key for x in mol.bonds):
+        return None
+
+    def _an_h_neighbour(v: int):
+        # H has valence 1, so a's and b's H neighbours are necessarily distinct atoms (no double-strip risk).
+        for x in mol.bonds:
+            other = x.j if x.i == v else (x.i if x.j == v else None)
+            if other is not None and atoms[other] == "H":
+                return other
+        return None
+
+    h_a, h_b = _an_h_neighbour(a), _an_h_neighbour(b)
+    if h_a is None or h_b is None:
+        return None
+    removed = {h_a, h_b}
+    keep = [i for i in range(len(atoms)) if i not in removed]
+    remap = {old: new for new, old in enumerate(keep)}
+    new_atoms = tuple(atoms[i] for i in keep)
+    new_bonds = set()
+    for x in mol.bonds:
+        if x.i in removed or x.j in removed:
+            continue
+        order = x.order + 1 if (min(x.i, x.j), max(x.i, x.j)) == key else x.order
+        new_bonds.add(Bond(remap[x.i], remap[x.j], order))
+    try:
+        return Molecule(new_atoms, frozenset(new_bonds), mol.charge).canonical()
+    except (ValueError, TypeError, NotImplementedError):
+        return None
+
+
+def _hydrogenation(step) -> bool:
+    """Recognizer (#114): one single unsaturation reduced in the SYNTHESIS direction --
+    ``precursor + H2 -> saturated`` (one C=C / C#C / C=O / C=N / C#N reduced by one order, consuming H2).
+
+    SOUND BY A STRUCTURALLY-INDEPENDENT WITNESS (no ``reaction_center`` read -- ISSUE-126/132; no family
+    enumerator -- manifest G3). For each heavy-heavy bond of the single heavy PRODUCT whose two endpoints each
+    carry an explicit H, :func:`_reduce_one_unsaturation` constructs the candidate precursor (that bond raised one
+    order, one H stripped from each end) and the step vouches iff some candidate is canonically IDENTICAL to the
+    step's heavy reactant (:func:`~smartchem.smiles.resonance_identity`). The witness is a direct graph comparison
+    of the two given molecules -- the oracle's own construction plus the shared canonicaliser, never the
+    ``bond_order_edit`` generator regenerating its own output (that would be self-agreement, #114 CI repair).
+
+    WHY THIS IS A CONSERVATION-LOCK (no false-VOUCH): the candidate is the product's heavy skeleton with exactly
+    one bond order raised and two H removed at that bond -- it can NEVER add or delete a heavy-heavy edge, so a
+    RING-OPENING hydrogenolysis (cyclopropane + H2 -> propane) or any skeletal rearrangement has no candidate
+    equal to its precursor and abstains. A same-formula decoy (cyclopropane / cyclobutane / oxirane) differs in
+    the heavy edge SET, so no raise-one-order candidate reaches it; recognition rests on ``resonance_identity``
+    never merging two distinct constitutions (pinned by the injectivity tests).
+
+    FAIL-CLOSED: a reactant pair that is not exactly {heavy, H2}, a charged/radical partner, a non-(+H2) formula
+    delta, a species that will not canonicalise, or no matching candidate all return False -- honest coverage
+    loss, never a vouch.
+
+    DEFERRED SCOPE (honest coverage loss, like #111's aryl-O): a CONJUGATED-RING reduction (precursor cyclic with
+    >= 2 multiple bonds, e.g. benzene -> cyclohexadiene) abstains; an aromatic ring does not partial-hydrogenate
+    as a clean single-H2 step. Isolated ring doubles (cyclohexene -> cyclohexane) and acyclic selective
+    hydrogenations (acrolein -> propanal) are kept.
+
+    GEOMETRIC / ISOTOPE BOUNDARY (Problem B, deferred -- a vouch means only "a reduction of this TYPE exists"):
+    the graph model carries no bond-angle / ring-strain geometry, so a GEOMETRICALLY impossible precursor
+    (anti-Bredt, trans-cycloalkene, strained bridgehead alkene) is still vouched as a TYPE-valid single bond-order
+    reduction -- a caller must NOT read the vouch as "the unsaturated precursor can physically exist" (that is
+    feasibility, #107). D2/HD are read as H2 (isotope-blind). (dalembert audit.)
+    """
+    reactants = getattr(step, "reactants", ())
+    products = getattr(step, "products", ())
+    if len(reactants) != 2 or len(products) != 1:
+        return False
+    target = products[0]
+    heavy = [m for m in reactants if not _is_dihydrogen(m)]
+    if len(heavy) != 1 or len(reactants) - len(heavy) != 1:  # exactly one H2 and one heavy precursor
+        return False
+    precursor = heavy[0]
+    from ..diels_alder import is_closed_shell_neutral
+    if not (is_closed_shell_neutral(target) and is_closed_shell_neutral(precursor)):
+        return False  # a radical / charged / ylide partner is not a hydrogenation reactant (fail-closed)
+    if _is_conjugated_ring_system(precursor):
+        return False  # defer aromatic-ring reduction (not a clean single-H2 step)
+    # fail-closed formula pre-check: a genuine single hydrogenation is EXACTLY +H2 over the precursor.
+    tf, pf = target.formula, precursor.formula
+    if tf.get("H", 0) - pf.get("H", 0) != 2:
+        return False
+    if {k: v for k, v in tf.items() if k != "H"} != {k: v for k, v in pf.items() if k != "H"}:
+        return False
+    from ..smiles import resonance_identity
+    try:
+        want = resonance_identity(precursor)
+    except (NotImplementedError, TypeError, ValueError):
+        return False
+    heavy_set = {i for i, s in enumerate(target.atoms) if s != "H"}
+    for bond in target.bonds:
+        if bond.i not in heavy_set or bond.j not in heavy_set:
+            continue  # only a heavy-heavy bond carries an unsaturation to reduce
+        candidate = _reduce_one_unsaturation(target, bond.i, bond.j)
+        if candidate is None:
+            continue
+        try:
+            if resonance_identity(candidate) == want:
+                return True  # precursor IS the product with one bond reduced + 2 H at its ends: a hydrogenation
+        except (NotImplementedError, TypeError, ValueError):
+            continue
+    return False
+
+
 _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
     ("acyl condensation (esterification/amidation)", _acyl_condensation),
     ("etherification (dehydrative, R-OH + R'-OH -> ether + water)", _etherification),
@@ -1162,6 +1299,8 @@ _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
      _thia_claisen_rearrangement),
     ("electrocyclization 4pi (1,3-butadiene -> cyclobutene)", _electrocyclization_4pi),
     ("electrocyclization 6pi ((Z)-1,3,5-hexatriene -> 1,3-cyclohexadiene)", _electrocyclization_6pi),
+    ("hydrogenation (partial bond-order edit, precursor + H2 -> saturated; one unsaturation reduced)",
+     _hydrogenation),
 )
 
 

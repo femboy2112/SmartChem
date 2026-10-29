@@ -271,9 +271,9 @@ def _reaction_family_for_step(step) -> str | None:
     The oracle names a class ONLY after re-deriving it from the step's own molecules: for the pericyclic
     families (the Diels-Alder zoo, [3,3]-sigmatropics, electrocyclizations) a guarded retro-disconnection
     of the adduct back into exactly these reactants (Layer A); for the dehydrative condensations (acyl,
-    etherification, N-alkylation) a conservation-locked whole-molecule census; and -- post ISSUE-126 --
-    only when the reaction centre is TRUSTED engine evidence.  The centre is therefore necessary but NOT
-    sufficient: a balanced step that merely CARRIES a copy of a family's canonical centre (e.g. a synthetic
+    etherification, N-alkylation) a conservation-locked whole-molecule census.  Post ISSUE-126/132 the reaction
+    centre is NOT read at all -- recognition is a pure function of the step's conserved molecules.
+    A balanced step that merely CARRIES a copy of a family's canonical centre (e.g. a synthetic
     H + H -> H2 wearing a borrowed Diels-Alder centre) is NOT named, because the oracle's Layer-A
     re-derivation abstains.  The previous centre-equality table named such a step from the centre alone;
     that path is removed, so the graph now agrees with the oracle on every step and never names chemistry

@@ -74,6 +74,26 @@ def test_ring_opening_hydrogenolysis_is_not_this_family():
     assert not out.is_internal_error
 
 
+# resonance_identity INJECTIVITY (dalembert's reinforcement): the no-skeletal-rearrangement guarantee
+# rests entirely on resonance_identity never merging two distinct constitutions. Each decoy below conserves
+# with H2 to the target but is a DIFFERENT constitution (a carbocycle / an epoxide), so it is NOT a single
+# bond-order reduction and MUST abstain, while the genuine carrier vouches -- pinning the one load-bearing
+# assumption the recognizer silently trusts.
+_SAME_FORMULA_DECOYS = [
+    ("propane: propene(genuine) vs cyclopropane(decoy)", "CCC",  "CC=C",  "C1CC1"),
+    ("butane: 1-butene(genuine) vs cyclobutane(decoy)",  "CCCC", "C=CCC", "C1CCC1"),
+    ("ethanol: acetaldehyde(genuine) vs oxirane(decoy)", "CCO",  "CC=O",  "C1CO1"),
+]
+
+
+@pytest.mark.parametrize("label,target,genuine,decoy", _SAME_FORMULA_DECOYS, ids=[c[0] for c in _SAME_FORMULA_DECOYS])
+def test_same_formula_decoy_does_not_collide_with_a_genuine_carrier(label, target, genuine, decoy):
+    assert "hydrogenation" in (recognize_reaction_type(_hydro_step(target, genuine)) or ""), f"{label}: genuine must vouch"
+    out = recognize_reaction_type_outcome(_hydro_step(target, decoy))
+    assert not out.is_match, f"{label}: same-formula decoy must NOT vouch (resonance_identity injectivity)"
+    assert not out.is_internal_error
+
+
 def test_a_step_without_dihydrogen_is_not_a_hydrogenation():
     # an esterification (AcOH + EtOH -> ethyl acetate + water) is 2->2 with water, no H2 reactant.
     step = ExperimentStep.assembling(

@@ -1171,6 +1171,12 @@ def _hydrogenation(step) -> bool:
     cyclic with >= 2 multiple bonds, e.g. benzene -> cyclohexadiene) abstains; an aromatic ring does not
     partial-hydrogenate as a clean single-H2 step. Isolated ring doubles (cyclohexene -> cyclohexane) and
     acyclic selective hydrogenations (butadiene -> butene) are kept.
+
+    GEOMETRIC / ISOTOPE BOUNDARY (Problem B, deferred -- a vouch means only "a reduction of this TYPE
+    exists"): the graph model carries no bond-angle / ring-strain geometry, so a GEOMETRICALLY impossible
+    precursor (anti-Bredt, trans-cycloalkene, strained bridgehead alkene) is still vouched as a TYPE-valid
+    single bond-order reduction -- a caller must NOT read the vouch as "the unsaturated precursor can
+    physically exist" (that is feasibility, #107). D2/HD are read as H2 (isotope-blind). (dalembert audit.)
     """
     reactants = getattr(step, "reactants", ())
     products = getattr(step, "products", ())

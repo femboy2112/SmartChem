@@ -3,6 +3,32 @@
 Autonomous engineering round off released `1.1.0`. Every item is its own branch/PR off fresh `main`; **nothing
 is merged, tagged, or released** (no such authority was granted). All claims carry evidence; unverified items say so.
 
+> ## ⚠ ERRATUM (2026-10-29, Mega-Round X)
+>
+> **This report's CI status was WRONG.** It implied the PRs were green, but the long full-suite jobs were still
+> running when it was written, and **PR #140's full CI (run `40802775981`, tip `fcc92de`) then FAILED with four
+> failures**: `test_provider_locality::test_family_enumerators_are_referenced_only_by_the_provider_layer`,
+> `test_v0_7_production_algebra::test_oracle_recognises_twenty_classes_...`, and two
+> `test_independent_recognition_corpus_s3` tests. Root cause: the #114 `_hydrogenation` recognizer re-derived
+> through the `bond_order_edits` family enumerator from inside the oracle — a G3 provider-locality violation, and
+> generator self-agreement rather than independent evidence. #141 (stacked) inherited the breakage.
+>
+> **Resolved in Mega-Round X.** #140 repaired with a structurally-independent witness (`c485bc8`) and #141 rebased
+> onto it (`630e0ac`); **both are now CI-green on their final SHAs** (full `test (3.10/3.12)` + PySCF + wheel
+> matrix 3.10–3.13 all success). The independent corpus was reconciled deliberately (hydrogenation moved from a
+> coverage gap to a recognized positive; a withheld skeletal-fiction control added); live-registry count tracked
+> to 22.
+>
+> **A second #139 item was sharpened.** The "latent DAG oracle-blindness" #139 documented is now **confirmed and
+> reproduced** as a live admission bypass (a conserved fiction reaches `FITS` in DAG mode while unrecognized),
+> and is **production-reachable** — see PR #144 + `docs/research/DAG_ADMISSION_BYPASS_FINDING_2026-10-29.md`. The
+> #139 characterization that the containing wall was "missing process conditions" was imprecise; the real residual
+> is the composability stability-data gap. The repair (DAG-ADMIT-02) is designed but staged behind a schema/golden
+> sign-off.
+>
+> Lesson, logged: green *targeted* tests are not a green *full suite*, and a CI run still in progress is not a
+> pass. Section E's status below reflects Round IX as written; this erratum supersedes its CI claims.
+
 ## A. Repository coordinates
 
 - **Starting SHA:** `origin/main` `9e8fa5f` (SmartChem 1.1.0, PR #133 merge). **No production merge/tag/release made.**

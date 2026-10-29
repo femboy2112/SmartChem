@@ -133,10 +133,17 @@ def _hypervalent_carbon_nitrate_ester():
                     0, "")
 
 
-def test_valence_gate_rejects_hypervalent_carbon_but_accepts_genuine_oxoacid_esters():
+def test_valence_gate_rejects_hypervalent_carbon_oxygen_nitrogen_but_accepts_genuine_esters():
+    from smartchem.category import Bond, Molecule
     from smartchem.experiment.reaction_type_oracle import _valence_upper_bound_sane
     assert _valence_upper_bound_sane(_hypervalent_carbon_alcohol()) is False        # C degree 5 > max{4}
     assert _valence_upper_bound_sane(_hypervalent_carbon_nitrate_ester()) is False  # hypervalent C again
+    # plan-2A extension: hypervalent OXYGEN (degree 3 > max{2}) and NITROGEN (degree 6 > max{5}) are the same
+    # class of conserved valence-insane fiction capped scission PRESERVES; the upper-bound gate must reject each.
+    hyper_o = Molecule(("O", "H", "H", "H"), frozenset({Bond(0, 1, 1), Bond(0, 2, 1), Bond(0, 3, 1)}), 0, "")
+    hyper_n = Molecule(("N", "H", "H", "H", "H", "H", "H"), frozenset({Bond(0, i, 1) for i in range(1, 7)}), 0, "")
+    assert _valence_upper_bound_sane(hyper_o) is False                               # O degree 3 > max{2}
+    assert _valence_upper_bound_sane(hyper_n) is False                               # N degree 6 > max{3,5}
     assert _valence_upper_bound_sane(parse_smiles("CO[N+](=O)[O-]")) is True         # genuine nitrate ester (N degree 5 ok)
     assert _valence_upper_bound_sane(parse_smiles("COP(=O)(O)O")) is True            # genuine phosphate ester
 

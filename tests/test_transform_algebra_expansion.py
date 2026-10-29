@@ -42,10 +42,10 @@ _NEW_CLASS_STEPS = [
 ]
 
 
-def test_oracle_has_twenty_one_recognizers():
-    # #110 activated acyl transfer (18th) + #111 sulfonate-ester transfer (19th) + #115 Claisen
-    # condensation (20th) + #114 hydrogenation / bond-order edit (21st) -- MINOR coverage expansions.
-    assert len(_RECOGNIZERS) == 21
+def test_oracle_has_twenty_two_recognizers():
+    # #110 activated acyl (18th) + #111 sulfonate-ester (19th) + #115 Claisen (20th) + #114 hydrogenation
+    # (21st) + #111 oxoacid (nitrate/phosphate) ester (22nd) -- MINOR coverage expansions.
+    assert len(_RECOGNIZERS) == 22
 
 
 @pytest.mark.parametrize("label,step,expect", _NEW_CLASS_STEPS, ids=[c[0] for c in _NEW_CLASS_STEPS])

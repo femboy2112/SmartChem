@@ -1270,6 +1270,122 @@ def _hydrogenation(step) -> bool:
     return False
 
 
+def _valence_upper_bound_sane(mol) -> bool:
+    """The ABSOLUTE-valence gate capped scission does NOT provide: every atom's bond-order-sum must not EXCEED the
+    maximum closed-shell valence for its element, and the element must be known. Capped scission is valence-
+    PRESERVING, not valence-SANE (it checks only relative valence; :class:`Molecule` carries no absolute valence),
+    so a hypervalent fiction (a carbon at bond-order-sum 5) is preserved, not refused. This upper-bound check
+    rejects that fiction while ACCEPTING the charge-separated nitrate (N at degree 5 = max{3,5}), which the
+    stricter exact-valence :func:`is_closed_shell_neutral` wrongly rejects (its terminal [O-] reads degree 1).
+    (dalembert kill: a vouched valence-insane 'nitrate ester' walked through the dropped #132 gate.)"""
+    from ..diels_alder import _CLOSED_SHELL_VALENCES
+    degree: dict = {}
+    for b in getattr(mol, "bonds", ()):
+        degree[b.i] = degree.get(b.i, 0) + getattr(b, "order", 1)
+        degree[b.j] = degree.get(b.j, 0) + getattr(b, "order", 1)
+    for idx, el in enumerate(getattr(mol, "atoms", ())):
+        allowed = _CLOSED_SHELL_VALENCES.get(el)
+        if allowed is None or degree.get(idx, 0) > max(allowed):
+            return False
+    return True
+
+
+def _oxoacid_center(mol, z: int) -> bool:
+    """Is atom ``z`` (an N or P) a neutral-representation OXOACID centre -- bonded to >= 2 oxygens with at
+    least one oxo (=O) bond? Separates a genuine nitrate/phosphate (N/P with oxo) from a hydroxylamine
+    O-ether (N, no oxo) or a phosphite (P(III), no oxo)."""
+    o_count, has_oxo = 0, False
+    for b in getattr(mol, "bonds", ()):
+        other = b.j if b.i == z else (b.i if b.j == z else None)
+        if other is None:
+            continue
+        if mol.atoms[other] == "O":
+            o_count += 1
+            if getattr(b, "order", 1) >= 2:
+                has_oxo = True
+    return o_count >= 2 and has_oxo
+
+
+def _oxoacid_ester_loci(mol) -> tuple:
+    """The order-1 O-Z ester bonds of ``mol`` where Z in {N, P} is an oxoacid centre and the O is an ALKYL
+    ester oxygen (also bonded to a carbon) -- the single condensation locus a nitrate / phosphate ester forms.
+    Sulfur is EXCLUDED: the #111 sulfonate recognizer owns C-S oxoacid esters, so keeping Z in {N, P} here
+    makes the two recognizers provably disjoint (no cross-poach)."""
+    centers = {"N", "P"}
+    out = []
+    for b in getattr(mol, "bonds", ()):
+        if getattr(b, "order", 1) != 1:
+            continue
+        ai, aj = mol.atoms[b.i], mol.atoms[b.j]
+        if "O" not in (ai, aj) or not ({ai, aj} & centers):
+            continue
+        o_idx = b.i if ai == "O" else b.j
+        z_idx = b.j if o_idx == b.i else b.i
+        o_has_c = any(
+            mol.atoms[(bb.j if bb.i == o_idx else bb.i)] == "C"
+            for bb in mol.bonds
+            if (bb.i == o_idx or bb.j == o_idx) and (bb.j if bb.i == o_idx else bb.i) != z_idx
+        )
+        if o_has_c and _oxoacid_center(mol, z_idx):
+            out.append(b)
+    return tuple(out)
+
+
+def _oxoacid_ester(step) -> bool:
+    """Recognizer (#111 extension): a dehydrative OXOACID ester condensation forming an O-Z ester bond,
+    Z in {N, P} -- a NITRATE or PHOSPHATE ester -- with water as coproduct
+    (``R-OH + (HO)Z(=O).. -> R-O-Z(=O).. + H2O``).
+
+    SOUND BY RE-DERIVATION (ISSUE-126/132 discipline; no ``reaction_center`` read). It reruns the generator's
+    OWN single-cut capped scission on the step's ester target, restricted to its O-Z oxoacid-ester loci and
+    capped with water, and vouches ONLY if some single cut disconnects the ester into EXACTLY the step's two
+    non-water reactants. The :class:`CappedScission` certificate conserves + W1-descends, so a bundled / multi-cut
+    fiction (>= 2 cuts) can never be re-derived -- demoted independently of any stored field.
+
+    SCOPE / FAIL-CLOSED. Z in {N, P} ONLY (sulfur oxoacid esters are the #111 sulfonate recognizer's; sulfate
+    esters are a separate deferred extension -- the disjoint scope is what keeps the two from cross-poaching).
+    The oxoacid-centre gate separates a genuine nitrate/phosphate from a hydroxylamine O-ether (N, no oxo) or a
+    phosphite (P(III), no oxo), which abstain. A nitrate's nitro group carries internal formal +/- yet is NET
+    neutral, which capped scission accepts; so -- unlike the C-X condensations -- this does NOT gate on the exact
+    ``is_closed_shell_neutral`` (its terminal [O-] reads degree 1 and would reject a genuine nitrate). Capped
+    scission is valence-PRESERVING, not valence-SANE, so soundness instead rests on an explicit UPPER-BOUND valence
+    gate (:func:`_valence_upper_bound_sane` -- rejects a hypervalent fiction, accepts the nitrate) PLUS the exact-
+    identity re-derivation match PLUS the oxoacid-centre gate. No matching cut, a budget-truncated enumeration, a
+    valence-insane species, or a non-canonicalising one all return False (honest coverage loss).
+    """
+    from ..smiles import resonance_identity
+    from ..structure_descent import ScissionError, single_cut_capped_scissions
+    from .feasibility import _is_water
+    non_water_products = [m for m in getattr(step, "products", ()) if not _is_water(m)]
+    non_water_reactants = [m for m in getattr(step, "reactants", ()) if not _is_water(m)]
+    water_products = [m for m in getattr(step, "products", ()) if _is_water(m)]
+    if len(non_water_products) != 1 or len(non_water_reactants) != 2 or not water_products:
+        return False
+    ester = non_water_products[0]
+    # ABSOLUTE-valence sanity (dalembert kill): capped scission PRESERVES but never CHECKS valence, so a
+    # hypervalent fiction (a carbon at bond-order-sum 5) would otherwise re-derive and false-vouch.
+    if not (_valence_upper_bound_sane(ester) and all(_valence_upper_bound_sane(r) for r in non_water_reactants)):
+        return False
+    loci = _oxoacid_ester_loci(ester)
+    if not loci:
+        return False
+    try:
+        want = tuple(sorted(resonance_identity(r) for r in non_water_reactants))
+    except (NotImplementedError, TypeError, ValueError):
+        return False
+    try:
+        scissions, _complete = single_cut_capped_scissions(ester, (_water(),), loci)
+    except (ScissionError, NotImplementedError, TypeError, ValueError):
+        return False
+    for cs in scissions:
+        try:
+            if tuple(sorted(resonance_identity(p) for p in cs.products)) == want:
+                return True  # the ester provably single-cut-disconnects into exactly the declared alcohol + oxoacid
+        except Exception:
+            continue
+    return False
+
+
 _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
     ("acyl condensation (esterification/amidation)", _acyl_condensation),
     ("etherification (dehydrative, R-OH + R'-OH -> ether + water)", _etherification),
@@ -1301,6 +1417,8 @@ _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
     ("electrocyclization 6pi ((Z)-1,3,5-hexatriene -> 1,3-cyclohexadiene)", _electrocyclization_6pi),
     ("hydrogenation (partial bond-order edit, precursor + H2 -> saturated; one unsaturation reduced)",
      _hydrogenation),
+    ("oxoacid ester condensation (alcohol + nitric/phosphoric acid -> nitrate/phosphate ester + water)",
+     _oxoacid_ester),
 )
 
 

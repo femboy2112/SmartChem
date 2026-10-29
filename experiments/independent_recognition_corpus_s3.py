@@ -11,7 +11,7 @@ compared against that independent label -- the oracle's answer is never the sour
 The INDEPENDENCE discipline (the thing that makes this a second bearing, not a bigger copy):
   * Molecules: written by hand as SMILES from textbook named reactions, never pulled from ``capped_scissions``.
   * Labels: ``truth`` (REAL / FICTION / OUTSIDE_GRAMMAR), ``family`` (the chemical class), and ``in_whitelist``
-    (is this family one of the oracle's 17 attested classes) are set from chemistry, not from the oracle.
+    (is this family one of the oracle's attested classes) are set from chemistry, not from the oracle.
   * Grounding: each case names its chemical grounding.  These are canonical named reactions (esterification,
     Friedel-Crafts acylation, Diels-Alder, aldol, ...) whose EXISTENCE as a reaction class is textbook; the specific
     small-molecule substrate is this author's construction.  No primary-literature yield/condition claim is made --
@@ -109,7 +109,7 @@ class Case:
     name: str
     family: str
     truth: str            # REAL / FICTION / OUTSIDE_GRAMMAR (the independent chemical label)
-    in_whitelist: bool    # is ``family`` one of the oracle's 17 attested classes?
+    in_whitelist: bool    # is ``family`` one of the oracle's attested classes?
     build: object         # () -> ExperimentStep  (may raise for the UNREPRESENTABLE cases)
     grounding: str        # chemical grounding of the LABEL (textbook named reaction, or UNVERIFIED)
     holdout: bool = False # substrate not present in the baseline corpus
@@ -150,6 +150,14 @@ def corpus() -> "tuple[Case, ...]":
         Case("Diels-Alder: butadiene + ethylene -> cyclohexene (centre-less, hand-built; #132 closed)",
              "Diels-Alder [4+2]", REAL, True,
              lambda: _hand(("C=CC=C", "C=C"), ("C1CCC=CC1",), "C1CCC=CC1"), W, expect=RECOGNIZED),
+        # -- hydrogenation (one single bond-order reduction + H2 -> saturated): the #114 recognizer (21st class).
+        # Was a COVERAGE_GAP before #114; now a recognized in-whitelist positive -- the whitelist membership was
+        # updated DELIBERATELY after the recognizer was independently established on these substrates (CI repair,
+        # plan 1B), never to silence the drift --
+        Case("catalytic hydrogenation: ethylene + H2 -> ethane (#114)", "hydrogenation", REAL, True,
+             lambda: _hand(("C=C", "[H][H]"), ("CC",), "CC"), W, expect=RECOGNIZED),
+        Case("hydrogenation (holdout): acetaldehyde + H2 -> ethanol (C=O reduced)", "hydrogenation", REAL, True,
+             lambda: _hand(("CC=O", "[H][H]"), ("CCO",), "CCO"), W, holdout=True, expect=RECOGNIZED),
 
         # ========================= FICTIONS: mass-balanced but no real reaction (must abstain) ======================
         Case("forged-centre lactide double condensation (direct constructor)", "bundled double condensation",
@@ -172,6 +180,13 @@ def corpus() -> "tuple[Case, ...]":
              FICTION, False, lambda: _hand(("CC(C)O", "CCOC(=O)C"), ("CC(C)CCOC(=O)C", "water"), "CC(C)CCOC(=O)C",
                                            _ELEM),
              "FICTION: the #109 reachable over-generation; new C-C bond, not a condensation", expect=CORRECTLY_DEMOTED),
+        # -- withheld hydrogenation fiction (#114 no-false-VOUCH): conserved, right shape, +H2, but a SKELETAL
+        # cyclization (acyclic diene -> carbocycle), NOT a single bond-order reduction.  The recognizer's
+        # no-rearrangement guarantee must refuse it; not used to design the rule --
+        Case("hydrogenation fiction: 1,3-butadiene + H2 -> cyclobutane", "hydrogenation (fiction)", FICTION, False,
+             lambda: _hand(("C=CC=C", "[H][H]"), ("C1CCC1",), "C1CCC1"),
+             "FICTION: +H2 conserves (C4H6 + H2 = C4H8) but butadiene does not cyclize to cyclobutane -- a skeletal "
+             "rearrangement, not a bond-order reduction", holdout=True, expect=CORRECTLY_DEMOTED),
 
         # ========================= NULL: census fires, molecules do not re-derive (clean abstain) ===================
         Case("lactide bundle, centre-less (census fires, re-derivation abstains, no crash)",
@@ -192,8 +207,6 @@ def corpus() -> "tuple[Case, ...]":
         # ========================= OUTSIDE the grammar: real reactions with NO attested recognizer =================
         Case("aldol addition: 2 acetaldehyde -> 3-hydroxybutanal", "aldol addition", REAL, False,
              lambda: _hand(("CC=O", "CC=O"), ("CC(O)CC=O",), "CC(O)CC=O"), W, expect=COVERAGE_GAP),
-        Case("catalytic hydrogenation: ethylene + H2 -> ethane (#114)", "hydrogenation", REAL, False,
-             lambda: _hand(("C=C", "[H][H]"), ("CC",), "CC"), W, expect=COVERAGE_GAP),
         Case("Friedel-Crafts acylation: benzene + acetic anhydride -> acetophenone + acetic acid (#110)",
              "Friedel-Crafts acylation", REAL, False,
              lambda: _hand(("c1ccccc1", "CC(=O)OC(C)=O"), ("CC(=O)c1ccccc1", "CC(=O)O"), "CC(=O)c1ccccc1"), W,

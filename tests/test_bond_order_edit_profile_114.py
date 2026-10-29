@@ -134,8 +134,10 @@ class TestReachabilityVsDefault:
 
 
 # targets whose hydrogenation PRODUCT shapes deliberately mimic other families' products -- the attribution-theft
-# surface the #114 adversary pass hammered (DA-adduct ring, arene-adjacent, ether, ester, fused/branched).
-_NOVOUCH_TARGETS = [
+# surface the #114 adversary pass hammered (DA-adduct ring, arene-adjacent, ether, ester, fused/branched). With the
+# #114 recognizer each emitted edit must be recognised as hydrogenation OR cleanly deferred (conjugated-ring), and
+# NEVER mis-attributed to another family nor surfaced as an instrument error.
+_EDIT_SHAPE_TARGETS = [
     "C1=CCCCC1",       # cyclohexene (from a DA-adduct-shaped diene) -- the worst case
     "C1CCCCC1",        # cyclohexane
     "CCc1ccccc1",      # ethylbenzene (arene-adjacent)
@@ -149,26 +151,32 @@ _NOVOUCH_TARGETS = [
 ]
 
 
-class TestNoFalseVouch:
-    """SOUNDNESS PIN: a generator wired behind a profile must not mint a reaction vouch for a recognizer-less family.
-    The oracle ABSTAINS on the hydrogenation step -- cleanly, not through a swallowed instrument error."""
+class TestHydrogenationRecognition:
+    """#114 recognizer: a genuine single bond-order edit is now RECOGNISED as hydrogenation; a conjugated-ring
+    reduction is cleanly DEFERRED (abstain); nothing is ever mis-attributed to another family or surfaced as an
+    instrument error.  (Replaces the pre-recognizer TestNoFalseVouch, which asserted the oracle always abstained --
+    true only while the family had no recognizer.  The no-FICTION-vouch guarantee is in
+    tests/test_hydrogenation_recognizer_114.py.)"""
 
-    def test_the_oracle_abstains_on_the_reachable_route_step(self):
+    def test_the_reachable_route_step_is_recognised_as_hydrogenation(self):
         reg = resolve_algebra_profile(PROFILE)
         res = search_routes(ETHANE, reagents=(WATER,), available=(ETHENE, H2), max_depth=1, registry=reg)
         assert res.routes, "expected the hydrogenation route to be reachable"
+        seen_hydro = False
         for r in res.routes:
             for step in r.steps:
                 out = recognize_reaction_type_outcome(step)
-                assert not out.is_match           # never MATCH -> never REACTION_VOUCHED by this family
-                assert not out.is_internal_error  # abstains CLEANLY (not an error disguised as a non-recognition)
-                assert out.reaction_class is None
+                assert not out.is_internal_error
+                if out.is_match:
+                    assert "hydrogenation" in out.reaction_class, f"mis-attributed -> {out.reaction_class!r}"
+                    seen_hydro = True
+        assert seen_hydro, "ethene + H2 -> ethane must now VOUCH as hydrogenation"
 
-    @pytest.mark.parametrize("target_smiles", _NOVOUCH_TARGETS)
-    def test_oracle_abstains_on_every_hydrogenation_step_the_family_can_emit(self, target_smiles):
-        # Encodes the invariant the #114 adversary flagged as "emergent, not asserted anywhere": a future 2->1
-        # recognizer that vouched an H2 addition (without reconstructing both declared reactants) would trip this.
-        # Build the synthesis step the route layer presents to the oracle (precursor + H2 -> target) for EVERY edit.
+    @pytest.mark.parametrize("target_smiles", _EDIT_SHAPE_TARGETS)
+    def test_every_emitted_edit_is_hydrogenation_or_cleanly_deferred(self, target_smiles):
+        # The #114 adversary's "emergent, not asserted anywhere" invariant, now sharpened: for EVERY edit the
+        # generator can emit, the oracle either RECOGNISES hydrogenation (re-derived from the molecules) or cleanly
+        # ABSTAINS (conjugated-ring deferral) -- never an instrument error, never a cross-poach to another family.
         target = parse_smiles(target_smiles)
         edits, _ = bond_order_edits(target)
         assert edits, f"{target_smiles} must carry at least one raisable bond"
@@ -176,8 +184,10 @@ class TestNoFalseVouch:
             precursor = _precursor_of(edit)
             step = ExperimentStep.assembling(target, (precursor, H2), (target,), reagents=())
             out = recognize_reaction_type_outcome(step)
-            assert not out.is_match, f"{target_smiles}: unexpected vouch -> {out.reaction_class}"
             assert not out.is_internal_error, f"{target_smiles}: internal recognizer error -> {out.faults}"
+            if out.is_match:
+                assert "hydrogenation" in out.reaction_class, \
+                    f"{target_smiles}: mis-attributed to {out.reaction_class!r}"
 
 
 class TestIndependentBondOrder:
@@ -229,6 +239,7 @@ class TestMeasuredReachabilityGain:
 
         ok, summary = validate()
         assert ok, summary
-        assert summary["reachable_under_profile"] == summary["cases"]  # reachable in every case under the profile
-        assert summary["reachable_under_defaults"] == 0                # unreachable under either default
-        assert summary["false_vouch"] == 0                            # and no minted vouch for the recognizer-less family
+        assert summary["reachable_under_profile"] == summary["cases"]                 # reachable in every case under the profile
+        assert summary["reachable_under_defaults"] == 0                               # unreachable under either default
+        assert summary["recognized_as_hydrogenation"] == summary["steps_classified"]  # every edit now vouches as hydrogenation
+        assert summary["misattributed"] == 0                                          # and none is cross-poached to another family

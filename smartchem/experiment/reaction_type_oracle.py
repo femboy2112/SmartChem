@@ -1133,6 +1133,79 @@ def _electrocyclization_6pi(step) -> bool:
 #: 14 pericyclic classes are locked apart by their per-family guarded RE-DERIVATION alone (ISSUE-132: no centre is
 #: read; the 14x14 identity matrix in PERICYCLIC-LAYER-A-FUZZ-132 pins no cross-poach), so none can poach another's
 #: steps.
+def _is_dihydrogen(mol) -> bool:
+    """True iff ``mol`` is neutral dihydrogen H2 (the pair a hydrogenation consumes)."""
+    atoms = getattr(mol, "atoms", ())
+    return len(atoms) == 2 and all(a == "H" for a in atoms) and getattr(mol, "charge", 0) == 0
+
+
+def _is_conjugated_ring_system(mol) -> bool:
+    """Fail-closed proxy for an aromatic / conjugated-RING species: the (connected) molecule is CYCLIC
+    (|bonds| >= |atoms|) AND carries >= 2 multiple (order >= 2) bonds. Benzene (3 ring doubles) and the
+    cyclohexadienes (2) match; an ISOLATED ring double (cyclohexene) and an ACYCLIC polyene (butadiene)
+    do not. Used to DEFER aromatic-ring bond-order reductions: an aromatic ring does not partial-
+    hydrogenate as a clean single-H2 step (the Kekule-edit fiction #114's adversary flagged)."""
+    atoms = getattr(mol, "atoms", ())
+    bonds = getattr(mol, "bonds", ())
+    if len(bonds) < len(atoms):  # a tree (|E| = |V|-1) is acyclic
+        return False
+    return sum(1 for b in bonds if getattr(b, "order", 1) >= 2) >= 2
+
+
+def _hydrogenation(step) -> bool:
+    """Recognizer (#114): one partial bond-order edit read in the SYNTHESIS direction --
+    ``precursor + H2 -> saturated`` (one C=C/C#C/C=O/C=N/C#N reduced by one order, consuming H2).
+
+    SOUND BY RE-DERIVATION (no ``reaction_center`` read -- ISSUE-126/132 discipline). It reruns the
+    family's OWN generator :func:`~smartchem.bond_order_edit.bond_order_edits` on the step's single heavy
+    PRODUCT and vouches ONLY if some emitted dehydrogenation edit re-produces EXACTLY the step's reactants
+    {precursor, H2}. The ``BondOrderEdit`` constructor is a conservation + W1-descent certificate, so no
+    conserved FICTION can be re-derived unless it genuinely IS a bond-order edit -- the match is the
+    generator's own invariant, recomputed from the molecules, never a trusted field.
+
+    FAIL-CLOSED: a reactant pair that is not exactly {heavy, H2}, a charged/radical partner, a species
+    that will not canonicalise, or a budget-truncated enumeration with no match all return False -- honest
+    coverage loss, never a vouch.
+
+    DEFERRED SCOPE (honest coverage loss, like #111's aryl-O): a CONJUGATED-RING reduction (precursor
+    cyclic with >= 2 multiple bonds, e.g. benzene -> cyclohexadiene) abstains; an aromatic ring does not
+    partial-hydrogenate as a clean single-H2 step. Isolated ring doubles (cyclohexene -> cyclohexane) and
+    acyclic selective hydrogenations (butadiene -> butene) are kept.
+    """
+    reactants = getattr(step, "reactants", ())
+    products = getattr(step, "products", ())
+    if len(reactants) != 2 or len(products) != 1:
+        return False
+    target = products[0]
+    heavy = [m for m in reactants if not _is_dihydrogen(m)]
+    if len(heavy) != 1 or len(reactants) - len(heavy) != 1:  # exactly one H2 and one heavy precursor
+        return False
+    precursor = heavy[0]
+    from ..diels_alder import is_closed_shell_neutral
+    if not (is_closed_shell_neutral(target) and is_closed_shell_neutral(precursor)):
+        return False  # a radical / charged / ylide partner is not a hydrogenation reactant (fail-closed)
+    if _is_conjugated_ring_system(precursor):
+        return False  # defer aromatic-ring reduction (not a clean single-H2 step)
+    from ..bond_order_edit import bond_order_edits
+    from ..smiles import resonance_identity
+    try:
+        want = resonance_identity(precursor)
+    except (NotImplementedError, TypeError, ValueError):
+        return False
+    try:
+        edits, _complete = bond_order_edits(target)
+    except (TypeError, ValueError):
+        return False
+    for edit in edits:
+        try:
+            carriers = [p for p in edit.products if not _is_dihydrogen(p)]
+            if len(carriers) == 1 and resonance_identity(carriers[0]) == want:
+                return True  # target dehydrogenates to exactly (precursor, H2): a genuine bond-order edit
+        except Exception:
+            continue  # a pathological edit is skipped; an error can only make the step LESS recognized
+    return False
+
+
 _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
     ("acyl condensation (esterification/amidation)", _acyl_condensation),
     ("etherification (dehydrative, R-OH + R'-OH -> ether + water)", _etherification),
@@ -1162,6 +1235,8 @@ _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
      _thia_claisen_rearrangement),
     ("electrocyclization 4pi (1,3-butadiene -> cyclobutene)", _electrocyclization_4pi),
     ("electrocyclization 6pi ((Z)-1,3,5-hexatriene -> 1,3-cyclohexadiene)", _electrocyclization_6pi),
+    ("hydrogenation (partial bond-order edit, precursor + H2 -> saturated; one unsaturation reduced)",
+     _hydrogenation),
 )
 
 

@@ -112,3 +112,41 @@ def test_a_recognized_step_is_mass_conserved():
 # -- fresh holdout not used to design the rule -------------------------------------------------------------
 def test_holdout_isopropyl_nitrate():
     assert "oxoacid" in (recognize_reaction_type(_ester_step("CC(C)O[N+](=O)[O-]", "CC(C)O", "O[N+](=O)[O-]")) or "")
+
+
+# -- dalembert KILL, now a permanent regression control: a VALENCE-INSANE fiction must never vouch ----------
+def _hypervalent_carbon_alcohol():
+    # CH5-OH: a carbon at bond-order-sum 5 (4 C-H + 1 C-O) -- a conserved but valence-insane FICTION that SMILES
+    # cannot express; capped scission PRESERVES its valence rather than refusing it.
+    from smartchem.category import Bond, Molecule
+    return Molecule(("C", "H", "H", "H", "H", "O", "H"),
+                    frozenset({Bond(0, 1, 1), Bond(0, 2, 1), Bond(0, 3, 1), Bond(0, 4, 1), Bond(0, 5, 1), Bond(5, 6, 1)}),
+                    0, "")
+
+
+def _hypervalent_carbon_nitrate_ester():
+    # CH5-O-NO2: the same hypervalent carbon, esterified to a genuine O-N oxoacid locus (N: 3 O, one oxo).
+    from smartchem.category import Bond, Molecule
+    return Molecule(("C", "H", "H", "H", "H", "O", "N", "O", "O"),
+                    frozenset({Bond(0, 1, 1), Bond(0, 2, 1), Bond(0, 3, 1), Bond(0, 4, 1), Bond(0, 5, 1),
+                               Bond(5, 6, 1), Bond(6, 7, 2), Bond(6, 8, 1)}),
+                    0, "")
+
+
+def test_valence_gate_rejects_hypervalent_carbon_but_accepts_genuine_oxoacid_esters():
+    from smartchem.experiment.reaction_type_oracle import _valence_upper_bound_sane
+    assert _valence_upper_bound_sane(_hypervalent_carbon_alcohol()) is False        # C degree 5 > max{4}
+    assert _valence_upper_bound_sane(_hypervalent_carbon_nitrate_ester()) is False  # hypervalent C again
+    assert _valence_upper_bound_sane(parse_smiles("CO[N+](=O)[O-]")) is True         # genuine nitrate ester (N degree 5 ok)
+    assert _valence_upper_bound_sane(parse_smiles("COP(=O)(O)O")) is True            # genuine phosphate ester
+
+
+def test_dalembert_kill_hypervalent_nitrate_ester_never_vouches():
+    # The exact false-VOUCH d'Alembert found: a conserved valence-insane 'nitrate ester' (hypervalent carbon)
+    # was vouched because the recognizer dropped the #132 valence gate. The upper-bound valence gate restores
+    # fail-closed behaviour. ExperimentStep.assembling accepts the step (it conserves; it does not check valence).
+    alcohol, ester, water = _hypervalent_carbon_alcohol(), _hypervalent_carbon_nitrate_ester(), parse_smiles("O")
+    acid = parse_smiles("O[N+](=O)[O-]")
+    step = ExperimentStep.assembling(ester, (alcohol, acid), (ester, water), reagents=())
+    assert _oxoacid_ester(step) is False
+    assert "oxoacid" not in (recognize_reaction_type(step) or "")

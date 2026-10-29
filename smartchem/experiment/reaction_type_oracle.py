@@ -1212,6 +1212,26 @@ def _hydrogenation(step) -> bool:
     return False
 
 
+def _valence_upper_bound_sane(mol) -> bool:
+    """The ABSOLUTE-valence gate capped scission does NOT provide: every atom's bond-order-sum must not EXCEED the
+    maximum closed-shell valence for its element, and the element must be known. Capped scission is valence-
+    PRESERVING, not valence-SANE (it checks only relative valence; :class:`Molecule` carries no absolute valence),
+    so a hypervalent fiction (a carbon at bond-order-sum 5) is preserved, not refused. This upper-bound check
+    rejects that fiction while ACCEPTING the charge-separated nitrate (N at degree 5 = max{3,5}), which the
+    stricter exact-valence :func:`is_closed_shell_neutral` wrongly rejects (its terminal [O-] reads degree 1).
+    (dalembert kill: a vouched valence-insane 'nitrate ester' walked through the dropped #132 gate.)"""
+    from ..diels_alder import _CLOSED_SHELL_VALENCES
+    degree: dict = {}
+    for b in getattr(mol, "bonds", ()):
+        degree[b.i] = degree.get(b.i, 0) + getattr(b, "order", 1)
+        degree[b.j] = degree.get(b.j, 0) + getattr(b, "order", 1)
+    for idx, el in enumerate(getattr(mol, "atoms", ())):
+        allowed = _CLOSED_SHELL_VALENCES.get(el)
+        if allowed is None or degree.get(idx, 0) > max(allowed):
+            return False
+    return True
+
+
 def _oxoacid_center(mol, z: int) -> bool:
     """Is atom ``z`` (an N or P) a neutral-representation OXOACID centre -- bonded to >= 2 oxygens with at
     least one oxo (=O) bond? Separates a genuine nitrate/phosphate (N/P with oxo) from a hydroxylamine
@@ -1268,10 +1288,12 @@ def _oxoacid_ester(step) -> bool:
     esters are a separate deferred extension -- the disjoint scope is what keeps the two from cross-poaching).
     The oxoacid-centre gate separates a genuine nitrate/phosphate from a hydroxylamine O-ether (N, no oxo) or a
     phosphite (P(III), no oxo), which abstain. A nitrate's nitro group carries internal formal +/- yet is NET
-    neutral, which capped scission accepts; so -- unlike the C-X condensations -- this does NOT gate on
-    ``is_closed_shell_neutral`` (that would reject the nitro); the CappedScission certificate (neutral-net only,
-    valence-sane) plus the exact-identity match plus the oxoacid-centre gate carry the soundness. No matching
-    cut, a budget-truncated enumeration, or a non-canonicalising species all return False (honest coverage loss).
+    neutral, which capped scission accepts; so -- unlike the C-X condensations -- this does NOT gate on the exact
+    ``is_closed_shell_neutral`` (its terminal [O-] reads degree 1 and would reject a genuine nitrate). Capped
+    scission is valence-PRESERVING, not valence-SANE, so soundness instead rests on an explicit UPPER-BOUND valence
+    gate (:func:`_valence_upper_bound_sane` -- rejects a hypervalent fiction, accepts the nitrate) PLUS the exact-
+    identity re-derivation match PLUS the oxoacid-centre gate. No matching cut, a budget-truncated enumeration, a
+    valence-insane species, or a non-canonicalising one all return False (honest coverage loss).
     """
     from ..smiles import resonance_identity
     from ..structure_descent import ScissionError, single_cut_capped_scissions
@@ -1282,6 +1304,10 @@ def _oxoacid_ester(step) -> bool:
     if len(non_water_products) != 1 or len(non_water_reactants) != 2 or not water_products:
         return False
     ester = non_water_products[0]
+    # ABSOLUTE-valence sanity (dalembert kill): capped scission PRESERVES but never CHECKS valence, so a
+    # hypervalent fiction (a carbon at bond-order-sum 5) would otherwise re-derive and false-vouch.
+    if not (_valence_upper_bound_sane(ester) and all(_valence_upper_bound_sane(r) for r in non_water_reactants)):
+        return False
     loci = _oxoacid_ester_loci(ester)
     if not loci:
         return False

@@ -251,7 +251,7 @@ def test_route_with_a_fiction_step_is_blocked():
 # COMPATIBILITY -- the registry grew by exactly one; the recognizer is a total pure boolean
 # ====================================================================================================
 def test_registry_has_twentyone_recognizers_including_sn2():
-    assert len(_RECOGNIZERS) == 21
+    assert len(_RECOGNIZERS) == 22  # + #119 imine condensation (22nd), stacked on this SN2 branch
     assert any(_SN2 in name for name, _ in _RECOGNIZERS)
 
 

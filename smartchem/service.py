@@ -3034,10 +3034,24 @@ class CompilationResponse:
         and E1 is time-blind, so that serial-hold stability is UNVERIFIED (see :class:`RankedDAGSummary`).
         Gated on a process-constrained request exactly like :attr:`admissible_route_digests` (a physical-only compile is
         judged by :attr:`exit_code`'s all-EXCLUDED rule instead), so the two lists stay symmetrical.
+
+        DAG-ADMIT-02 (reaction-TYPE admission gate): a FITS dossier enters this list ONLY if EVERY step is a
+        positively-recognized reaction class (:func:`_dag_dossier_steps_recognized`, re-derived from the thick
+        ``replay_payload``).  A conserved-but-FICTIONAL DAG that physically/process-FITS no longer reaches an
+        admissible state -- it stays in ``ranked_dag_dossiers`` with its ``fit_status`` UNCHANGED (FITS keeps its pure
+        physical/process meaning) but is WITHHELD from admission, closing the DAG-ADMIT-BYPASS.  This mirrors the linear
+        path, which carries recognition on the readiness/frontier axis rather than in ``fit_status``; a DAG dossier
+        carries no such axis, so the admission list is where the DAG path's recognition gate must live.  The gate
+        applies whenever the thick ``replay_payload`` is present (production and the DEFAULT transport always carry it);
+        on an explicit THIN_ADVISORY wire the recognition claim is unverifiable and stays ADVISORY (admitted on
+        ``fit_status``, keeping ``process_selection_status``/``exit_code`` transport-invariant), with
+        :func:`_check_verified_admission` the strong fail-closed guarantee for a no-replay FITS DAG under verified
+        admission.  See :func:`_dag_dossier_steps_recognized`.
         """
         if not self.request.constraints.process.constrains_anything:
             return ()
-        return tuple(d.route_digest for d in self.ranked_dag_dossiers if d.fit_status == "FITS")
+        return tuple(d.route_digest for d in self.ranked_dag_dossiers
+                     if d.fit_status == "FITS" and _dag_dossier_steps_recognized(d))
 
     @property
     def admissible_route_digests(self) -> tuple[str, ...]:
@@ -4803,6 +4817,56 @@ def _reconstruct_dag(payload) -> "object":
     def build(replay):
         return SynthesisDAG(DAG_SCHEMA, _replay_payload_to_steps(replay))
     return _memoised_reconstruction("dag", payload, build)
+
+
+def _dag_dossier_steps_recognized(dossier) -> bool:
+    """DAG-ADMIT-02: is EVERY step of ``dossier``'s DAG a positively-recognized reaction class?
+
+    The convergent analogue of the linear path's reaction-TYPE recognition channel.  The linear side carries that
+    channel in the per-route READINESS tier (an unrecognized route sits at ``FORMAL_CANDIDATE``, never
+    ``REACTION_VOUCHED``) and in the affordability frontier's ``NOT_A_REACTION`` disposition
+    (:func:`route_reaction_type_blockers`); a :class:`RankedDAGSummary` carries NEITHER, so before this gate a
+    convergent DAG had NO recognition-bearing observable anywhere -- a conserved FICTION that physically/process-FITS
+    reached :attr:`~CompilationResponse.admissible_dag_digests` with nothing flagging its chemistry unrecognized (the
+    DAG-ADMIT-BYPASS finding).  This closes it the WEAKEST sound way: recognition is RE-DERIVED from the thick
+    ``replay_payload`` at the admission point, not stored -- so it adds NO dossier field, moves NO
+    ``route_digest``/``result_digest``/golden/schema, and carries NO forgeable recognition verdict (there is nothing
+    to relabel -- the strength of re-derivation over a stored field).  ``fit_status`` keeps its pure physical/process/
+    composability meaning (the plan's "do not conflate recognition with process fit"); only ADMISSION is gated, exactly
+    as the linear side keeps ``fit_status`` pure and carries recognition on a separate axis.
+
+    RE-DERIVED WHEN PRESENT, ADVISORY WHEN ABSENT, IDENTITY-BOUND -- the SAME thin-transport boundary the linear
+    frontier's recognition channel carries (:meth:`_check_frontier_coherence`):
+
+    * ``replay_payload`` PRESENT (the DEFAULT ``CANONICAL_VERIFIED`` wire, and EVERY in-memory response --
+      :meth:`RankedDAGSummary.of_dag` always attaches it): the gate APPLIES.  The reconstructed DAG's identity MUST
+      equal the claimed ``route_digest`` -- so a SUBSTITUTED replay (a recognized reaction's steps carried under a
+      fiction's digest) does not bind and cannot buy admission.  Then every step must be positively recognized
+      (``route_reaction_type_blockers`` empty); any unrecognized step withholds admission.  Even a forged
+      ``fit_status``-relabel to FITS cannot admit a fiction -- its own honest replay re-derives as unrecognized.
+      This is where the DAG-ADMIT-BYPASS is actually closed: production and the default transport both carry replay.
+    * ``replay_payload`` ABSENT (an explicit ``THIN_ADVISORY`` opt-out, or a hand-built dossier): the recognition
+      claim is UNVERIFIABLE here, so it stays ADVISORY (admitted on ``fit_status`` alone) rather than demoted -- NOT a
+      false "chemically impossible", and it keeps ``process_selection_status``/``exit_code`` transport-INVARIANT (those
+      derived fields are re-checked byte-for-byte on load, line ~6198, and a recognized response's admission must
+      survive a thin round-trip exactly as the linear side's does).  The STRONGER guarantee for the thin wire is
+      :func:`_check_verified_admission`, which under ``require_verified_admission`` REFUSES a FITS DAG that carries no
+      replay (UNVERIFIED) -- the plan's "thin/advisory transport refused when the recognition claim is unverifiable".
+
+    BOUNDARY (honest, stated plainly): a fully fail-closed-on-every-load gate (a thin PLAIN load also withholding an
+    unverifiable DAG) would need recognition STORED on the dossier -- a ``schema_version`` bump + golden re-freeze
+    (the versioned Candidate B, operator sign-off).  This re-derivation is the weakest sound repair that needs none:
+    it closes the production/default-transport hole and leaves the thin PLAIN wire exactly as advisory as the linear
+    frontier's, with verified admission the strong guarantee for both.
+    """
+    from .experiment.reaction_type_oracle import route_reaction_type_blockers
+    if dossier.replay_payload is None:
+        return True  # advisory: unverifiable here -> not demoted (verified admission refuses a no-replay FITS DAG)
+    dag = _reconstruct_dag(dossier.replay_payload)
+    bound = _v08_digest(dag) if dossier.is_legacy_v08 else dag.digest
+    if bound != dossier.route_digest:
+        return False
+    return not route_reaction_type_blockers(dag)
 
 
 def _dag_height(dag) -> int:

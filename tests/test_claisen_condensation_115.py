@@ -68,8 +68,8 @@ _MUST_NOT_VOUCH = [
 ]
 
 
-def test_oracle_now_has_twenty_recognizers():
-    assert len(_RECOGNIZERS) == 20
+def test_oracle_now_has_twentyone_recognizers():
+    assert len(_RECOGNIZERS) == 21  # + #112 SN2 substitution at sp3 carbon (21st)
 
 
 @pytest.mark.parametrize("name,rs,ps", _POSITIVES, ids=[c[0] for c in _POSITIVES])

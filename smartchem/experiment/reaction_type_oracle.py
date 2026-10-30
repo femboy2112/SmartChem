@@ -68,9 +68,11 @@ section-10.4 G6 -- a blocker dominates cost), so a route with any unrecognized s
 frontier. It runs DOWNSTREAM of ``ranked``; it never touches ``_score_tuple``.
 
 Boundaries carried as documented debt (R56 acyl + R57 etherification + R63 N-alkylation scope, per the gates).
-* EIGHTEEN ACTIVE CLASSES -- three dehydrative condensations + one activated acyl transfer + eight Diels-Alder [4+2]
-  families + four [3,3] sigmatropic isomerizations + two electrocyclizations, each with its own conservation-lock
-  (condensation / activated transfer) or re-derivation-certificate (pericyclic / sigmatropic / electrocyclic) proof:
+* TWENTY-ONE ACTIVE CLASSES -- three dehydrative condensations + one activated acyl transfer + one alkyl
+  sulfonate-ester transfer (#111) + one Claisen 1,3-dicarbonyl condensation (#115) + eight Diels-Alder [4+2]
+  families + four [3,3] sigmatropic isomerizations + two electrocyclizations + one SN2 substitution (#112), each
+  with its own conservation-lock (condensation / activated transfer / sulfonate-ester / Claisen / SN2) or
+  re-derivation-certificate (pericyclic / sigmatropic / electrocyclic) proof:
   (1) acyl condensation (R56), (2) dehydrative etherification (R57), (3) dehydrative N-alkylation (R63, generalising
   and SUBSUMING the R60 N-methylation sub-case -- it REPLACES the R60 entry rather than adding one; it covers any
   non-carbonyl N nucleophile -- amine, azole, sulfonamide, hydrazide, hydroxylamine, amidine/guanidine -- by an ALKYL
@@ -93,6 +95,13 @@ Boundaries carried as documented debt (R56 acyl + R57 etherification + R63 N-alk
   demoting);
   (16) 4-pi electrocyclization (butadiene -> cyclobutene) + (17) 6-pi electrocyclization (hexatriene -> cyclohexadiene)
   -- the THIRD pericyclic archetype, rank-flat ring-open/close isomerizations on the same lateral seam.
+  (18) SN2 substitution at an sp3 carbon (#112) -- a heteroatom (O/N/S) nucleophile displacing a HALIDE leaving group
+  at an sp3, non-tertiary carbon (``R-X + Nu-M -> R-Nu + M-X``, the counterion M carried EXPLICITLY so the neutral
+  graph never needs a bare ion -- the #105-wall-respecting SN2 subset).  Locked by the #106 radius-1 predicate
+  (:class:`~smartchem.radius1_environment.AtomEnvironment`: an sp3, tetravalent, >=1-hydrogen carbon whose only
+  heteroatom neighbour is the nucleophile -- excluding SNAr/vinylic/acyl collisions, carbene/radical centres, and
+  alpha-heteroatom SN1 oxocarbenium centres) AND an independent single-cut re-derivation into the declared precursors
+  (C-halide broken); carbon-nucleophile (nitrile) and sulfonate leaving groups are deferred behind their own gates.
   All EIGHT DA classes are locked apart, and the four [3,3] and two electrocyclic classes from each other and from
   every DA class, by their per-family guarded RE-DERIVATION alone (ISSUE-132: no centre is read; the re-derivation is
   the load-bearing separator wherever families share a bond structure) -- none poaches another's steps (the 14x14
@@ -416,6 +425,10 @@ def _n_alkylation(step) -> bool:
 
 
 _HALOGENS = frozenset({"F", "Cl", "Br", "I"})
+
+#: The heteroatom nucleophiles the #112 SN2 recognizer admits.  A CARBON nucleophile is deliberately excluded
+#: (the nitrile/cyanide case collides with C-C coupling fictions and is deferred -- see :func:`_sn2_substitution`).
+_SN2_NUCLEOPHILES = frozenset({"O", "N", "S"})
 
 
 def _acyl_adjacency(molecule):
@@ -1119,6 +1132,157 @@ def _electrocyclization_6pi(step) -> bool:
     return _sigmatropic_rearrangement(step, ELECTRO_6PI)
 
 
+def _sn2_substitution(step) -> bool:
+    """Recognizer: an SN2 nucleophilic substitution at an sp3 carbon (#112), the TWENTY-FIRST active class.
+
+    The class.  A heteroatom nucleophile displaces a HALIDE leaving group at a saturated carbon:
+    ``R-X + Nu-M -> R-Nu + M-X`` for ``X`` a halogen and ``Nu in {O, N, S}`` -- Williamson ether synthesis
+    (``EtBr + NaOEt -> Et2O + NaBr``), thioether synthesis (``EtBr + NaSEt -> Et2S + NaBr``), and
+    amine/azole/Gabriel N-alkylation by an alkyl halide (``EtBr + MeNH2 -> EtNHMe + HBr``).  The counterion
+    ``M`` (a metal of a salt, or ``H``) is carried EXPLICITLY, so every species is neutral and the #105
+    global-charge wall is never touched: this recogniser vouches ONLY the subset of SN2 that is honestly
+    representable in the neutral bond-graph.  The generator already EMITS these (capped scission caps the
+    opened carbon with the halide-salt byproduct in the pool), and they all read ``recognize_reaction_type ->
+    None`` until now -- this is the demoter's inverse, a positive vouch for the real class.
+
+    The conservation-lock proof (why a fired step is FORCED onto a genuine SN2).  Within the elementary
+    intermolecular shape (2 reactants -> 2 products), a VOUCH requires ALL of, read off ONE candidate
+    product-carbon:
+
+    * the electrophilic carbon is SN2-COMPETENT -- an sp3, tetravalent, at-least-one-hydrogen carbon whose ONLY
+      heteroatom neighbour is the nucleophile (the full gate, with each clause closing a specific hole, lives on
+      :func:`_sn2_rederives` reading :class:`~smartchem.radius1_environment.AtomEnvironment`).  ``is_saturated_carbon``
+      (every incident bond order 1) excludes the three centre-identical collisions the context-free
+      :class:`~smartchem.reaction_center.ReactionCenter` cannot -- SNAr (aromatic, a Kekule order-2 bond), vinylic
+      (``C=C``) and acyl (``C=O``); tetravalence + the target's :func:`~smartchem.diels_alder.is_closed_shell_neutral`
+      gate exclude a carbene/radical centre (dalembert KILL 1); the hydrogen requirement demotes a fully-substituted
+      tertiary centre (``MTBE``, SN1); and the single-heteroatom requirement demotes an alpha-O/N/S oxocarbenium /
+      iminium / thiocarbenium (acetal / orthoester / aminal -- dalembert KILL 2, which a carbon-only count misses).
+      A carbon nucleophile is NOT admitted (``Nu`` restricted to heteroatoms), so the nitrile/cyanide case and the
+      ``C-C``-coupling fiction it could collide with are deferred, not risked (documented boundary below);
+    * the step **independently re-derives**: a single-cut capped scission of the product-carbon's ``C-Nu``
+      bond, consuming the declared coproduct as the cap reagent, disconnects into EXACTLY the two declared
+      precursors (by :func:`~smartchem.smiles.resonance_identity`), in ONE connected component, with a
+      ``C-halogen`` bond BROKEN (the halide-leaving-group lock -- a hydroxide or other non-halide leaving group
+      forms no ``C-halogen`` broken bond and is demoted).  The reverse of one single-cut substitution IS, by
+      construction, one genuine SN2; a bundled multi-cut fiction that merely forges the net signature needs
+      ``>= 2`` cuts and so is NEVER re-derived.
+
+    The clauses are a CONJUNCTION, and that is the lock: the re-derivation alone pins only the NET
+    ``R-X + Nu-M -> R-Nu + M-X`` (it cannot tell SN1 from SN2); the radius-1 carbon gate supplies the MECHANISM
+    constraint the net cannot -- for ``tBuOMe`` the re-derivation matches only at the (zero-hydrogen) tertiary
+    carbon, for an acetal only at the (two-heteroatom) oxocarbenium carbon, for aryl/vinyl/acyl only at the
+    non-sp3 carbon, and the innocent methyl carbons fail the re-derivation.  No single clause suffices.
+
+    CONTENT-DETERMINISTIC + FAIL-CLOSED (the module cardinals).  Recognition is a pure function of the
+    conserved ``reactants``/``products`` molecules: the carried ``step.reaction_center`` is NEVER read (both
+    product-assignments are tried, so the ``target`` label is not trusted either), a forged or absent centre
+    can neither mint nor block a vouch, and any error at any layer (a charged species the capper refuses, a
+    canonicalisation budget, a pathological graph) returns ``False`` -- honest demotion, never a spurious
+    vouch.
+
+    DEFERRED, with documented boundaries (honest coverage loss, prefer-sound-over-broad): a CARBON
+    nucleophile (nitrile synthesis ``RBr + NaCN -> RCN + NaBr``) -- it needs its own lock against ``C-C``
+    coupling fictions and did not re-derive cleanly under the neutral salt model; a SULFONATE (``-OTs``/
+    ``-OMs``) leaving group -- its multi-atom departure is a separate extension; and anything that would need
+    a BARE ion (the #105 wall).  Each is a future round behind its own gate."""
+    from ..smiles import resonance_identity
+
+    reactants = tuple(getattr(step, "reactants", ()) or ())
+    products = tuple(getattr(step, "products", ()) or ())
+    if len(reactants) != 2 or len(products) != 2:
+        return False  # the elementary intermolecular substitution shape only
+    try:
+        want = tuple(sorted(resonance_identity(r) for r in reactants))
+    except (NotImplementedError, TypeError, ValueError):
+        return False  # a species that will not canonicalise -> fail-closed demote
+    # try BOTH product assignments (nucleophile-product, coproduct) so the ``target`` label is not trusted
+    for nu_product, coproduct in ((products[0], products[1]), (products[1], products[0])):
+        if _sn2_rederives(nu_product, coproduct, want):
+            return True
+    return False
+
+
+def _sn2_rederives(nu_product, coproduct, want: tuple) -> bool:
+    """Does ``nu_product`` carry an SN2-competent sp3 ``C-{O,N,S}`` centre that single-cut-disconnects --
+    consuming ``coproduct`` -- into EXACTLY the precursor identities ``want`` by a genuine SN2 (a ``C-Nu``
+    formed, a ``C-halogen`` broken, one component)?  The content-deterministic, fail-closed SN2 witness.
+
+    The electrophilic-carbon gate (hardened against two adversary kills the review gate caught -- the meta-lesson:
+    run adversaries SEPARATELY from acceptance) reads the carbon's radius-1 environment
+    (:class:`~smartchem.radius1_environment.AtomEnvironment`) and requires ALL of:
+
+    * ``is_saturated_carbon`` -- an sp3 carbon (every incident bond order 1), excluding the centre-identical SNAr
+      (aromatic), vinylic and acyl collisions;
+    * TETRAVALENT -- exactly four radius-1 neighbours.  KILL 1 (dalembert): ``is_saturated_carbon`` is an
+      all-single-bonds test, NOT a valence test, so a divalent CARBENE / trivalent RADICAL carbon passes it; the
+      target is additionally gated on :func:`~smartchem.diels_alder.is_closed_shell_neutral` (the sibling-recognizer
+      guard SN2 had been missing) and the carbon itself must carry four bonds -- a carbene/radical centre is demoted;
+    * at least one HYDROGEN -- a fully-substituted (zero-H) carbon cannot undergo backside SN2 (it is SN1/E1),
+      whether crowded by carbon (a tertiary ``tBu`` centre) or heteroatoms; closes the MTBE control;
+    * EXACTLY ONE heteroatom neighbour, the nucleophile itself.  KILL 2 (dalembert): a carbon-only substitution
+      count reads an acetal / orthoester / aminal / thioacetal carbon (an alpha-O/N/S lone-pair donor) as a benign
+      'secondary' centre, but that carbon forms an oxocarbenium/iminium/thiocarbenium and reacts SN1 -- MORE
+      decisively than the tertiary case the recognizer already rejects.  Requiring the carbon's only heteroatom to
+      be the nucleophile demotes every alpha-heteroatom donor (a conservative coverage boundary: it also demotes the
+      rare alpha-EWG-heteroatom SN2, honest coverage loss, never a false-vouch).
+
+    Then the conservation lock: a single-cut scission of the ``C-Nu`` bond consuming ``coproduct`` must reproduce
+    EXACTLY the declared precursors, in one connected component, breaking a ``C-halogen`` bond (the halide-leaving-
+    group requirement -- a non-halide leaving group forms no such broken bond and is demoted).  (The formed ``C-Nu``
+    bond is the cut bond by construction of this loop, so it is not re-checked as a discriminator.)"""
+    from ..structure_descent import single_cut_capped_scissions, ScissionError
+    from ..smiles import resonance_identity
+    from ..radius1_environment import AtomEnvironment
+    from ..diels_alder import is_closed_shell_neutral
+
+    if not is_closed_shell_neutral(nu_product):
+        return False  # KILL 1 guard: a radical / carbene / charged TARGET is not an SN2 product (fail-closed)
+    atoms = getattr(nu_product, "atoms", ())
+    for b in sorted(getattr(nu_product, "bonds", ())):
+        if b.order != 1:
+            continue
+        ei, ej = atoms[b.i], atoms[b.j]
+        if ei == "C" and ej in _SN2_NUCLEOPHILES:
+            cidx = b.i
+        elif ej == "C" and ei in _SN2_NUCLEOPHILES:
+            cidx = b.j
+        else:
+            continue
+        try:
+            env = AtomEnvironment.at(nu_product, cidx)
+        except Exception:
+            continue
+        if not env.is_saturated_carbon:          # sp3 -- excludes aromatic (SNAr) / vinylic / acyl centres
+            continue
+        if len(env.star) != 4:                   # tetravalent -- excludes a carbene / radical centre (KILL 1)
+            continue
+        if env.hydrogen_count < 1:               # bears >=1 H -- a fully-substituted carbon is SN1 (MTBE / tBu)
+            continue
+        if sum(1 for elem, _order in env.star if elem in _SN2_NUCLEOPHILES) != 1:
+            continue  # exactly ONE heteroatom (the nucleophile): an alpha-O/N/S donor is an SN1 oxocarbenium (KILL 2)
+        try:
+            scissions, _complete = single_cut_capped_scissions(nu_product, (coproduct,), (b,))
+        except (ScissionError, NotImplementedError, TypeError, ValueError):
+            continue  # the target/coproduct cannot be single-cut re-derived (e.g. charged) -> demote
+        for cs in scissions:
+            try:
+                if tuple(sorted(resonance_identity(p) for p in cs.products)) != want:
+                    continue
+                rc = cs.reaction_center()
+                if rc.n_components != 1:
+                    continue
+                broken_c_x = any(
+                    order == 1 and (("C" == lo and hi in _HALOGENS) or ("C" == hi and lo in _HALOGENS))
+                    for lo, hi, order in rc.broken
+                )
+                if broken_c_x:
+                    return True
+            except Exception:
+                continue  # a pathological scission is skipped; an error can only make the step LESS recognized
+    return False
+
+
 #: The positive whitelist of attested reaction-class recognizers: ``(class_name, predicate)``. A step is
 #: recognized iff SOME predicate fires. Every entry MUST carry a conservation-lock proof (see the module
 #: docstring); a general bounded-radius recognizer is exactly escape #7 and is not admitted. R56 shipped acyl;
@@ -1162,6 +1326,8 @@ _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
      _thia_claisen_rearrangement),
     ("electrocyclization 4pi (1,3-butadiene -> cyclobutene)", _electrocyclization_4pi),
     ("electrocyclization 6pi ((Z)-1,3,5-hexatriene -> 1,3-cyclohexadiene)", _electrocyclization_6pi),
+    ("SN2 substitution (R-X + O/N/S-nucleophile -> R-Nu + halide-salt/HX; sp3 non-tertiary carbon)",
+     _sn2_substitution),
 )
 
 

@@ -2864,6 +2864,7 @@ class CompilationResponse:
             return
         # function-local by convention, not necessity: both modules are already loaded by ``import smartchem.service``
         # (via the experiment package), so this is neither a load-time saving nor a cycle dodge (0.9.5 Part 16).
+        from .experiment.activator_ledger import route_activator_blockers
         from .experiment.catalyst_availability import route_catalyst_blockers
         from .experiment.reaction_type_oracle import route_reaction_type_blockers
         process = self.request.constraints.process
@@ -2919,6 +2920,8 @@ class CompilationResponse:
                         f"(TAMPER-HARDENING-01, KILL 1){self._legacy_hint()}"
                     )
                 rederived_hard |= set(route_catalyst_blockers(route))
+                rederived_hard |= set(route_activator_blockers(route))  # ACTIVATOR-LEDGER-01 (#107): mirror the
+                #     producer symmetrically, or a stripped activator blocker would pass unverified (tamper hole).
                 rederived_fiction |= set(route_reaction_type_blockers(route))
             missing_hard = rederived_hard - set(e.cost_vector.hard_blockers)
             missing_fiction = rederived_fiction - set(e.cost_vector.fiction_blockers)
@@ -3516,6 +3519,7 @@ def _affordability_frontier(routes: "tuple", ranked: "tuple", *, process_bounds:
     if not routes or not ranked:
         return ()
     from .experiment.affordability import AffordabilityFrontierEntry, basket_cost_vector, pareto_frontier
+    from .experiment.activator_ledger import route_activator_blockers
     from .experiment.catalyst_availability import route_catalyst_blockers
     from .experiment.reaction_type_oracle import route_reaction_type_blockers
     by_digest = {r.digest: r for r in routes}
@@ -3546,6 +3550,13 @@ def _affordability_frontier(routes: "tuple", ranked: "tuple", *, process_bounds:
         # catalyst today, so this appends nothing for every current route -- a guard ahead of its data.)  All of these
         # are REAL reactions that are just hard, so they ride ``hard_blockers`` (disposition tier REAL_BUT_HARD).
         hard = hard + route_catalyst_blockers(route)
+        # ... plus ACTIVATOR-LEDGER-01 (#107): a step whose recognized CLASS requires a stoichiometric activator
+        # (today only the Claisen condensation's enolizing base) that its declared conditions do not supply is a
+        # REAL reaction merely out of reach without the reagent, so it rides ``hard_blockers`` (REAL_BUT_HARD) too
+        # -- NOT ``fiction_blockers`` (it is a known reaction) and NOT a feasibility/impossibility claim.  Keyed on
+        # the recognized class (base-rate-safe), it demotes the capability over-claim the oracle's Problem-A vouch
+        # left open (a baseless Claisen reading as kitchen-runnable); type-validity is untouched.
+        hard = hard + route_activator_blockers(route)
         # -- channel 2, NOT-A-REACTION: REACTION-TYPE-ORACLE-01 (R56) -- a step that matches NO attested reaction class
         # is a reaction-TYPE FICTION, a formula-balanced graph move that is no real reaction at all (Problem A; R55
         # measured 72% of the frontier was such fiction, un-blocked).  This rides the DISTINCT ``fiction_blockers``

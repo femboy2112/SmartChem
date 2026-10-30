@@ -68,9 +68,13 @@ section-10.4 G6 -- a blocker dominates cost), so a route with any unrecognized s
 frontier. It runs DOWNSTREAM of ``ranked``; it never touches ``_score_tuple``.
 
 Boundaries carried as documented debt (R56 acyl + R57 etherification + R63 N-alkylation scope, per the gates).
-* EIGHTEEN ACTIVE CLASSES -- three dehydrative condensations + one activated acyl transfer + eight Diels-Alder [4+2]
-  families + four [3,3] sigmatropic isomerizations + two electrocyclizations, each with its own conservation-lock
-  (condensation / activated transfer) or re-derivation-certificate (pericyclic / sigmatropic / electrocyclic) proof:
+* TWENTY ACTIVE CLASSES -- three dehydrative condensations + one activated acyl transfer + one alkyl sulfonate-ester
+  transfer (#111) + one Claisen 1,3-dicarbonyl condensation (#115) + eight Diels-Alder [4+2] families + four [3,3]
+  sigmatropic isomerizations + two electrocyclizations, each with its own conservation-lock (condensation / activated
+  transfer / sulfonate-ester / Claisen) or re-derivation-certificate (pericyclic / sigmatropic / electrocyclic) proof.
+  The numbered derivation below enumerates the first EIGHTEEN; the #111 alkyl sulfonate-ester transfer (an sp3-alkyl
+  carbinol O sulfonylated by a sulfonyl halide, coproduct H-X) and the #115 Claisen condensation (two esters -> a
+  1,3-dicarbonyl + an alcohol, an orientation witness rejecting the butanone fiction) are the 19th and 20th classes:
   (1) acyl condensation (R56), (2) dehydrative etherification (R57), (3) dehydrative N-alkylation (R63, generalising
   and SUBSUMING the R60 N-methylation sub-case -- it REPLACES the R60 entry rather than adding one; it covers any
   non-carbonyl N nucleophile -- amine, azole, sulfonamide, hydrazide, hydroxylamine, amidine/guanidine -- by an ALKYL

@@ -222,6 +222,22 @@ reads a payload-supplied path — recompile locally from the file).
 * **May not:** reinterpret an existing verdict word; relax a fail-closed law (an unread demand stays `UNKNOWN`);
   make an absence of evidence count as evidence; let any optional backend change a verdict.
 
+### 7.1 Convergent-DAG admission is reaction-type gated (DAG-ADMIT-02)
+
+`admissible_dag_digests` admits a combined-FITS convergent DAG **only when every step is a positively-recognized
+reaction class**, re-derived from the dossier's thick `replay_payload` at the admission point — the convergent
+analogue of the linear path, which carries recognition on the readiness/frontier axis a DAG dossier lacks. This is a
+*tightening* (a FITS-but-unrecognized DAG is now **withheld** from admission, never newly admitted), so it cannot
+newly VOUCH anything; it closes the DAG-ADMIT-BYPASS where a conserved fiction reached an admissible DAG state while
+its chemistry was unrecognized. `fit_status` is **unchanged** (it keeps its pure physical/process/composability
+meaning; recognition is a separate axis). Stability: no stored field, so **no `schema_version` bump and no identity
+move** — `SynthesisDAG.digest`, `RankedDAGSummary.digest`, `result_digest` and every golden are byte-stable; the
+admission list is a derived view, not a wire field. Boundary: on an explicit `THIN_ADVISORY` wire the replay is
+absent, so recognition is unverifiable and the claim stays advisory (`process_selection_status`/`exit_code` remain
+transport-invariant); a consumer needing the guarantee uses `require_verified_admission`, which refuses a FITS DAG
+with no replay. A fully fail-closed-on-every-load gate would require storing recognition (a future declared schema
+move).
+
 ## 8. Optional backends
 
 * **RDKit** is optional, never required, and never changes a verdict. It serves two roles, both import-guarded so the

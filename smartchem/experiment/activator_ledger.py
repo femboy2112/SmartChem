@@ -92,10 +92,9 @@ class ActivatorRole(enum.Enum):
     """A non-conserved activation ROLE a reaction class may require of its declared conditions.
 
     Deliberately minimal: only the roles a currently-recognized class actually requires are defined. LEWIS_ACID
-    (Friedel-Crafts), TRANSITION_METAL_CATALYST (cross-coupling) and BRONSTED_ACID (acid-catalysed condensation)
-    are the obvious future members -- NOT pre-declared, because an unused role is dead surface and because each
-    carries its own base-rate question that must be answered when (and only when) a class that needs it is
-    recognized.
+    (Friedel-Crafts) and BRONSTED_ACID (acid-catalysed condensation) remain obvious future members -- NOT
+    pre-declared, because an unused role is dead surface and because each carries its own base-rate question that
+    must be answered when (and only when) a class that needs it is recognized.
     """
 
     #: A stoichiometric base that forms a carbonyl enolate CLEANLY -- strong enough to deprotonate the alpha-C AND
@@ -103,10 +102,22 @@ class ActivatorRole(enum.Enum):
     #: The Claisen condensation's defining requirement.
     ENOLIZING_BASE = "enolizing_base"
 
+    #: A transition-metal hydrogenation catalyst (CATALYTIC, not consumed) that activates H2 toward an unsaturated
+    #: substrate -- Pd, Pt, Ni, Rh, Ru and their supported/oxide forms. The recognized ``hydrogenation`` class
+    #: CONSUMES H2 (the recognizer checks "+H2 over the precursor"), and H2 + an unsaturated substrate does NOT
+    #: react without such a catalyst -- a UNIVERSAL requirement of the H2-consuming pathway (the catalyst-free
+    #: diimide / dissolving-metal reductions do not consume H2, so they are not this class). Distinct from the
+    #: enolizing base: this role is CATALYTIC; its availability (every real one is an INDUSTRIAL metal) is the
+    #: separate concern :mod:`~smartchem.experiment.catalyst_availability` owns -- this ledger imposes the
+    #: REQUIREMENT, that module checks OBTAINABILITY of a declared one.
+    TRANSITION_METAL_CATALYST = "transition_metal_catalyst"
 
-#: Human-readable phrase per role, for the honest blocker reason text.
+
+#: Human-readable phrase per role, for the honest blocker reason text. Each phrase carries the role's ACTIVATION
+#: NATURE (stoichiometric vs catalytic) so the blocker reason reads correctly for either.
 ROLE_PHRASE: dict[ActivatorRole, str] = {
-    ActivatorRole.ENOLIZING_BASE: "enolizing base (alkoxide / metal hydride / metal amide)",
+    ActivatorRole.ENOLIZING_BASE: "stoichiometric enolizing base (alkoxide / metal hydride / metal amide)",
+    ActivatorRole.TRANSITION_METAL_CATALYST: "transition-metal hydrogenation catalyst (Pd / Pt / Ni / Rh / Ru)",
 }
 
 
@@ -118,6 +129,12 @@ _CASE_EXACT_SPELLING: dict[str, str] = {
     "t-buok": "t-BuOK", "tbuok": "tBuOK",
     "nah": "NaH", "kh": "KH", "nanh2": "NaNH2", "lihmds": "LiHMDS", "nahmds": "NaHMDS", "khmds": "KHMDS",
     "lda": "LDA", "litmp": "LiTMP", "kda": "KDA",
+    # hydrogenation-catalyst metal tokens (case carries the element identity)
+    "pd": "Pd", "pt": "Pt", "ni": "Ni", "rh": "Rh", "ru": "Ru",
+    "pd/c": "Pd/C", "pt/c": "Pt/C", "rh/c": "Rh/C", "ru/c": "Ru/C", "pd-c": "Pd-C",
+    "pto2": "PtO2", "pd(oh)2": "Pd(OH)2",
+    # multi-word catalyst names whose metal token is a formula (so the case must be certified, not defaulted)
+    "raney ni": "Raney Ni", "raney-ni": "Raney-Ni", "pd black": "Pd black", "pt black": "Pt black",
 }
 
 #: Positive whitelist: normalized reagent names recognized as filling ``ENOLIZING_BASE``. Conservative -- every
@@ -141,9 +158,32 @@ _ENOLIZING_BASE_NAMES: frozenset[str] = frozenset({
     # in the module's own-named unsafe direction (d'Alembert #107 kill). The regression is locked in the tests.
 })
 
-#: normalized name -> the roles it positively fills. One table today; keyed so a future role just adds a set.
+#: Positive whitelist: normalized reagent names recognized as filling ``TRANSITION_METAL_CATALYST`` -- the
+#: transition-metal catalysts that activate H2 for a hydrogenation (Pd / Pt / Ni / Rh / Ru and their supported /
+#: oxide / named forms). Grounded in reagent IDENTITY, exact-match (never a substring scan), case-certified like the
+#: enolizing bases. Conservative: every entry is a textbook H2-hydrogenation catalyst. Omitting a valid one is the
+#: SAFE direction -- a hydrogenation declaring an unlisted catalyst stays REAL_BUT_HARD (missing requirement), and
+#: every real catalyst here is an INDUSTRIAL metal :mod:`catalyst_availability` demotes to REAL_BUT_HARD anyway, so
+#: the clearing whitelist's precision changes the blocker REASON, never the kitchen disposition.
+_HYDROGENATION_CATALYST_NAMES: frozenset[str] = frozenset({
+    # palladium
+    "pd", "pd/c", "pd-c", "pd/carbon", "palladium", "palladium on carbon", "palladium/carbon",
+    "palladium on charcoal", "palladium black", "pd black",
+    "pd(oh)2", "palladium hydroxide", "palladium hydroxide on carbon", "pearlman's catalyst", "pearlmans catalyst",
+    # platinum
+    "pt", "pt/c", "platinum", "platinum on carbon", "platinum black", "pt black",
+    "pto2", "platinum oxide", "platinum dioxide", "adams' catalyst", "adams catalyst", "adam's catalyst",
+    # nickel (Raney)
+    "ni", "nickel", "raney nickel", "raney ni", "raney-nickel", "raney-ni", "nickel boride",
+    # rhodium / ruthenium
+    "rh", "rh/c", "rhodium", "rhodium on carbon", "rhodium on alumina", "wilkinson's catalyst", "wilkinsons catalyst",
+    "ru", "ru/c", "ruthenium", "ruthenium on carbon",
+})
+
+#: normalized name -> the roles it positively fills. Keyed so a future role just adds a set.
 _ROLE_NAMES: dict[ActivatorRole, frozenset[str]] = {
     ActivatorRole.ENOLIZING_BASE: _ENOLIZING_BASE_NAMES,
+    ActivatorRole.TRANSITION_METAL_CATALYST: _HYDROGENATION_CATALYST_NAMES,
 }
 
 
@@ -215,7 +255,7 @@ def step_activator_blockers(step) -> tuple[str, ...]:
     reasons = set()
     for role in missing:
         reasons.add(
-            f"activator not declared: a {reaction_class} step requires a stoichiometric "
+            f"activator not declared: a {reaction_class} step requires a "
             f"{ROLE_PHRASE.get(role, role.value)}, none positively declared in the step conditions for "
             f"'{eq}' -- demoted REAL-BUT-HARD (Problem B activation; type-validity holds, NOT a claim of "
             f"impossibility or cost)"
@@ -244,11 +284,26 @@ def route_activator_blockers(route) -> tuple[str, ...]:
 
 
 #: The ledger. Keyed by the EXACT oracle display name (the stable wire identity -- never renamed; see the
-#: import-time guard below). Conservative: one entry, the Claisen condensation. The mechanism generalizes; the
-#: DATA stays base-rate-safe at the one unambiguous case.
+#: import-time guard below). Conservative: an entry exists ONLY for a class with a UNIVERSAL, unambiguous
+#: activation requirement -- the mechanism may generalize, but the DATA stays base-rate-safe.
+#:
+#: Mega-Round XI re-review (22 classes): the two new recognizers were reviewed against the guard's question --
+#:   * ``hydrogenation``: this recognized class CONSUMES H2 (the recognizer requires exactly +H2 over the
+#:     precursor), and H2 + an unsaturated substrate does NOT react without a transition-metal catalyst -- a
+#:     UNIVERSAL requirement of the H2-consuming pathway (the catalyst-free diimide / dissolving-metal reductions
+#:     do not consume H2, so they are structurally a DIFFERENT class, not this one). Added, TRANSITION_METAL_CATALYST.
+#:     Not confused with stoichiometric consumption: the catalyst is catalytic; its OBTAINABILITY (every real one
+#:     is INDUSTRIAL) is :mod:`catalyst_availability`'s separate gate, which composes with this requirement
+#:     (undeclared -> REAL_BUT_HARD here; declared -> REAL_BUT_HARD there -- never a false CLEAN).
+#:   * ``oxoacid ester condensation``: a dehydrative esterification of an oxoacid (nitric / phosphoric). Self-acidic
+#:     like the acyl / ether condensations -- NO stoichiometric activator or catalyst is universally required, so
+#:     NO entry (fabricating one from analogy is the banned move; feasibility stays the deferred Problem B UNKNOWN).
 REQUIRED_ACTIVATORS: dict[str, frozenset[ActivatorRole]] = {
     "Claisen condensation (ester/ketone + ester/carbonate -> 1,3-dicarbonyl + alcohol)": frozenset(
         {ActivatorRole.ENOLIZING_BASE}
+    ),
+    "hydrogenation (partial bond-order edit, precursor + H2 -> saturated; one unsaturation reduced)": frozenset(
+        {ActivatorRole.TRANSITION_METAL_CATALYST}
     ),
 }
 
@@ -272,13 +327,15 @@ _assert_ledger_keys_are_live_classes()
 #: A fingerprint of the FULL recognizer registry at the moment the ledger's base-rate scope was last reviewed
 #: (sha256 of the sorted display names, first 16 hex; the count is carried for a legible failure message). The
 #: rename guard above protects the PAST (a key that vanished); THIS protects the FUTURE (a class that APPEARED).
-#: The base-rate argument -- "among the recognized classes, only the Claisen condensation needs a stoichiometric
-#: activator" -- is a SNAPSHOT over exactly these 20 classes. The audit roadmap (W0.4) plans aldol / Knoevenagel /
-#: Michael (enolizing base) and the metal cross-couplings (catalyst): each WOULD need an entry, and a forgotten one
-#: is a false-VOUCH on growth. If any recognizer is added / removed / renamed, this digest moves and import fails
-#: LOUD, forcing a ledger re-decision rather than a silent gap.
-_REVIEWED_CLASS_COUNT = 20
-_REVIEWED_REGISTRY_DIGEST = "2a9ee79ec4c018a9"
+#: The base-rate argument -- "among the recognized classes, the Claisen condensation needs a stoichiometric
+#: enolizing base and the hydrogenation needs a transition-metal catalyst" -- is a SNAPSHOT over exactly these 22
+#: classes (Mega-Round XI re-review: +hydrogenation {TRANSITION_METAL_CATALYST}, +oxoacid ester {none}; see the
+#: ledger table). The audit roadmap still plans aldol / Knoevenagel / Michael (enolizing base) and the metal
+#: cross-couplings (catalyst): each WOULD need an entry when its recognizer lands, and a forgotten one is a
+#: false-VOUCH on growth. If any recognizer is added / removed / renamed, this digest moves and import fails LOUD,
+#: forcing a ledger re-decision rather than a silent gap.
+_REVIEWED_CLASS_COUNT = 22
+_REVIEWED_REGISTRY_DIGEST = "2a3bc34443129ff2"
 
 
 def _assert_registry_unchanged_since_ledger_review() -> None:

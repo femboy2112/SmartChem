@@ -58,11 +58,16 @@ def _diels_alder():
 
 # --------------------------------------------------------------------------- ledger invariants
 
-def test_ledger_is_exactly_the_claisen_entry_today():
-    # A DELIBERATE count. Adding a class requirement is a reviewed base-rate decision, not an accident; this test
-    # must be changed on purpose when a second entry is justified.
-    assert set(REQUIRED_ACTIVATORS) == {CLAISEN}
+_HYDROGENATION = "hydrogenation (partial bond-order edit, precursor + H2 -> saturated; one unsaturation reduced)"
+
+
+def test_ledger_is_exactly_the_two_reviewed_entries_today():
+    # A DELIBERATE set. Adding a class requirement is a reviewed base-rate decision, not an accident; this test
+    # must be changed on purpose when a further entry is justified. Mega-Round XI re-review added hydrogenation
+    # (TRANSITION_METAL_CATALYST); oxoacid ester was reviewed and correctly carries NO entry (self-acidic).
+    assert set(REQUIRED_ACTIVATORS) == {CLAISEN, _HYDROGENATION}
     assert REQUIRED_ACTIVATORS[CLAISEN] == frozenset({ActivatorRole.ENOLIZING_BASE})
+    assert REQUIRED_ACTIVATORS[_HYDROGENATION] == frozenset({ActivatorRole.TRANSITION_METAL_CATALYST})
 
 
 def test_every_ledger_key_is_a_live_oracle_class_name():
@@ -71,7 +76,7 @@ def test_every_ledger_key_is_a_live_oracle_class_name():
 
 
 def test_registry_fingerprint_guard_is_armed_and_matches_live_registry():
-    # The growth guard: the reviewed snapshot must equal the live 20-class registry, and the guard must pass on it.
+    # The growth guard: the reviewed snapshot must equal the live 22-class registry, and the guard must pass on it.
     import hashlib
     live = sorted(name for name, _pred in _RECOGNIZERS)
     assert len(live) == al._REVIEWED_CLASS_COUNT
@@ -87,12 +92,14 @@ def test_registry_fingerprint_guard_fires_on_drift(monkeypatch):
         al._assert_registry_unchanged_since_ledger_review()
 
 
-def test_no_other_recognized_class_carries_a_requirement():
+def test_only_the_two_reviewed_classes_carry_a_requirement():
     # The base-rate guard, proven over the WHOLE registry without constructing a step per class: every class but
-    # Claisen must map to an empty requirement, so no pericyclic / Fischer / activated-acyl step is ever demoted.
+    # the two reviewed ones (Claisen, hydrogenation) must map to an empty requirement, so no pericyclic / Fischer /
+    # activated-acyl / oxoacid-ester step is ever demoted.
+    carriers = {CLAISEN, _HYDROGENATION}
     for name, _pred in _RECOGNIZERS:
         required = REQUIRED_ACTIVATORS.get(name, frozenset())
-        if name == CLAISEN:
+        if name in carriers:
             assert required
         else:
             assert required == frozenset(), f"{name!r} unexpectedly requires an activator -- false-EXCLUDE risk"
@@ -111,7 +118,7 @@ _FILLS_ENOLIZING_BASE = [
 _MUST_NOT_FILL = [
     "NaOH", "KOH", "sodium hydroxide", "Na2CO3", "K2CO3", "NaHCO3", "sodium bicarbonate",
     "pyridine", "triethylamine", "Et3N", "DBU", "ammonia", "sodium acetate", "water", "acetic acid",
-    "palladium on carbon", "sulfuric acid", "base-free", "", "   ",
+    "sulfuric acid", "base-free", "", "   ",
     # strong-but-nucleophilic organometallics: never used to enolize an ester/ketone -> must NOT clear
     "n-BuLi", "s-BuLi", "t-BuLi", "tert-butyllithium", "sec-butyllithium", "MeLi", "methyllithium",
     "PhLi", "phenyllithium", "EtMgBr", "ethylmagnesium bromide",
@@ -126,6 +133,55 @@ def test_recognized_enolizing_bases_fill_the_role(name):
 @pytest.mark.parametrize("name", _MUST_NOT_FILL)
 def test_weak_or_nonbase_or_junk_fills_no_role(name):
     assert classify_activator_roles(name) == frozenset()
+
+
+# --------------------------------------------------------------------------- hydrogenation catalyst role (XI)
+
+_FILLS_METAL_CATALYST = [
+    "Pd/C", "palladium on carbon", "palladium/carbon", "Pd", "palladium", "Pd(OH)2", "Pearlman's catalyst",
+    "PtO2", "platinum oxide", "Adams' catalyst", "Pt", "platinum", "Raney nickel", "Raney Ni", "nickel",
+    "Rh", "rhodium", "Wilkinson's catalyst", "Ru", "ruthenium",
+]
+
+#: must NOT fill TRANSITION_METAL_CATALYST -- non-catalysts, a base (fills the OTHER role, not this one), wrong case.
+_MUST_NOT_FILL_METAL_CATALYST = ["water", "acetic acid", "NaOEt", "sulfuric acid", "pD", "PT", "", "palladium-free"]
+
+
+@pytest.mark.parametrize("name", _FILLS_METAL_CATALYST)
+def test_recognized_hydrogenation_catalysts_fill_the_catalyst_role_only(name):
+    roles = classify_activator_roles(name)
+    assert ActivatorRole.TRANSITION_METAL_CATALYST in roles
+    assert ActivatorRole.ENOLIZING_BASE not in roles          # a catalyst is not a base -- distinct roles
+
+
+@pytest.mark.parametrize("name", _MUST_NOT_FILL_METAL_CATALYST)
+def test_noncatalyst_or_wrongcase_fills_no_catalyst_role(name):
+    assert ActivatorRole.TRANSITION_METAL_CATALYST not in classify_activator_roles(name)
+
+
+def _hydrogenation(catalysts=None):
+    # ethylene + H2 -> ethane: the recognized H2-consuming hydrogenation class.
+    return _step(("C=C", "[H][H]"), ("CC",), catalysts=catalysts)
+
+
+def test_hydrogenation_recognized_and_demoted_without_a_catalyst():
+    step = _hydrogenation()
+    assert recognize_reaction_type(step) == _HYDROGENATION       # type-validity holds ...
+    assert step_activator_blockers(step)                         # ... but no catalyst declared -> REAL_BUT_HARD
+
+
+def test_hydrogenation_catalyst_declared_clears_the_activator_requirement():
+    # a declared metal catalyst MEETS the ledger requirement (the activator channel clears); its INDUSTRIAL
+    # obtainability is catalyst_availability's separate gate, so the two compose to REAL_BUT_HARD, never false-CLEAN.
+    from smartchem.experiment.catalyst_availability import route_catalyst_blockers
+    from smartchem.experiment.step import ROUTE_SCHEMA, ExperimentRoute
+    step = _hydrogenation(catalysts=("Pd/C",))
+    assert step_activator_blockers(step) == ()                   # requirement met
+    assert route_catalyst_blockers(ExperimentRoute(ROUTE_SCHEMA, (step,)))  # ... but Pd/C is INDUSTRIAL (separate gate)
+
+
+def test_hydrogenation_noncatalyst_condition_stays_demoted():
+    assert step_activator_blockers(_hydrogenation(catalysts=("water",)))  # water is not a hydrogenation catalyst
 
 
 @pytest.mark.parametrize("bad", [None, 123, 1.5, b"NaOEt", ["NaOEt"], object()])

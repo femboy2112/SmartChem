@@ -78,8 +78,62 @@ as its own PR** — identity-bearing recognition field, `schema_version` bump, f
 an adversarial test proving neither a forged condition envelope nor an altered serialized dossier bypasses
 admission, and a COMPATIBILITY.md declaration of the semantic move.
 
-## 5. Status
+## 5. Status (original, 2026-10-29 — superseded by §6)
 
-- **Hole:** CONFIRMED, reproduced, production-reachable. (`experiments/dag_admission_bypass_probe.py`.)
-- **Repair:** DESIGNED (DAG-ADMIT-02, §4). NOT implemented — it is a release-contract change awaiting sign-off
-  on the `schema_version` bump + golden re-freeze. No production code changed on this branch.
+- **Hole:** CONFIRMED, reproduced. (`experiments/dag_admission_bypass_probe.py`.)
+- **Repair:** DESIGNED (DAG-ADMIT-02, §4). NOT yet implemented at the time this was written.
+
+## 6. UPDATE — IMPLEMENTED (DAG-ADMIT-02, Candidate A, no sign-off needed)
+
+**Date:** 2026-10-29 (Mega-Round XI). The repair is now IMPLEMENTED in `smartchem/service.py`, as the **re-derive**
+variant §4 itself named ("*or* `admissible_dag_digests` must re-derive recognition from each dossier's thick
+`replay_payload` at the admission point"). Measuring the two candidates (the round's P0) showed this one is the
+**weakest sound repair and needs NO sign-off** — §4's "contract catch" over-stated the cost. The identity-bearing
+STORED field (Candidate B) remains a legitimate, stronger, sign-off-gated option (see the boundary below).
+
+### 6.1 What was built
+- `_dag_dossier_steps_recognized(dossier)` — re-derives recognition from the thick `replay_payload` (reconstruct the
+  `SynthesisDAG`, bind `reconstruct.digest == route_digest` like `_check_frontier_coherence` KILL 1, then
+  `route_reaction_type_blockers`). No stored field; nothing forgeable to relabel.
+- `admissible_dag_digests` now admits a FITS dossier only when every step is positively recognized. `fit_status`
+  keeps its pure physical/process/composability meaning (the plan's "do not conflate recognition with process fit").
+
+### 6.2 Field-by-field compatibility differential (MEASURED, the round's P0 deliverable)
+| axis | moves? | why |
+|---|---|---|
+| request `semantic_digest` | **no** | unchanged; search identity untouched |
+| search/transform registry digest | **no** | no new recognizer, no registry change |
+| `SynthesisDAG.digest` / DAG `route_digest` | **no** | recognition is re-derived, never a dossier field |
+| `RankedDAGSummary.digest` | **no** | no `compare=True` field added |
+| response `result_digest` | **no** | admission list is a derived property, not serialized, not hashed |
+| DAG dossier `schema_version` | **no** | no schema change |
+| serialized payload / goldens | **no** | `admissible_dag_digests` is not a serialized key |
+| `process_selection_status` / `exit_code` | only for an unrecognized-only FITS set | correct, and transport-invariant for recognized responses (advisory on thin — §6.4) |
+
+Confirmed by the full OOM-safe suite and by `tests/test_v1_0_version_transition.py` (no version-transition move) —
+so §4's `schema_version` bump + golden re-freeze + sign-off are **not** required for Candidate A.
+
+### 6.3 Production reachability — refined (honest correction of §2)
+§2 claimed the bypass was "production-reachable" via the methyl-acetate DAG recompile. Measured end-to-end through
+`run_compilation`, it is **latent, not live**: every *generator-derived* DAG step is `UNKNOWN`-fit, contained by
+TWO accidental walls — the composability "no sourced stability data" gap (multi-step) and a process-axis **workup
+gap** (single-step: generator steps carry no explicit workup). Neither is a recognition gate; both shrink as
+coverage/seeding grows. The only FITS DAGs on the current search are *seeded recognized* reactions (paracetamol via
+Ac₂O). So the hole is a real **contract** defect (a FITS-unrecognized DAG → admissible) demonstrable at the
+`admissible_dag_digests`/`of_dag` level; its production exposure opens as the containing gaps close. DAG-ADMIT-02
+closes the contract regardless. (`experiments/dag_admission_recognition_gate_probe.py`,
+`tests/test_dag_admission_recognition_gate.py`.)
+
+### 6.4 The one boundary, and the stronger (sign-off) option
+On an explicit `THIN_ADVISORY` wire the replay is stripped, so recognition cannot be re-derived; there the claim
+stays ADVISORY (admitted on `fit_status`), exactly as the linear frontier's fiction channel is advisory on thin
+transport, keeping `process_selection_status`/`exit_code` transport-invariant. The strong guarantee for the thin
+wire is `_check_verified_admission`, which under `require_verified_admission` already REFUSES a FITS DAG with no
+replay (fail-closed). A gate that ALSO withholds an unverifiable DAG on a *plain* thin load would need recognition
+**stored** on the dossier — Candidate B's `schema_version` bump + golden re-freeze + operator sign-off. That is the
+documented, available upgrade; Candidate A is the weakest repair that closes the production/default-transport hole
+with zero contract movement.
+
+- **Hole:** CONFIRMED, contract defect; production exposure latent (contained, not a recognition gate).
+- **Repair:** IMPLEMENTED (DAG-ADMIT-02, Candidate A). No schema/digest/golden/sign-off. Stronger always-fail-closed
+  variant (Candidate B) staged for sign-off.

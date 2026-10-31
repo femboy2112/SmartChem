@@ -284,3 +284,60 @@ def test_mixed_route_only_the_baseless_claisen_contributes():
     class R:
         steps = (_claisen(), _fischer(), _diels_alder(), _claisen(catalysts=("NaOEt",)))
     assert len(route_activator_blockers(R)) == 1
+
+
+# -- #112 SN2 conditional activator (1.5 consolidation; closes the evil-morty neutral-alcohol capability over-claim).
+# The requirement is CONDITIONAL on the step's nucleophile (not class-keyed): a NEUTRAL oxygen nucleophile (an
+# alcohol R-O-H) needs a stoichiometric base to form the alkoxide in situ (Williamson), so a baseless such step is
+# demoted REAL-BUT-HARD; a salt alkoxide, a neutral amine and a neutral thiol are competent and get no requirement.
+SN2 = "SN2 substitution"
+
+
+def _sn2_neutral_alcohol(catalysts=None):
+    # EtBr + EtOH -> Et2O + HBr : a neutral OXYGEN nucleophile (coproduct H-Br), the kill case.
+    return _step(("CCBr", "CCO"), ("CCOCC", "Br"), catalysts=catalysts)
+
+
+def test_sn2_neutral_alcohol_recognition_is_untouched():
+    assert SN2 in recognize_reaction_type(_sn2_neutral_alcohol())  # Problem A (type-validity) unchanged by the fix
+
+
+def test_sn2_neutral_alcohol_without_base_is_demoted():
+    reasons = step_activator_blockers(_sn2_neutral_alcohol())
+    assert len(reasons) == 1 and "activator not declared" in reasons[0] and "alkoxide" in reasons[0]
+
+
+@pytest.mark.parametrize("base", ["NaOEt", "sodium ethoxide", "NaH", "LDA", "potassium tert-butoxide"])
+def test_sn2_neutral_alcohol_with_a_declared_base_clears(base):
+    assert step_activator_blockers(_sn2_neutral_alcohol(catalysts=(base,))) == ()  # recoverable demotion
+
+
+@pytest.mark.parametrize("weak", ["water", "acetic acid", "pyridine", "triethylamine"])
+def test_sn2_neutral_alcohol_with_a_weak_base_stays_demoted(weak):
+    assert len(step_activator_blockers(_sn2_neutral_alcohol(catalysts=(weak,)))) == 1  # conservative clearing set
+
+
+def test_sn2_salt_alkoxide_needs_no_base():
+    step = _step(("CCBr", "CCO[Na]"), ("CCOCC", "[Na]Br"))  # the alkoxide IS the competent nucleophile
+    assert SN2 in recognize_reaction_type(step) and step_activator_blockers(step) == ()
+
+
+def test_sn2_neutral_amine_needs_no_base():
+    step = _step(("CCBr", "CN"), ("CCNC", "Br"))  # a neutral amine is itself a competent nucleophile
+    assert SN2 in recognize_reaction_type(step) and step_activator_blockers(step) == ()
+
+
+def test_sn2_neutral_thiol_needs_no_base():
+    step = _step(("CCBr", "CCS"), ("CCSCC", "Br"))  # neutral thiols react base-free: demoting would false-EXCLUDE
+    assert SN2 in recognize_reaction_type(step) and step_activator_blockers(step) == ()
+
+
+def test_deprotonating_base_role_whitelist():
+    assert ActivatorRole.DEPROTONATING_BASE in classify_activator_roles("NaOEt")
+    assert ActivatorRole.DEPROTONATING_BASE in classify_activator_roles("NaH")
+    assert ActivatorRole.DEPROTONATING_BASE not in classify_activator_roles("water")
+
+
+def test_sn2_requirement_is_conditional_not_class_keyed():
+    # a blanket REQUIRED_ACTIVATORS entry would false-EXCLUDE the salt/amine/thiol sub-populations.
+    assert not any("SN2" in k for k in REQUIRED_ACTIVATORS)

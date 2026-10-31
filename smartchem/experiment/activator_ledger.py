@@ -75,7 +75,12 @@ from __future__ import annotations
 import enum
 import hashlib
 
-from .reaction_type_oracle import _RECOGNIZERS, _step_equation, recognize_reaction_type
+from .reaction_type_oracle import (
+    _RECOGNIZERS,
+    _step_equation,
+    recognize_reaction_type,
+    sn2_feasibility_signature,
+)
 from .stock import case_fold_match_certifies
 
 __all__ = [
@@ -112,12 +117,21 @@ class ActivatorRole(enum.Enum):
     #: REQUIREMENT, that module checks OBTAINABILITY of a declared one.
     TRANSITION_METAL_CATALYST = "transition_metal_catalyst"
 
+    #: A stoichiometric base that deprotonates a NEUTRAL oxygen nucleophile (an alcohol ``R-O-H``) to its competent
+    #: conjugate nucleophile (the alkoxide ``R-O-``) -- without it the bare ``R-O-H`` does not displace a halide by
+    #: SN2 (the Williamson ether synthesis forms the alkoxide IN SITU with NaOEt / NaH). The SAME strong bases that
+    #: form a carbonyl enolate form an alkoxide a fortiori (an alcohol, pKa ~16-18, is MORE acidic than an ester
+    #: alpha-C-H, ~25), so the clearing whitelist is the enolizing-base set reused. Required only for the
+    #: NEUTRAL-oxygen SN2 sub-case (a salt alkoxide is already competent; a neutral amine / thiol runs base-free).
+    DEPROTONATING_BASE = "deprotonating_base"
+
 
 #: Human-readable phrase per role, for the honest blocker reason text. Each phrase carries the role's ACTIVATION
 #: NATURE (stoichiometric vs catalytic) so the blocker reason reads correctly for either.
 ROLE_PHRASE: dict[ActivatorRole, str] = {
     ActivatorRole.ENOLIZING_BASE: "stoichiometric enolizing base (alkoxide / metal hydride / metal amide)",
     ActivatorRole.TRANSITION_METAL_CATALYST: "transition-metal hydrogenation catalyst (Pd / Pt / Ni / Rh / Ru)",
+    ActivatorRole.DEPROTONATING_BASE: "stoichiometric base to form the alkoxide nucleophile (alkoxide / metal hydride / metal amide)",
 }
 
 
@@ -184,6 +198,11 @@ _HYDROGENATION_CATALYST_NAMES: frozenset[str] = frozenset({
 _ROLE_NAMES: dict[ActivatorRole, frozenset[str]] = {
     ActivatorRole.ENOLIZING_BASE: _ENOLIZING_BASE_NAMES,
     ActivatorRole.TRANSITION_METAL_CATALYST: _HYDROGENATION_CATALYST_NAMES,
+    # The alkoxide-forming bases that clear the DEPROTONATING_BASE role are exactly the enolizing bases (an alcohol
+    # is more acidic than an ester alpha-C-H, so every enolizing base forms the alkoxide a fortiori). Reused, not
+    # re-listed, so the two sets never drift. Conservative: weaker bases (hydroxide/carbonate) are omitted -- a
+    # SAFE false-EXCLUDE, never a false CLEAR.
+    ActivatorRole.DEPROTONATING_BASE: _ENOLIZING_BASE_NAMES,
 }
 
 
@@ -230,6 +249,30 @@ def _required_roles(reaction_class: str | None) -> frozenset[ActivatorRole]:
     return REQUIRED_ACTIVATORS.get(reaction_class, frozenset())
 
 
+def _conditional_required_roles(step, reaction_class: str | None) -> frozenset[ActivatorRole]:
+    """Activation roles a recognized class requires CONDITIONALLY on the STEP's content -- requirements that hold
+    for a sub-population of the class, not universally, so they do not belong in the class-keyed
+    :data:`REQUIRED_ACTIVATORS` (a blanket entry there would false-EXCLUDE the rest of the class).
+
+    Today exactly one: an SN2 whose nucleophile is a NEUTRAL (protonated) OXYGEN nucleophile -- an alcohol
+    ``R-O-H`` (coproduct ``H-X``). Its competent nucleophile, the alkoxide, does NOT exist until a stoichiometric
+    base forms it in situ, so the bare ``R-O-H + R'-X`` mixture is not kitchen-runnable (the Williamson ether
+    synthesis's defining need). This is the Claisen situation (a non-reactant base forms the nucleophile), NOT the
+    salt/amine one. Excluded, each a CONSCIOUS boundary (an adversarial re-review set them): a metal-SALT
+    oxy-nucleophile (``signature.is_neutral == False``) is already deprotonated and competent; a neutral AMINE
+    (N) is itself a competent nucleophile and runs base-free; a neutral THIOL (S) is nucleophilic enough to react
+    base-free, so demoting it would false-EXCLUDE real chemistry. Fail-closed: any fault -> empty."""
+    if not reaction_class or "SN2 substitution" not in reaction_class:
+        return frozenset()
+    try:
+        signature = sn2_feasibility_signature(step)
+    except Exception:
+        return frozenset()
+    if signature is not None and signature[0] == "O" and signature[1]:
+        return frozenset({ActivatorRole.DEPROTONATING_BASE})
+    return frozenset()
+
+
 def step_activator_blockers(step) -> tuple[str, ...]:
     """Ordered, deduplicated activator-requirement blockers for a single ``step``.
 
@@ -241,7 +284,7 @@ def step_activator_blockers(step) -> tuple[str, ...]:
         reaction_class = recognize_reaction_type(step)
     except Exception:
         return ()  # fail-closed: an unrecognized step is the oracle's demotion, not an activator question
-    required = _required_roles(reaction_class)
+    required = _required_roles(reaction_class) | _conditional_required_roles(step, reaction_class)
     if not required:
         return ()
     declared = _declared_roles(step)
@@ -301,11 +344,16 @@ def route_activator_blockers(route) -> tuple[str, ...]:
 #:
 #: 1.5 consolidation re-review (24 classes): the integration merged #112 SN2 substitution and #119 imine
 #: condensation on top of the 22. Both reviewed against the guard's question and given NO entry:
-#:   * ``SN2 substitution``: the recognized subset is ``R-X + Nu-M -> R-Nu + M-X`` with the nucleophile carried as
-#:     a DECLARED reactant in its reactive form (alkoxide / thiolate / amine; the counterion M is explicit). The
-#:     activation is already in the conserved stoichiometry -- unlike the Claisen enolate, no base forms the
-#:     nucleophile IN SITU from a non-reactant -- and no catalyst is universally required. Demanding one would
-#:     false-EXCLUDE the Williamson ether synthesis (NaOEt + R-X declared). NO entry.
+#:   * ``SN2 substitution``: the recognizer vouches BOTH a metal-salt nucleophile (``R-Nu-M``) AND a NEUTRAL
+#:     protonated one (``R-Nu-H``, coproduct H-X). A blanket "no entry" was KILLED by adversarial re-review
+#:     (evil-morty): a NEUTRAL OXYGEN nucleophile (an alcohol ``R-O-H``) is NOT a competent SN2 nucleophile --
+#:     ``EtOH + EtBr`` bare gives no ether; the Williamson synthesis forms the alkoxide IN SITU with a
+#:     stoichiometric base (NaOEt / NaH). That is the Claisen situation, not the salt one. So SN2 takes a
+#:     CONDITIONAL requirement via :func:`_conditional_required_roles` (keyed on the step's nucleophile, NOT a
+#:     class-keyed REQUIRED_ACTIVATORS entry that would false-EXCLUDE the rest of the class): a neutral-oxygen SN2
+#:     with no declared base demotes to REAL_BUT_HARD (DEPROTONATING_BASE), recoverable. No requirement for a
+#:     metal-SALT oxy-nucleophile (already deprotonated), a neutral AMINE (competent base-free), or a neutral
+#:     THIOL (nucleophilic enough base-free -- demoting it would false-EXCLUDE real chemistry).
 #:   * ``imine condensation``: a dehydrative carbonyl + amine condensation (coproduct water). A Bronsted acid
 #:     ACCELERATES the dehydration but is not a feasibility gate -- the reaction reaches equilibrium uncatalysed,
 #:     driven by water removal -- so it sits in the SAME self-acidic condensation population as the acyl / ether /

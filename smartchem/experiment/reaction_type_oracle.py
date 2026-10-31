@@ -1249,23 +1249,27 @@ def _sn2_rederives(nu_product, coproduct, want: tuple) -> bool:
     Then the conservation lock: a single-cut scission of the ``C-Nu`` bond consuming ``coproduct`` must reproduce
     EXACTLY the declared precursors, in one connected component, breaking a ``C-halogen`` bond (the halide-leaving-
     group requirement -- a non-halide leaving group forms no such broken bond and is demoted).  (The formed ``C-Nu``
-    bond is the cut bond by construction of this loop, so it is not re-checked as a discriminator.)"""
+    bond is the cut bond by construction of this loop, so it is not re-checked as a discriminator.)
+
+    Returns the nucleophile ELEMENT ('O'/'N'/'S') on a vouch -- a truthy value, so :func:`_sn2_substitution`'s
+    truthiness test is unchanged -- or ``None`` on demotion. The element lets the activator ledger read the
+    nucleophile's identity for its Problem-B feasibility gate without re-identifying the SN2 centre."""
     from ..structure_descent import single_cut_capped_scissions, ScissionError
     from ..smiles import resonance_identity
     from ..radius1_environment import AtomEnvironment
     from ..diels_alder import is_closed_shell_neutral
 
     if not is_closed_shell_neutral(nu_product):
-        return False  # KILL 1 guard: a radical / carbene / charged TARGET is not an SN2 product (fail-closed)
+        return None  # KILL 1 guard: a radical / carbene / charged TARGET is not an SN2 product (fail-closed)
     atoms = getattr(nu_product, "atoms", ())
     for b in sorted(getattr(nu_product, "bonds", ())):
         if b.order != 1:
             continue
         ei, ej = atoms[b.i], atoms[b.j]
         if ei == "C" and ej in _SN2_NUCLEOPHILES:
-            cidx = b.i
+            cidx, nu_elem = b.i, ej
         elif ej == "C" and ei in _SN2_NUCLEOPHILES:
-            cidx = b.j
+            cidx, nu_elem = b.j, ei
         else:
             continue
         try:
@@ -1296,10 +1300,53 @@ def _sn2_rederives(nu_product, coproduct, want: tuple) -> bool:
                     for lo, hi, order in rc.broken
                 )
                 if broken_c_x:
-                    return True
+                    return nu_elem  # truthy on success (the nucleophile element); recognition reads only truthiness
             except Exception:
                 continue  # a pathological scission is skipped; an error can only make the step LESS recognized
-    return False
+    return None
+
+
+def _is_neutral_hydrogen_halide(mol) -> bool:
+    """True iff ``mol`` is a neutral hydrogen halide H-X (exactly one H + one halogen, charge 0). Fail-closed."""
+    try:
+        if int(getattr(mol, "charge", 0) or 0) != 0:
+            return False
+        formula = dict(mol.formula)
+    except Exception:
+        return False
+    halogens = [e for e in formula if e in _HALOGENS]
+    return (
+        len(halogens) == 1
+        and formula.get("H") == 1
+        and formula.get(halogens[0]) == 1
+        and set(formula) == {"H", halogens[0]}
+    )
+
+
+def sn2_feasibility_signature(step):
+    """For an SN2 step, the ``(nucleophile_element, nucleophile_is_neutral)`` at its re-deriving centre, else ``None``.
+
+    ``nucleophile_element`` is ``'O'``/``'N'``/``'S'``; ``nucleophile_is_neutral`` is True iff the leaving halide
+    departs as a NEUTRAL hydrogen halide (coproduct ``H-X``) -- i.e. the nucleophile was supplied PROTONATED
+    (``R-Nu-H``, an alcohol/amine/thiol) rather than as a metal salt (``R-Nu-M``, an alkoxide/thiolate). This is a
+    FEASIBILITY read for the activator ledger (Problem B); it does NOT touch recognition (Problem A, a pure
+    type-validity function), and it reuses the recogniser's own single-cut re-derivation to pin the centre so it
+    cannot disagree with the vouch. Fail-closed: a non-SN2 step, or any fault, returns ``None``."""
+    from ..smiles import resonance_identity
+
+    reactants = tuple(getattr(step, "reactants", ()) or ())
+    products = tuple(getattr(step, "products", ()) or ())
+    if len(reactants) != 2 or len(products) != 2:
+        return None
+    try:
+        want = tuple(sorted(resonance_identity(r) for r in reactants))
+    except (NotImplementedError, TypeError, ValueError):
+        return None
+    for nu_product, coproduct in ((products[0], products[1]), (products[1], products[0])):
+        nu_elem = _sn2_rederives(nu_product, coproduct, want)
+        if nu_elem:
+            return (nu_elem, _is_neutral_hydrogen_halide(coproduct))
+    return None
 
 
 def _imine_condensation(step) -> bool:

@@ -30,13 +30,14 @@ def test_default_registry_generates_with_exactly_one_provider():
     assert DEFAULT_TRANSFORM_REGISTRY.provider_ids == ("capped-scission-mediated",)
 
 
-def test_oracle_recognises_its_classes_but_none_are_wired_into_the_default():
-    # MINOR coverage expansion: #110 activated acyl transfer (18th) + #111 sulfonate-ester transfer (19th) +
-    # #115 Claisen condensation (20th) + #114 hydrogenation (21st) + #111 oxoacid (nitrate/phosphate) ester
-    # (22nd) are new RULES that widen coverage (COMPATIBILITY.md sec 1/sec 7).  This test tracks the LIVE
-    # registry count; the semantic it PINS -- the "recognised != generated" gap -- is unchanged: the oracle is a
-    # readiness-layer demoter, not a search provider, and none of these recognizers adds a default provider.
-    assert _oracle_class_count() == 22
+def test_oracle_recognises_twenty_four_classes_but_none_are_wired_into_the_default():
+    # MINOR coverage expansion: 1.1.0 base 20 (#110 activated acyl 18th, #111 sulfonate-ester 19th, #115 Claisen
+    # 20th) + #114 hydrogenation (21st) + #111 oxoacid (nitrate/phosphate) ester (22nd) + #112 SN2 substitution
+    # (23rd) + #119 imine condensation (24th) are new RULES that widen coverage (COMPATIBILITY.md sec 1/sec 7).
+    # The "recognised != generated" gap this test pins is unchanged: the oracle is a readiness-layer demoter, not
+    # a search provider, and none of these recognizers adds a default provider (imine condensation ships an
+    # OPT-IN provider, absent from the default).
+    assert _oracle_class_count() == 24
     # every non-capped family is opt-in: none but capped-scission is in the default.
     rows = build_rows()
     in_default = [r["provider_id"] for r in rows if r["in_default"]]

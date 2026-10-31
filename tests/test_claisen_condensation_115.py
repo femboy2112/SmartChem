@@ -68,8 +68,8 @@ _MUST_NOT_VOUCH = [
 ]
 
 
-def test_oracle_now_has_twenty_two_recognizers():
-    assert len(_RECOGNIZERS) == 22  # + #114 hydrogenation (21st) + #111 oxoacid (nitrate/phosphate) ester (22nd)
+def test_oracle_now_has_twenty_four_recognizers():
+    assert len(_RECOGNIZERS) == 24  # base 20 + #114 hydrogenation (21st) + #111 oxoacid ester (22nd) + #112 SN2 (23rd) + #119 imine (24th)
 
 
 @pytest.mark.parametrize("name,rs,ps", _POSITIVES, ids=[c[0] for c in _POSITIVES])

@@ -9,6 +9,52 @@ This file summarises the finite chemical-compiler release arc. The exhaustive pe
 
 ---
 
+## [1.5.0] — 2026-10-30 (release candidate — unreleased; not tagged or published)
+
+**Minor release candidate: the full 20 → 24 reaction-class coverage expansion, consolidated from four review
+forks, under an unchanged 1.x machine contract.** From 1.0.0 the stable wire schema ids, `semantic_digest`, route
+digests, the verdict vocabulary and the readiness/capability semantics remain **byte-invariant**; only the declared
+version-bound identity moves (`result_digest`, `tool_version`, the implementation digest, the `--version` banner).
+The version-independent payload golden is verified **unmoved** by the coverage expansion (the oracle is a
+readiness-layer demoter; a recognizer changes readiness, never a search identity). Full differential + gate ledger:
+[`V1_5_CONSOLIDATION_2026-10-30.md`](docs/research/V1_5_CONSOLIDATION_2026-10-30.md).
+
+### Added — reaction-type coverage (20 → 24 recognized classes)
+
+- **#114 hydrogenation** (21st) — `precursor + H2 -> saturated` (a partial bond-order edit; one unsaturation
+  reduced). Requires a transition-metal catalyst (see the activator ledger).
+- **#111 oxoacid ester condensation** (22nd) — `alcohol + nitric/phosphoric acid -> nitrate/phosphate ester +
+  water` (Z ∈ {N, P}; disjoint from the #111 sulfonate recognizer, which owns C–S oxoacid esters).
+- **#112 SN2 substitution** (23rd) — `R-X + O/N/S-nucleophile -> R-Nu + halide-salt/HX` at an sp3, non-tertiary
+  carbon; locked by the #106 radius-1 environment predicate (sp3 ∧ tetravalent ∧ ≥1 H ∧ single heteroatom
+  neighbour) plus an independent single-cut re-derivation. Neutral-graph subset (counterion explicit; the #105
+  charge wall is untouched).
+- **#119 imine condensation** (24th) — `carbonyl + amine/hydroxylamine/hydrazine -> imine/oxime/hydrazone + water`
+  via a new opt-in C=N generator, recognised by an independent retro re-derivation (the C=N must hydrolyse into
+  exactly the two declared precursors).
+
+Each class ships its no-false-vouch adversarial corpus. Per-fork evidence:
+[`REACTION_ALGEBRA_1_3_P3_FINDINGS_2026-10-30.md`](docs/research/REACTION_ALGEBRA_1_3_P3_FINDINGS_2026-10-30.md),
+[`MEGA_ROUND_IX_EXECUTION_REPORT_2026-10-28.md`](docs/research/MEGA_ROUND_IX_EXECUTION_REPORT_2026-10-28.md).
+
+### Added — feasibility, search and admission organs
+
+- **Activator ledger (#107)** — a class-keyed, base-rate-safe **demoter** mapping a recognized class to the
+  stoichiometric activator / catalyst it requires (Claisen condensation → enolizing base; hydrogenation →
+  transition-metal catalyst), so a route that names no such reagent sinks to `REAL_BUT_HARD` instead of reading as
+  kitchen-runnable. Pure feasibility layer (rides the `hard_blockers` channel, excluded from `semantic_digest`); it
+  can only demote, never false-VOUCH. Carries an import-time re-review guard that fails loud on registry growth.
+- **Bounded typed-event route search (#123)** — an opt-in `search_event_routes` that makes the oracle-vouched
+  [3,3]-sigmatropic / electrocyclic families reachable from retrosynthesis, with a separate well-founded
+  termination proof. `search_routes` and its frozen receipt are untouched; `lateral_hops=0` reproduces the exact
+  scission route set. [`BOUNDED_EVENT_SEARCH_1_4_P4_FINDINGS_2026-10-30.md`](docs/research/BOUNDED_EVENT_SEARCH_1_4_P4_FINDINGS_2026-10-30.md).
+- **DAG-admission recognition gate (#144)** — re-derives recognition from the thick replay payload at admission,
+  identity-bound, so a DAG step cannot be admitted on `fit_status` alone.
+- **#106 radius-1 environment predicate** (`smartchem/radius1_environment.py`) — a recognizer-local atom-environment
+  discriminator (the SN2 lock); not a general molecular-representation rewrite.
+
+---
+
 ## [1.1.0] — 2026-10-23
 
 **Minor release: wider chemical recognition and a graph/synthesis workbench, under an unchanged 1.x machine

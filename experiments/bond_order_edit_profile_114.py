@@ -1,9 +1,12 @@
-"""CHEM-ALG-01 #114 -- measured reachability gain of the opt-in ``bond-order-edit-v1`` algebra profile.
+"""CHEM-ALG-01 #114 -- the opt-in ``bond-order-edit-v1`` profile AND its reaction-type recognizer.
 
 Claim under test (DISCLOSED within this grammar): wiring the bond-order-edit (de/hydrogenation) family behind a named
 opt-in profile makes the synthesis-direction hydrogenation route ``unsaturated + H2 -> saturated`` REACHABLE, while
-(a) neither production default profile reaches it, and (b) NO generated step is falsely vouched -- the reaction-type
-oracle abstains cleanly on every bond-order step, so the gain is pure reachability (W1/W3), never a minted vouch.
+neither production default profile reaches it; AND the #114 reaction-type recognizer now RECOGNISES those genuine
+single bond-order edits as ``hydrogenation`` (promoting them from FORMAL_CANDIDATE to REACTION_VOUCHED), re-derived
+from the molecules via the family's own generator -- so every bench step is recognised as hydrogenation and NONE is
+mis-attributed to another family. (The no-FICTION-vouch and conjugated-ring-deferral guarantees are proved in
+tests/test_hydrogenation_recognizer_114.py.)
 
 Run: ``.venv/bin/python -m experiments.bond_order_edit_profile_114``  (exit 0 iff the measured invariants hold).
 ``validate()`` is imported by tests/test_bond_order_edit_profile_114.py so the measured gain is a permanent control.
@@ -36,7 +39,8 @@ class _Measured:
     under_profile: int       # hydrogenation routes reachable under bond-order-edit-v1
     under_defaults: int      # hydrogenation routes reachable under ANY default profile (must be 0)
     steps_seen: int          # bond-order steps the oracle was asked to classify
-    vouched: int             # steps the oracle MATCHED (false-vouch; must be 0)
+    recognized: int          # steps the #114 recognizer MATCHED as hydrogenation (now the expected outcome)
+    misattributed: int       # steps MATCHED as something OTHER than hydrogenation (a cross-poach; must be 0)
 
 
 def _routes_to_saturated(target, precursor, registry):
@@ -49,14 +53,17 @@ def _measure_case(label: str, target_smiles: str, precursor_smiles: str) -> _Mea
     under_defaults = sum(
         len(_routes_to_saturated(target, precursor, resolve_algebra_profile(pid)).routes) for pid in _DEFAULTS
     )
-    steps_seen = vouched = 0
+    steps_seen = recognized = misattributed = 0
     for r in prof.routes:
         for step in r.steps:
             steps_seen += 1
             out = recognize_reaction_type_outcome(step)
             if out.is_match:
-                vouched += 1
-    return _Measured(label, len(prof.routes), under_defaults, steps_seen, vouched)
+                if "hydrogenation" in (out.reaction_class or ""):
+                    recognized += 1
+                else:
+                    misattributed += 1
+    return _Measured(label, len(prof.routes), under_defaults, steps_seen, recognized, misattributed)
 
 
 def run() -> list[_Measured]:
@@ -67,29 +74,33 @@ def validate() -> tuple[bool, dict]:
     rows = run()
     reachable = sum(1 for m in rows if m.under_profile >= 1)
     default_hits = sum(m.under_defaults for m in rows)
-    false_vouch = sum(m.vouched for m in rows)
+    recognized = sum(m.recognized for m in rows)
+    misattributed = sum(m.misattributed for m in rows)
     steps = sum(m.steps_seen for m in rows)
     summary = {
         "cases": len(rows),
         "reachable_under_profile": reachable,
         "reachable_under_defaults": default_hits,
         "steps_classified": steps,
-        "false_vouch": false_vouch,
+        "recognized_as_hydrogenation": recognized,
+        "misattributed": misattributed,
     }
     ok = (
-        reachable == len(rows)      # the hydrogenation route is reachable in EVERY case under the opt-in profile
-        and default_hits == 0       # and in NO case under either default profile
-        and steps >= len(rows)      # at least one bond-order step was actually classified (non-vacuous vouch check)
-        and false_vouch == 0        # and the oracle minted no vouch for the recognizer-less family
+        reachable == len(rows)         # the hydrogenation route is reachable in EVERY case under the opt-in profile
+        and default_hits == 0          # and in NO case under either default profile
+        and steps >= len(rows)         # at least one bond-order step was actually classified (non-vacuous)
+        and recognized == steps        # and the #114 recognizer vouches EVERY genuine hydrogenation step
+        and misattributed == 0         # and never mis-attributes one to another family (cross-poach)
     )
     return ok, summary
 
 
 def main() -> int:
     rows = run()
-    print(f"{'case':<13} {'under_profile':>13} {'under_defaults':>15} {'steps':>6} {'vouched':>8}")
+    print(f"{'case':<13} {'under_profile':>13} {'under_defaults':>15} {'steps':>6} {'recognized':>11} {'misattr':>8}")
     for m in rows:
-        print(f"{m.label:<13} {m.under_profile:>13} {m.under_defaults:>15} {m.steps_seen:>6} {m.vouched:>8}")
+        print(f"{m.label:<13} {m.under_profile:>13} {m.under_defaults:>15} {m.steps_seen:>6} "
+              f"{m.recognized:>11} {m.misattributed:>8}")
     ok, summary = validate()
     print(f"\nsummary: {summary}")
     print("VALIDATE:", "PASS" if ok else "FAIL")

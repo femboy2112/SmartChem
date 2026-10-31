@@ -219,8 +219,9 @@ class BondOrderEditProvider(TransformProvider):
     provider_version: str = "v1"
     witness_kind: str = "BOND_ORDER_EDIT"
     # neutral, mass-reducing (sheds H2), and IR-wired (DecompositionEdge): admissible in all three consumers.
-    # NB: still absent from any certified profile this round -- it has no reaction-type oracle recognizer, so the
-    # route demoter would flag its routes "unrecognized"; use-admissibility is necessary, not sufficient, for a profile.
+    # NB: wired behind the OPT-IN "bond-order-edit-v1" profile only (not a default); it still has NO reaction-type
+    # oracle recognizer, so the route demoter flags its routes "unrecognized" -- a pure reachability gain (W1/W3),
+    # never a minted vouch. Use-admissibility is necessary, not sufficient, for a profile.
     supported_uses = frozenset(
         {ProviderUse.STRUCTURE_DECOMPILE, ProviderUse.LINEAR_ROUTE, ProviderUse.CONVERGENT_DAG}
     )

@@ -333,21 +333,53 @@ class IntramolecularCondensationEdge(Digestible):
         return f"IntramolecularCondensationEdge({self.equation()})"
 
 
-def retro_lactonization_edges(target: Molecule, *, budget: int = 10_000) -> tuple[IntramolecularCondensationEdge, ...]:
-    """Every :class:`IntramolecularCondensationEdge` whose synthesis assembles ``target`` (a lactone) from a hydroxy
-    acid expelling water.  Standalone enumeration (NOT a ``search_routes`` provider): open each in-ring ester linkage
-    into its hydroxy-acid precursor, keep only those whose forward re-derivation reproduces ``target`` exactly.
-    Fail-closed: a neutral, uncharged lactone only; a site whose certificates do not pass is dropped."""
+@dataclass(frozen=True)
+class LactonizationEnumeration:
+    """The result of a bounded lactonization enumeration, reporting whether it was EXHAUSTIVE.
+
+    INTERFACE DEBT (OPERATION XIII, section 9).  ``retro_lactonization_edges`` returns only a tuple and its ``budget``
+    can TRUNCATE the scan of candidate ring-ester sites silently, so a caller cannot tell a complete enumeration from
+    a cut-off one.  Before this generator can feed a search that claims a COMPLETE receipt, the enumeration must say
+    whether it saw every candidate.  ``exhaustive`` is True iff every ring-ester site was examined
+    (``sites_total <= budget``); when False the scan stopped at the budget and the edge set is a LOWER BOUND, which
+    MUST NOT contribute to a COMPLETE search receipt.
+
+    (``exhaustive`` is about candidate COVERAGE, not acceptance: a site whose certificates fail is still
+    EXAMINED -- and correctly dropped -- so dropping it does not make the enumeration non-exhaustive.)"""
+    edges: tuple
+    exhaustive: bool
+    sites_total: int          # candidate ring-ester sites the target has
+    sites_examined: int       # how many were actually scanned (min(sites_total, budget))
+    budget: int
+
+    def __post_init__(self) -> None:
+        # the invariant the caller relies on: exhaustive <=> every candidate site was examined.
+        if self.exhaustive != (self.sites_examined >= self.sites_total):
+            raise IntramolecularCondensationError(
+                "LactonizationEnumeration.exhaustive disagrees with sites_examined/sites_total")
+
+
+def retro_lactonization_enumeration(target: Molecule, *, budget: int = 10_000) -> LactonizationEnumeration:
+    """Bounded enumeration of lactonization edges that REPORTS its exhaustiveness (section 9 interface debt).  Opens
+    each in-ring ester linkage into its hydroxy-acid precursor and keeps only those whose forward re-derivation
+    reproduces ``target`` exactly; fail-closed (a neutral, uncharged lactone only; a failing site is dropped).  The
+    returned record states whether the ``budget`` truncated the candidate-site scan -- read ``exhaustive`` before
+    treating the edge set as complete."""
     if type(target) is not Molecule:
         raise TypeError("target must be a Molecule")
+    if not (isinstance(budget, int) and budget >= 1):
+        raise IntramolecularCondensationError("budget must be an int >= 1")
     if target.charge != 0 or target.state:
-        return ()
+        # a charged/stateful target is out of this generator's scope: there is nothing to enumerate, so the empty
+        # result is vacuously exhaustive (zero candidate sites, all examined).
+        return LactonizationEnumeration((), True, 0, 0, budget)
     from .smiles import resonance_identity
+    sites = list(_ring_ester_sites(target))
+    sites_total = len(sites)
+    sites_examined = min(sites_total, budget)
     edges: list[IntramolecularCondensationEdge] = []
     seen: set[str] = set()
-    for i, (c_acyl, o_ester, _o_carbonyl) in enumerate(_ring_ester_sites(target)):
-        if i >= budget:
-            break
+    for c_acyl, o_ester, _o_carbonyl in sites[:budget]:
         try:
             precursor = _open_lactone(target, c_acyl, o_ester)
         except (ValueError, TypeError):
@@ -361,4 +393,12 @@ def retro_lactonization_edges(target: Molecule, *, budget: int = 10_000) -> tupl
         if key not in seen:
             seen.add(key)
             edges.append(edge)
-    return tuple(edges)
+    return LactonizationEnumeration(tuple(edges), sites_examined >= sites_total, sites_total, sites_examined, budget)
+
+
+def retro_lactonization_edges(target: Molecule, *, budget: int = 10_000) -> tuple[IntramolecularCondensationEdge, ...]:
+    """Every :class:`IntramolecularCondensationEdge` whose synthesis assembles ``target`` (a lactone) from a hydroxy
+    acid expelling water (the edge TUPLE only; backward-compatible).  Standalone enumeration (NOT a ``search_routes``
+    provider).  For an enumeration that reports whether ``budget`` truncated the scan -- which a COMPLETE search
+    receipt requires -- use :func:`retro_lactonization_enumeration` and read ``.exhaustive``."""
+    return retro_lactonization_enumeration(target, budget=budget).edges

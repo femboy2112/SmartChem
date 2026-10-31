@@ -49,11 +49,13 @@ from experiments.sandbox_foundation.aqueous_equilibrium import (
     DAVIES_FIXED_POINT_TOL,
     DAVIES_I_MAX,
     DAVIES_MAX_ITERS,
+    EXTERNAL_VALIDATION_UNAVAILABLE,
     KA_ACETIC_25C,
     KW_25C,
     NUMERICALLY_UNVERIFIED,
     SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL,
     SOLVED_WITHIN_IDEAL_MODEL,
+    BenchmarkObligation,
     InvalidParameterError,
     NumericalVerificationError,
     _require_constant_at_source_state,
@@ -270,3 +272,31 @@ def solve(system: VinegarBicarbonateSystem, *, tol: float = DAVIES_FIXED_POINT_T
         activity_model=system.activity_model, solver_agreement_residual=agreement,
         charge_balance_residual=charge_resid, carbon_conservation_residual=carbon_resid,
         acetate_conservation_residual=acetate_resid, davies_iterations=davies_iters, caveats=caveats)
+
+
+# --------------------------------------------------------------------------------- the independent-benchmark obligation
+def mixed_phreeqc_benchmark_obligation() -> BenchmarkObligation:
+    """The mixed acetate+carbonate interior is the object with no limiting-case free check (the parents each have
+    their own benchmark; the mixed interior is new).  Its independent cross-check is two-tiered (Operation XIII P0):
+    an arbitrary-precision Decimal holdout (`coupled_reference_hp.cross_check`, already run -> NUMERICALLY_VERIFIED,
+    a SOLVE cross-check) AND a PHREEQC comparison which is EXTERNAL_VALIDATION_UNAVAILABLE until run (PHREEQC absent
+    on the committed baseline; the reproducible decks are `benchmarks/coupled_phreeqc/inputs/*.pqi`).  The MIXED
+    family needs a database carrying BOTH acetate and carbonate -- minteq.v4.dat (primary), llnl.dat (secondary);
+    phreeqc.dat has no acetate and must not be patched with the code's own constant."""
+    return BenchmarkObligation(
+        tool="PHREEQC",
+        verdict=EXTERNAL_VALIDATION_UNAVAILABLE,
+        recipe={
+            "import": "phreeqpython in an ISOLATED scratch venv (never the committed baseline)",
+            "database": "minteq.v4.dat (carries acetate AND carbonate; primary) + llnl.dat (secondary); pin sha256",
+            "species": ("CH3COOH(aq)/H(Acetate)", "CH3COO-/Acetate-", "CO2(aq)", "HCO3-", "CO3-2",
+                        "H+", "OH-", "Na+", "Na(Acetate)"),
+            "cases": "benchmarks/coupled_phreeqc/cases.py (M1..M11, closed liquid; open/sealed arrive with P1)",
+            "compare": "PHREEQC pH (pH <guess> charge) vs VinegarBicarbonateSystem.solve().pH_activity; |dpH| AGREE "
+                       "<= 0.02",
+            "independence_caveat": "PHREEQC and this model share the Ka/K1/K2/Kw lineage AND PHREEQC's DB traces to "
+                                   "the same classical EMF work, so a match is solver/activity-model VERIFICATION "
+                                   "(common-mode), NOT independent measured-chemistry validation; a MEASURED mixed "
+                                   "pH would be the stronger rung and is not fabricated if unavailable.",
+        },
+        comparison=None)

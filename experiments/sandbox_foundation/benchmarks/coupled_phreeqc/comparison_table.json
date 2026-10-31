@@ -1,0 +1,129 @@
+{
+  "target": "experiments/sandbox_foundation/coupled_equilibrium.py :: VinegarBicarbonateSystem.solve",
+  "reference_solver": "PHREEQC (minteq.v4.dat primary, llnl.dat secondary)",
+  "reference_status": "EXTERNAL_VALIDATION_UNAVAILABLE",
+  "note": "PHREEQC is absent on the committed baseline; the inputs/*.pqi decks are the reproducible probe. The code column + the arbitrary-precision holdout tier are filled; the PHREEQC pH column is null until an external run signs it (never fabricated).",
+  "rows": {
+    "M1": {
+      "desc": "pure water (control)",
+      "C_Ac": 0.0,
+      "C_C": 0.0,
+      "Na": 0.0,
+      "code_pH_davies": 7.0,
+      "code_verdict_davies": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
+      "hp_tier_davies": "NUMERICALLY_VERIFIED",
+      "phreeqc_pH": null,
+      "abs_dpH": null
+    },
+    "M2": {
+      "desc": "vinegar only (acetate limit)",
+      "C_Ac": 0.1,
+      "C_C": 0.0,
+      "Na": 0.0,
+      "code_pH_davies": 2.881474778474802,
+      "code_verdict_davies": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
+      "hp_tier_davies": "NUMERICALLY_VERIFIED",
+      "phreeqc_pH": null,
+      "abs_dpH": null
+    },
+    "M3": {
+      "desc": "bicarbonate only (carbonate limit)",
+      "C_Ac": 0.0,
+      "C_C": 0.1,
+      "Na": 0.1,
+      "code_pH_davies": 8.124883348962989,
+      "code_verdict_davies": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
+      "hp_tier_davies": "NUMERICALLY_VERIFIED",
+      "phreeqc_pH": null,
+      "abs_dpH": null
+    },
+    "M4": {
+      "desc": "stoichiometric mixed",
+      "C_Ac": 0.1,
+      "C_C": 0.1,
+      "Na": 0.1,
+      "code_pH_davies": 5.446531361070232,
+      "code_verdict_davies": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
+      "hp_tier_davies": "NUMERICALLY_VERIFIED",
+      "phreeqc_pH": null,
+      "abs_dpH": null
+    },
+    "M5": {
+      "desc": "acid in excess -> BICARBONATE-LIMITED",
+      "C_Ac": 0.2,
+      "C_C": 0.05,
+      "Na": 0.05,
+      "code_pH_davies": 4.1904702247141685,
+      "code_verdict_davies": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
+      "hp_tier_davies": "NUMERICALLY_VERIFIED",
+      "phreeqc_pH": null,
+      "abs_dpH": null
+    },
+    "M6": {
+      "desc": "bicarbonate in excess -> acid-limited",
+      "C_Ac": 0.05,
+      "C_C": 0.2,
+      "Na": 0.2,
+      "code_pH_davies": 6.70398260696117,
+      "code_verdict_davies": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
+      "hp_tier_davies": "NUMERICALLY_VERIFIED",
+      "phreeqc_pH": null,
+      "abs_dpH": null
+    },
+    "M7": {
+      "desc": "dilute mixed",
+      "C_Ac": 0.01,
+      "C_C": 0.01,
+      "Na": 0.01,
+      "code_pH_davies": 5.509345400852299,
+      "code_verdict_davies": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
+      "hp_tier_davies": "NUMERICALLY_VERIFIED",
+      "phreeqc_pH": null,
+      "abs_dpH": null
+    },
+    "M8": {
+      "desc": "intermediate ionic strength",
+      "C_Ac": 0.1,
+      "C_C": 0.1,
+      "Na": 0.3,
+      "code_pH_davies": 11.38541838377897,
+      "code_verdict_davies": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
+      "hp_tier_davies": "NUMERICALLY_VERIFIED",
+      "phreeqc_pH": null,
+      "abs_dpH": null
+    },
+    "M9": {
+      "desc": "high I near the Davies boundary",
+      "C_Ac": 0.2,
+      "C_C": 0.2,
+      "Na": 0.4,
+      "code_pH_davies": 8.073268226284153,
+      "code_verdict_davies": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
+      "hp_tier_davies": "NUMERICALLY_VERIFIED",
+      "phreeqc_pH": null,
+      "abs_dpH": null
+    },
+    "M10": {
+      "desc": "extreme basicity numerical control",
+      "C_Ac": 0.0,
+      "C_C": 0.1,
+      "Na": 0.3,
+      "code_pH_davies": 12.864374692632628,
+      "code_verdict_davies": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
+      "hp_tier_davies": "NUMERICALLY_VERIFIED",
+      "phreeqc_pH": null,
+      "abs_dpH": null
+    },
+    "M11": {
+      "desc": "refusal probe (I > Davies domain)",
+      "C_Ac": 0.3,
+      "C_C": 0.3,
+      "Na": 0.6,
+      "code_pH_davies": 8.084823141268215,
+      "code_verdict_davies": "NUMERICALLY_UNVERIFIED",
+      "hp_tier_davies": "NUMERICALLY_VERIFIED",
+      "phreeqc_pH": null,
+      "abs_dpH": null
+    }
+  }
+}

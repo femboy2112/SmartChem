@@ -1,0 +1,17 @@
+DATABASE llnl.dat
+# mixed case M3 bicarbonate only (carbonate limit): C_Ac=0.0 C_C=0.1 Na=0.1 mol/L (mol/kgw here; molar-match per PREREGISTRATION A1/A2 when run)
+SOLUTION 1
+  units mol/kgw
+  temp 25
+  pH 7 charge
+  Na 0.1
+  C(4) 0.1
+SELECTED_OUTPUT
+  -file llnl_M3.sel
+  -reset false
+  -ph true
+  -ionic_strength true
+  -totals C(4)
+  -molalities H+ OH- Na+ Acetate- CO2 HCO3- CO3-2
+  -activities H+ OH- Na+ Acetate-
+END

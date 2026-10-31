@@ -1,0 +1,15 @@
+DATABASE minteq.v4.dat
+# mixed case M1 pure water (control): C_Ac=0.0 C_C=0.0 Na=0.0 mol/L (mol/kgw here; molar-match per PREREGISTRATION A1/A2 when run)
+SOLUTION 1
+  units mol/kgw
+  temp 25
+  pH 7 charge
+SELECTED_OUTPUT
+  -file minteq.v4_M1.sel
+  -reset false
+  -ph true
+  -ionic_strength true
+  -totals C(4)
+  -molalities H+ OH- Na+ Acetate- CO2 HCO3- CO3-2
+  -activities H+ OH- Na+ Acetate-
+END

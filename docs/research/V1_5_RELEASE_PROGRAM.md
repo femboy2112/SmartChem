@@ -5,11 +5,17 @@ obligation.** Supersedes nothing: `V1_0_RELEASE_GATE.md` and the `v1.0.0` tag re
 
 ## 0. Baselines (verified against the live repo, not a prompt)
 
+> **Status (2026-10-30): the 1.1→1.5 ladder is consolidated.** 1.1.0 is released; the post-1.1 coverage campaign's
+> four forks (#145/#146/#147/#148) are integrated into `integration/v1.5-candidate` as the **1.5.0** release
+> candidate (20→24 recognized classes). The §2/§3 prose below is the *historical* 1.1-candidate record; the
+> load-bearing current sections are **§4 (acceptance gates)** and **§5 (2.0 prerequisites)**. Full consolidation
+> differential + §4 gate ledger: [`V1_5_CONSOLIDATION_2026-10-30.md`](V1_5_CONSOLIDATION_2026-10-30.md).
+
 | ref | SHA | note |
 |---|---|---|
-| `v1.0.0` (published release) | `8345bbb` | the stable 1.0 record; `git diff v1.0.0 -- smartchem/` vs `origin/main` is empty |
-| `origin/main` | `99fce34` | 5 commits past the tag, all docs/launch — semantically ≡ `v1.0.0` |
-| `feat/chemical-graph-projections` (PR #101, draft) | `3a37d46` (+#114) | this program's development branch (P0 + Waves A/B/C + CI OOM-fix; this commit adds Wave D #114); `__version__ = 1.1.0a1` |
+| `v1.0.0` (published release) | `8345bbb` | the stable 1.0 record |
+| `v1.1.0` (published release) | `9e8fa5f` | `origin/main`; 20-class oracle; the consolidation base (every 1.5 fork is cut off this) |
+| `integration/v1.5-candidate` (this consolidation) | `98e04b2` | #145+#146+#147+#148 integrated; **24** recognized classes; `__version__ = 1.5.0`; registry digest `0dfb95140ad927ef`; version-independent golden unmoved. **Not merged/tagged/published.** |
 
 ## 1. Scientific authority model (invariant across the whole 1.x series — never relaxed)
 

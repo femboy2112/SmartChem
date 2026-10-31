@@ -9,6 +9,93 @@ This file summarises the finite chemical-compiler release arc. The exhaustive pe
 
 ---
 
+## [1.5.0] — 2026-10-30 (release candidate — unreleased; not tagged or published)
+
+**Minor release candidate: the full 20 → 24 reaction-class coverage expansion, consolidated from four review
+forks, under an unchanged 1.x machine contract.** From 1.0.0 the stable wire schema ids, `semantic_digest`, route
+digests, the verdict vocabulary and the readiness/capability semantics remain **byte-invariant**; only the declared
+version-bound identity moves (`result_digest`, `tool_version`, the implementation digest, the `--version` banner).
+The version-independent payload golden is verified **unmoved** by the coverage expansion (the oracle is a
+readiness-layer demoter; a recognizer changes readiness, never a search identity). Full differential + gate ledger:
+[`V1_5_CONSOLIDATION_2026-10-30.md`](docs/research/V1_5_CONSOLIDATION_2026-10-30.md).
+
+### Corrected — hostile scientific review (OPERATION XII, 2026-10-31)
+
+A scientific hardening pass on the candidate, all on the feasibility axis (version-independent golden **NO DRIFT**,
+recognizer registry digest untouched). Full record:
+[`OPERATION_SMARTCHEM_XII_2026-10-31.md`](docs/research/OPERATION_SMARTCHEM_XII_2026-10-31.md).
+
+- **Metal-free hydrogenation (1A).** The universal "a hydrogenation requires a transition metal" was scientifically
+  false: metal-free frustrated-Lewis-pair catalysts hydrogenate imines (C=N) and nitriles (C≡N) — Stephan et al.,
+  Angew. Chem. Int. Ed. 2007, 46, 8050 — but not aldehydes (C=O). The requirement is now **step-conditional** on the
+  reduced bond, with a new `HYDROGEN_ACTIVATION_CATALYST` role (transition metal **or** metal-free FLP) for the
+  C=N / C≡N domain, scoped by a structural imine/nitrile witness (an adversarial review proved the element pair
+  `{C,N}` alone false-CLEARs oximes / hydrazones / amidines / cumulenes; now excluded).
+- **SN2 is a structural type claim (1B).** The recognizer no longer implies it establishes the SN2 *mechanism*: it
+  certifies SN2-*compatibility* (a necessary structural condition), resolves no SN1/SN2/E2 competition, and mints no
+  stereochemical (inversion) claim. The vouch is the oracle's existential "a mechanism of the SN2 type is
+  structurally available".
+- **Base-regime classifier (1C).** Verified sound (no fix) against a preregistered source-backed corpus + hostile
+  holdouts: the mild/strong split keys on the hydroxyl carbon's own bond, so an allyl alcohol / β-hydroxy carbonyl
+  (unsaturation *near* the OH-carbon) correctly stays strong, never false-cleared by a mild base.
+- **Event-type certificates (P1).** `classify_event` (the opt-in #123 typed-event search) now **certifies** each
+  class's invariants rather than guessing from shape: a `SCISSION` is recognized only when every fragment is
+  strictly smaller than the target (the W1 rank-descent the class asserts), so a conserving 2→2 step whose
+  principal reactant exceeds the target (e.g. an ester hydrolysis) is refused fail-closed, not mislabeled an
+  assembly. The recognition projection is thus independent of the search grammar (reachability) and grammar-safe.
+  The deferred `INTRAMOLECULAR_COPRODUCT` class is documented as a **shape** certificate only — it cannot
+  distinguish an intramolecular condensation from an intermolecular retro-fragmentation (no atom-map), so
+  connectivity-preservation is the future generator's proof obligation.
+
+### Added — reaction-type coverage (20 → 24 recognized classes)
+
+- **#114 hydrogenation** (21st) — `precursor + H2 -> saturated` (a partial bond-order edit; one unsaturation
+  reduced). Needs an H2-activation catalyst, keyed on the reduced bond (see the activator ledger): a C=N / C≡N
+  reduction (imine / nitrile) clears with a transition metal **or** a metal-free frustrated-Lewis-pair catalyst
+  (Stephan 2007); a C=C / C=O reduction needs a transition metal.
+- **#111 oxoacid ester condensation** (22nd) — `alcohol + nitric/phosphoric acid -> nitrate/phosphate ester +
+  water` (Z ∈ {N, P}; disjoint from the #111 sulfonate recognizer, which owns C–S oxoacid esters).
+- **#112 SN2 substitution** (23rd) — `R-X + O/N/S-nucleophile -> R-Nu + halide-salt/HX` at an sp3, non-tertiary
+  carbon; locked by the #106 radius-1 environment predicate (sp3 ∧ tetravalent ∧ ≥1 H ∧ single heteroatom
+  neighbour) plus an independent single-cut re-derivation. Neutral-graph subset (counterion explicit; the #105
+  charge wall is untouched).
+- **#119 imine condensation** (24th) — `carbonyl + amine/hydroxylamine/hydrazine -> imine/oxime/hydrazone + water`
+  via a new opt-in C=N generator, recognised by an independent retro re-derivation (the C=N must hydrolyse into
+  exactly the two declared precursors).
+
+Each class ships its no-false-vouch adversarial corpus. Per-fork evidence:
+[`REACTION_ALGEBRA_1_3_P3_FINDINGS_2026-10-30.md`](docs/research/REACTION_ALGEBRA_1_3_P3_FINDINGS_2026-10-30.md),
+[`MEGA_ROUND_IX_EXECUTION_REPORT_2026-10-28.md`](docs/research/MEGA_ROUND_IX_EXECUTION_REPORT_2026-10-28.md).
+
+### Added — feasibility, search and admission organs
+
+- **Activator ledger (#107)** — a class-keyed, base-rate-safe **demoter** mapping a recognized class to the
+  stoichiometric activator / catalyst it requires (Claisen condensation → enolizing base; the hydrogenation and
+  neutral-oxygen SN2 requirements are **step-conditional**, keyed on the step's content rather than its class), so a
+  route that names no such reagent sinks to `REAL_BUT_HARD` instead of reading as kitchen-runnable. Pure feasibility layer (rides the `hard_blockers` channel, excluded from `semantic_digest`); it
+  can only demote, never false-VOUCH. Carries an import-time re-review guard that fails loud on registry growth.
+  Also carries a **conditional** requirement keyed on a step's content, not its class: a neutral-oxygen **SN2**
+  (#112) whose nucleophile is protonated (`R-O-H`) needs a stoichiometric base to form the oxy-anion in situ, so a
+  baseless such step sinks to `REAL_BUT_HARD` — pKa-regime-aware, so an alcohol (pKa ~16) requires a strong
+  alkoxide/hydride base while a carboxylic acid / phenol (pKa ~5 / ~10) clears with a mild carbonate/hydroxide base.
+  A metal-salt alkoxide, a neutral amine and a neutral thiol are competent base-free and carry no requirement.
+- **Bounded typed-event route search (#123)** — an opt-in `search_event_routes` that makes the oracle-vouched
+  [3,3]-sigmatropic / electrocyclic families reachable from retrosynthesis, with a separate well-founded
+  termination proof. `search_routes` and its frozen receipt are untouched; `lateral_hops=0` reproduces the exact
+  scission route set. [`BOUNDED_EVENT_SEARCH_1_4_P4_FINDINGS_2026-10-30.md`](docs/research/BOUNDED_EVENT_SEARCH_1_4_P4_FINDINGS_2026-10-30.md).
+- **Intramolecular-lactonization generator (OPERATION XII P2)** — `smartchem.intramolecular_condensation`, the first
+  real producer for the type-3 `INTRAMOLECULAR_COPRODUCT` event (a hydroxy acid → lactone + water). Standalone (not
+  wired into any search), structural type-validity only; it proves intramolecularity *at the generator* (opens only
+  in-ring ester linkages, so it can never emit an intermolecular fragmentation) and narrows to true lactones
+  (cyclic anhydrides / carbonates / carbamates are not mislabeled). The oracle demotes the step as unrecognized
+  (no lactonization recognizer yet) — reachability, not a vouch.
+- **DAG-admission recognition gate (#144)** — re-derives recognition from the thick replay payload at admission,
+  identity-bound, so a DAG step cannot be admitted on `fit_status` alone.
+- **#106 radius-1 environment predicate** (`smartchem/radius1_environment.py`) — a recognizer-local atom-environment
+  discriminator (the SN2 lock); not a general molecular-representation rewrite.
+
+---
+
 ## [1.1.0] — 2026-10-23
 
 **Minor release: wider chemical recognition and a graph/synthesis workbench, under an unchanged 1.x machine

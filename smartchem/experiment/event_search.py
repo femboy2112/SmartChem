@@ -106,35 +106,75 @@ class EventType(Enum):
     CONNECTED_LATERAL = "CONNECTED_LATERAL"
     #: one connected principal precursor LARGER than the target, expelling a conserved coproduct.  DEFERRED
     #: (no generator emits it here -- the 2.0 event-calculus obligation); defined so the taxonomy is complete.
+    #: CERTIFICATE BOUNDARY (recognition vs. the name): classify_event certifies only this SHAPE -- one
+    #: connected principal precursor, rank-larger than the target, expelling >=1 coproduct.  It does NOT certify
+    #: the "intramolecular" (connectivity-preserving) chemistry the name evokes: distinguishing a genuine
+    #: intramolecular rearrangement-with-coproduct (lactonization, Dieckmann) from an INTERmolecular 1->many
+    #: FRAGMENTATION (e.g. a retro-Diels-Alder, cyclohexene -> butadiene + ethylene) requires an atom-map between
+    #: precursor and products that a constitution-only Molecule does not carry -- both have the identical shape.
+    #: The intramolecular property is therefore the PRODUCER's proof obligation (the generator that wires this
+    #: class live -- future work -- builds the step from a known intramolecular transform and so carries the
+    #: atom-map), NOT this shape recognizer's.  A nonlocal property is proven by the model that has it, never
+    #: proxied by a local shape check that cannot.
     INTRAMOLECULAR_COPRODUCT = "INTRAMOLECULAR_COPRODUCT"
 
 
 def classify_event(step: ExperimentStep) -> EventType:
-    """Classify a SYNTHESIS :class:`ExperimentStep` into its :class:`EventType` by reactant/product shape alone.
+    """Classify a SYNTHESIS :class:`ExperimentStep` into its :class:`EventType`, CERTIFYING the structural
+    invariants each class asserts -- not merely matching a coarse shape.
 
-    Fail-closed: a shape matching none of the three classes raises :class:`EventClassificationError` -- an
+    The returned type is a certificate: SCISSION is returned only for an arity->=2 assembly whose every fragment
+    is strictly smaller than the target (the W1 rank-descent); the single-precursor classes are reached only when
+    there is exactly one (connected-by-construction) reactant molecule.  This is a pure RECOGNITION projection,
+    independent of the REACHABILITY projection (the search grammar): it holds a hand-built step to the same
+    invariants the grammar enforces at generation, so a step that CONSERVES but is no rank-descending assembly
+    (e.g. an ester hydrolysis whose principal reactant exceeds the target) is NOT laundered into SCISSION by its
+    2-reactant arity.
+
+    Fail-closed: a step certifying none of the three classes raises :class:`EventClassificationError` -- an
     unrecognized event is refused, never silently bucketed.  Used for the per-event-type receipt counts and as
     the structural witness that the taxonomy is complete (a hand-built intramolecular-coproduct step classifies
     as the DEFERRED class, exhibiting that the category exists but has no producer in the shipped search)."""
     if type(step) is not ExperimentStep:
         raise EventClassificationError("classify_event expects an ExperimentStep")
+    target_atoms = len(step.target.atoms)
     # ARITY by MULTIPLICITY, not distinct identity: a scission into two IDENTICAL fragments (AcOH + AcOH -> Ac2O +
     # H2O) has one distinct id but is plainly an arity->=2 assembly.  A lateral / intramolecular event is a single
     # input molecule (an isomerization or an intramolecular rearrangement is 1->1 or 1->1+coproduct, reagentless),
     # so exactly-one reactant MOLECULE is the clean separator; a scission always has >=2 (capped-scission's
     # >=2-component contract, read backward, yields >=2 precursor molecules even when they coincide).
     if len(step.reactants) >= 2:
-        return EventType.SCISSION                      # assembled from >=2 fragment molecules (arity->=2 scission)
-    # exactly one precursor molecule from here
+        # ARITY alone is NOT the SCISSION certificate.  The class CLAIMS ">=2 strictly-smaller fragments" (the
+        # inherited W1 rank-descent), so the recognizer must CERTIFY that rank property, not infer it from the
+        # fact that the bounded search would only ever have produced a W1 scission.  A conserving 2->2 transfer /
+        # hydrolysis whose principal reactant is NOT smaller than the target -- ester hydrolysis, methyl acetate
+        # (11 atoms) + water -> acetic acid target (8) + methanol -- is a real, buildable step that is no
+        # rank-descending assembly and matches no typed event class; it is REFUSED fail-closed, never mislabeled
+        # SCISSION.  This is the recognition-vs-reachability separation made load-bearing: classify_event holds a
+        # hand-built step to the SAME invariant the grammar enforces at generation (structure_descent W1, "every
+        # fragment strictly fewer atoms than the parent"), so the returned EventType is a CERTIFICATE of W1 rather
+        # than a shape guess that trusts the step's provenance.
+        if all(len(r.atoms) < target_atoms for r in step.reactants):
+            return EventType.SCISSION                  # assembled from >=2 strictly-smaller fragments (W1 descent)
+        raise EventClassificationError(
+            f"a >=2-reactant step is a SCISSION only when every fragment is strictly smaller than the target "
+            f"(the W1 rank-descent the class certifies); got reactant atom counts "
+            f"{sorted(len(r.atoms) for r in step.reactants)} against target atoms={target_atoms}"
+        )
+    # Exactly one precursor MOLECULE from here -- and since a Molecule of >1 atom is one connected species by
+    # construction (category.Molecule refuses a disconnected graph), "one connected precursor" is GUARANTEED by
+    # arity==1; the laterals' connectedness claim needs no separate check (it cannot be violated).
     precursor = step.reactants[0]
-    target_atoms = len(step.target.atoms)
     precursor_atoms = len(precursor.atoms)
     target_id = _ident(step.target)
     coproducts = [p for p in step.products if _ident(p) != target_id]
     if not coproducts and precursor_atoms == target_atoms:
         return EventType.CONNECTED_LATERAL             # 1->1 rank-flat isomerization / ring open-close
     if coproducts and precursor_atoms > target_atoms:
-        return EventType.INTRAMOLECULAR_COPRODUCT       # 1 larger principal -> target + coproduct (DEFERRED)
+        # SHAPE only (DEFERRED class): 1 larger connected principal -> target + coproduct.  This does NOT certify
+        # the "intramolecular" chemistry -- an intermolecular retro-fragmentation has the identical shape and no
+        # atom-map exists here to tell them apart; the producer carries that proof.  See the EventType docstring.
+        return EventType.INTRAMOLECULAR_COPRODUCT
     raise EventClassificationError(
         f"step shape (precursor atoms={precursor_atoms}, target atoms={target_atoms}, "
         f"coproducts={len(coproducts)}) matches no typed event class"

@@ -176,12 +176,65 @@ def test_classify_event_covers_all_three_typed_shapes():
     assert classify_event(intramolecular) is EventType.INTRAMOLECULAR_COPRODUCT
 
 
+def test_scission_certifies_w1_rank_descent_not_arity_alone():
+    """P1 (event-type certificate): classify_event CERTIFIES the W1 rank-descent the SCISSION class claims, it
+    does not read arity alone.  A REAL conserving 2->2 step whose principal reactant is LARGER than the target --
+    ester hydrolysis, methyl acetate (11 atoms) + water -> acetic acid target (8) + methanol -- is no
+    rank-descending assembly; it is REFUSED fail-closed, never laundered into SCISSION by its 2-reactant arity.
+    NON-VACUITY: the step conserves, has >=2 reactants, and would have been classified SCISSION under the old
+    arity-only rule -- so the certificate is doing load-bearing work."""
+    meoac = parse_smiles("CC(=O)OC")          # methyl acetate, 11 atoms (> the 8-atom target)
+    acoh = parse_smiles("CC(=O)O")            # acetic acid, the target
+    hydrolysis = ExperimentStep.assembling(
+        acoh, (meoac, parse_smiles("O")), (acoh, parse_smiles("CO")), reagents=())
+    assert len(hydrolysis.reactants) >= 2                               # the old arity-only rule said SCISSION
+    assert not all(len(r.atoms) < len(acoh.atoms) for r in hydrolysis.reactants)  # but W1 is violated
+    with pytest.raises(EventClassificationError):
+        classify_event(hydrolysis)
+
+
+def test_classify_event_recognition_does_not_trust_provenance():
+    """The RECOGNITION projection is independent of the REACHABILITY projection: a hand-built step is held to the
+    SAME W1 invariant the search grammar enforces at generation, so the certificate cannot be bought with a
+    forged-looking shape.  A genuine grammar scission (every fragment strictly smaller) classifies; a
+    same-arity non-descending step does not -- the difference is the invariant, never where the step came from."""
+    ac2o = parse_smiles("CC(=O)OC(=O)C")
+    acoh = parse_smiles("CC(=O)O")
+    grammar_shaped = ExperimentStep.assembling(      # AcOH + AcOH -> Ac2O + H2O: each fragment < target (W1)
+        ac2o, (acoh, acoh), (ac2o, parse_smiles("O")), reagents=())
+    assert classify_event(grammar_shaped) is EventType.SCISSION
+    assert all(len(r.atoms) < len(ac2o.atoms) for r in grammar_shaped.reactants)
+
+
 def test_the_deferred_intramolecular_coproduct_class_has_no_producer_in_the_search():
     # the category is DEFINED (classifier recognizes its shape) but the shipped search never YIELDS one: no
     # generator emits a connected-1->1-with-coproduct event (CappedScission's >=2-component contract #125 forbids
     # it; no lateral family expels a coproduct).  Over the whole paracetamol route set, zero type-3 events appear.
     pe = search_event_routes(PARA, lateral_hops=1, **PARA_KW)
     assert pe.event_type_counts()[EventType.INTRAMOLECULAR_COPRODUCT] == 0
+
+
+def test_intramolecular_coproduct_certifies_shape_not_connectivity_preservation():
+    """CERTIFICATE BOUNDARY (P1): classify_event certifies the SHAPE of the type-3 class (one connected principal
+    precursor, rank-larger than the target, expelling a coproduct) -- it does NOT certify the 'intramolecular'
+    connectivity the name evokes.  A genuine intramolecular lactonization and an INTERmolecular 1->many retro-DA
+    fragmentation have the IDENTICAL shape, and no atom-map exists on a constitution-only Molecule to separate
+    them -- so both classify as INTRAMOLECULAR_COPRODUCT.  Establishing connectivity-preservation is the PRODUCER's
+    proof obligation (the deferred generator that wires this class live carries the atom-map), never this shape
+    recognizer's.  This test pins that boundary so a future producer cannot lean on classify_event to prove it."""
+    lactonization = ExperimentStep.assembling(      # OCCCC(=O)O -> gamma-butyrolactone + water: truly intramolecular
+        parse_smiles("O=C1CCCO1"), (parse_smiles("OCCCC(=O)O"),),
+        (parse_smiles("O=C1CCCO1"), parse_smiles("O")), reagents=())
+    retro_diels_alder = ExperimentStep.assembling(  # cyclohexene -> butadiene + ethylene: INTERmolecular fragmentation
+        parse_smiles("C=CC=C"), (parse_smiles("C1=CCCCC1"),),
+        (parse_smiles("C=CC=C"), parse_smiles("C=C")), reagents=())
+    assert classify_event(lactonization) is EventType.INTRAMOLECULAR_COPRODUCT
+    assert classify_event(retro_diels_alder) is EventType.INTRAMOLECULAR_COPRODUCT   # SAME type: shape is identical
+    # both are genuinely the certified shape: one connected precursor, larger than target, with a coproduct
+    for step in (lactonization, retro_diels_alder):
+        assert len(step.reactants) == 1
+        assert len(step.reactants[0].atoms) > len(step.target.atoms)
+        assert step.byproducts  # a coproduct is expelled
 
 
 def test_classify_event_is_fail_closed_on_a_non_step():

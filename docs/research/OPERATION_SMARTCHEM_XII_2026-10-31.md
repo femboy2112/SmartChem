@@ -88,6 +88,34 @@ source-backed corpus + hostile holdouts, now locked as tests:
 - Every `strong` holdout stays demoted under a mild base (K2CO3 / NaOH / Et3N / DBU) — the unsafe false-CLEAR direction
   is closed. The `mild` whitelist tops out at conjugate-acid pKa ~10.5 (carbonate), so only sub-11 acids clear mild.
 
+## P0 — DAG admission trust boundary (§2 of OPERATION XII · VERIFIED + DOCUMENTED · Outcome A)
+
+DAG-ADMIT-02 (Candidate A, PR #144) re-derives convergent-DAG reaction recognition from the thick `replay_payload` at
+admission, identity-bound to `route_digest`, storing no forgeable recognition field and moving no digest / golden /
+schema. `fit_status` keeps its pure physical/process/composability meaning; only ADMISSION carries the recognition
+tier. The remaining thin-wire boundary is real and is now stated plainly rather than presented as strong verification
+(the plan's **Outcome A** — preserve Candidate A, expose + document its trust tiers):
+
+| transport / policy | replay | recognition | admission tier | proven by |
+|---|---|---|---|---|
+| in-memory / default `CANONICAL_VERIFIED` wire | present | re-derived + identity-bound | **VERIFIED_ADMISSIBLE** | `test_recognized_fits_dag_is_admitted`; `test_gate_does_not_move_result_digest_or_break_round_trip` |
+| unrecognized steps (with replay) | present | fails | **WITHHELD** | `test_unrecognized_fits_dag_is_withheld_from_admission` |
+| substituted / forged replay | present | identity-bind fails | **WITHHELD** | `test_substituted_replay_cannot_buy_admission` |
+| explicit `THIN_ADVISORY` opt-out, plain load | absent | unverifiable | **ADVISORY_ONLY** (admitted on `fit_status`; not a false "impossible") | `test_missing_replay_is_advisory_on_plain_but_refused_under_verified_admission` |
+| any no-replay FITS DAG under `require_verified_admission` | absent | unverifiable | **REFUSED** (the strong guarantee) | same; `test_onload_rederivation`; `test_v0_9_5_loader_laws` |
+
+**Acceptance (met):** no forged or unrecognized DAG becomes VERIFIED-admissible, and the recognized positives
+(paracetamol via Ac₂O) keep working across a thick round-trip (`result_digest` / `admissible_dag_digests` /
+`process_selection_status` byte-identical). `admissible_dag_digests` on a *default* load is **advisory-tier** for a
+no-replay DAG and must not be read as verified chemistry; a consumer needing the strong guarantee loads under
+`require_verified_admission`. The new `test_trust_mode_matrix_advisory_admission_is_distinguishable_from_withheld`
+restates the tiers as one legible artifact.
+
+**Outcome A, not B.** A fully fail-closed-on-every-plain-load gate would need a versioned stored-recognition facet
+(`schema_version` bump + golden re-freeze + operator sign-off) — the deferred, review-only Candidate B. The shipped
+re-derivation is the weakest sound repair that closes the production / default-transport hole with no wire-identity
+move; nothing here changes `fit_status` meaning.
+
 ## Scientific claim ledger (P0 §1)
 
 | claim | status | evidence |
@@ -106,7 +134,6 @@ source-backed corpus + hostile holdouts, now locked as tests:
 
 ## Remaining (scoped, not yet executed this round)
 
-- **P0 §2** — DAG admission trust-tier matrix (advisory vs verified); honest tier labelling.
 - **P1/P2** — event-type invariant enforcement; a real type-3 `INTRAMOLECULAR_COPRODUCT` generator (lactonization)
   with its own well-founded termination proof.
 - **P3** — independent imine-condensation witness; elimination via the rank-increasing event rail; aldol scoping.

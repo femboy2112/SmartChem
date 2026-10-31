@@ -144,3 +144,31 @@ def test_gate_does_not_move_result_digest_or_break_round_trip():
     assert back.result_digest == resp.result_digest
     assert back.admissible_dag_digests == resp.admissible_dag_digests
     assert back.process_selection_status == resp.process_selection_status
+
+
+# ---- OPERATION XII P0 §2: the complete trust-mode matrix, made legible (advisory != verified) ----
+# These tiers are PROVEN cell-by-cell by the tests above; this restates them as one artifact so a downstream consumer
+# cannot mistake advisory admission for verified chemistry (the trust table is also documented in
+# docs/research/OPERATION_SMARTCHEM_XII_2026-10-31.md):
+#   VERIFIED_ADMISSIBLE -- replay PRESENT: recognition RE-DERIVED + identity-bound to route_digest, and a faithful
+#       of_dag projection -> admitted AND survives a require_verified_admission load
+#       (test_recognized_fits_dag_is_admitted; test_gate_does_not_move_result_digest_or_break_round_trip -- the latter
+#       on a GENUINE run_compilation DAG, the only faithful-projection fixture a verified load accepts).
+#   ADVISORY_ONLY -- replay ABSENT: admitted on fit_status alone, recognition UNVERIFIABLE here -> NOT demoted, but
+#       REFUSED under require_verified_admission (test_missing_replay_is_advisory_on_plain_but_refused_under_verified).
+#   WITHHELD -- replay present but steps unrecognized, or a substituted/forged replay that fails the identity-bind ->
+#       never admitted (test_unrecognized_fits_dag_is_withheld; test_substituted_replay_cannot_buy_admission).
+# fit_status keeps its pure physical/process meaning in every cell; only ADMISSION carries the recognition tier. A
+# hand-forced FITS dossier (not a faithful of_dag projection) is refused by a verified load regardless of replay -- so
+# the forced-dossier tests above assert the IN-MEMORY admissible_dag_digests tier, not a verified round-trip.
+def test_trust_mode_matrix_advisory_admission_is_distinguishable_from_withheld():
+    resp = _methyl_acetate_dag_response()
+    rec = next(d for d in resp.ranked_dag_dossiers if _recognized(d))
+    unrec = next(d for d in resp.ranked_dag_dossiers if not _recognized(d))
+    # ADVISORY_ONLY (no replay) and WITHHELD (unrecognized, with replay) are DISTINCT outcomes, not conflated:
+    assert _dag_dossier_steps_recognized(_force_fits(rec, replay=False)) is True    # advisory: admitted in-memory
+    assert _dag_dossier_steps_recognized(_force_fits(unrec, replay=True)) is False  # withheld: fiction, with replay
+    # and the no-replay advisory DAG is refused the instant the strong guarantee is demanded (advisory != verified).
+    no_replay = _inject(resp, _force_fits(rec, replay=False))
+    with pytest.raises(ValueError):
+        response_from_payload(response_to_payload(no_replay, include_replay=False), require_verified_admission=True)

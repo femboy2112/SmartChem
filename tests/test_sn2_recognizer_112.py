@@ -148,6 +148,22 @@ def test_mutation_primary_vouches_tertiary_twin_demotes():
     assert not _is_sn2(_step("COC(C)(C)C", "CC(C)(C)Br", "CO[Na]", "[Na]Br"))  # tertiary twin: DEMOTE
 
 
+def test_sn2_vouch_is_a_structural_type_claim_not_a_mechanism_or_stereochemistry_claim():
+    # OPERATION XII 1B boundary: a graph rewrite cannot establish a MECHANISM. The vouch certifies an SN2-COMPATIBLE
+    # sp3 centre (a NECESSARY structural condition), NOT that the substrate proceeds by SN2 over SN1/E2
+    # (solvent/kinetics-dependent, unrepresented), and NOT any Walden-inversion stereochemistry (the constitution-only
+    # Molecule carries no configuration). A SECONDARY substrate -- where SN1/E2 genuinely compete -- still vouches,
+    # because SN2 is a structurally AVAILABLE mechanism there; the existential vouch makes no claim it wins.
+    secondary = _step("COC(C)C", "CC(C)Br", "CO[Na]", "[Na]Br")  # isopropyl methyl ether: SN1/E2 compete
+    assert _is_sn2(secondary)
+    rt = recognize_reaction_type(secondary)
+    assert rt is not None and _SN2 in rt
+    # the recognized value is a reaction-TYPE label; it asserts no mechanism-resolution or stereochemical outcome
+    low = rt.lower()
+    for banned in ("inversion", "retention", "concerted", "stereo", "enantio"):
+        assert banned not in low
+
+
 def test_mutation_halide_vouches_hydroxide_twin_demotes():
     assert _is_sn2(_step("CCOC", "CCBr", "CO[Na]", "[Na]Br"))            # halide LG: VOUCH
     assert not _is_sn2(_step("CCOC", "CCO", "CO[Na]", "[Na]O"))          # hydroxide LG twin: DEMOTE

@@ -1188,10 +1188,24 @@ def _sn2_substitution(step) -> bool:
       ``>= 2`` cuts and so is NEVER re-derived.
 
     The clauses are a CONJUNCTION, and that is the lock: the re-derivation alone pins only the NET
-    ``R-X + Nu-M -> R-Nu + M-X`` (it cannot tell SN1 from SN2); the radius-1 carbon gate supplies the MECHANISM
-    constraint the net cannot -- for ``tBuOMe`` the re-derivation matches only at the (zero-hydrogen) tertiary
-    carbon, for an acetal only at the (two-heteroatom) oxocarbenium carbon, for aryl/vinyl/acyl only at the
-    non-sp3 carbon, and the innocent methyl carbons fail the re-derivation.  No single clause suffices.
+    ``R-X + Nu-M -> R-Nu + M-X`` (it cannot tell SN1 from SN2); the radius-1 carbon gate supplies the
+    SN2-COMPATIBILITY constraint -- a NECESSARY structural condition the net cannot -- excluding the structural
+    impostors: for ``tBuOMe`` the re-derivation matches only at the (zero-hydrogen) tertiary carbon, for an acetal
+    only at the (two-heteroatom) oxocarbenium carbon, for aryl/vinyl/acyl only at the non-sp3 carbon, and the
+    innocent methyl carbons fail the re-derivation.  No single clause suffices.
+
+    MECHANISM & STEREOCHEMISTRY BOUNDARY (OPERATION XII 1B; IUPAC Gold Book terms ``SN2``/``bimolecular``).  A graph
+    rewrite cannot establish a reaction MECHANISM, and this recognizer does not pretend to.  The gate certifies that
+    the net substitution sits at an SN2-COMPATIBLE sp3 centre (a NECESSARY, not sufficient, structural condition); it
+    does NOT resolve the SN1 / SN2 / E2 competition -- that turns on solvent, nucleophilicity / basicity, temperature
+    and kinetics, none of which the conserved bond-graph carries -- and it mints NO stereochemical (Walden-inversion)
+    claim, because the constitution-only :class:`~smartchem.category.Molecule` carries no configuration (the CLI
+    ``--match-layer configuration`` is REFUSED until stereo perception exists).  So the VOUCH is the oracle's standard
+    existential Problem-A claim (module docstring): "a mechanism of the SN2 TYPE is STRUCTURALLY AVAILABLE for this
+    net substitution", NEVER "this substrate proceeds by SN2 (not SN1 / E2) under given conditions" and NEVER "with
+    inversion of configuration".  Those are feasibility (Problem B) and a finer stereochemical identity layer, both
+    out of scope and both honestly WITHHELD, not fabricated.  (A secondary substrate, where SN1 / E2 genuinely
+    compete, still vouches -- SN2 is a structurally AVAILABLE mechanism there; the vouch does not claim it wins.)
 
     CONTENT-DETERMINISTIC + FAIL-CLOSED (the module cardinals).  Recognition is a pure function of the
     conserved ``reactants``/``products`` molecules: the carried ``step.reaction_center`` is NEVER read (both

@@ -158,7 +158,11 @@ lactonization generator must establish intramolecularity itself; it may not lean
 **Scope / gates.** `classify_event` / `event_type_counts` / `EventType` are confined to `event_search.py` (only
 tests consume them elsewhere) — zero blast radius into any digest/serialization surface. Golden **NO DRIFT**;
 ruff clean; `tests/test_event_search_123.py` 22 passed (19 prior + `test_scission_certifies_w1_rank_descent_not_arity_alone`,
-`test_classify_event_recognition_does_not_trust_provenance`, the boundary test above).
+`test_classify_event_recognition_does_not_trust_provenance`, the boundary test above). Full OOM-safe suite on the
+P1 tip `01a2183`: **8106 passed / 0 failed / 0 errors / 50 skipped** (collected 8156 = 8152 + the `33bfacf` DAG
+matrix test + the 3 P1 regressions), verified two ways (console aggregate + an independent 40-file junit tally,
+zero problem batches). Hosted CI run `41187287909` (head `01a21832…`): **conclusion success, all 7 jobs green**
+(`test` 3.10/3.12, `Wheel install matrix` ×4, `Optional PySCF backend (smoke)`), per-job + head-SHA verified.
 
 ### P1 claim ledger
 

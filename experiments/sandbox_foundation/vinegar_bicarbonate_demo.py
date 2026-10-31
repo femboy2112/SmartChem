@@ -247,12 +247,50 @@ def run_scenario(scenario_id: str) -> ScenarioResult:   # noqa: C901 (a flat dis
                  f"dynamics (ASSUMED kLa) relax to the sealed end state",
             caveats=("the dynamic kLa is an ASSUMED parameter (Level A); CALIBRATION_REQUIRED for a real apparatus",))
     if sid == "B7":
-        return ScenarioResult("B7", "mixing / valve dependence", DEFERRED,
-                              note="requires the two-cell reactive world (P3); not implemented in this build -- "
-                                   "reported DEFERRED, never a fabricated success")
+        from experiments.sandbox_foundation.coupled_twocell import (
+            CoupledCell,
+            CoupledWorld,
+            DiffusiveMembrane,
+            simulate_diffusive,
+        )
+        A = CoupledCell(volume_L=0.1, n_acetate_mol=0.02, n_carbon_mol=0.0, n_sodium_mol=0.0, activity_model="ideal")
+        B = CoupledCell(volume_L=0.1, n_acetate_mol=0.0, n_carbon_mol=0.02, n_sodium_mol=0.02, activity_model="ideal")
+        transferred = {}
+        end = None
+        for valve in (0.0, 0.5, 1.0):
+            w = simulate_diffusive(CoupledWorld(cellA=A, cellB=B),
+                                   DiffusiveMembrane(g_HAc_L_per_s=0.01, g_CO2_L_per_s=0.01, valve=valve),
+                                   duration_s=20.0, dt=0.5)
+            transferred[valve] = w.cellB.n_acetate_mol
+            end = w
+        return ScenarioResult(
+            "B7", "mixing / valve dependence (two cells)", IMPLEMENTED,
+            frames=(vinegar_frame("B7-cellA", "acid cell after diffusion (valve open)", end.cellA.speciate()),
+                    vinegar_frame("B7-cellB", "bicarbonate cell after diffusion (valve open)", end.cellB.speciate())),
+            note=f"acetate reaching cell B: valve0={transferred[0.0]:.2e} valve0.5={transferred[0.5]:.2e} "
+                 f"valve1={transferred[1.0]:.2e} mol (scales with valve; global totals conserved)",
+            caveats=("two-cell transport coefficients are prescribed/ASSUMED (claim_tiers.ASSUMED_PARAMETER)",))
     if sid == "B8":
-        return ScenarioResult("B8", "dissolution / grain-size sensitivity", DEFERRED,
-                              note="requires the solid-bicarbonate dissolution phase (P4); reported DEFERRED")
+        from experiments.sandbox_foundation.solid_bicarbonate import (
+            SolidBicarbonateSystem,
+            dissolution_step,
+            dissolve_to_saturation,
+        )
+        base = dict(volume_L=0.1, n_acetate_mol=0.02, n_carbon_aqueous_mol=0.0, n_sodium_aqueous_mol=0.0,
+                    activity_model="ideal")
+        s = SolidBicarbonateSystem(n_solid_mol=0.05, **base)
+        sat = dissolve_to_saturation(s)
+        fast = dissolution_step(s, k_diss_mol_per_s=0.01, dt=1.0)
+        slow = dissolution_step(s, k_diss_mol_per_s=0.001, dt=1.0)
+        return ScenarioResult(
+            "B8", "dissolution / grain-size sensitivity", IMPLEMENTED,
+            frames=(vinegar_frame("B8-before", "vinegar + undissolved powder", s.speciate()),
+                    vinegar_frame("B8-dissolved", "after fast dissolution (to saturation / exhaustion)",
+                                  sat.system_after.speciate())),
+            note=f"fast limit dissolved {sat.dissolved_mol:.4f} mol (remaining solid {sat.system_after.n_solid_mol:.4f}"
+                 f"); finite-rate 1 s step: k=0.01 -> {fast.dissolved_mol:.2e} mol, k=0.001 -> {slow.dissolved_mol:.2e}"
+                 " mol (grain-size proxy; k_diss ASSUMED)",
+            caveats=("dissolution rate k_diss is ASSUMED/synthetic (CALIBRATION_REQUIRED); solubility is SOURCED",))
     raise ValueError(f"unknown scenario {scenario_id!r}; expected B1..B8")
 
 

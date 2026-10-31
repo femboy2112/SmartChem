@@ -23,9 +23,10 @@ def test_scenario_matrix_is_honest(report):
     m = report["scenario_matrix"]
     for sid in ("B1", "B2", "B3", "B4", "B5", "B6"):
         assert m[sid] == demo.NUMERICALLY_VERIFIED, (sid, m[sid])
-    # the unsupported scenarios are DEFERRED, never a fabricated success.
-    assert m["B7"] == demo.DEFERRED and m["B8"] == demo.DEFERRED
-    assert report["honesty"]["deferred"] == ["B7", "B8"]
+    # B7/B8 now run on P3/P4 machinery: IMPLEMENTED (they run and conserve), but their transport/rate coefficients
+    # are ASSUMED, so NOT claimed NUMERICALLY_VERIFIED -- honestly distinct from the HP-verified equilibria.
+    assert m["B7"] == demo.IMPLEMENTED and m["B8"] == demo.IMPLEMENTED
+    assert report["honesty"]["deferred"] == []
 
 
 def test_every_frame_satisfies_the_renderer_contract(report):
@@ -35,7 +36,7 @@ def test_every_frame_satisfies_the_renderer_contract(report):
             problems = demo.validate_vinegar_frame(fr)
             assert not problems, (sc["scenario"], problems)
             n += 1
-    assert n >= 7   # B1..B4 (4) + B5 (2) + B6 (2)
+    assert n >= 11   # B1..B4 (4) + B5 (2) + B6 (2) + B7 (2) + B8 (2)
 
 
 def test_unsupported_quantities_are_null_never_zero(report):
@@ -86,11 +87,16 @@ def test_B6_open_and_sealed_differ_and_dynamics_conserve_and_relax():
     assert abs(ts[-1]["flux_mol_per_s"]) < abs(ts[0]["flux_mol_per_s"])   # flux relaxes
 
 
-def test_deferred_scenarios_carry_no_frames_or_time_series():
-    for sid in ("B7", "B8"):
-        sc = demo.run_scenario(sid)
-        assert sc.status == demo.DEFERRED
-        assert sc.frames == () and sc.time_series == ()
+def test_B7_B8_are_implemented_on_P3_P4_machinery():
+    b7 = demo.run_scenario("B7")
+    assert b7.status == demo.IMPLEMENTED
+    assert len(b7.frames) == 2 and "valve" in b7.note
+    b8 = demo.run_scenario("B8")
+    assert b8.status == demo.IMPLEMENTED
+    assert len(b8.frames) == 2 and "dissolved" in b8.note
+    # both are IMPLEMENTED, not NUMERICALLY_VERIFIED: their transport/rate coefficients are assumed.
+    for sc in (b7, b8):
+        assert any("ASSUMED" in c for c in sc.caveats)
 
 
 def test_closed_status_is_earned_and_demotes_on_unverified():

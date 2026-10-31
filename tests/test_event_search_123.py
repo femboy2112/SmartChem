@@ -207,9 +207,10 @@ def test_classify_event_recognition_does_not_trust_provenance():
 
 
 def test_the_deferred_intramolecular_coproduct_class_has_no_producer_in_the_search():
-    # the category is DEFINED (classifier recognizes its shape) but the shipped search never YIELDS one: no
-    # generator emits a connected-1->1-with-coproduct event (CappedScission's >=2-component contract #125 forbids
-    # it; no lateral family expels a coproduct).  Over the whole paracetamol route set, zero type-3 events appear.
+    # the category is DEFINED (classifier recognizes its shape) but the shipped SEARCH never YIELDS one: the P2
+    # lactonization generator (smartchem.intramolecular_condensation) exists but is STANDALONE, not wired into
+    # search_event_routes (CappedScission's >=2-component contract #125 cannot represent it; no lateral family
+    # expels a coproduct).  Over the whole paracetamol route set, zero type-3 events appear.
     pe = search_event_routes(PARA, lateral_hops=1, **PARA_KW)
     assert pe.event_type_counts()[EventType.INTRAMOLECULAR_COPRODUCT] == 0
 

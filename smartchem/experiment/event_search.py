@@ -23,12 +23,16 @@ of (:class:`EventType`):
 * ``CONNECTED_LATERAL`` -- a single connected precursor of the SAME atom count (a [3,3] sigmatropic or an
   electrocyclic ring open/close); rank-flat, reagentless, no coproduct.
 * ``INTRAMOLECULAR_COPRODUCT`` -- a single connected principal precursor LARGER than the target, expelling a
-  conserved coproduct (lactonization, Dieckmann, intramolecular aldol condensation).  **Representation
-  DEFERRED** (the 2.0 reaction-event-calculus obligation): no generator in the repo emits such a transform
-  today -- ``CappedScission``'s >=2-component contract (#125) structurally forbids it and no lateral family
-  expels a coproduct -- so the search never yields one.  The category is DEFINED and :func:`classify_event`
-  recognizes its shape (so the taxonomy is complete and the deferral is exhibited, not hand-waved), but it
-  has ZERO producers here; wiring a generator for it is future work.  See the findings doc.
+  conserved coproduct (lactonization, Dieckmann, intramolecular aldol condensation).  A STANDALONE generator for
+  the lactonization subfamily now exists -- :func:`smartchem.intramolecular_condensation.retro_lactonization_edges`
+  (OPERATION XII P2), which proves intramolecularity AT THE GENERATOR (it opens only in-ring ester linkages, so the
+  precursor stays one connected molecule) -- but it is **not wired into THIS bounded search**: ``CappedScission``'s
+  >=2-component contract (#125) still cannot represent it and no lateral family expels a coproduct, so
+  ``search_event_routes`` still yields ZERO type-3 events.  Wiring the generator into the recursive search (with the
+  ``(coproduct_events, atoms, lateral_hops)`` termination proof for the rank-INCREASING retro step, and a
+  lactonization recognizer so the oracle vouches rather than demotes the step) is the deferred follow-on.  The
+  category is DEFINED and :func:`classify_event` recognizes its SHAPE (so the taxonomy is complete and the deferral
+  is exhibited, not hand-waved).  See the findings doc.
 
 THE TERMINATION PROOF (#125 acceptance clause 4; the #104 "well-founded non-atom-count measure").  Termination
 is OVERDETERMINED -- two independent well-founded measures each strictly decrease on every recursion edge.  Be

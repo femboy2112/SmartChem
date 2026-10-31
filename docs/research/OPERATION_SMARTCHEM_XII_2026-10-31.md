@@ -172,6 +172,59 @@ zero problem batches). Hosted CI run `41187287909` (head `01a21832…`): **concl
 | the tightened `SCISSION` cert false-excludes a reachable search step | **REFUTED** (grammar-safe: W1 holds for every capped scission) | evil-morty; 6-target run; `structure_descent` W1 |
 | `INTRAMOLECULAR_COPRODUCT` certifies the *intramolecular* property its name claims | **CORRECTED** to a shape certificate; connectivity is the P2 producer's obligation | retro-DA counterexample; boundary test |
 
+## P2 — the type-3 `INTRAMOLECULAR_COPRODUCT` generator: intramolecular lactonization (BUILT · `8f2b10f`)
+
+The headline. The `INTRAMOLECULAR_COPRODUCT` event class was DEFINED but had **zero producers** (`CappedScission`'s
+≥2-component contract cannot represent a connected 1→1+coproduct event; no lateral family expels a coproduct). This
+adds the first real producer, for the lactonization subfamily — a new module
+`smartchem/intramolecular_condensation.py`, `retro_lactonization_edges(target)`, which given a lactone emits an edge
+encoding the synthesis `hydroxy_acid → lactone + water` (a step `classify_event` classifies `INTRAMOLECULAR_COPRODUCT`).
+
+**Intramolecularity proved AT THE GENERATOR (the P1 hard constraint discharged).** The generator opens only
+**in-ring** ester linkages (a bond whose removal leaves the graph connected), so the precursor stays one connected
+`Molecule` and the forward condensation closes a bond within it. It is therefore structurally **incapable** of an
+intermolecular 1→many fragmentation — a retro-Diels-Alder has the identical type-3 *shape* (which `classify_event`,
+shape-only, cannot distinguish) but no ester ring to open, so it yields zero edges. The nonlocal property `classify_event`
+could not certify is proven here by the model that has the atom-map.
+
+**Three certificates** (conservation alone proves nothing — every condensation balances mass): (1) conservation via an
+independent `Reaction`; (2) the load-bearing forward re-derivation — the precursor is re-scanned for its own carboxyl
+and hydroxyl and must lactonize to *exactly* the target + water, compared by canonical identity; (3) the
+one-connected-precursor intramolecularity invariant.
+
+**Adversarial review (evil-morty + own probes) broke the first draft; folded in.** Two of three claims were BROKEN by
+one root cause — the acyl carbon was never constrained to bear exactly one heteroatom, and a docstring promised a
+carboxyl-`OH` exclusion that was absent from the code:
+
+- **Narrowed to true lactones.** Cyclic **anhydrides** (succinic/glutaric/maleic → diacids), **carbonates** (ethylene
+  carbonate), and **carbamates** (oxazolidinone) were being opened and mislabeled "lactonization" (genuine condensations
+  of *other* families whose precursors are not hydroxy acids). The acyl carbon must now bear exactly one heteroatom
+  besides its `=O`; the look-alikes yield zero edges.
+- **The missing carboxyl-`OH` exclusion is now enforced**, so a diacid is not read as alcohol+acid; a hand-built
+  diacid-precursor edge is refused (the certificate now bears its claimed load).
+- **Dedup bug fixed.** Dedup keyed on `repr()` — which is the **formula** string — collapsed distinct same-formula
+  isomers and could discard the genuine target lactone (a polyol-lactone false negative). Re-keyed on
+  `resonance_identity`; the polyol case is recovered. Claim 2 (intramolecularity / no intermolecular fragmentation)
+  HELD throughout, verified.
+
+**Scope.** STANDALONE (not wired into `search_routes` / `search_event_routes`), structural type-validity only
+(Problem A). The 24-class oracle has no lactonization recognizer, so it honestly **demotes** the step as unrecognized
+rather than false-vouching — the recognition-vs-reachability separation, pinned by a test. **Gates:** golden NO DRIFT
+(nothing registered or digested), ruff clean, `tests/test_intramolecular_condensation_p2.py` + the event suite green;
+zero blast radius (the module is imported by nothing but its test). **Deferred follow-on:** wiring the generator into
+the bounded recursive search, with the `(coproduct_events, atoms, lateral_hops)` termination proof for the
+rank-INCREASING retro step and a lactonization *recognizer* so the oracle vouches rather than demotes.
+
+### P2 claim ledger
+
+| claim | status | evidence |
+|---|---|---|
+| the type-3 class has no producer | **RESOLVED** — `retro_lactonization_edges` is the first | `8f2b10f`; `test_lactonization_generator_produces_a_type3_event` |
+| every emitted edge is a genuine intramolecular lactonization (hydroxy acid → lactone + water) | **BROKEN → repaired** (anhydride/carbonate/carbamate were mislabeled) | evil-morty; lactone-guard narrowing; `test_non_lactone_acyl_rings_are_rejected` |
+| the re-derivation certificate refuses a fabricated precursor | **BROKEN → repaired** (a diacid passed) | evil-morty; carboxyl-`OH` exclusion; `test_diacid_precursor_is_refused_by_rederivation` |
+| the generator can emit an intermolecular fragmentation | **REFUTED** (in-ring-only; connected precursor) | evil-morty HELD; `test_generator_structurally_cannot_emit_an_intermolecular_fragmentation` |
+| a polyol lactone is silently dropped | **was a `repr()`/formula dedup bug → fixed** (resonance-identity dedup) | trace; `test_polyol_lactone_is_not_dropped_by_formula_dedup` |
+
 ## Scientific claim ledger (P0 §1)
 
 | claim | status | evidence |
@@ -196,12 +249,11 @@ zero problem batches). Hosted CI run `41187287909` (head `01a21832…`): **concl
 
 ## Remaining (scoped, not yet executed this round)
 
-- **P2** (headline) — a real type-3 `INTRAMOLECULAR_COPRODUCT` generator (lactonization) with its own
-  well-founded termination proof. **Hard constraint carried from P1:** the generator must itself establish the
-  *intramolecular* (connectivity-preserving) property — it builds the step from a known intramolecular transform
-  and so carries the atom-map; it may NOT rely on `classify_event`, which certifies the shape only (an
-  intermolecular retro-fragmentation has the identical shape). The termination measure to attribute to the code
-  that enforces it (not the prettiest independent certificate).
+- **P2 follow-on** — the generator (`8f2b10f`) is standalone; wiring it into the bounded recursive search needs the
+  `(coproduct_events, atoms, lateral_hops)` lexicographic termination proof for the rank-INCREASING retro step
+  (the coproduct-event budget strictly decreases per hop even as atom count rises — attribute the measure to the
+  code that enforces it, not the prettiest certificate), plus a lactonization *recognizer* so the oracle vouches
+  rather than demotes the step. Both deferred.
 - **P3** — independent imine-condensation witness; elimination via the rank-increasing event rail; aldol scoping.
 - **P4** — physicalization (separate 2.0 research branch): mixed acetate/carbonate PHREEQC benchmark; open/sealed gas
   boundaries; conservative chamber transport.

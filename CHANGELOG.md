@@ -83,6 +83,12 @@ Each class ships its no-false-vouch adversarial corpus. Per-fork evidence:
   [3,3]-sigmatropic / electrocyclic families reachable from retrosynthesis, with a separate well-founded
   termination proof. `search_routes` and its frozen receipt are untouched; `lateral_hops=0` reproduces the exact
   scission route set. [`BOUNDED_EVENT_SEARCH_1_4_P4_FINDINGS_2026-10-30.md`](docs/research/BOUNDED_EVENT_SEARCH_1_4_P4_FINDINGS_2026-10-30.md).
+- **Intramolecular-lactonization generator (OPERATION XII P2)** — `smartchem.intramolecular_condensation`, the first
+  real producer for the type-3 `INTRAMOLECULAR_COPRODUCT` event (a hydroxy acid → lactone + water). Standalone (not
+  wired into any search), structural type-validity only; it proves intramolecularity *at the generator* (opens only
+  in-ring ester linkages, so it can never emit an intermolecular fragmentation) and narrows to true lactones
+  (cyclic anhydrides / carbonates / carbamates are not mislabeled). The oracle demotes the step as unrecognized
+  (no lactonization recognizer yet) — reachability, not a vouch.
 - **DAG-admission recognition gate (#144)** — re-derives recognition from the thick replay payload at admission,
   identity-bound, so a DAG step cannot be admitted on `fit_status` alone.
 - **#106 radius-1 environment predicate** (`smartchem/radius1_environment.py`) — a recognizer-local atom-environment

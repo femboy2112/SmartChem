@@ -19,10 +19,32 @@ The version-independent payload golden is verified **unmoved** by the coverage e
 readiness-layer demoter; a recognizer changes readiness, never a search identity). Full differential + gate ledger:
 [`V1_5_CONSOLIDATION_2026-10-30.md`](docs/research/V1_5_CONSOLIDATION_2026-10-30.md).
 
+### Corrected — hostile scientific review (OPERATION XII, 2026-10-31)
+
+A scientific hardening pass on the candidate, all on the feasibility axis (version-independent golden **NO DRIFT**,
+recognizer registry digest untouched). Full record:
+[`OPERATION_SMARTCHEM_XII_2026-10-31.md`](docs/research/OPERATION_SMARTCHEM_XII_2026-10-31.md).
+
+- **Metal-free hydrogenation (1A).** The universal "a hydrogenation requires a transition metal" was scientifically
+  false: metal-free frustrated-Lewis-pair catalysts hydrogenate imines (C=N) and nitriles (C≡N) — Stephan et al.,
+  Angew. Chem. Int. Ed. 2007, 46, 8050 — but not aldehydes (C=O). The requirement is now **step-conditional** on the
+  reduced bond, with a new `HYDROGEN_ACTIVATION_CATALYST` role (transition metal **or** metal-free FLP) for the
+  C=N / C≡N domain, scoped by a structural imine/nitrile witness (an adversarial review proved the element pair
+  `{C,N}` alone false-CLEARs oximes / hydrazones / amidines / cumulenes; now excluded).
+- **SN2 is a structural type claim (1B).** The recognizer no longer implies it establishes the SN2 *mechanism*: it
+  certifies SN2-*compatibility* (a necessary structural condition), resolves no SN1/SN2/E2 competition, and mints no
+  stereochemical (inversion) claim. The vouch is the oracle's existential "a mechanism of the SN2 type is
+  structurally available".
+- **Base-regime classifier (1C).** Verified sound (no fix) against a preregistered source-backed corpus + hostile
+  holdouts: the mild/strong split keys on the hydroxyl carbon's own bond, so an allyl alcohol / β-hydroxy carbonyl
+  (unsaturation *near* the OH-carbon) correctly stays strong, never false-cleared by a mild base.
+
 ### Added — reaction-type coverage (20 → 24 recognized classes)
 
 - **#114 hydrogenation** (21st) — `precursor + H2 -> saturated` (a partial bond-order edit; one unsaturation
-  reduced). Requires a transition-metal catalyst (see the activator ledger).
+  reduced). Needs an H2-activation catalyst, keyed on the reduced bond (see the activator ledger): a C=N / C≡N
+  reduction (imine / nitrile) clears with a transition metal **or** a metal-free frustrated-Lewis-pair catalyst
+  (Stephan 2007); a C=C / C=O reduction needs a transition metal.
 - **#111 oxoacid ester condensation** (22nd) — `alcohol + nitric/phosphoric acid -> nitrate/phosphate ester +
   water` (Z ∈ {N, P}; disjoint from the #111 sulfonate recognizer, which owns C–S oxoacid esters).
 - **#112 SN2 substitution** (23rd) — `R-X + O/N/S-nucleophile -> R-Nu + halide-salt/HX` at an sp3, non-tertiary
@@ -40,9 +62,9 @@ Each class ships its no-false-vouch adversarial corpus. Per-fork evidence:
 ### Added — feasibility, search and admission organs
 
 - **Activator ledger (#107)** — a class-keyed, base-rate-safe **demoter** mapping a recognized class to the
-  stoichiometric activator / catalyst it requires (Claisen condensation → enolizing base; hydrogenation →
-  transition-metal catalyst), so a route that names no such reagent sinks to `REAL_BUT_HARD` instead of reading as
-  kitchen-runnable. Pure feasibility layer (rides the `hard_blockers` channel, excluded from `semantic_digest`); it
+  stoichiometric activator / catalyst it requires (Claisen condensation → enolizing base; the hydrogenation and
+  neutral-oxygen SN2 requirements are **step-conditional**, keyed on the step's content rather than its class), so a
+  route that names no such reagent sinks to `REAL_BUT_HARD` instead of reading as kitchen-runnable. Pure feasibility layer (rides the `hard_blockers` channel, excluded from `semantic_digest`); it
   can only demote, never false-VOUCH. Carries an import-time re-review guard that fails loud on registry growth.
   Also carries a **conditional** requirement keyed on a step's content, not its class: a neutral-oxygen **SN2**
   (#112) whose nucleophile is protonated (`R-O-H`) needs a stoichiometric base to form the oxy-anion in situ, so a

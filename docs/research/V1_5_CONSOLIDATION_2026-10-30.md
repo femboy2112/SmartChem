@@ -118,7 +118,7 @@ tool-version-bound fields; the regenerated `tests/fixtures/cli_json/*.json` diff
 `result_digest` across 5 fixtures and **nothing semantic** (audited line-by-line). No stable wire schema id,
 verdict word, route digest or readiness/capability semantic moved.
 
-## 6. §4 acceptance-gate ledger (status at `98e04b2` + docs)
+## 6. §4 acceptance-gate ledger (code-final SHA `7e57b66`)
 
 | # | gate | status |
 |---|---|---|
@@ -126,7 +126,7 @@ verdict word, route digest or readiness/capability semantic moved.
 | 2 | Version-boundary discipline: every semantic move since 1.0 classified; version-independent golden green; no undeclared promotion | **MET** — §4/§5 above; golden NO DRIFT; cli-json diff version-bound-only |
 | 3 | Workbench threat model (UNATTESTED≠COMPLETE; names from oracle not caller; bounded renderer; runs without RDKit/PySCF) | inherited from 1.1; unchanged by this integration |
 | 4 | Fail-closed everywhere (unread demand→UNKNOWN; finer identity refuses, never wrong-isomer) | inherited; the ledger + oracle are pure demoters by construction |
-| 5 | Full OOM-safe suite green AND clean wheel-install Py 3.10–3.13 on the FINAL SHA, no cancelled/partial counts | **in progress** — OOM suite + wheel matrix + hosted CI per-job on the final SHA |
+| 5 | Full OOM-safe suite green AND clean wheel-install Py 3.10–3.13 on the FINAL SHA, no cancelled/partial counts | **MET** on code-final `7e57b66`. Local OOM suite: **8060 passed / 0 failed / 0 errors / 50 skipped** (collected 8110), verified two ways — console aggregate AND an independent 40-file junit tally, zero problem batches. Hosted CI run `41162101432` (headSha `7e57b66`): all 7 jobs **success** — `test (3.10)`, `test (3.12)`, wheel-install matrix `3.10/3.11/3.12/3.13`, PySCF smoke. The 50 skips are the unchanged RDKit-absent oracle set. |
 
 **Boundaries.** No merge into protected `main`, no tag, no publish without separate explicit authorization. The
 2.0 track (PHREEQC physicalization, PR #134; per-atom formal charge #105; general reaction-event calculus /

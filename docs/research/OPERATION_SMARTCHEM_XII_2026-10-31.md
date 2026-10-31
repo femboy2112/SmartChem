@@ -210,8 +210,11 @@ carboxyl-`OH` exclusion that was absent from the code:
 **Scope.** STANDALONE (not wired into `search_routes` / `search_event_routes`), structural type-validity only
 (Problem A). The 24-class oracle has no lactonization recognizer, so it honestly **demotes** the step as unrecognized
 rather than false-vouching — the recognition-vs-reachability separation, pinned by a test. **Gates:** golden NO DRIFT
-(nothing registered or digested), ruff clean, `tests/test_intramolecular_condensation_p2.py` + the event suite green;
-zero blast radius (the module is imported by nothing but its test). **Deferred follow-on:** wiring the generator into
+(nothing registered or digested), ruff clean, `tests/test_intramolecular_condensation_p2.py` (21) + the event suite
+green; zero blast radius (the module is imported by nothing but its test). Full OOM-safe suite on tip `52596fb`:
+**8127 passed / 0 failed / 0 errors / 50 skipped** (collected 8177 = 8156 + 21 P2 tests), two ways (console + 40-file
+junit tally, zero problem batches); hosted CI run `41193640463` (head `52596fb`): **conclusion success, all 7 jobs
+green**, per-job + head-SHA verified. **Deferred follow-on:** wiring the generator into
 the bounded recursive search, with the `(coproduct_events, atoms, lateral_hops)` termination proof for the
 rank-INCREASING retro step and a lactonization *recognizer* so the oracle vouches rather than demotes.
 

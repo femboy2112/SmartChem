@@ -44,6 +44,11 @@ Each class ships its no-false-vouch adversarial corpus. Per-fork evidence:
   transition-metal catalyst), so a route that names no such reagent sinks to `REAL_BUT_HARD` instead of reading as
   kitchen-runnable. Pure feasibility layer (rides the `hard_blockers` channel, excluded from `semantic_digest`); it
   can only demote, never false-VOUCH. Carries an import-time re-review guard that fails loud on registry growth.
+  Also carries a **conditional** requirement keyed on a step's content, not its class: a neutral-oxygen **SN2**
+  (#112) whose nucleophile is protonated (`R-O-H`) needs a stoichiometric base to form the oxy-anion in situ, so a
+  baseless such step sinks to `REAL_BUT_HARD` — pKa-regime-aware, so an alcohol (pKa ~16) requires a strong
+  alkoxide/hydride base while a carboxylic acid / phenol (pKa ~5 / ~10) clears with a mild carbonate/hydroxide base.
+  A metal-salt alkoxide, a neutral amine and a neutral thiol are competent base-free and carry no requirement.
 - **Bounded typed-event route search (#123)** — an opt-in `search_event_routes` that makes the oracle-vouched
   [3,3]-sigmatropic / electrocyclic families reachable from retrosynthesis, with a separate well-founded
   termination proof. `search_routes` and its frozen receipt are untouched; `lateral_hops=0` reproduces the exact

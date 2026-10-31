@@ -1349,6 +1349,94 @@ def sn2_feasibility_signature(step):
     return None
 
 
+def _neutral_hydroxyl_carbon(mol):
+    """Index of the UNIQUE carbon bearing a neutral hydroxyl ``O-H`` in ``mol``, else ``None``.
+
+    A hydroxyl ``O`` is an oxygen whose only two radius-1 neighbours are ONE carbon and ONE hydrogen, both order-1
+    (the shape shared by an alcohol ``C-O-H``, a phenol ``Ar-O-H`` and a carboxylic acid ``C(=O)-O-H``; the carbonyl
+    ``=O`` of the acid carries no H and is not a hydroxyl).  Returns the carbon's index when there is EXACTLY one such
+    oxygen -- 0 (no hydroxyl) or >=2 (a di-/poly-ol, the nucleophilic oxygen then ambiguous) returns ``None``, so the
+    caller falls back to the conservative regime.  Pure graph read; fail-closed on any access fault."""
+    try:
+        atoms = mol.atoms
+        bonds = mol.bonds
+    except Exception:
+        return None
+    carbons: list[int] = []
+    for oi, el in enumerate(atoms):
+        if el != "O":
+            continue
+        star = []  # (neighbour_element, bond_order, neighbour_index)
+        for b in bonds:
+            if b.i == oi:
+                star.append((atoms[b.j], b.order, b.j))
+            elif b.j == oi:
+                star.append((atoms[b.i], b.order, b.i))
+        if len(star) == 2 and sorted((e, o) for e, o, _ in star) == [("C", 1), ("H", 1)]:
+            carbons.append(next(idx for e, _o, idx in star if e == "C"))
+    return carbons[0] if len(carbons) == 1 else None
+
+
+def sn2_oxygen_base_regime(step):
+    """For a neutral-OXYGEN SN2 step, the pKa regime of the nucleophile's ``O-H`` -- which STRENGTH of base forms
+    its competent conjugate nucleophile in situ:
+
+    * ``'mild'`` -- an ACIDIC ``O-H`` whose conjugate base is resonance-stabilised because the hydroxyl carbon bears
+      a double bond to CARBON or OXYGEN: a carbonyl carbon (``C=O``) makes it a CARBOXYLIC / carbamic / carbonic acid
+      (pKa ~3-6), an alkene/aromatic carbon (``C=C``) a PHENOL / enol (pKa ~10-11).  A MILD base (carbonate /
+      hydroxide / a strong amine, conjugate-acid pKa >~10) forms the carboxylate / phenoxide, so the SN2 is runnable
+      with one.
+    * ``'strong'`` -- an ALCOHOL ``O-H`` (hydroxyl on an sp3 carbon, pKa ~16) OR any oxygen this bounded read cannot
+      positively place as C/O-conjugated-acidic.  This INCLUDES a hydroxyl on a ``C=N`` carbon -- an amide's iminol
+      tautomer, an isourea / amidine O-form -- whose conjugate base is amidate-level (pKa ~17-22; O-imidate
+      alkylation needs a strong base / Meerwein salt, NOT a kitchen carbonate), so the ``C=N`` case is DELIBERATELY
+      excluded from 'mild' (the evil-morty re-review finding).  Only a STRONG base (alkoxide / hydride / amide) is
+      credited here; a mild base does NOT clear it.
+
+    The regime boundary is the hybridisation-and-partner of the HYDROXYL carbon (its bounded radius-1
+    :class:`~smartchem.radius1_environment.AtomEnvironment`): an incident order>=2 bond to ``C`` or ``O`` is acidic
+    (the pKa boundary where carbonate is competent), everything else -- sp3 (an alcohol), ``C=N``, or no readable
+    carbon -- is 'strong'.  FAIL-CLOSED to ``'strong'`` within the neutral-oxygen case: a poly-ol (ambiguous
+    nucleophile), a halogen-bearing nucleophile (the alkyl-halide reactant cannot be told apart) or any read fault
+    keeps the conservative strong-base requirement.  The relaxation to ``'mild'`` fires ONLY on a positively
+    identified C/O-conjugated acidic ``O-H``, so an alcohol is NEVER mis-cleared by a mild base -- the unsafe
+    direction is closed by construction (an sp3 carbon carries no order>=2 bond, so it can never read as acidic).
+    Returns ``None`` only for a non-two-reactant step (the caller gates on :func:`sn2_feasibility_signature` first,
+    so within a recognized neutral-oxygen SN2 the answer is always a regime)."""
+    from ..radius1_environment import AtomEnvironment
+
+    reactants = tuple(getattr(step, "reactants", ()) or ())
+    if len(reactants) != 2:
+        return None
+
+    def _has_halogen(m) -> bool:
+        try:
+            return any(e in _HALOGENS for e in dict(m.formula))
+        except Exception:
+            return True  # an unreadable formula is treated as the halide side, never the nucleophile (fail-closed)
+
+    # The nucleophile is the reactant with NO halogen (the alkyl halide carries the leaving halide). Not unique ->
+    # the nucleophile cannot be isolated by this bounded read -> conservative 'strong'.
+    nucleophiles = [m for m in reactants if not _has_halogen(m)]
+    if len(nucleophiles) != 1:
+        return "strong"
+    cidx = _neutral_hydroxyl_carbon(nucleophiles[0])
+    if cidx is None:
+        return "strong"
+    try:
+        env = AtomEnvironment.at(nucleophiles[0], cidx)
+    except Exception:
+        return "strong"
+    # ACIDIC iff the hydroxyl carbon bears an order>=2 bond to CARBON (C=C -> phenol / enol) or OXYGEN (C=O ->
+    # carboxylic / carbamic / carbonic acid). A double bond to NITROGEN (C=N -- an amide's iminol tautomer, an
+    # isourea / amidine O-form) is DELIBERATELY NOT acidic enough: its conjugate base is amidate-level (pKa ~17-22,
+    # O-imidate alkylation needs a strong base / Meerwein salt, NOT a kitchen carbonate), so it stays 'strong'
+    # (fail-closed). This is strictly narrower than ``is_saturated_carbon`` (any order>=2), closing the evil-morty
+    # C=N over-claim: the sp2 -> acidic bet is honoured only for the C/O partners where it is sound.
+    acidic = any(order >= 2 and elem in ("C", "O") for elem, order in env.star)
+    return "mild" if acidic else "strong"
+
+
 def _imine_condensation(step) -> bool:
     """Recognizer: a carbonyl + amine -> imine condensation (#119), the TWENTY-SECOND active class.
 

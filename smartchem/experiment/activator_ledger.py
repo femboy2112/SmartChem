@@ -80,6 +80,7 @@ from .reaction_type_oracle import (
     _step_equation,
     recognize_reaction_type,
     sn2_feasibility_signature,
+    sn2_oxygen_base_regime,
 )
 from .stock import case_fold_match_certifies
 
@@ -122,8 +123,18 @@ class ActivatorRole(enum.Enum):
     #: SN2 (the Williamson ether synthesis forms the alkoxide IN SITU with NaOEt / NaH). The SAME strong bases that
     #: form a carbonyl enolate form an alkoxide a fortiori (an alcohol, pKa ~16-18, is MORE acidic than an ester
     #: alpha-C-H, ~25), so the clearing whitelist is the enolizing-base set reused. Required only for the
-    #: NEUTRAL-oxygen SN2 sub-case (a salt alkoxide is already competent; a neutral amine / thiol runs base-free).
+    #: NEUTRAL-oxygen SN2 sub-case whose nucleophile is an ALCOHOL (a salt alkoxide is already competent; a neutral
+    #: amine / thiol runs base-free; an ACIDIC oxygen takes the milder sibling role below).
     DEPROTONATING_BASE = "deprotonating_base"
+
+    #: A base to deprotonate an ACIDIC oxygen nucleophile -- a carboxylic acid (pKa ~5) or a phenol / enol (pKa ~10),
+    #: an ``O-H`` on an sp2 carbon whose conjugate base is resonance-stabilised. The pKa-regime sibling of
+    #: ``DEPROTONATING_BASE`` (the sp3 ALCOHOL case, pKa ~16): because the acidic ``O-H`` is far weaker, a MILD base
+    #: (carbonate / hydroxide / a strong amine) forms the carboxylate / phenoxide, so a mild base CLEARS this -- the
+    #: carboxylate/phenoxide O-alkylation runs with K2CO3 / NaOH / Et3N. The asymmetry is load-bearing: a strong
+    #: (alkoxide/hydride/amide) base clears this a fortiori, but a mild base does NOT clear the alcohol case, so the
+    #: two requirements never collapse. Required only for the neutral-ACIDIC-oxygen SN2 sub-case (keyed on the step).
+    ACIDIC_PROTON_BASE = "acidic_proton_base"
 
 
 #: Human-readable phrase per role, for the honest blocker reason text. Each phrase carries the role's ACTIVATION
@@ -132,6 +143,7 @@ ROLE_PHRASE: dict[ActivatorRole, str] = {
     ActivatorRole.ENOLIZING_BASE: "stoichiometric enolizing base (alkoxide / metal hydride / metal amide)",
     ActivatorRole.TRANSITION_METAL_CATALYST: "transition-metal hydrogenation catalyst (Pd / Pt / Ni / Rh / Ru)",
     ActivatorRole.DEPROTONATING_BASE: "stoichiometric base to form the alkoxide nucleophile (alkoxide / metal hydride / metal amide)",
+    ActivatorRole.ACIDIC_PROTON_BASE: "stoichiometric base to deprotonate the acidic oxygen nucleophile -- a mild base suffices (carbonate / hydroxide / strong amine, or any alkoxide / hydride / amide)",
 }
 
 
@@ -149,6 +161,10 @@ _CASE_EXACT_SPELLING: dict[str, str] = {
     "pto2": "PtO2", "pd(oh)2": "Pd(OH)2",
     # multi-word catalyst names whose metal token is a formula (so the case must be certified, not defaulted)
     "raney ni": "Raney Ni", "raney-ni": "Raney-Ni", "pd black": "Pd black", "pt black": "Pt black",
+    # mild-base (acidic-oxygen clearing) tokens whose case is a formula or an acronym
+    "k2co3": "K2CO3", "cs2co3": "Cs2CO3", "na2co3": "Na2CO3", "li2co3": "Li2CO3",
+    "naoh": "NaOH", "koh": "KOH", "lioh": "LiOH", "ba(oh)2": "Ba(OH)2",
+    "k3po4": "K3PO4", "et3n": "Et3N", "dipea": "DIPEA", "dbu": "DBU", "dbn": "DBN", "tmg": "TMG",
 }
 
 #: Positive whitelist: normalized reagent names recognized as filling ``ENOLIZING_BASE``. Conservative -- every
@@ -170,6 +186,33 @@ _ENOLIZING_BASE_NAMES: frozenset[str] = frozenset({
     # NOTE: alkyllithiums (n-BuLi, s-BuLi, t-BuLi, MeLi, PhLi, ...) are deliberately NOT here -- strong but
     # NUCLEOPHILIC, they 1,2-add to the ester/ketone instead of enolizing it, so clearing on them was a false-CLEAR
     # in the module's own-named unsafe direction (d'Alembert #107 kill). The regression is locked in the tests.
+})
+
+#: Positive whitelist: normalized reagent names recognized as a MILD base competent to deprotonate an ACIDIC oxygen
+#: nucleophile to its oxy-anion for an SN2 -- a carboxylic acid (pKa ~5) or a phenol (pKa ~10). The set is the
+#: conjugate-acid-pKa >~10 bases, which deprotonate a phenol (and a carboxylic acid a fortiori); every entry is a
+#: textbook base for a carboxylate / phenoxide O-alkylation. Deliberately conservative, because a CLEAR is the unsafe
+#: direction: BICARBONATE (conjugate-acid pKa ~6.3 -- clears a carboxylic acid but NOT a phenol, and this one role
+#: serves both acidic sub-cases so it must clear the weaker-acid member) and the WEAKER amines (pyridine ~5,
+#: DABCO ~8.8, DMAP ~9.7, N-methylmorpholine ~7.4) are OMITTED -- a SAFE under-claim (a base-free such step stays
+#: REAL_BUT_HARD; a carboxylate-only clearing with bicarbonate is lost), never a false CLEAR. Crucially these do NOT
+#: appear in :data:`_ENOLIZING_BASE_NAMES`, so a mild base can never clear the sp3-ALCOHOL ``DEPROTONATING_BASE``
+#: requirement (an alcohol, pKa ~16, needs the strong alkoxide/hydride/amide base) -- the pKa asymmetry that keeps
+#: the relaxation sound. Grounded in reagent IDENTITY, exact-match, case-certified like the enolizing bases.
+_ACIDIC_OXYGEN_BASE_NAMES: frozenset[str] = frozenset({
+    # carbonates
+    "k2co3", "potassium carbonate", "cs2co3", "cesium carbonate", "caesium carbonate",
+    "na2co3", "sodium carbonate", "li2co3", "lithium carbonate",
+    # hydroxides
+    "naoh", "sodium hydroxide", "koh", "potassium hydroxide", "lioh", "lithium hydroxide",
+    "ba(oh)2", "barium hydroxide",
+    # phosphate
+    "k3po4", "potassium phosphate", "tripotassium phosphate",
+    # strong tertiary-amine / amidine / guanidine bases (conjugate-acid pKa >~10.5)
+    "et3n", "triethylamine", "dipea", "diisopropylethylamine", "n,n-diisopropylethylamine",
+    "n-ethyl-n,n-diisopropylamine", "hunig's base", "hunigs base", "hünig's base",
+    "dbu", "1,8-diazabicyclo[5.4.0]undec-7-ene", "dbn", "1,5-diazabicyclo[4.3.0]non-5-ene",
+    "tmg", "tetramethylguanidine", "1,1,3,3-tetramethylguanidine",
 })
 
 #: Positive whitelist: normalized reagent names recognized as filling ``TRANSITION_METAL_CATALYST`` -- the
@@ -203,6 +246,11 @@ _ROLE_NAMES: dict[ActivatorRole, frozenset[str]] = {
     # re-listed, so the two sets never drift. Conservative: weaker bases (hydroxide/carbonate) are omitted -- a
     # SAFE false-EXCLUDE, never a false CLEAR.
     ActivatorRole.DEPROTONATING_BASE: _ENOLIZING_BASE_NAMES,
+    # The ACIDIC-oxygen SN2 (carboxylic acid / phenol) clears with a MILD base; the STRONG enolizing/alkoxide bases
+    # clear it a fortiori, so the clearing set is the mild whitelist UNION the strong set. The reverse does NOT hold
+    # (a mild base is absent from _ENOLIZING_BASE_NAMES, so it cannot clear the sp3-ALCOHOL DEPROTONATING_BASE
+    # requirement) -- the pKa asymmetry that makes the relaxation safe in the unsafe (clear) direction.
+    ActivatorRole.ACIDIC_PROTON_BASE: _ACIDIC_OXYGEN_BASE_NAMES | _ENOLIZING_BASE_NAMES,
 }
 
 
@@ -254,14 +302,22 @@ def _conditional_required_roles(step, reaction_class: str | None) -> frozenset[A
     for a sub-population of the class, not universally, so they do not belong in the class-keyed
     :data:`REQUIRED_ACTIVATORS` (a blanket entry there would false-EXCLUDE the rest of the class).
 
-    Today exactly one: an SN2 whose nucleophile is a NEUTRAL (protonated) OXYGEN nucleophile -- an alcohol
-    ``R-O-H`` (coproduct ``H-X``). Its competent nucleophile, the alkoxide, does NOT exist until a stoichiometric
-    base forms it in situ, so the bare ``R-O-H + R'-X`` mixture is not kitchen-runnable (the Williamson ether
-    synthesis's defining need). This is the Claisen situation (a non-reactant base forms the nucleophile), NOT the
-    salt/amine one. Excluded, each a CONSCIOUS boundary (an adversarial re-review set them): a metal-SALT
-    oxy-nucleophile (``signature.is_neutral == False``) is already deprotonated and competent; a neutral AMINE
-    (N) is itself a competent nucleophile and runs base-free; a neutral THIOL (S) is nucleophilic enough to react
-    base-free, so demoting it would false-EXCLUDE real chemistry. Fail-closed: any fault -> empty."""
+    Today exactly one class: an SN2 whose nucleophile is a NEUTRAL (protonated) OXYGEN nucleophile (coproduct
+    ``H-X``). Its competent nucleophile, the oxy-ANION, does NOT exist until a stoichiometric base forms it in situ,
+    so the bare ``R-O-H + R'-X`` mixture is not kitchen-runnable -- but which STRENGTH of base is the defining need
+    depends on the oxygen's pKa, so the requirement splits by :func:`sn2_oxygen_base_regime`:
+
+    * an ALCOHOL ``R-O-H`` (hydroxyl on an sp3 carbon, pKa ~16) needs a STRONG base to form the alkoxide -- the
+      Williamson situation, like the Claisen (a non-reactant base forms the nucleophile): ``DEPROTONATING_BASE``;
+    * an ACIDIC oxygen -- a carboxylic acid (pKa ~5) or a phenol / enol (pKa ~10), hydroxyl on an sp2 carbon -- needs
+      only a MILD base to form the carboxylate / phenoxide (the K2CO3 / NaOH / Et3N ester- and aryl-ether syntheses):
+      the milder ``ACIDIC_PROTON_BASE`` (still a requirement, so a base-free such step is still demoted REAL_BUT_HARD;
+      only the clearing set is wider). Fail-closed: an unclassifiable oxygen takes the conservative strong requirement.
+
+    Excluded, each a CONSCIOUS boundary (an adversarial re-review set them): a metal-SALT oxy-nucleophile
+    (``signature.is_neutral == False``) is already deprotonated and competent; a neutral AMINE (N) is itself a
+    competent nucleophile and runs base-free; a neutral THIOL (S) is nucleophilic enough to react base-free, so
+    demoting it would false-EXCLUDE real chemistry. Fail-closed: any fault -> empty."""
     if not reaction_class or "SN2 substitution" not in reaction_class:
         return frozenset()
     try:
@@ -269,6 +325,12 @@ def _conditional_required_roles(step, reaction_class: str | None) -> frozenset[A
     except Exception:
         return frozenset()
     if signature is not None and signature[0] == "O" and signature[1]:
+        try:
+            regime = sn2_oxygen_base_regime(step)
+        except Exception:
+            regime = "strong"  # fail-closed to the conservative strong-base requirement
+        if regime == "mild":
+            return frozenset({ActivatorRole.ACIDIC_PROTON_BASE})
         return frozenset({ActivatorRole.DEPROTONATING_BASE})
     return frozenset()
 
@@ -351,9 +413,15 @@ def route_activator_blockers(route) -> tuple[str, ...]:
 #:     stoichiometric base (NaOEt / NaH). That is the Claisen situation, not the salt one. So SN2 takes a
 #:     CONDITIONAL requirement via :func:`_conditional_required_roles` (keyed on the step's nucleophile, NOT a
 #:     class-keyed REQUIRED_ACTIVATORS entry that would false-EXCLUDE the rest of the class): a neutral-oxygen SN2
-#:     with no declared base demotes to REAL_BUT_HARD (DEPROTONATING_BASE), recoverable. No requirement for a
-#:     metal-SALT oxy-nucleophile (already deprotonated), a neutral AMINE (competent base-free), or a neutral
-#:     THIOL (nucleophilic enough base-free -- demoting it would false-EXCLUDE real chemistry).
+#:     with no declared base demotes to REAL_BUT_HARD, recoverable. The base STRENGTH is pKa-regime-aware
+#:     (:func:`sn2_oxygen_base_regime`): an ALCOHOL (sp3 ``C-O-H``, pKa ~16) needs a STRONG base
+#:     (DEPROTONATING_BASE, cleared by the alkoxide/hydride/amide set); an ACIDIC oxygen -- a carboxylic acid
+#:     (pKa ~5) or a phenol/enol (pKa ~10), an sp2 ``C-O-H`` -- needs only a MILD base (ACIDIC_PROTON_BASE, cleared
+#:     by carbonate/hydroxide/strong-amine, or any strong base a fortiori). The split closes a SAFE under-claim
+#:     evil-morty found (acidic-O routes were being forced onto a strong base) without ever letting a mild base
+#:     clear the alcohol case -- the pKa asymmetry is load-bearing. No requirement for a metal-SALT oxy-nucleophile
+#:     (already deprotonated), a neutral AMINE (competent base-free), or a neutral THIOL (nucleophilic enough
+#:     base-free -- demoting it would false-EXCLUDE real chemistry).
 #:   * ``imine condensation``: a dehydrative carbonyl + amine condensation (coproduct water). A Bronsted acid
 #:     ACCELERATES the dehydration but is not a feasibility gate -- the reaction reaches equilibrium uncatalysed,
 #:     driven by water removal -- so it sits in the SAME self-acidic condensation population as the acyl / ether /

@@ -9,7 +9,8 @@ The soundness law under test (mirrors the module docstring):
     NONE, so paracetamol-via-Ac2O and the esterification flagships are NOT false-EXCLUDEd;
   * silence resolved toward the capability model -> catalysts==() does NOT clear a class-level requirement;
   * conservative role whitelist -> a base too weak to enolize an ester alpha-C (hydroxide/carbonate/amine) does NOT
-    clear the requirement (over-recognizing a base is the unsafe direction);
+    clear the ENOLIZING requirement (over-recognizing a base is the unsafe direction) -- though such a mild base DOES
+    clear the separate, pKa-regime-aware ACIDIC_PROTON_BASE requirement of a carboxylic-acid / phenol SN2 (1.5);
   * content-determinism preserved -> the check reads the ENVELOPE, never the conserved molecules or reaction_center.
 """
 from __future__ import annotations
@@ -28,7 +29,11 @@ from smartchem.experiment.activator_ledger import (
     route_activator_blockers,
     step_activator_blockers,
 )
-from smartchem.experiment.reaction_type_oracle import _RECOGNIZERS, recognize_reaction_type
+from smartchem.experiment.reaction_type_oracle import (
+    _RECOGNIZERS,
+    recognize_reaction_type,
+    sn2_oxygen_base_regime,
+)
 from smartchem.experiment.step import ExperimentStep
 from smartchem.smiles import parse_smiles
 
@@ -113,15 +118,34 @@ _FILLS_ENOLIZING_BASE = [
     "sodium amide", "NaNH2", "LiHMDS", "LiTMP", "KDA",
 ]
 
-#: must NOT fill ENOLIZING_BASE. Weak bases (cannot reliably enolize an ester alpha-C), NUCLEOPHILIC organometallics
-#: (strong but 1,2-add to the carbonyl rather than enolize it -- the d'Alembert #107 kill), non-bases, and junk.
-_MUST_NOT_FILL = [
+#: must NEVER fill ENOLIZING_BASE (the invariant unchanged by the 1.5 acidic-oxygen refinement). Weak/mild bases
+#: (cannot reliably enolize an ester alpha-C), NUCLEOPHILIC organometallics (strong but 1,2-add to the carbonyl
+#: rather than enolize it -- the d'Alembert #107 kill), non-bases, and junk. A mild base added for the acidic-oxygen
+#: SN2 (NaOH / K2CO3 / Et3N) fills the SEPARATE ACIDIC_PROTON_BASE role -- which is exactly why it must NOT leak into
+#: the enolizing role (that would re-open the Claisen false-CLEAR).
+_MUST_NOT_FILL_ENOLIZING = [
     "NaOH", "KOH", "sodium hydroxide", "Na2CO3", "K2CO3", "NaHCO3", "sodium bicarbonate",
     "pyridine", "triethylamine", "Et3N", "DBU", "ammonia", "sodium acetate", "water", "acetic acid",
     "sulfuric acid", "base-free", "", "   ",
-    # strong-but-nucleophilic organometallics: never used to enolize an ester/ketone -> must NOT clear
     "n-BuLi", "s-BuLi", "t-BuLi", "tert-butyllithium", "sec-butyllithium", "MeLi", "methyllithium",
     "PhLi", "phenyllithium", "EtMgBr", "ethylmagnesium bromide",
+]
+
+#: fill the ACIDIC_PROTON_BASE role (a mild base competent to deprotonate a carboxylic acid / phenol for an SN2) --
+#: AND must NOT fill ENOLIZING_BASE (they cannot enolize an ester). The new 1.5 capability.
+_FILLS_ACIDIC_PROTON_BASE = [
+    "K2CO3", "potassium carbonate", "Cs2CO3", "cesium carbonate", "Na2CO3", "sodium carbonate",
+    "NaOH", "sodium hydroxide", "KOH", "LiOH", "K3PO4", "potassium phosphate",
+    "Et3N", "triethylamine", "DIPEA", "diisopropylethylamine", "DBU", "TMG",
+]
+
+#: must fill NO activator role at all -- non-bases, junk, nucleophilic organometallics, AND the deliberately-omitted
+#: WEAK bases that are too weak to deprotonate a phenol (bicarbonate pKaH ~6.3, pyridine ~5): the conservative
+#: boundary of the acidic-oxygen clearing set (a SAFE under-claim). An entry here fills neither role -> clears nothing.
+_FILLS_NO_ROLE_AT_ALL = [
+    "NaHCO3", "sodium bicarbonate", "pyridine", "ammonia", "sodium acetate", "water", "acetic acid",
+    "sulfuric acid", "base-free", "", "   ",
+    "n-BuLi", "t-BuLi", "tert-butyllithium", "MeLi", "methyllithium", "PhLi", "EtMgBr", "ethylmagnesium bromide",
 ]
 
 
@@ -130,8 +154,20 @@ def test_recognized_enolizing_bases_fill_the_role(name):
     assert ActivatorRole.ENOLIZING_BASE in classify_activator_roles(name)
 
 
-@pytest.mark.parametrize("name", _MUST_NOT_FILL)
-def test_weak_or_nonbase_or_junk_fills_no_role(name):
+@pytest.mark.parametrize("name", _MUST_NOT_FILL_ENOLIZING)
+def test_weak_or_nonbase_or_junk_never_fills_the_enolizing_role(name):
+    assert ActivatorRole.ENOLIZING_BASE not in classify_activator_roles(name)
+
+
+@pytest.mark.parametrize("name", _FILLS_ACIDIC_PROTON_BASE)
+def test_mild_bases_fill_the_acidic_proton_role_only(name):
+    roles = classify_activator_roles(name)
+    assert ActivatorRole.ACIDIC_PROTON_BASE in roles, f"{name!r} should fill ACIDIC_PROTON_BASE"
+    assert ActivatorRole.ENOLIZING_BASE not in roles, f"{name!r} must NOT leak into ENOLIZING_BASE"
+
+
+@pytest.mark.parametrize("name", _FILLS_NO_ROLE_AT_ALL)
+def test_nonbase_junk_and_too_weak_bases_fill_no_role(name):
     assert classify_activator_roles(name) == frozenset()
 
 
@@ -190,10 +226,11 @@ def test_non_string_fills_no_role_fail_closed(bad):
 
 
 def test_case_ambiguous_token_does_not_clear():
-    # Na2CO3 (carbonate) is not a base in the whitelist at all; but the case guard must also refuse a token whose
-    # alternate case reading is a DIFFERENT species. "na2co3" never clears regardless (double safety).
-    assert classify_activator_roles("na2co3") == frozenset()
-    assert classify_activator_roles("Na2CO3") == frozenset()
+    # Na2CO3 (sodium carbonate) IS a mild base in the acidic-oxygen whitelist (1.5), so the HONEST spelling clears;
+    # but the all-lowercase "na2co3" is case-ambiguous (it could read as the cobalt salt Na2Co3), so the case guard
+    # refuses it -- the whole point of case-certification applied to a name that IS in the whitelist.
+    assert ActivatorRole.ACIDIC_PROTON_BASE in classify_activator_roles("Na2CO3")  # honest spelling certifies
+    assert classify_activator_roles("na2co3") == frozenset()  # ambiguous case -> refused (could be Na2Co3)
 
 
 # --------------------------------------------------------------------------- step-level demotion
@@ -341,3 +378,94 @@ def test_deprotonating_base_role_whitelist():
 def test_sn2_requirement_is_conditional_not_class_keyed():
     # a blanket REQUIRED_ACTIVATORS entry would false-EXCLUDE the salt/amine/thiol sub-populations.
     assert not any("SN2" in k for k in REQUIRED_ACTIVATORS)
+
+
+# -- #112 SN2 pKa-regime refinement (1.5 consolidation; closes the evil-morty acidic-oxygen SAFE under-claim).
+# The neutral-oxygen SN2 base requirement is split by the nucleophile's pKa regime (sn2_oxygen_base_regime): an
+# ALCOHOL (sp3 C-O-H, pKa ~16) needs a STRONG base; an ACIDIC oxygen -- a carboxylic acid (pKa ~5) or a phenol
+# (pKa ~10), sp2 C-O-H -- needs only a MILD base. The load-bearing asymmetry: a mild base clears the acidic case but
+# NEVER the alcohol case (the unsafe direction stays closed).
+def _sn2_carboxylic_acid(catalysts=None):
+    # AcOH + EtBr -> ethyl acetate + HBr: a neutral OXYGEN nucleophile whose O-H is a carboxylic acid (pKa ~5).
+    return _step(("CCBr", "CC(=O)O"), ("CC(=O)OCC", "Br"), catalysts=catalysts)
+
+
+def _sn2_phenol(catalysts=None):
+    # PhOH + MeBr -> anisole + HBr: a neutral OXYGEN nucleophile whose O-H is a phenol (pKa ~10).
+    return _step(("CBr", "Oc1ccccc1"), ("COc1ccccc1", "Br"), catalysts=catalysts)
+
+
+@pytest.mark.parametrize("stepf", [_sn2_carboxylic_acid, _sn2_phenol], ids=["carboxylic-acid", "phenol"])
+def test_acidic_oxygen_sn2_recognition_is_untouched(stepf):
+    assert SN2 in recognize_reaction_type(stepf())  # Problem A unchanged -- still a vouched SN2
+
+
+@pytest.mark.parametrize("stepf", [_sn2_carboxylic_acid, _sn2_phenol], ids=["carboxylic-acid", "phenol"])
+def test_acidic_oxygen_sn2_without_a_base_is_demoted(stepf):
+    reasons = step_activator_blockers(stepf())
+    assert len(reasons) == 1 and "activator not declared" in reasons[0] and "acidic oxygen" in reasons[0]
+
+
+@pytest.mark.parametrize("stepf", [_sn2_carboxylic_acid, _sn2_phenol], ids=["carboxylic-acid", "phenol"])
+@pytest.mark.parametrize("mild", ["K2CO3", "potassium carbonate", "Cs2CO3", "NaOH", "sodium hydroxide",
+                                  "K3PO4", "Et3N", "triethylamine", "DIPEA", "DBU"])
+def test_acidic_oxygen_sn2_clears_with_a_mild_base(stepf, mild):
+    assert step_activator_blockers(stepf(catalysts=(mild,))) == ()  # a mild base forms the carboxylate/phenoxide
+
+
+@pytest.mark.parametrize("stepf", [_sn2_carboxylic_acid, _sn2_phenol], ids=["carboxylic-acid", "phenol"])
+@pytest.mark.parametrize("strong", ["NaOEt", "NaH", "LDA"])
+def test_acidic_oxygen_sn2_clears_with_a_strong_base_a_fortiori(stepf, strong):
+    assert step_activator_blockers(stepf(catalysts=(strong,))) == ()  # a strong base clears it too
+
+
+@pytest.mark.parametrize("stepf", [_sn2_carboxylic_acid, _sn2_phenol], ids=["carboxylic-acid", "phenol"])
+@pytest.mark.parametrize("tooweak", ["NaHCO3", "sodium bicarbonate", "pyridine", "water", "acetic acid"])
+def test_acidic_oxygen_sn2_stays_demoted_with_a_too_weak_or_nonbase(stepf, tooweak):
+    # conservative clearing set: bicarbonate (too weak for a phenol) and non-bases do NOT clear -- a SAFE under-claim.
+    assert len(step_activator_blockers(stepf(catalysts=(tooweak,)))) == 1
+
+
+# THE load-bearing safety regression: a MILD base must NEVER clear the sp3-ALCOHOL SN2 (it cannot form the alkoxide).
+@pytest.mark.parametrize("mild", ["K2CO3", "potassium carbonate", "NaOH", "sodium hydroxide", "Et3N", "DBU", "DIPEA"])
+def test_alcohol_sn2_is_NOT_cleared_by_a_mild_base(mild):
+    reasons = step_activator_blockers(_sn2_neutral_alcohol(catalysts=(mild,)))
+    assert len(reasons) == 1 and "alkoxide" in reasons[0]  # still the STRONG (alkoxide) requirement, unmet
+
+
+def test_acidic_proton_base_role_whitelist():
+    assert ActivatorRole.ACIDIC_PROTON_BASE in classify_activator_roles("K2CO3")
+    assert ActivatorRole.ACIDIC_PROTON_BASE in classify_activator_roles("Et3N")
+    assert ActivatorRole.ACIDIC_PROTON_BASE in classify_activator_roles("NaOEt")  # a strong base clears it a fortiori
+    assert ActivatorRole.ACIDIC_PROTON_BASE not in classify_activator_roles("NaHCO3")  # too weak -> no role
+    assert ActivatorRole.ACIDIC_PROTON_BASE not in classify_activator_roles("water")
+
+
+@pytest.mark.parametrize("stepf,expected", [
+    (_sn2_carboxylic_acid, "mild"),
+    (_sn2_phenol, "mild"),
+    (_sn2_neutral_alcohol, "strong"),
+])
+def test_oxygen_base_regime_classifier(stepf, expected):
+    assert sn2_oxygen_base_regime(stepf()) == expected
+
+
+def test_benzyl_alcohol_sn2_is_strong_regime_not_fooled_by_the_ring():
+    # benzyl alcohol's O-H is on an sp3 CH2 (pKa ~15), NOT the aromatic ring: the regime keys on the HYDROXYL
+    # carbon's own hybridisation, so an aromatic ring elsewhere in the molecule does not relax it to 'mild'.
+    step = _step(("CBr", "OCc1ccccc1"), ("COCc1ccccc1", "Br"))
+    assert sn2_oxygen_base_regime(step) == "strong"
+    assert len(step_activator_blockers(step)) == 1 and "alkoxide" in step_activator_blockers(step)[0]
+
+
+def test_iminol_cn_hydroxyl_is_strong_not_cleared_by_a_mild_base():
+    # evil-morty re-review finding: a hydroxyl on a C=N carbon (an amide's iminol tautomer -- N-methylacetimidic
+    # acid, the iminol of N-methylacetamide) is NOT carbonate-acidic (amidate pKa ~17-22; O-imidate alkylation needs
+    # a strong base / Meerwein salt). The C=N partner is excluded from 'mild', so it keeps the STRONG requirement and
+    # a mild base must NOT clear it (closing the false-CLEAR); a strong base still clears it (recoverable).
+    step = _step(("CCBr", "CC(O)=NC"), ("CCOC(C)=NC", "Br"))
+    assert SN2 in recognize_reaction_type(step)  # it DOES vouch as an SN2 (recognition untouched)
+    assert sn2_oxygen_base_regime(step) == "strong"
+    assert len(step_activator_blockers(step)) == 1  # baseless -> demoted
+    assert len(step_activator_blockers(_step(("CCBr", "CC(O)=NC"), ("CCOC(C)=NC", "Br"), catalysts=("K2CO3",)))) == 1
+    assert step_activator_blockers(_step(("CCBr", "CC(O)=NC"), ("CCOC(C)=NC", "Br"), catalysts=("NaH",))) == ()

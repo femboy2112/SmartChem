@@ -55,10 +55,42 @@ Re-reviewed the two new-since-seal classes against the guard's question ("does a
 stoichiometric activator / catalyst that would otherwise read as kitchen-runnable with nothing declared?"). Both
 given **NO** `REQUIRED_ACTIVATORS` entry, reasoning recorded in the ledger:
 
-- **SN2 (#112) → no entry.** The recognized subset is `R-X + Nu-M → R-Nu + M-X` with the nucleophile carried as a
-  *declared reactant* in its reactive form (alkoxide/thiolate/amine; counterion explicit). The activation is
-  already in the conserved stoichiometry — unlike the Claisen enolate, no base forms the nucleophile *in situ* from
-  a non-reactant — and no catalyst is universal. An entry would false-EXCLUDE the Williamson ether synthesis.
+- **SN2 (#112) → CONDITIONAL requirement (revised after adversarial re-review).** An initial "no entry" was
+  **killed** by the consolidated hostile sweep (evil-morty): the recognizer vouches both a salt nucleophile
+  (`R-Nu-M`) *and* a NEUTRAL protonated one (`R-Nu-H`, coproduct H-X), and a neutral **oxygen** nucleophile (an
+  alcohol `R-O-H`) is not a competent SN2 nucleophile — `EtOH + EtBr` bare gives no ether; the Williamson synthesis
+  forms the alkoxide *in situ* with a stoichiometric base. That cleared as kitchen-runnable = a capability
+  over-claim (a cross-fork interaction: SN2 #112 × the ledger #107, new at the merge). **Fixed** (feasibility layer
+  only; recognition/type-validity untouched): `_conditional_required_roles` demotes a neutral-oxygen-nucleophile
+  SN2 with no declared base to `REAL_BUT_HARD`, recoverable by declaring the base — keyed on the step's nucleophile,
+  not a blanket class entry. Conscious boundaries (adversary-set): a metal-salt oxy-nucleophile (already
+  deprotonated), a neutral **amine** (competent base-free), and a neutral **thiol** (reacts base-free — demoting
+  would false-EXCLUDE) get no requirement. A re-attack of the fix confirmed no over-claim remains, no recognition
+  regression, and no false-EXCLUDE of the salt/amine/thiol cases.
+  - *pKa-regime-aware base strength (refinement implemented, not deferred).* The required base STRENGTH now depends
+    on the oxygen's pKa, read from the **hydroxyl carbon's own radius-1 environment** by `sn2_oxygen_base_regime`:
+    an **alcohol** (`O-H` on an sp3 carbon, pKa ~16) needs a **strong** base → `DEPROTONATING_BASE` (cleared by the
+    alkoxide/hydride/amide set only); an **acidic** oxygen — a **carboxylic acid** (`C=O`, pKa ~5) or a
+    **phenol/enol** (`C=C`, pKa ~10) — needs only a **mild** base → the new `ACIDIC_PROTON_BASE` (cleared by
+    carbonate/hydroxide/strong-amine, or any strong base a fortiori). This closes the former safe under-claim
+    (carboxylate/phenoxide O-alkylation with K₂CO₃/NaOH/Et₃N is the textbook reagent and now clears) while the pKa
+    **asymmetry is load-bearing**: mild-base names are absent from the strong (`_ENOLIZING_BASE_NAMES`) set, so a
+    mild base can never clear the alcohol case — an alcohol is never mis-cleared (the unsafe direction is closed by
+    construction, since an sp3 carbon carries no order≥2 bond).
+  - *Adversarial re-attack of the refinement (evil-morty).* The headline unsafe-direction claim held under attack
+    (no sp3 alcohol, however decorated — benzylic / allylic / β-carbonyl / fluorinated — ever reads `mild`;
+    nucleophile-identification cannot be gamed; no role leak into the Claisen enolizing or the alcohol strong
+    requirement). It proved **one** real over-claim: a hydroxyl on a **`C=N`** carbon (an amide's **iminol**
+    tautomer, an **isourea/amidine** O-form) is *amidate*-level (pKa ~17–22, O-imidate alkylation needs a strong
+    base / Meerwein salt, not carbonate), yet the first cut's blanket "any sp2 ⇒ mild" cleared it with K₂CO₃.
+    **Fixed**: `mild` now fires only when the hydroxyl carbon's order≥2 partner is **C or O** (phenol/enol or
+    carboxyl); a **`C=N`** partner is excluded → `strong` (fail-closed). Regression locked.
+  - *Residual conservative boundaries (all safe direction, documented).* A poly-ol (ambiguous nucleophile), a
+    halogen-bearing nucleophile (the alkyl-halide reactant cannot be told apart), and a `C=N` hydroxyl all
+    fail-closed to `strong`; **bicarbonate** and weak amines (pyridine/DABCO) are omitted from the mild set (too
+    weak for a phenol — carboxylate-only clearing with bicarbonate is lost). Each is a capability *under*-claim
+    (recoverable with a strong base), never a false-VOUCH. The whole gate remains latent on the default route
+    search (SN2 has no default generator), so neither direction is reachable there.
 - **imine (#119) → no entry.** A dehydrative carbonyl+amine condensation (coproduct water). A Brønsted acid
   *accelerates* dehydration but is not a feasibility gate (the reaction reaches equilibrium uncatalysed, driven by
   water removal) — the same self-acidic condensation population as the acyl / ether / oxoacid classes that get no
@@ -90,7 +122,7 @@ verdict word, route digest or readiness/capability semantic moved.
 
 | # | gate | status |
 |---|---|---|
-| 1 | No demonstrated false-VOUCH on the standing corpus + every new rule's hostile controls | per-fork adversarial corpora retained (evil-morty + d'Alembert, run separately from acceptance); consolidated hostile-control sweep pending on the final SHA |
+| 1 | No demonstrated false-VOUCH on the standing corpus + every new rule's hostile controls | **MET** — per-fork adversarial corpora retained; the consolidated hostile sweep found ONE cross-fork capability over-claim (neutral-alcohol SN2 reading kitchen-runnable), **fixed** and re-attack-confirmed. The prior safe-direction under-claim (acidic-O mild-base recovery) is now **implemented** as a pKa-regime-aware base-strength gate (§3); a second evil-morty re-attack held the unsafe direction and found+**fixed** one further over-claim (a `C=N` iminol hydroxyl reading mild — now excluded → strong). Remaining residuals are all SAFE-direction under-claims (bicarbonate/poly-ol/halo-nucleophile/`C=N` → conservative strong, §3), documented. No false-VOUCH remains. |
 | 2 | Version-boundary discipline: every semantic move since 1.0 classified; version-independent golden green; no undeclared promotion | **MET** — §4/§5 above; golden NO DRIFT; cli-json diff version-bound-only |
 | 3 | Workbench threat model (UNATTESTED≠COMPLETE; names from oracle not caller; bounded renderer; runs without RDKit/PySCF) | inherited from 1.1; unchanged by this integration |
 | 4 | Fail-closed everywhere (unread demand→UNKNOWN; finer identity refuses, never wrong-isomer) | inherited; the ledger + oracle are pure demoters by construction |

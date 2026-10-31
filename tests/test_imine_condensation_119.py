@@ -216,8 +216,8 @@ def test_enumerate_on_a_molecule_with_no_cn_is_empty_and_complete():
 
 
 # -- obligation 9: compatibility / version-differential -------------------------------------------------------
-def test_recognizer_count_is_twentytwo():
-    assert len(_RECOGNIZERS) == 22
+def test_recognizer_count_is_twenty_four():
+    assert len(_RECOGNIZERS) == 24  # 1.5 consolidation: base 20 + hydrogenation + oxoacid ester + SN2 + imine
 
 
 def test_registry_digest_moves_when_the_imine_provider_is_added():

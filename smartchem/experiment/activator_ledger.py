@@ -298,6 +298,19 @@ def route_activator_blockers(route) -> tuple[str, ...]:
 #:   * ``oxoacid ester condensation``: a dehydrative esterification of an oxoacid (nitric / phosphoric). Self-acidic
 #:     like the acyl / ether condensations -- NO stoichiometric activator or catalyst is universally required, so
 #:     NO entry (fabricating one from analogy is the banned move; feasibility stays the deferred Problem B UNKNOWN).
+#:
+#: 1.5 consolidation re-review (24 classes): the integration merged #112 SN2 substitution and #119 imine
+#: condensation on top of the 22. Both reviewed against the guard's question and given NO entry:
+#:   * ``SN2 substitution``: the recognized subset is ``R-X + Nu-M -> R-Nu + M-X`` with the nucleophile carried as
+#:     a DECLARED reactant in its reactive form (alkoxide / thiolate / amine; the counterion M is explicit). The
+#:     activation is already in the conserved stoichiometry -- unlike the Claisen enolate, no base forms the
+#:     nucleophile IN SITU from a non-reactant -- and no catalyst is universally required. Demanding one would
+#:     false-EXCLUDE the Williamson ether synthesis (NaOEt + R-X declared). NO entry.
+#:   * ``imine condensation``: a dehydrative carbonyl + amine condensation (coproduct water). A Bronsted acid
+#:     ACCELERATES the dehydration but is not a feasibility gate -- the reaction reaches equilibrium uncatalysed,
+#:     driven by water removal -- so it sits in the SAME self-acidic condensation population as the acyl / ether /
+#:     oxoacid ester classes that get no entry. A BRONSTED_ACID requirement here is precisely the banned base-rate
+#:     trap (acid-catalysed in the literature, run catalyst-free in the records). NO entry.
 REQUIRED_ACTIVATORS: dict[str, frozenset[ActivatorRole]] = {
     "Claisen condensation (ester/ketone + ester/carbonate -> 1,3-dicarbonyl + alcohol)": frozenset(
         {ActivatorRole.ENOLIZING_BASE}
@@ -328,14 +341,15 @@ _assert_ledger_keys_are_live_classes()
 #: (sha256 of the sorted display names, first 16 hex; the count is carried for a legible failure message). The
 #: rename guard above protects the PAST (a key that vanished); THIS protects the FUTURE (a class that APPEARED).
 #: The base-rate argument -- "among the recognized classes, the Claisen condensation needs a stoichiometric
-#: enolizing base and the hydrogenation needs a transition-metal catalyst" -- is a SNAPSHOT over exactly these 22
-#: classes (Mega-Round XI re-review: +hydrogenation {TRANSITION_METAL_CATALYST}, +oxoacid ester {none}; see the
-#: ledger table). The audit roadmap still plans aldol / Knoevenagel / Michael (enolizing base) and the metal
+#: enolizing base and the hydrogenation needs a transition-metal catalyst" -- is a SNAPSHOT over exactly these 24
+#: classes (Mega-Round XI: +hydrogenation {TRANSITION_METAL_CATALYST}, +oxoacid ester {none}; 1.5 consolidation:
+#: +SN2 {none}, +imine condensation {none}; see the ledger table). The audit roadmap still plans aldol /
+#: Knoevenagel / Michael (enolizing base) and the metal
 #: cross-couplings (catalyst): each WOULD need an entry when its recognizer lands, and a forgotten one is a
 #: false-VOUCH on growth. If any recognizer is added / removed / renamed, this digest moves and import fails LOUD,
 #: forcing a ledger re-decision rather than a silent gap.
-_REVIEWED_CLASS_COUNT = 22
-_REVIEWED_REGISTRY_DIGEST = "2a3bc34443129ff2"
+_REVIEWED_CLASS_COUNT = 24
+_REVIEWED_REGISTRY_DIGEST = "0dfb95140ad927ef"
 
 
 def _assert_registry_unchanged_since_ledger_review() -> None:

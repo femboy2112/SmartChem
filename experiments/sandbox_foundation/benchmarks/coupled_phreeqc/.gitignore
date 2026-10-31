@@ -1,0 +1,3 @@
+*.sel
+phreeqc_results.json
+__pycache__/

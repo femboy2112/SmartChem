@@ -27,8 +27,10 @@ from smartchem.intramolecular_condensation import (
     LACTONIZATION_CLASS,
     IntramolecularCondensationEdge,
     IntramolecularCondensationError,
+    LactonizationEnumeration,
     _WATER,
     retro_lactonization_edges,
+    retro_lactonization_enumeration,
 )
 from smartchem.smiles import parse_smiles
 
@@ -151,3 +153,60 @@ def test_generated_step_conserves_and_round_trips_through_the_certificate():
     # the edge's own equation names the synthesis direction precursor -> target + water
     (edge,) = retro_lactonization_edges(GBL)
     assert "->" in edge.equation() and "H2O" in repr(edge.reagents[0].formula) or edge.reagents == (_WATER,)
+
+
+# ------------------------------------------------------------------- OPERATION XIII section 9: enumeration exhaustiveness
+GLYCOLIDE = parse_smiles("O=C1OCC(=O)OC1")   # a DILACTONE: two in-ring ester sites (symmetric -> one deduped edge)
+
+
+def test_enumeration_reports_exhaustive_for_a_normal_lactone():
+    e = retro_lactonization_enumeration(GBL)
+    assert isinstance(e, LactonizationEnumeration)
+    assert e.exhaustive is True
+    assert e.sites_total == e.sites_examined >= 1
+    # the edge tuple matches the backward-compatible helper exactly.
+    assert e.edges == retro_lactonization_edges(GBL)
+
+
+def test_a_truncating_budget_is_reported_not_exhaustive():
+    """Glycolide has TWO candidate ring-ester sites.  budget=1 scans only one, so the enumeration is NOT exhaustive
+    and its edge set is a LOWER BOUND -- the record says so (the section-9 interface debt discharged), rather than
+    letting a truncated scan masquerade as complete."""
+    full = retro_lactonization_enumeration(GLYCOLIDE)
+    assert full.sites_total == 2 and full.exhaustive is True
+    cut = retro_lactonization_enumeration(GLYCOLIDE, budget=1)
+    assert cut.exhaustive is False
+    assert cut.sites_examined == 1 and cut.sites_total == 2
+    assert len(cut.edges) <= len(full.edges)   # a lower bound, never more than the exhaustive set
+
+
+def test_empty_results_are_vacuously_exhaustive():
+    # a charged target and an acyclic ester both yield no candidate sites -> empty AND exhaustive (nothing to miss).
+    from smartchem.category import Molecule
+    charged = Molecule(GBL.atoms, GBL.bonds, charge=-1)
+    for e in (retro_lactonization_enumeration(charged),
+              retro_lactonization_enumeration(parse_smiles("CC(=O)OC"))):   # methyl acetate (acyclic)
+        assert e.edges == () and e.exhaustive is True and e.sites_total == 0
+
+
+def test_budget_must_be_a_positive_int():
+    for bad in (0, -1):
+        with pytest.raises(IntramolecularCondensationError):
+            retro_lactonization_enumeration(GBL, budget=bad)
+
+
+def test_exhaustive_flag_invariant_is_guarded():
+    # the record cannot be constructed with a flag that contradicts the site counts (checks-derived-from-subject trap
+    # avoided: the flag is a real statement about coverage, enforced at construction).
+    with pytest.raises(IntramolecularCondensationError):
+        LactonizationEnumeration(edges=(), exhaustive=True, sites_total=2, sites_examined=1, budget=1)
+    # the consistent record is accepted.
+    ok = LactonizationEnumeration(edges=(), exhaustive=False, sites_total=2, sites_examined=1, budget=1)
+    assert ok.exhaustive is False
+
+
+def test_backward_compatibility_of_the_edge_tuple_helper():
+    # the original tuple API is unchanged for every shipped case.
+    for smi in ("O=C1CCCO1", "O=C1CCO1", "O=C1CCCCO1", "O=C1OCC(=O)OC1", "O=c1ccc2ccccc2o1", "O=C1OCC(O)C(O)C1O"):
+        assert retro_lactonization_edges(parse_smiles(smi)) == \
+            retro_lactonization_enumeration(parse_smiles(smi)).edges

@@ -1583,6 +1583,55 @@ def _reduce_one_unsaturation(mol, a: int, b: int):
         return None
 
 
+def _hydrogenation_reduced_bond(step):
+    """The WITNESS behind the hydrogenation recognizer: ``(target, i, j)`` naming the single heavy-heavy bond of the
+    PRODUCT (``target``) whose one-order reduction (strip one H at each endpoint) regenerates the step's heavy
+    reactant -- i.e. the ONE unsaturation this ``precursor + H2 -> saturated`` step reduced -- or ``None`` if the step
+    is not a recognized single-H2 hydrogenation.  :func:`_hydrogenation` (the bool recognizer) is simply ``this is
+    not None``; :func:`hydrogenation_reduced_bond_elements` reads the endpoint ELEMENTS and
+    :func:`hydrogenation_reduces_imine_or_nitrile` reads the endpoint ENVIRONMENT.  Fail-closed to ``None`` on any
+    shape / identity fault -- the recognizer's existing semantics, now also carrying WHICH bond was reduced."""
+    reactants = getattr(step, "reactants", ())
+    products = getattr(step, "products", ())
+    if len(reactants) != 2 or len(products) != 1:
+        return None
+    target = products[0]
+    heavy = [m for m in reactants if not _is_dihydrogen(m)]
+    if len(heavy) != 1 or len(reactants) - len(heavy) != 1:  # exactly one H2 and one heavy precursor
+        return None
+    precursor = heavy[0]
+    from ..diels_alder import is_closed_shell_neutral
+    if not (is_closed_shell_neutral(target) and is_closed_shell_neutral(precursor)):
+        return None  # a radical / charged / ylide partner is not a hydrogenation reactant (fail-closed)
+    if _is_conjugated_ring_system(precursor):
+        return None  # defer aromatic-ring reduction (not a clean single-H2 step)
+    # fail-closed formula pre-check: a genuine single hydrogenation is EXACTLY +H2 over the precursor.
+    tf, pf = target.formula, precursor.formula
+    if tf.get("H", 0) - pf.get("H", 0) != 2:
+        return None
+    if {k: v for k, v in tf.items() if k != "H"} != {k: v for k, v in pf.items() if k != "H"}:
+        return None
+    from ..smiles import resonance_identity
+    try:
+        want = resonance_identity(precursor)
+    except (NotImplementedError, TypeError, ValueError):
+        return None
+    heavy_set = {i for i, s in enumerate(target.atoms) if s != "H"}
+    for bond in target.bonds:
+        if bond.i not in heavy_set or bond.j not in heavy_set:
+            continue  # only a heavy-heavy bond carries an unsaturation to reduce
+        candidate = _reduce_one_unsaturation(target, bond.i, bond.j)
+        if candidate is None:
+            continue
+        try:
+            if resonance_identity(candidate) == want:
+                # precursor IS the product with THIS bond reduced + 2 H at its ends: a hydrogenation.
+                return (target, bond.i, bond.j)
+        except (NotImplementedError, TypeError, ValueError):
+            continue
+    return None
+
+
 def _hydrogenation(step) -> bool:
     """Recognizer (#114): one single unsaturation reduced in the SYNTHESIS direction --
     ``precursor + H2 -> saturated`` (one C=C / C#C / C=O / C=N / C#N reduced by one order, consuming H2).
@@ -1617,44 +1666,80 @@ def _hydrogenation(step) -> bool:
     reduction -- a caller must NOT read the vouch as "the unsaturated precursor can physically exist" (that is
     feasibility, #107). D2/HD are read as H2 (isotope-blind). (dalembert audit.)
     """
-    reactants = getattr(step, "reactants", ())
-    products = getattr(step, "products", ())
-    if len(reactants) != 2 or len(products) != 1:
-        return False
-    target = products[0]
-    heavy = [m for m in reactants if not _is_dihydrogen(m)]
-    if len(heavy) != 1 or len(reactants) - len(heavy) != 1:  # exactly one H2 and one heavy precursor
-        return False
-    precursor = heavy[0]
-    from ..diels_alder import is_closed_shell_neutral
-    if not (is_closed_shell_neutral(target) and is_closed_shell_neutral(precursor)):
-        return False  # a radical / charged / ylide partner is not a hydrogenation reactant (fail-closed)
-    if _is_conjugated_ring_system(precursor):
-        return False  # defer aromatic-ring reduction (not a clean single-H2 step)
-    # fail-closed formula pre-check: a genuine single hydrogenation is EXACTLY +H2 over the precursor.
-    tf, pf = target.formula, precursor.formula
-    if tf.get("H", 0) - pf.get("H", 0) != 2:
-        return False
-    if {k: v for k, v in tf.items() if k != "H"} != {k: v for k, v in pf.items() if k != "H"}:
-        return False
-    from ..smiles import resonance_identity
+    return _hydrogenation_reduced_bond(step) is not None
+
+
+def hydrogenation_reduced_bond_elements(step) -> frozenset[str] | None:
+    """The element pair of the unsaturation a recognized hydrogenation reduced -- ``{"C", "N"}`` for a C=N / C#N
+    reduction, ``{"C"}`` for an alkene / alkyne, ``{"C", "O"}`` for a carbonyl -- or ``None`` when ``step`` is not a
+    recognized single-H2 hydrogenation (fail-closed, TOTAL).  A pure read of the two given molecules -- no
+    ``reaction_center`` (ISSUE-126/132), no family enumerator (manifest G3)."""
     try:
-        want = resonance_identity(precursor)
-    except (NotImplementedError, TypeError, ValueError):
+        found = _hydrogenation_reduced_bond(step)
+        if found is None:
+            return None
+        target, i, j = found
+        return frozenset({target.atoms[i], target.atoms[j]})
+    except Exception:
+        return None
+
+
+def hydrogenation_reduces_imine_or_nitrile(step) -> bool:
+    """Does the recognized hydrogenation reduce a GENUINE imine (C=N) or nitrile (C#N) -- the substrate domain for
+    which a metal-free frustrated-Lewis-pair catalyst is experimentally established (Chase, Welch, Jurca & Stephan,
+    Angew. Chem. Int. Ed. 2007, 46, 8050, DOI 10.1002/anie.200702908)?  ``True`` ONLY for a plain imine / nitrile;
+    ``False`` (fail-closed, TOTAL) otherwise.
+
+    The element pair ``{"C","N"}`` alone is TOO COARSE (evil-morty, OPERATION XII 1A): an oxime (C=N-O), a hydrazone
+    / azine (C=N-N), an amidine / guanidine (the C=N carbon bearing a second N), and the isocyanate / carbodiimide
+    CUMULENES (the carbon carrying a second multiple bond) all reduce through a C=N bond yet are NOT metal-free-FLP
+    substrates -- their N-O / N-N / strongly-basic / cumulene character quenches or falls outside the Lewis-acid
+    catalyst.  Granting them the metal-free clearing set was a false-CLEAR.  So this reads the reduced bond's
+    ENVIRONMENT (in the saturated product, where the element identities are invariant):
+
+    * the bond is exactly ``C-N``;
+    * the NITROGEN's only heavy neighbour besides the reduced carbon is CARBON (no N-O oxime, no N-N hydrazone);
+    * the CARBON carries NO second multiple bond (no isocyanate / carbodiimide cumulene) and NO second nitrogen
+      neighbour (no amidine / guanidine).
+
+    Conservative by design: it keeps the plain ketimine / aldimine / nitrile the paper validates and EXCLUDES every
+    decorated C=N.  The vouch stays a Problem-A TYPE claim ("a metal-free catalytic hydrogenation of an imine /
+    nitrile of this constitution is experimentally established"); the STERIC feasibility nuance (the catalytic FLP
+    turnover classically needs a hindered imine, while unhindered imines run B(C6F5)3-mediated) is Problem B and NOT
+    claimed here.  A pure read of the given molecules -- no ``reaction_center``, no family enumerator."""
+    try:
+        found = _hydrogenation_reduced_bond(step)
+        if found is None:
+            return False
+        target, i, j = found
+        atoms = target.atoms
+        if {atoms[i], atoms[j]} != {"C", "N"}:
+            return False  # only a C=N / C#N reduction can be an imine / nitrile
+        n_idx, c_idx = (i, j) if atoms[i] == "N" else (j, i)
+
+        def _heavy_neighbours(v):
+            out = []
+            for b in target.bonds:
+                other = b.j if b.i == v else (b.i if b.j == v else None)
+                if other is not None and atoms[other] != "H":
+                    out.append((other, b.order))
+            return out
+
+        # the nitrogen is imine-type: its only heavy neighbour besides the reduced carbon is carbon
+        for other, _order in _heavy_neighbours(n_idx):
+            if other != c_idx and atoms[other] != "C":
+                return False  # an N-O (oxime) or N-N (hydrazone / azine) nitrogen -- not a metal-free FLP substrate
+        # the carbon is a plain imine / nitrile carbon: no SECOND multiple bond (cumulene) and no SECOND N (amidine)
+        for other, order in _heavy_neighbours(c_idx):
+            if other == n_idx:
+                continue  # the reduced bond itself
+            if order >= 2:
+                return False  # a second multiple bond on the carbon -> isocyanate / carbodiimide cumulene
+            if atoms[other] == "N":
+                return False  # a second nitrogen on the carbon -> amidine / guanidine
+        return True
+    except Exception:
         return False
-    heavy_set = {i for i, s in enumerate(target.atoms) if s != "H"}
-    for bond in target.bonds:
-        if bond.i not in heavy_set or bond.j not in heavy_set:
-            continue  # only a heavy-heavy bond carries an unsaturation to reduce
-        candidate = _reduce_one_unsaturation(target, bond.i, bond.j)
-        if candidate is None:
-            continue
-        try:
-            if resonance_identity(candidate) == want:
-                return True  # precursor IS the product with one bond reduced + 2 H at its ends: a hydrogenation
-        except (NotImplementedError, TypeError, ValueError):
-            continue
-    return False
 
 
 def _valence_upper_bound_sane(mol) -> bool:

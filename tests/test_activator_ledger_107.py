@@ -66,13 +66,15 @@ def _diels_alder():
 _HYDROGENATION = "hydrogenation (partial bond-order edit, precursor + H2 -> saturated; one unsaturation reduced)"
 
 
-def test_ledger_is_exactly_the_two_reviewed_entries_today():
-    # A DELIBERATE set. Adding a class requirement is a reviewed base-rate decision, not an accident; this test
-    # must be changed on purpose when a further entry is justified. Mega-Round XI re-review added hydrogenation
-    # (TRANSITION_METAL_CATALYST); oxoacid ester was reviewed and correctly carries NO entry (self-acidic).
-    assert set(REQUIRED_ACTIVATORS) == {CLAISEN, _HYDROGENATION}
+def test_class_keyed_ledger_is_claisen_only():
+    # A DELIBERATE set. The CLASS-KEYED ledger carries ONLY a requirement universal across EVERY instance of the
+    # class -- today exactly the Claisen condensation's enolizing base. Hydrogenation was MOVED to a step-CONDITIONAL
+    # requirement (OPERATION XII 1A): its H2-activation need splits by the reduced bond -- a C=N/C#N reduction admits
+    # a metal-free FLP catalyst (Stephan 2007), a C=C/C=O one does not -- so a blanket class-keyed TRANSITION_METAL
+    # entry would be exactly the false universal the metal-free counterexample refutes. SN2 is likewise conditional.
+    assert set(REQUIRED_ACTIVATORS) == {CLAISEN}
     assert REQUIRED_ACTIVATORS[CLAISEN] == frozenset({ActivatorRole.ENOLIZING_BASE})
-    assert REQUIRED_ACTIVATORS[_HYDROGENATION] == frozenset({ActivatorRole.TRANSITION_METAL_CATALYST})
+    assert _HYDROGENATION not in REQUIRED_ACTIVATORS
 
 
 def test_every_ledger_key_is_a_live_oracle_class_name():
@@ -81,7 +83,7 @@ def test_every_ledger_key_is_a_live_oracle_class_name():
 
 
 def test_registry_fingerprint_guard_is_armed_and_matches_live_registry():
-    # The growth guard: the reviewed snapshot must equal the live 22-class registry, and the guard must pass on it.
+    # The growth guard: the reviewed snapshot must equal the live 24-class registry, and the guard must pass on it.
     import hashlib
     live = sorted(name for name, _pred in _RECOGNIZERS)
     assert len(live) == al._REVIEWED_CLASS_COUNT
@@ -97,17 +99,18 @@ def test_registry_fingerprint_guard_fires_on_drift(monkeypatch):
         al._assert_registry_unchanged_since_ledger_review()
 
 
-def test_only_the_two_reviewed_classes_carry_a_requirement():
+def test_only_claisen_carries_a_class_keyed_requirement():
     # The base-rate guard, proven over the WHOLE registry without constructing a step per class: every class but
-    # the two reviewed ones (Claisen, hydrogenation) must map to an empty requirement, so no pericyclic / Fischer /
-    # activated-acyl / oxoacid-ester step is ever demoted.
-    carriers = {CLAISEN, _HYDROGENATION}
+    # Claisen must map to an empty CLASS-KEYED requirement, so no pericyclic / Fischer / activated-acyl /
+    # oxoacid-ester / hydrogenation / SN2 step is ever demoted by the blanket dict (the conditional ones key on the
+    # step, tested separately).
+    carriers = {CLAISEN}
     for name, _pred in _RECOGNIZERS:
         required = REQUIRED_ACTIVATORS.get(name, frozenset())
         if name in carriers:
             assert required
         else:
-            assert required == frozenset(), f"{name!r} unexpectedly requires an activator -- false-EXCLUDE risk"
+            assert required == frozenset(), f"{name!r} unexpectedly class-keyed -- false-EXCLUDE risk"
 
 
 # --------------------------------------------------------------------------- role classifier
@@ -187,12 +190,15 @@ _MUST_NOT_FILL_METAL_CATALYST = ["water", "acetic acid", "NaOEt", "sulfuric acid
 def test_recognized_hydrogenation_catalysts_fill_the_catalyst_role_only(name):
     roles = classify_activator_roles(name)
     assert ActivatorRole.TRANSITION_METAL_CATALYST in roles
+    assert ActivatorRole.HYDROGEN_ACTIVATION_CATALYST in roles  # a TM metal clears the C=N requirement a fortiori
     assert ActivatorRole.ENOLIZING_BASE not in roles          # a catalyst is not a base -- distinct roles
 
 
 @pytest.mark.parametrize("name", _MUST_NOT_FILL_METAL_CATALYST)
 def test_noncatalyst_or_wrongcase_fills_no_catalyst_role(name):
-    assert ActivatorRole.TRANSITION_METAL_CATALYST not in classify_activator_roles(name)
+    roles = classify_activator_roles(name)
+    assert ActivatorRole.TRANSITION_METAL_CATALYST not in roles
+    assert ActivatorRole.HYDROGEN_ACTIVATION_CATALYST not in roles  # a non-catalyst fills NEITHER H2-activation role
 
 
 def _hydrogenation(catalysts=None):
@@ -218,6 +224,135 @@ def test_hydrogenation_catalyst_declared_clears_the_activator_requirement():
 
 def test_hydrogenation_noncatalyst_condition_stays_demoted():
     assert step_activator_blockers(_hydrogenation(catalysts=("water",)))  # water is not a hydrogenation catalyst
+
+
+# ----------------------------------------- metal-free H2 activation: the C=N / C#N correction (OPERATION XII 1A)
+# Refutes the universal "a hydrogenation needs a transition metal". A C=N / C#N reduction is catalysed METAL-FREE by
+# a frustrated Lewis pair (Chase, Welch, Jurca & Stephan, Angew. Chem. Int. Ed. 2007, 46, 8050, DOI
+# 10.1002/anie.200702908 -- imines + lone-pair-sequestered nitriles, NOT aldehydes). The fix must CLEAR that case
+# under a metal-free catalyst WITHOUT ever clearing C=C / C=O (the load-bearing safe-direction boundary).
+
+_FILLS_METAL_FREE_H2 = ["B(C6F5)3", "tris(pentafluorophenyl)borane", "tris(pentafluorophenyl)boron", "BCF"]
+
+#: Lewis acids / reagents that are NOT validated metal-free H2-activation catalysts -> must fill NEITHER activation
+#: role (BF3 / AlCl3 are Lewis acids but not FLP hydrogenation catalysts; B(C6F5)2 is a wrong/truncated formula).
+_MUST_NOT_FILL_H2_ACTIVATION = ["BF3", "boron trifluoride", "AlCl3", "water", "benzene", "B(C6F5)2", ""]
+
+
+@pytest.mark.parametrize("name", _FILLS_METAL_FREE_H2)
+def test_metal_free_flp_fills_h2_activation_but_is_not_a_transition_metal(name):
+    roles = classify_activator_roles(name)
+    assert ActivatorRole.HYDROGEN_ACTIVATION_CATALYST in roles
+    assert ActivatorRole.TRANSITION_METAL_CATALYST not in roles  # METAL-free: the sets are DISJOINT, the whole point
+    assert ActivatorRole.ENOLIZING_BASE not in roles
+
+
+@pytest.mark.parametrize("name", _MUST_NOT_FILL_H2_ACTIVATION)
+def test_non_h2_catalyst_fills_no_activation_role(name):
+    roles = classify_activator_roles(name)
+    assert ActivatorRole.HYDROGEN_ACTIVATION_CATALYST not in roles
+    assert ActivatorRole.TRANSITION_METAL_CATALYST not in roles
+
+
+def _imine_hydrogenation(catalysts=None):
+    # methanimine CH2=NH + H2 -> methylamine CH3NH2: a recognized C=N reduction (the metal-free-FLP domain).
+    return _step(("C=N", "[H][H]"), ("CN",), catalysts=catalysts)
+
+
+def _nitrile_hydrogenation(catalysts=None):
+    # acetonitrile CH3C#N + H2 -> ethanimine CH3CH=NH: a recognized C#N partial reduction (metal-free-FLP domain).
+    return _step(("CC#N", "[H][H]"), ("CC=N",), catalysts=catalysts)
+
+
+def _carbonyl_hydrogenation(catalysts=None):
+    # acetaldehyde CH3CHO + H2 -> ethanol: a C=O reduction. NO metal-free catalytic route (Stephan 2007: aldehydes
+    # do not react under FLP catalysis), so it must keep the TM-only requirement.
+    return _step(("CC=O", "[H][H]"), ("CCO",), catalysts=catalysts)
+
+
+def test_hydrogenation_reduced_bond_elements_reports_the_reduced_unsaturation():
+    from smartchem.experiment.reaction_type_oracle import hydrogenation_reduced_bond_elements
+    assert hydrogenation_reduced_bond_elements(_imine_hydrogenation()) == frozenset({"C", "N"})
+    assert hydrogenation_reduced_bond_elements(_nitrile_hydrogenation()) == frozenset({"C", "N"})
+    assert hydrogenation_reduced_bond_elements(_hydrogenation()) == frozenset({"C"})            # alkene C=C
+    assert hydrogenation_reduced_bond_elements(_carbonyl_hydrogenation()) == frozenset({"C", "O"})
+    assert hydrogenation_reduced_bond_elements(_diels_alder()) is None                          # not a hydrogenation
+
+
+def test_imine_hydrogenation_demoted_catalyst_free():
+    step = _imine_hydrogenation()
+    assert recognize_reaction_type(step) == _HYDROGENATION       # type-validity holds ...
+    assert step_activator_blockers(step)                         # ... C=N needs an H2-activation catalyst
+
+
+def test_imine_hydrogenation_cleared_by_a_metal_free_flp():
+    # THE Stephan-2007 correction: a metal-free FLP MEETS the H2-activation requirement for a C=N reduction, so the
+    # model no longer falsely asserts "only a transition metal can do this".
+    assert step_activator_blockers(_imine_hydrogenation(catalysts=("B(C6F5)3",))) == ()
+
+
+def test_imine_hydrogenation_cleared_by_a_transition_metal_a_fortiori():
+    assert step_activator_blockers(_imine_hydrogenation(catalysts=("Pd/C",))) == ()
+
+
+def test_nitrile_hydrogenation_cleared_by_a_metal_free_flp():
+    assert step_activator_blockers(_nitrile_hydrogenation(catalysts=("B(C6F5)3",))) == ()
+
+
+def test_metal_free_flp_does_not_clear_a_cc_hydrogenation():
+    # LOAD-BEARING safe boundary: FLP alkene hydrogenation is not a supported general route, so a C=C reduction
+    # stays demoted under B(C6F5)3 -- the metal-free set is ABSENT from the C=C (TRANSITION_METAL_CATALYST) role.
+    assert step_activator_blockers(_hydrogenation(catalysts=("B(C6F5)3",)))  # ethylene + H2 -> ethane, still blocked
+
+
+def test_metal_free_flp_does_not_clear_a_carbonyl_hydrogenation():
+    # Stephan 2007: aldehydes do NOT undergo metal-free catalytic hydrogenation -> a C=O reduction keeps TM-only.
+    assert step_activator_blockers(_carbonyl_hydrogenation(catalysts=("B(C6F5)3",)))
+
+
+def test_carbonyl_hydrogenation_cleared_by_a_transition_metal():
+    assert step_activator_blockers(_carbonyl_hydrogenation(catalysts=("Pd/C",))) == ()
+
+
+# ---- the C=N / C#N witness is NARROWER than the element pair {C,N} (evil-morty, OPERATION XII 1A) ----
+# A C=N bond is not the exclusive property of an imine: an oxime (N-O), a hydrazone / azine (N-N), an amidine
+# (C bearing a 2nd N), and the isocyanate / carbodiimide CUMULENES (C with a 2nd multiple bond) all reduce through a
+# C=N yet are NOT metal-free-FLP substrates. They must keep TM-only -- a metal-free FLP must NOT clear them (that was
+# the one false-CLEAR evil-morty proved against the first cut, now closed by a structural witness).
+
+_NON_IMINE_CN_HYDROGENATIONS = {
+    "oxime        CC=NO -> CCNO":     (("CC=NO", "[H][H]"), ("CCNO",)),
+    "hydrazone    C=NN  -> CNN":      (("C=NN", "[H][H]"), ("CNN",)),
+    "amidine      CC(=N)N -> CC(N)N": (("CC(=N)N", "[H][H]"), ("CC(N)N",)),
+    "isocyanate   O=C=N -> O=CN":     (("O=C=N", "[H][H]"), ("O=CN",)),
+    "carbodiimide N=C=N -> N=CN":     (("N=C=N", "[H][H]"), ("N=CN",)),
+}
+
+
+@pytest.mark.parametrize("label", list(_NON_IMINE_CN_HYDROGENATIONS))
+def test_decorated_cn_is_not_cleared_by_a_metal_free_flp(label):
+    from smartchem.experiment.reaction_type_oracle import (
+        hydrogenation_reduced_bond_elements,
+        hydrogenation_reduces_imine_or_nitrile,
+    )
+    rs, ps = _NON_IMINE_CN_HYDROGENATIONS[label]
+    step = _step(rs, ps)
+    assert recognize_reaction_type(step) == _HYDROGENATION                     # a recognized hydrogenation ...
+    assert hydrogenation_reduced_bond_elements(step) == frozenset({"C", "N"})  # ... reducing a C=N bond ...
+    assert not hydrogenation_reduces_imine_or_nitrile(step)                    # ... but NOT a genuine imine / nitrile
+    assert step_activator_blockers(_step(rs, ps, catalysts=("B(C6F5)3",)))     # metal-free FLP does NOT clear it
+    assert step_activator_blockers(_step(rs, ps, catalysts=("Pd/C",))) == ()   # a transition metal clears a fortiori
+
+
+def test_hydrogenation_reduces_imine_or_nitrile_is_a_narrow_structural_witness():
+    from smartchem.experiment.reaction_type_oracle import hydrogenation_reduces_imine_or_nitrile
+    assert hydrogenation_reduces_imine_or_nitrile(_imine_hydrogenation())        # C=N imine     -> True
+    assert hydrogenation_reduces_imine_or_nitrile(_nitrile_hydrogenation())      # C#N nitrile   -> True
+    assert not hydrogenation_reduces_imine_or_nitrile(_hydrogenation())          # alkene C=C    -> False
+    assert not hydrogenation_reduces_imine_or_nitrile(_carbonyl_hydrogenation()) # carbonyl C=O  -> False
+    assert not hydrogenation_reduces_imine_or_nitrile(_diels_alder())            # not a hydrogenation -> False
+    for rs, ps in _NON_IMINE_CN_HYDROGENATIONS.values():
+        assert not hydrogenation_reduces_imine_or_nitrile(_step(rs, ps))         # every decorated C=N -> False
 
 
 @pytest.mark.parametrize("bad", [None, 123, 1.5, b"NaOEt", ["NaOEt"], object()])

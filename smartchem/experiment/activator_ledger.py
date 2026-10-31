@@ -78,6 +78,7 @@ import hashlib
 from .reaction_type_oracle import (
     _RECOGNIZERS,
     _step_equation,
+    hydrogenation_reduces_imine_or_nitrile,
     recognize_reaction_type,
     sn2_feasibility_signature,
     sn2_oxygen_base_regime,
@@ -109,13 +110,16 @@ class ActivatorRole(enum.Enum):
     ENOLIZING_BASE = "enolizing_base"
 
     #: A transition-metal hydrogenation catalyst (CATALYTIC, not consumed) that activates H2 toward an unsaturated
-    #: substrate -- Pd, Pt, Ni, Rh, Ru and their supported/oxide forms. The recognized ``hydrogenation`` class
-    #: CONSUMES H2 (the recognizer checks "+H2 over the precursor"), and H2 + an unsaturated substrate does NOT
-    #: react without such a catalyst -- a UNIVERSAL requirement of the H2-consuming pathway (the catalyst-free
-    #: diimide / dissolving-metal reductions do not consume H2, so they are not this class). Distinct from the
-    #: enolizing base: this role is CATALYTIC; its availability (every real one is an INDUSTRIAL metal) is the
-    #: separate concern :mod:`~smartchem.experiment.catalyst_availability` owns -- this ledger imposes the
-    #: REQUIREMENT, that module checks OBTAINABILITY of a declared one.
+    #: substrate -- Pd, Pt, Ni, Rh, Ru and their supported / oxide forms. Required for a hydrogenation reducing a
+    #: C=C / C=O / C#C unsaturation: for these substrate classes a transition metal is the supported H2-activation
+    #: route and no GENERAL metal-free catalytic route is established (the catalyst-free diimide / dissolving-metal
+    #: reductions do not consume H2, so they are a DIFFERENT class). NOT universal across all hydrogenations -- the
+    #: scientifically false "only a transition metal can reduce this" (OPERATION XII 1A): a C=N / C#N reduction
+    #: (imine / nitrile) is ALSO catalysed metal-free by a frustrated Lewis pair (Stephan et al. 2007), so that
+    #: sub-case takes the broader :attr:`HYDROGEN_ACTIVATION_CATALYST` instead. The requirement is keyed on the
+    #: reduced bond by :func:`_conditional_required_roles`, never blanket class-keyed. This role is CATALYTIC; its
+    #: availability (every real one is an INDUSTRIAL metal) is :mod:`~smartchem.experiment.catalyst_availability`'s
+    #: separate concern -- this ledger imposes the REQUIREMENT, that module checks OBTAINABILITY of a declared one.
     TRANSITION_METAL_CATALYST = "transition_metal_catalyst"
 
     #: A stoichiometric base that deprotonates a NEUTRAL oxygen nucleophile (an alcohol ``R-O-H``) to its competent
@@ -136,6 +140,18 @@ class ActivatorRole(enum.Enum):
     #: two requirements never collapse. Required only for the neutral-ACIDIC-oxygen SN2 sub-case (keyed on the step).
     ACIDIC_PROTON_BASE = "acidic_proton_base"
 
+    #: A catalyst that activates molecular H2 for a C=N / C#N reduction (imine / nitrile), fillable EITHER by a
+    #: transition-metal catalyst OR by an experimentally-validated metal-free frustrated-Lewis-pair catalyst
+    #: (e.g. B(C6F5)3; Chase, Welch, Jurca & Stephan, Angew. Chem. Int. Ed. 2007, 46, 8050, DOI
+    #: 10.1002/anie.200702908 -- it hydrogenates imines and lone-pair-sequestered nitriles, but NOT aldehydes, so the
+    #: C=O case keeps the TM-only :attr:`TRANSITION_METAL_CATALYST`). This replaces the scientifically false universal
+    #: "only a transition metal can reduce this" for the nitrogen-unsaturation domain. A transition metal clears it a
+    #: fortiori (its clearing whitelist is the TM set UNION the metal-free FLP set); a metal-free FLP does NOT clear
+    #: the C=C / C=O requirement (it is absent from that role's set) -- the substrate-scoped asymmetry that keeps the
+    #: relaxation a true-CLEAR, never a false one. Filled only by EXACT, case-certified reagent identity, never an
+    #: arbitrary "catalyst" text label.
+    HYDROGEN_ACTIVATION_CATALYST = "hydrogen_activation_catalyst"
+
 
 #: Human-readable phrase per role, for the honest blocker reason text. Each phrase carries the role's ACTIVATION
 #: NATURE (stoichiometric vs catalytic) so the blocker reason reads correctly for either.
@@ -144,6 +160,7 @@ ROLE_PHRASE: dict[ActivatorRole, str] = {
     ActivatorRole.TRANSITION_METAL_CATALYST: "transition-metal hydrogenation catalyst (Pd / Pt / Ni / Rh / Ru)",
     ActivatorRole.DEPROTONATING_BASE: "stoichiometric base to form the alkoxide nucleophile (alkoxide / metal hydride / metal amide)",
     ActivatorRole.ACIDIC_PROTON_BASE: "stoichiometric base to deprotonate the acidic oxygen nucleophile -- a mild base suffices (carbonate / hydroxide / strong amine, or any alkoxide / hydride / amide)",
+    ActivatorRole.HYDROGEN_ACTIVATION_CATALYST: "catalyst that activates molecular H2 for this C=N / C#N reduction -- a transition metal (Pd / Pt / Ni / Rh / Ru) OR an experimentally-validated metal-free frustrated-Lewis-pair catalyst (e.g. B(C6F5)3; Stephan et al. 2007)",
 }
 
 
@@ -165,6 +182,8 @@ _CASE_EXACT_SPELLING: dict[str, str] = {
     "k2co3": "K2CO3", "cs2co3": "Cs2CO3", "na2co3": "Na2CO3", "li2co3": "Li2CO3",
     "naoh": "NaOH", "koh": "KOH", "lioh": "LiOH", "ba(oh)2": "Ba(OH)2",
     "k3po4": "K3PO4", "et3n": "Et3N", "dipea": "DIPEA", "dbu": "DBU", "dbn": "DBN", "tmg": "TMG",
+    # metal-free (frustrated-Lewis-pair) H2-activation catalyst tokens whose case is a formula / acronym (Stephan 2007)
+    "b(c6f5)3": "B(C6F5)3", "bcf": "BCF",
 }
 
 #: Positive whitelist: normalized reagent names recognized as filling ``ENOLIZING_BASE``. Conservative -- every
@@ -237,10 +256,26 @@ _HYDROGENATION_CATALYST_NAMES: frozenset[str] = frozenset({
     "ru", "ru/c", "ruthenium", "ruthenium on carbon",
 })
 
+#: Positive whitelist: normalized reagent names recognized as the METAL-FREE half of ``HYDROGEN_ACTIVATION_CATALYST``
+#: -- an experimentally-validated metal-free (frustrated-Lewis-pair) catalyst that activates molecular H2 for a
+#: C=N / C#N reduction. Grounded in Chase, Welch, Jurca & Stephan, Angew. Chem. Int. Ed. 2007, 46, 8050 (DOI
+#: 10.1002/anie.200702908) and its 2008 Chem. Commun. follow-up (B(C6F5)3 a direct imine-hydrogenation catalyst).
+#: Exact-match / case-certified like the metal set; conservative -- anchored on the nameable, catalytically-competent
+#: B(C6F5)3 and its synonyms. Omitting a valid metal-free catalyst is the SAFE direction (a C=N hydrogenation
+#: declaring only an unlisted one stays REAL_BUT_HARD, recoverable). Kept DISJOINT from the transition-metal set: a
+#: metal-free catalyst must never read AS a transition metal (that disjointness is the whole scientific point).
+_METAL_FREE_H2_CATALYST_NAMES: frozenset[str] = frozenset({
+    "b(c6f5)3", "bcf", "tris(pentafluorophenyl)borane", "tris(pentafluorophenyl)boron",
+})
+
 #: normalized name -> the roles it positively fills. Keyed so a future role just adds a set.
 _ROLE_NAMES: dict[ActivatorRole, frozenset[str]] = {
     ActivatorRole.ENOLIZING_BASE: _ENOLIZING_BASE_NAMES,
     ActivatorRole.TRANSITION_METAL_CATALYST: _HYDROGENATION_CATALYST_NAMES,
+    # The C=N / C#N hydrogenation's H2-activation requirement is filled by a transition metal (a fortiori) OR a
+    # metal-free FLP catalyst (Stephan 2007): the UNION. So a declared Pd/C clears it too; the metal-free set stays
+    # DISJOINT from the TM set, so a metal-free catalyst is never mistaken for a transition metal.
+    ActivatorRole.HYDROGEN_ACTIVATION_CATALYST: _HYDROGENATION_CATALYST_NAMES | _METAL_FREE_H2_CATALYST_NAMES,
     # The alkoxide-forming bases that clear the DEPROTONATING_BASE role are exactly the enolizing bases (an alcohol
     # is more acidic than an ester alpha-C-H, so every enolizing base forms the alkoxide a fortiori). Reused, not
     # re-listed, so the two sets never drift. Conservative: weaker bases (hydroxide/carbonate) are omitted -- a
@@ -317,21 +352,41 @@ def _conditional_required_roles(step, reaction_class: str | None) -> frozenset[A
     Excluded, each a CONSCIOUS boundary (an adversarial re-review set them): a metal-SALT oxy-nucleophile
     (``signature.is_neutral == False``) is already deprotonated and competent; a neutral AMINE (N) is itself a
     competent nucleophile and runs base-free; a neutral THIOL (S) is nucleophilic enough to react base-free, so
-    demoting it would false-EXCLUDE real chemistry. Fail-closed: any fault -> empty."""
-    if not reaction_class or "SN2 substitution" not in reaction_class:
+    demoting it would false-EXCLUDE real chemistry. Fail-closed: any fault -> empty.
+
+    The SECOND conditional class is HYDROGENATION (OPERATION XII 1A). Every hydrogenation needs an H2-activation
+    catalyst, but the SUPPORTED fulfillment depends on the reduced bond, so a blanket class-keyed
+    ``TRANSITION_METAL_CATALYST`` would be the scientifically false universal "only a transition metal can do this":
+    a C=N / C#N reduction (imine / nitrile) is ALSO catalysed metal-free by a frustrated Lewis pair (Stephan et al.,
+    Angew. Chem. Int. Ed. 2007, 46, 8050), so it takes the broader ``HYDROGEN_ACTIVATION_CATALYST`` (a transition
+    metal OR a metal-free FLP clears it). A C=C / C=O / C#C reduction has no established metal-free catalytic route
+    (aldehydes do NOT react under FLP catalysis -- Stephan 2007), so it keeps the stricter ``TRANSITION_METAL_CATALYST``
+    (TM only). The imine / nitrile domain is confirmed by :func:`hydrogenation_reduces_imine_or_nitrile`, which reads
+    the reduced bond's ENVIRONMENT -- NOT merely its element pair: a C=N decorated as an oxime (C=N-O), a hydrazone
+    (C=N-N), an amidine / guanidine (C bearing a 2nd N) or an isocyanate / carbodiimide cumulene also reduces through
+    a C=N yet is NOT a metal-free-FLP substrate (evil-morty, OPERATION XII 1A), so each is EXCLUDED and keeps TM-only.
+    Fail-closed to the STRICTER (TM-only) requirement whenever a genuine imine / nitrile cannot be POSITIVELY confirmed
+    -- never grant the wider metal-free clearing set otherwise (the unsafe direction is a false-CLEAR)."""
+    if not reaction_class:
         return frozenset()
-    try:
-        signature = sn2_feasibility_signature(step)
-    except Exception:
-        return frozenset()
-    if signature is not None and signature[0] == "O" and signature[1]:
+    if "SN2 substitution" in reaction_class:
         try:
-            regime = sn2_oxygen_base_regime(step)
+            signature = sn2_feasibility_signature(step)
         except Exception:
-            regime = "strong"  # fail-closed to the conservative strong-base requirement
-        if regime == "mild":
-            return frozenset({ActivatorRole.ACIDIC_PROTON_BASE})
-        return frozenset({ActivatorRole.DEPROTONATING_BASE})
+            return frozenset()
+        if signature is not None and signature[0] == "O" and signature[1]:
+            try:
+                regime = sn2_oxygen_base_regime(step)
+            except Exception:
+                regime = "strong"  # fail-closed to the conservative strong-base requirement
+            if regime == "mild":
+                return frozenset({ActivatorRole.ACIDIC_PROTON_BASE})
+            return frozenset({ActivatorRole.DEPROTONATING_BASE})
+        return frozenset()
+    if _HYDROGENATION_CLASS_ANCHOR in reaction_class:
+        if hydrogenation_reduces_imine_or_nitrile(step):
+            return frozenset({ActivatorRole.HYDROGEN_ACTIVATION_CATALYST})
+        return frozenset({ActivatorRole.TRANSITION_METAL_CATALYST})  # not a plain imine/nitrile: TM-only, fail-closed
     return frozenset()
 
 
@@ -388,18 +443,26 @@ def route_activator_blockers(route) -> tuple[str, ...]:
     return tuple(sorted(reasons))
 
 
-#: The ledger. Keyed by the EXACT oracle display name (the stable wire identity -- never renamed; see the
-#: import-time guard below). Conservative: an entry exists ONLY for a class with a UNIVERSAL, unambiguous
-#: activation requirement -- the mechanism may generalize, but the DATA stays base-rate-safe.
+#: The CLASS-KEYED ledger. Keyed by the EXACT oracle display name (the stable wire identity -- never renamed; see the
+#: import-time guard below). Conservative: an entry exists ONLY for a class with a UNIVERSAL, unambiguous activation
+#: requirement that holds for EVERY instance -- today exactly the Claisen condensation. A requirement that holds only
+#: for a SUB-population (SN2 with a neutral-oxygen nucleophile; hydrogenation, whose H2-activation fulfillment is
+#: substrate-scoped) rides :func:`_conditional_required_roles` instead, where it keys on the step without
+#: false-EXCLUDING the rest of the class. The mechanism may generalize, but the DATA stays base-rate-safe.
 #:
 #: Mega-Round XI re-review (22 classes): the two new recognizers were reviewed against the guard's question --
 #:   * ``hydrogenation``: this recognized class CONSUMES H2 (the recognizer requires exactly +H2 over the
-#:     precursor), and H2 + an unsaturated substrate does NOT react without a transition-metal catalyst -- a
-#:     UNIVERSAL requirement of the H2-consuming pathway (the catalyst-free diimide / dissolving-metal reductions
-#:     do not consume H2, so they are structurally a DIFFERENT class, not this one). Added, TRANSITION_METAL_CATALYST.
-#:     Not confused with stoichiometric consumption: the catalyst is catalytic; its OBTAINABILITY (every real one
-#:     is INDUSTRIAL) is :mod:`catalyst_availability`'s separate gate, which composes with this requirement
-#:     (undeclared -> REAL_BUT_HARD here; declared -> REAL_BUT_HARD there -- never a false CLEAN).
+#:     precursor), and H2 + an unsaturated substrate does NOT react without a catalyst that activates H2. First
+#:     reviewed (Mega-Round XI) as a class-keyed {TRANSITION_METAL_CATALYST}; CORRECTED to STEP-CONDITIONAL
+#:     (OPERATION XII 1A) because that was the scientifically false universal "only a transition metal can reduce
+#:     this" -- a C=N / C#N reduction (imine / nitrile) is catalysed metal-free by a frustrated Lewis pair (Stephan
+#:     et al., Angew. Chem. Int. Ed. 2007, 46, 8050). So the requirement now rides :func:`_conditional_required_roles`,
+#:     keyed on the reduced bond: C=N / C#N -> HYDROGEN_ACTIVATION_CATALYST (TM or metal-free FLP); C=C / C=O / C#C ->
+#:     the stricter TRANSITION_METAL_CATALYST (TM only; aldehydes do not react metal-free -- Stephan 2007). The
+#:     catalyst-free diimide / dissolving-metal reductions do not consume H2, so they are a DIFFERENT class. Catalyst
+#:     OBTAINABILITY (every real catalyst is specialized / INDUSTRIAL) is :mod:`catalyst_availability`'s separate
+#:     gate, which composes with this requirement (undeclared -> REAL_BUT_HARD here; declared -> REAL_BUT_HARD there
+#:     -- never a false CLEAN).
 #:   * ``oxoacid ester condensation``: a dehydrative esterification of an oxoacid (nitric / phosphoric). Self-acidic
 #:     like the acyl / ether condensations -- NO stoichiometric activator or catalyst is universally required, so
 #:     NO entry (fabricating one from analogy is the banned move; feasibility stays the deferred Problem B UNKNOWN).
@@ -427,20 +490,23 @@ def route_activator_blockers(route) -> tuple[str, ...]:
 #:     driven by water removal -- so it sits in the SAME self-acidic condensation population as the acyl / ether /
 #:     oxoacid ester classes that get no entry. A BRONSTED_ACID requirement here is precisely the banned base-rate
 #:     trap (acid-catalysed in the literature, run catalyst-free in the records). NO entry.
+#: Substring anchors identifying the classes whose activator requirement is STEP-CONDITIONAL (handled in
+#: :func:`_conditional_required_roles`, not this class-keyed dict). Guarded live below alongside the ledger keys: a
+#: renamed class would otherwise silently disarm its conditional requirement (a false-VOUCH-shaped regression).
+_HYDROGENATION_CLASS_ANCHOR = "hydrogenation (partial bond-order edit"
+_CONDITIONAL_CLASS_ANCHORS = ("SN2 substitution", _HYDROGENATION_CLASS_ANCHOR)
+
 REQUIRED_ACTIVATORS: dict[str, frozenset[ActivatorRole]] = {
     "Claisen condensation (ester/ketone + ester/carbonate -> 1,3-dicarbonyl + alcohol)": frozenset(
         {ActivatorRole.ENOLIZING_BASE}
-    ),
-    "hydrogenation (partial bond-order edit, precursor + H2 -> saturated; one unsaturation reduced)": frozenset(
-        {ActivatorRole.TRANSITION_METAL_CATALYST}
     ),
 }
 
 
 def _assert_ledger_keys_are_live_classes() -> None:
-    """Fail-closed on a class RENAME: every ledger key MUST be a current oracle display name. If a recognizer is
-    renamed without updating the ledger, the requirement would silently stop firing (a false-VOUCH-shaped
-    regression). Raise at import instead -- loud, not silent."""
+    """Fail-closed on a class RENAME: every class-keyed ledger key AND every step-conditional class anchor MUST match
+    a current oracle display name. If a recognizer is renamed without updating the ledger, the requirement would
+    silently stop firing (a false-VOUCH-shaped regression). Raise at import instead -- loud, not silent."""
     live = {name for name, _predicate in _RECOGNIZERS}
     stale = set(REQUIRED_ACTIVATORS) - live
     if stale:
@@ -448,6 +514,15 @@ def _assert_ledger_keys_are_live_classes() -> None:
             "activator ledger references reaction class name(s) absent from the oracle registry -- a rename "
             f"silently disarmed a requirement: {sorted(stale)}"
         )
+    # The step-CONDITIONAL requirements (:func:`_conditional_required_roles`) key on a SUBSTRING anchor of a live
+    # class display name, not a full ledger key, so the rename guard above cannot see them. Guard them here too: a
+    # renamed SN2 or hydrogenation class would silently stop requiring its base / H2-activation catalyst.
+    for anchor in _CONDITIONAL_CLASS_ANCHORS:
+        if not any(anchor in name for name in live):
+            raise AssertionError(
+                f"activator ledger conditional-requirement anchor {anchor!r} matches no current oracle class -- a "
+                f"rename silently disarmed a step-conditional activator requirement"
+            )
 
 
 _assert_ledger_keys_are_live_classes()
@@ -456,10 +531,12 @@ _assert_ledger_keys_are_live_classes()
 #: A fingerprint of the FULL recognizer registry at the moment the ledger's base-rate scope was last reviewed
 #: (sha256 of the sorted display names, first 16 hex; the count is carried for a legible failure message). The
 #: rename guard above protects the PAST (a key that vanished); THIS protects the FUTURE (a class that APPEARED).
-#: The base-rate argument -- "among the recognized classes, the Claisen condensation needs a stoichiometric
-#: enolizing base and the hydrogenation needs a transition-metal catalyst" -- is a SNAPSHOT over exactly these 24
-#: classes (Mega-Round XI: +hydrogenation {TRANSITION_METAL_CATALYST}, +oxoacid ester {none}; 1.5 consolidation:
-#: +SN2 {none}, +imine condensation {none}; see the ledger table). The audit roadmap still plans aldol /
+#: The base-rate argument -- "among the recognized classes, the Claisen condensation always needs a stoichiometric
+#: enolizing base; the hydrogenation and the neutral-oxygen SN2 need a step-conditional activator" -- is a SNAPSHOT
+#: over exactly these 24 classes (Mega-Round XI reviewed hydrogenation + oxoacid ester; 1.5 consolidation reviewed
+#: SN2 + imine condensation; OPERATION XII 1A moved hydrogenation from a class-keyed TRANSITION_METAL_CATALYST to the
+#: step-conditional H2-activation split -- see the ledger table and :func:`_conditional_required_roles`). The audit
+#: roadmap still plans aldol /
 #: Knoevenagel / Michael (enolizing base) and the metal
 #: cross-couplings (catalyst): each WOULD need an entry when its recognizer lands, and a forgotten one is a
 #: false-VOUCH on growth. If any recognizer is added / removed / renamed, this digest moves and import fails LOUD,

@@ -38,6 +38,14 @@ recognizer registry digest untouched). Full record:
 - **Base-regime classifier (1C).** Verified sound (no fix) against a preregistered source-backed corpus + hostile
   holdouts: the mild/strong split keys on the hydroxyl carbon's own bond, so an allyl alcohol / β-hydroxy carbonyl
   (unsaturation *near* the OH-carbon) correctly stays strong, never false-cleared by a mild base.
+- **Event-type certificates (P1).** `classify_event` (the opt-in #123 typed-event search) now **certifies** each
+  class's invariants rather than guessing from shape: a `SCISSION` is recognized only when every fragment is
+  strictly smaller than the target (the W1 rank-descent the class asserts), so a conserving 2→2 step whose
+  principal reactant exceeds the target (e.g. an ester hydrolysis) is refused fail-closed, not mislabeled an
+  assembly. The recognition projection is thus independent of the search grammar (reachability) and grammar-safe.
+  The deferred `INTRAMOLECULAR_COPRODUCT` class is documented as a **shape** certificate only — it cannot
+  distinguish an intramolecular condensation from an intermolecular retro-fragmentation (no atom-map), so
+  connectivity-preservation is the future generator's proof obligation.
 
 ### Added — reaction-type coverage (20 → 24 recognized classes)
 

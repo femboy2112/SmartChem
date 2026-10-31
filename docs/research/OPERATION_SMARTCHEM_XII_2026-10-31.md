@@ -12,7 +12,8 @@ on 2026-10-30; the corrections below revise specific conclusions and say so expl
 
 - Branch `integration/v1.5-candidate`; baseline this round began at `55a44c6` (the 1.5 candidate, all §4 gates MET).
 - `9e8fa5f` (= released `v1.1.0`) is an ancestor; `main` is untouched.
-- Commits this round (newest last): `75c0119` (1A), `1c46279` (1B), `5c29f70` (1C).
+- Commits this round (newest last): `75c0119` (1A), `1c46279` (1B), `5c29f70` (1C), `18469fa` + `33bfacf`
+  (P0 docs + §2 DAG trust matrix), `c2331c2` (P1 event-type certificate).
 
 ## P0 — hostile scientific review (§1 of OPERATION XII)
 
@@ -116,6 +117,57 @@ restates the tiers as one legible artifact.
 re-derivation is the weakest sound repair that closes the production / default-transport hole with no wire-identity
 move; nothing here changes `fit_status` meaning.
 
+## P1 — event-type certificates (`classify_event`; VERIFIED + REPAIRED · `c2331c2`)
+
+The #123 bounded typed-event search (`smartchem/experiment/event_search.py`) classifies every search step into
+one of three `EventType`s via `classify_event`. P1 makes that classifier a genuine **certificate** of each
+class's asserted invariants — the RECOGNITION projection — independent of how the step was produced (the search
+grammar, the REACHABILITY projection).
+
+**Claim refuted (false label).** `classify_event` returned `SCISSION` on `len(step.reactants) >= 2` **alone**.
+The `SCISSION` class asserts ">=2 **strictly-smaller** fragments" (the inherited W1 rank-descent), but that rank
+property was checked only in a test helper (`_is_monotone_and_hop_bounded`), never in the recognizer. A real
+conserving 2→2 step whose principal reactant exceeds the target — ester hydrolysis, methyl acetate (11 atoms) +
+water → acetic acid target (8) + methanol — was therefore mislabeled a rank-descending assembly.
+
+**Repair.** The `SCISSION` branch now certifies `all(len(r.atoms) < len(target.atoms) for r in reactants)`,
+fail-closed (`EventClassificationError`) otherwise. Grammar-safe by construction: `structure_descent.py` W1
+(every capped-scission fragment strictly smaller than the parent, lines 300 / 642–643) guarantees the predicate
+holds for every step the default `CappedScission`-only registry produces, so `event_type_counts()` never raises
+on real search output. **Connectedness needs no check** — a `Molecule` of >1 atom is one connected species by
+construction (`category.py:790`), so the single-precursor branches (`CONNECTED_LATERAL` / `INTRAMOLECULAR_COPRODUCT`)
+already guarantee "one connected precursor" from `arity == 1`; adding a connectedness predicate would be a check
+the type system makes impossible to violate.
+
+**Adversarial re-attack (evil-morty, read-only).** Both claims on trial — (1) grammar-safe / no false-exclude,
+(2) no surviving mislabel — **HELD**, verified by code reading *and* a live search over 6 targets / 22 route steps
+(zero raised). It surfaced one **residual** (not a break of the invariants on trial, independently reproduced):
+
+**Residual pinned — the `INTRAMOLECULAR_COPRODUCT` certificate boundary.** The type-3 class certifies a **shape**
+(one connected principal precursor, rank-larger than the target, expelling ≥1 coproduct); it does **not** certify
+the *intramolecular* connectivity its name evokes. A genuine intramolecular lactonization (4-hydroxybutanoic acid
+→ γ-butyrolactone + water) and an **inter**molecular 1→many fragmentation (retro-Diels-Alder: cyclohexene →
+butadiene + ethylene) have the **identical shape**, and no atom-map on a constitution-only `Molecule` separates
+them — both classify `INTRAMOLECULAR_COPRODUCT`. A nonlocal (atom-origin) property cannot be proven by a local
+shape check. Following the 1B precedent (document the boundary, preserve wire identity — no rename, digest
+untouched): the connectivity-preservation property is now stated as the **(P2) producer's proof obligation** (the
+generator builds the step from a known intramolecular transform and so carries the atom-map), pinned by
+`test_intramolecular_coproduct_certifies_shape_not_connectivity_preservation`. **Hard constraint on P2:** the
+lactonization generator must establish intramolecularity itself; it may not lean on `classify_event` for it.
+
+**Scope / gates.** `classify_event` / `event_type_counts` / `EventType` are confined to `event_search.py` (only
+tests consume them elsewhere) — zero blast radius into any digest/serialization surface. Golden **NO DRIFT**;
+ruff clean; `tests/test_event_search_123.py` 22 passed (19 prior + `test_scission_certifies_w1_rank_descent_not_arity_alone`,
+`test_classify_event_recognition_does_not_trust_provenance`, the boundary test above).
+
+### P1 claim ledger
+
+| claim | status | evidence |
+|---|---|---|
+| a `SCISSION` is certified by ≥2-reactant arity alone | **REFUTED** (false label) → repaired to certify W1 rank-descent | ester-hydrolysis probe; `c2331c2` |
+| the tightened `SCISSION` cert false-excludes a reachable search step | **REFUTED** (grammar-safe: W1 holds for every capped scission) | evil-morty; 6-target run; `structure_descent` W1 |
+| `INTRAMOLECULAR_COPRODUCT` certifies the *intramolecular* property its name claims | **CORRECTED** to a shape certificate; connectivity is the P2 producer's obligation | retro-DA counterexample; boundary test |
+
 ## Scientific claim ledger (P0 §1)
 
 | claim | status | evidence |
@@ -130,12 +182,22 @@ move; nothing here changes `fit_status` meaning.
 - ruff clean (changed files); targeted suites green (activator 259, SN2 40, hydrogenation/recognizer 52, corpus 4).
 - Version-independent payload golden: **NO DRIFT** on every commit (all three corrections ride the feasibility layer
   or are documentary; none moves a search/semantic identity).
-- Full OOM-safe suite + hosted CI: pending on the P0 §1 tip (recorded in this file when complete).
+- Full OOM-safe suite on code-final `5c29f70`: **8102 passed / 0 failed / 0 errors / 50 skipped** (collected 8152),
+  verified two ways (console aggregate + an independent 40-file junit tally, zero problem batches). The one test added
+  after it (`33bfacf`'s DAG trust-mode matrix test) verified standalone 7/7.
+- Hosted CI on the P0 tip `33bfacf` (= head `33bfacf5445a322cdca804b6e22395d9c221ade9`), run `41181700389`:
+  **conclusion `success`, all 7 jobs green** — `test (3.10)`, `test (3.12)`, `Wheel install matrix` ×4 (3.10/3.11/3.12/3.13),
+  `Optional PySCF backend (smoke)`. Head-SHA confirmed pinned to the branch tip; per-job conclusions read from the run
+  object, not the watcher exit code.
 
 ## Remaining (scoped, not yet executed this round)
 
-- **P1/P2** — event-type invariant enforcement; a real type-3 `INTRAMOLECULAR_COPRODUCT` generator (lactonization)
-  with its own well-founded termination proof.
+- **P2** (headline) — a real type-3 `INTRAMOLECULAR_COPRODUCT` generator (lactonization) with its own
+  well-founded termination proof. **Hard constraint carried from P1:** the generator must itself establish the
+  *intramolecular* (connectivity-preserving) property — it builds the step from a known intramolecular transform
+  and so carries the atom-map; it may NOT rely on `classify_event`, which certifies the shape only (an
+  intermolecular retro-fragmentation has the identical shape). The termination measure to attribute to the code
+  that enforces it (not the prettiest independent certificate).
 - **P3** — independent imine-condensation witness; elimination via the rank-increasing event rail; aldol scoping.
 - **P4** — physicalization (separate 2.0 research branch): mixed acetate/carbonate PHREEQC benchmark; open/sealed gas
   boundaries; conservative chamber transport.

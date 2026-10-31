@@ -603,4 +603,49 @@ def test_iminol_cn_hydroxyl_is_strong_not_cleared_by_a_mild_base():
     assert sn2_oxygen_base_regime(step) == "strong"
     assert len(step_activator_blockers(step)) == 1  # baseless -> demoted
     assert len(step_activator_blockers(_step(("CCBr", "CC(O)=NC"), ("CCOC(C)=NC", "Br"), catalysts=("K2CO3",)))) == 1
+
+
+# -- OPERATION XII 1C: the pKa-regime classifier is POSITIONAL -- it keys on the HYDROXYL carbon's OWN order>=2 bond,
+# so a C=C / C=O NEAR (but not ON) it does NOT relax the requirement. This preregistered corpus pins both the positive
+# cases (acid / phenol / enol -> mild) and the hostile holdouts a naive "any unsaturation -> mild" classifier would
+# false-CLEAR. Source-backed pKa (CRC / PubChem tertiary): AcOH 4.76, phenol 9.95, vinyl-alcohol/enol ~10.5; ethanol
+# 15.9, allyl alcohol ~15.5, benzyl alcohol ~15.4, ethylene glycol 14.2. The 'mild' whitelist tops out at conjugate-
+# acid pKa ~10.5 (carbonate), so only the sub-11 acids clear mild; every ~15-16 alcohol stays strong (no false-CLEAR).
+def _sn2_enol(catalysts=None):
+    # vinyl alcohol (enol) + MeBr -> methyl vinyl ether + HBr: C=C is ON the hydroxyl carbon -> acidic (pKa ~10.5).
+    return _step(("CBr", "C=CO"), ("C=COC", "Br"), catalysts=catalysts)
+
+
+def _sn2_allyl_alcohol(catalysts=None):
+    # allyl alcohol + MeBr: the C=C is ONE carbon from the sp3 hydroxyl carbon -> still an ALCOHOL (pKa ~15.5).
+    return _step(("CBr", "C=CCO"), ("C=CCOC", "Br"), catalysts=catalysts)
+
+
+def _sn2_beta_hydroxy_carbonyl(catalysts=None):
+    # glycolaldehyde (HOCH2CHO) + MeBr: the C=O is ONE carbon from the sp3 hydroxyl carbon -> still an ALCOHOL.
+    return _step(("CBr", "OCC=O"), ("COCC=O", "Br"), catalysts=catalysts)
+
+
+def _sn2_diol(catalysts=None):
+    # ethylene glycol + MeBr: TWO hydroxyls -> the nucleophilic oxygen is ambiguous -> fail-closed to 'strong'.
+    return _step(("CBr", "OCCO"), ("COCCO", "Br"), catalysts=catalysts)
+
+
+@pytest.mark.parametrize("stepf,expected", [
+    (_sn2_enol, "mild"),                    # C=C ON the OH-carbon -> enol, acidic
+    (_sn2_allyl_alcohol, "strong"),         # C=C NEAR -> sp3 alcohol  (the positional discriminator vs the enol)
+    (_sn2_beta_hydroxy_carbonyl, "strong"), # C=O NEAR -> sp3 alcohol  (the discriminator vs a carboxylic acid)
+    (_sn2_diol, "strong"),                  # poly-ol -> ambiguous nucleophile -> fail-closed
+], ids=["enol-mild", "allyl-alcohol-strong", "beta-hydroxy-carbonyl-strong", "diol-strong"])
+def test_1c_base_regime_is_positional_not_fooled_by_nearby_unsaturation(stepf, expected):
+    assert sn2_oxygen_base_regime(stepf()) == expected
+
+
+# the no-false-CLEAR half: every 'strong' hostile holdout stays demoted under a MILD base (the unsafe direction).
+@pytest.mark.parametrize("stepf", [_sn2_allyl_alcohol, _sn2_beta_hydroxy_carbonyl, _sn2_diol],
+                         ids=["allyl-alcohol", "beta-hydroxy-carbonyl", "diol"])
+@pytest.mark.parametrize("mild", ["K2CO3", "NaOH", "Et3N", "DBU"])
+def test_1c_nearby_unsaturation_alcohol_is_not_cleared_by_a_mild_base(stepf, mild):
+    reasons = step_activator_blockers(stepf(catalysts=(mild,)))
+    assert len(reasons) == 1 and "alkoxide" in reasons[0]  # still the STRONG requirement -- no false-CLEAR
     assert step_activator_blockers(_step(("CCBr", "CC(O)=NC"), ("CCOC(C)=NC", "Br"), catalysts=("NaH",))) == ()

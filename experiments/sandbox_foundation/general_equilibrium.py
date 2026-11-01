@@ -1,0 +1,141 @@
+"""OPERATION XV Wave B (P1) -- the general EQUILIBRIUM-OPERATOR interface + a first ADAPTER.
+
+The kinetic kernel (general_kernel.py) evolves dn/dt = N r + q.  A great deal of aqueous chemistry is NOT a slow
+kinetic relaxation but a FAST equilibrium: an algebraic constraint g(n) = 0 on the conserved-component inventories,
+solved to speciation without fabricated high reaction rates (the plan's section 2/3 warning).  This module adds that
+second operator KIND -- the EquilibriumOperator -- and, crucially, proves the ARCHITECTURE GATE: the existing,
+already-verified aqueous equilibrium solver (aqueous_equilibrium.solve) becomes a CONSUMER of the general interface
+through a thin ADAPTER, with NO rewrite of its numerics.  The plan is explicit: "Use an adapter first.  Once the
+adapter proves useful, factor genuine shared mathematics without changing results unnecessarily."
+
+WHAT IS (deliberately) HERE, and what is NOT:
+  * EquilibriumOperator -- the interface: speciate conserved-component INVENTORIES (mol) at a volume + temperature
+    into equilibrium species amounts (mol), algebraically.  Keyed on conserved components, so it composes with the
+    kernel's E n totals.
+  * EquilibriumState -- the typed result: species amounts, the conservation closure of the fast equilibrium, derived
+    scalars (pH, ...), and an evidential tier (never self-certified above what the wrapped solver earns).
+  * AcetateWaterEquilibriumOperator -- the first adapter, wrapping aqueous_equilibrium.solve.
+
+NOT here (they belong to Wave C, and are not faked as speculative empty types now): Compartment, InterfaceTransfer,
+ExternalBoundary, the operator-split coupled integrator.  They attach through this same interface when the coupled
+world needs them.
+
+IDENTITY NOTE: the wrapped solver reports concentrations by ROLE (h_plus_M, ac_minus_M, ...), not kernel Species
+objects.  This adapter is the EXPLICIT bridge the plan permits ("Do not create a second incompatible species identity
+system without an explicit adapter"): it returns amounts keyed by canonical species NAME, and the Wave C coupling will
+map those names to kernel Species through a declared species table.  No second solver and no second identity model is
+introduced -- the verified numerics are reused verbatim.
+"""
+from __future__ import annotations
+
+import math
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+
+from experiments.sandbox_foundation import aqueous_equilibrium
+from experiments.sandbox_foundation.claim_tiers import REFUSED, STRUCTURALLY_CONSERVING
+from experiments.sandbox_foundation.general_kernel import KernelError
+
+
+class EquilibriumError(KernelError):
+    """Fail-closed error for the general equilibrium interface."""
+
+
+@dataclass(frozen=True)
+class EquilibriumState:
+    """The typed result of solving a fast equilibrium through the general interface."""
+    species_amounts: dict        # {species_name: mol} at equilibrium
+    volume_L: float
+    temperature_K: float
+    component_inputs: dict        # {component: total mol supplied}
+    component_residuals: dict     # {component: |amount recovered in species - supplied|} -- fast-equilibrium closure
+    derived: dict                 # MODEL_DERIVED scalars (pH, ionic strength, ...); a quantity not supplied is absent
+    structural_tier: str          # STRUCTURALLY_CONSERVING if every conserved component closed, else REFUSED
+    solver_verdict: str           # the WRAPPED solver's own chemistry verdict (its provenance, passed through)
+    assumptions: tuple = ()       # declared modelling assumptions (e.g. water treated as an implicit reservoir)
+    caveats: tuple = field(default_factory=tuple)
+
+
+class EquilibriumOperator(ABC):
+    """Solve g(n) = 0: map conserved-component inventories (mol) to equilibrium species amounts (mol), algebraically.
+
+    ``components`` is the frozenset of conserved components the operator speciates; ``species`` is the tuple of
+    species names it returns.  A component it does not model is REFUSED, never silently ignored."""
+    components: frozenset = frozenset()
+    species: tuple = ()
+
+    @abstractmethod
+    def speciate(self, component_amounts: dict, *, volume_L: float,
+                 temperature_K: float = 298.15) -> EquilibriumState:
+        ...
+
+    def _validate(self, component_amounts: dict, volume_L: float, temperature_K: float) -> None:
+        if isinstance(volume_L, bool) or not (isinstance(volume_L, (int, float))
+                                              and math.isfinite(volume_L) and volume_L > 0):
+            raise EquilibriumError("volume_L must be a finite reactor volume > 0 (litres)")
+        if isinstance(temperature_K, bool) or not (isinstance(temperature_K, (int, float))
+                                                   and math.isfinite(temperature_K) and temperature_K > 0):
+            raise EquilibriumError("temperature_K must be a finite temperature > 0")
+        if type(component_amounts) is not dict:
+            raise EquilibriumError("component_amounts must be a {component: mol} dict")
+        for comp, val in component_amounts.items():
+            if comp not in self.components:
+                raise EquilibriumError(
+                    f"component {comp!r} is not modelled by {type(self).__name__} (has {sorted(self.components)}); "
+                    f"an unknown component is refused, never ignored")
+            if isinstance(val, bool) or not (isinstance(val, (int, float)) and math.isfinite(val) and val >= 0):
+                raise EquilibriumError(f"component amount for {comp!r} must be a finite mol value >= 0")
+
+
+class AcetateWaterEquilibriumOperator(EquilibriumOperator):
+    """Adapter: the verified aqueous_equilibrium.solve(AcetateWaterSystem) as a general EquilibriumOperator.
+
+    Conserved components ACETATE and SODIUM are supplied as inventories (mol); water/H/O are handled through the
+    wrapped solver's implicit solvent reservoir (a declared assumption, since water is in vast excess), and H+/OH-/
+    charge are determined by the acid/water equilibria + electroneutrality.  The numerics are the existing solver's,
+    unchanged."""
+    components = frozenset({"acetate", "sodium"})
+    species = ("HAc", "Ac-", "H+", "OH-", "Na+", "NaAc")
+
+    def __init__(self, *, activity_model: str = "ideal", include_ion_pair: bool = False):
+        if activity_model not in ("ideal", "davies"):
+            raise EquilibriumError("activity_model must be 'ideal' or 'davies'")
+        self.activity_model = activity_model
+        self.include_ion_pair = bool(include_ion_pair)
+
+    def speciate(self, component_amounts: dict, *, volume_L: float,
+                 temperature_K: float = 298.15) -> EquilibriumState:
+        self._validate(component_amounts, volume_L, temperature_K)
+        acetate_mol = float(component_amounts.get("acetate", 0.0))
+        sodium_mol = float(component_amounts.get("sodium", 0.0))
+        V = float(volume_L)
+
+        system = aqueous_equilibrium.AcetateWaterSystem(
+            total_acetic_M=acetate_mol / V, sodium_M=sodium_mol / V, temperature_K=temperature_K,
+            activity_model=self.activity_model, include_ion_pair=self.include_ion_pair)
+        res = aqueous_equilibrium.solve(system)                          # the VERIFIED numerics, verbatim
+
+        amounts = {
+            "HAc": res.hac_M * V, "Ac-": res.ac_minus_M * V, "H+": res.h_plus_M * V,
+            "OH-": res.oh_minus_M * V, "Na+": res.na_plus_M * V, "NaAc": res.naac_M * V,
+        }
+        # fast-equilibrium conservation closure: every acetate-bearing and sodium-bearing species summed back
+        acetate_out = amounts["HAc"] + amounts["Ac-"] + amounts["NaAc"]
+        sodium_out = amounts["Na+"] + amounts["NaAc"]
+        residuals = {"acetate": abs(acetate_out - acetate_mol), "sodium": abs(sodium_out - sodium_mol)}
+        tol = 1e-9 * max(1.0, acetate_mol, sodium_mol)
+        structural_tier = STRUCTURALLY_CONSERVING if all(r <= tol for r in residuals.values()) else REFUSED
+
+        derived = {
+            "pH": res.pH, "pH_concentration": res.pH_concentration, "pH_activity": res.pH_activity,
+            "ionic_strength_M": res.ionic_strength_M, "gamma_monovalent": res.gamma_monovalent,
+            "charge_balance_residual": res.charge_balance_residual,
+            "solver_agreement_residual": res.solver_agreement_residual,
+        }
+        return EquilibriumState(
+            species_amounts=amounts, volume_L=V, temperature_K=float(temperature_K),
+            component_inputs={"acetate": acetate_mol, "sodium": sodium_mol}, component_residuals=residuals,
+            derived=derived, structural_tier=structural_tier, solver_verdict=res.verdict,
+            assumptions=("water is an implicit solvent reservoir (not a finite conserved inventory); H+/OH- are set "
+                         "by the acid + water autodissociation equilibria and electroneutrality",),
+            caveats=tuple(res.caveats))

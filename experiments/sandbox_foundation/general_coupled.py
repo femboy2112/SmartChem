@@ -107,6 +107,27 @@ class EquilibriumCoupling:
                 raise CoupledError(f"species_table names {nm!r} which the operator does not produce")
             if type(sp) is not Species:
                 raise CoupledError(f"species_table[{nm!r}] must be a Species")
+        # XVI-P0.2: the mapping must be INJECTIVE -- two operator species aliased onto one kernel Species would merge
+        # distinct chemical species (e.g. silently identify NH3 and NH4+), a laundering move a plain dict permits.
+        mapped = list(self.species_table.values())
+        if len(set(mapped)) != len(mapped):
+            dup = sorted({sp.name for sp in mapped if mapped.count(sp) > 1})
+            raise CoupledError(f"species_table is not injective: distinct operator species map to the same kernel "
+                               f"Species {dup} -- a name alias cannot merge two chemically distinct species")
+        # XVI-P0.2: the mapping must be chemically FAITHFUL -- a name may only map to a kernel Species whose
+        # composition+charge match the operator's declared signature, so "NH4+" cannot be aliased onto a Na+ Species.
+        # Fail-closed: an operator that declares no complete signature cannot be coupled (its faithfulness is unprovable).
+        sig = getattr(self.operator, "species_signature", {})
+        if not sig or any(nm not in sig for nm in self.operator.species):
+            raise CoupledError(f"operator {type(self.operator).__name__} does not declare a complete species_signature; "
+                               f"its species_table cannot be verified chemically faithful (fail-closed)")
+        for nm, sp in self.species_table.items():
+            sig_comp, sig_charge = sig[nm]
+            if sp.composition != tuple(sig_comp) or sp.charge != sig_charge:
+                raise CoupledError(
+                    f"species_table[{nm!r}] maps to {sp.name!r} {sp.composition} q={sp.charge}, which does NOT match "
+                    f"the operator's declared signature for {nm!r} ({tuple(sig_comp)} q={sig_charge}); a nominal "
+                    f"species cannot be aliased onto a chemically incompatible element/charge signature")
         if type(self.reservoir_components) is not frozenset:
             object.__setattr__(self, "reservoir_components", frozenset(self.reservoir_components))
 
@@ -415,7 +436,13 @@ class CoupledWorld:
         return sol.y[:, -1]
 
     def _project(self, y: np.ndarray) -> np.ndarray:
-        """P: re-speciate every fast-equilibrium compartment onto g(n) = 0 (instantaneous SNIA projection)."""
+        """P: re-speciate every fast-equilibrium compartment onto g(n) = 0 (instantaneous SNIA projection).
+
+        XVI-P0.2: the returned species vector is NOT trusted on the operator's word.  Every projection result passes a
+        fail-closed admission gate (``_admit_projection``) -- completeness, finiteness, nonnegativity, an accepted
+        structural verdict, and conserved-component closure RECOMPUTED by the world from the returned species -- before
+        a single amount is installed.  An inadmissible projection raises CoupledError and aborts the run rather than
+        laundering an unverified or non-conserving vector into the world and certifying the trajectory."""
         if not self._has_equilibrium:
             return y
         out = y.copy()
@@ -429,9 +456,55 @@ class CoupledWorld:
             amounts = {nm: out[self._slot[(c.name, sp)]] for nm, sp in ec.species_table.items()}
             totals = ec.operator.component_totals(amounts)
             state = ec.operator.speciate(totals, volume_L=V, temperature_K=298.15)
+            self._admit_projection(c, ec, state, totals)          # fail-closed: refuse a bad projection, never install it
             for nm, sp in ec.species_table.items():
                 out[self._slot[(c.name, sp)]] = state.species_amounts[nm]
         return out
+
+    @staticmethod
+    def _projection_tol(totals_in: dict) -> float:
+        scale = max([1.0] + [abs(float(v)) for v in totals_in.values()])
+        return 1e-6 * scale
+
+    def _admit_projection(self, c, ec, state, totals_in: dict) -> None:
+        """XVI-P0.2 fail-closed admission of a fast-equilibrium projection.  The world verifies the CODOMAIN itself --
+        it does not trust the operator's self-reported residuals or tier blindly: it recomputes the conserved-component
+        closure from the RETURNED species.  Raises CoupledError on any violation (no partial install)."""
+        from experiments.sandbox_foundation.general_equilibrium import EquilibriumState
+        if type(state) is not EquilibriumState:
+            raise CoupledError(f"compartment {c.name!r} fast-equilibrium returned a {type(state).__name__}, "
+                               f"not an EquilibriumState")
+        sa = state.species_amounts
+        if type(sa) is not dict:
+            raise CoupledError(f"compartment {c.name!r} projection returned a non-dict species map")
+        # completeness: every kernel species the world must install has a value
+        missing = [nm for nm in ec.species_table if nm not in sa]
+        if missing:
+            raise CoupledError(f"compartment {c.name!r} projection is missing required species {sorted(missing)}")
+        tol = self._projection_tol(totals_in)
+        # finiteness + nonnegativity of every installed amount
+        for nm in ec.species_table:
+            v = sa[nm]
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+                raise CoupledError(f"compartment {c.name!r} projection returned a non-finite amount for {nm!r}: {v!r}")
+            if float(v) < -tol:
+                raise CoupledError(f"compartment {c.name!r} projection returned a negative amount for {nm!r}: "
+                                   f"{float(v):.3e} (tol {tol:.3e})")
+        # the operator's own structural verdict must be an ACCEPTED one (not REFUSED / unverified)
+        if state.structural_tier != STRUCTURALLY_CONSERVING:
+            raise CoupledError(f"compartment {c.name!r} projection returned structural_tier "
+                               f"{state.structural_tier!r}, not {STRUCTURALLY_CONSERVING!r}; the solve is refused or "
+                               f"unverified and its vector is not admitted")
+        # INDEPENDENT closure (do NOT trust the operator's self-reported residuals): recompute the operator's conserved
+        # components from the RETURNED species and require they equal the inputs the projection was keyed on
+        totals_out = ec.operator.component_totals(sa)
+        for comp, tin in totals_in.items():
+            tout = float(totals_out.get(comp, 0.0))
+            if not math.isfinite(tout) or abs(tout - float(tin)) > tol:
+                raise CoupledError(
+                    f"compartment {c.name!r} projection does NOT conserve component {comp!r}: keyed on {float(tin):.6g} "
+                    f"but the returned species recompute to {tout:.6g} (residual {abs(tout - float(tin)):.3e} > tol "
+                    f"{tol:.3e}); refusing to install a non-conserving speciation")
 
     # ---------------------------------------------------------------- the stepper
     def _step(self, y: np.ndarray, dt: float, scheme: str, rtol: float, atol: float) -> np.ndarray:

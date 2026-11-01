@@ -60,9 +60,17 @@ class EquilibriumOperator(ABC):
     """Solve g(n) = 0: map conserved-component inventories (mol) to equilibrium species amounts (mol), algebraically.
 
     ``components`` is the frozenset of conserved components the operator speciates; ``species`` is the tuple of
-    species names it returns.  A component it does not model is REFUSED, never silently ignored."""
+    species names it returns.  A component it does not model is REFUSED, never silently ignored.
+
+    ``species_signature`` (XVI-P0.2) declares the expected (composition, charge) of every species NAME the operator
+    returns -- the composition tuple in the same canonical (element, count) form a kernel Species uses, plus the
+    integer charge.  It lets a consumer (EquilibriumCoupling) verify that the kernel Species a name is mapped to is
+    chemically FAITHFUL to the name (so "NH4+" cannot be aliased onto a sodium Species), fail-closed: a coupling
+    refuses an operator that does not declare a complete signature.  An empty default forces every real operator to
+    declare it."""
     components: frozenset = frozenset()
     species: tuple = ()
+    species_signature: dict = {}     # {species_name: (composition_tuple, charge)} -- for faithfulness checking
 
     @abstractmethod
     def speciate(self, component_amounts: dict, *, volume_L: float,
@@ -96,6 +104,14 @@ class AcetateWaterEquilibriumOperator(EquilibriumOperator):
     unchanged."""
     components = frozenset({"acetate", "sodium"})
     species = ("HAc", "Ac-", "H+", "OH-", "Na+", "NaAc")
+    species_signature = {                                    # XVI-P0.2 (composition, charge) per returned species name
+        "HAc": ((("C", 2), ("H", 4), ("O", 2)), 0),
+        "Ac-": ((("C", 2), ("H", 3), ("O", 2)), -1),
+        "H+": ((("H", 1),), 1),
+        "OH-": ((("H", 1), ("O", 1)), -1),
+        "Na+": ((("Na", 1),), 1),
+        "NaAc": ((("C", 2), ("H", 3), ("Na", 1), ("O", 2)), 0),
+    }
 
     def __init__(self, *, activity_model: str = "ideal", include_ion_pair: bool = False):
         if activity_model not in ("ideal", "davies"):
@@ -159,6 +175,14 @@ class AmmoniaWaterEquilibriumOperator(EquilibriumOperator):
     the speciation solves against)."""
     components = frozenset({"ammonia", "strong_base", "strong_acid"})
     species = ("NH3", "NH4+", "H+", "OH-", "Na+", "Cl-")
+    species_signature = {                                    # XVI-P0.2 (composition, charge) per returned species name
+        "NH3": ((("H", 3), ("N", 1)), 0),
+        "NH4+": ((("H", 4), ("N", 1)), 1),
+        "H+": ((("H", 1),), 1),
+        "OH-": ((("H", 1), ("O", 1)), -1),
+        "Na+": ((("Na", 1),), 1),
+        "Cl-": ((("Cl", 1),), -1),
+    }
 
     def speciate(self, component_amounts: dict, *, volume_L: float,
                  temperature_K: float = 298.15) -> EquilibriumState:

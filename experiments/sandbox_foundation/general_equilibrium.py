@@ -32,7 +32,7 @@ import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
-from experiments.sandbox_foundation import aqueous_equilibrium
+from experiments.sandbox_foundation import ammonia_equilibrium, aqueous_equilibrium
 from experiments.sandbox_foundation.claim_tiers import REFUSED, STRUCTURALLY_CONSERVING
 from experiments.sandbox_foundation.general_kernel import KernelError
 
@@ -139,3 +139,64 @@ class AcetateWaterEquilibriumOperator(EquilibriumOperator):
             assumptions=("water is an implicit solvent reservoir (not a finite conserved inventory); H+/OH- are set "
                          "by the acid + water autodissociation equilibria and electroneutrality",),
             caveats=tuple(res.caveats))
+
+    def component_totals(self, species_amounts: dict) -> dict:
+        """The operator's OWN conservation law: reconstruct its conserved-component inventories from species amounts
+        (acetate = HAc + Ac- + NaAc; sodium = Na+ + NaAc).  Used by the coupled world to re-key a current inventory
+        onto the operator's components before projecting -- generic, so the coupled integrator carries no chemistry."""
+        g = species_amounts.get
+        return {"acetate": g("HAc", 0.0) + g("Ac-", 0.0) + g("NaAc", 0.0),
+                "sodium": g("Na+", 0.0) + g("NaAc", 0.0)}
+
+
+class AmmoniaWaterEquilibriumOperator(EquilibriumOperator):
+    """Adapter: the Wave D ammonia_equilibrium.solve as a general EquilibriumOperator -- a weak BASE buffer, a
+    chemistry DISTINCT from acetate, through the SAME Wave B interface (no second solver, no second identity system).
+
+    Conserved components: ammonia (total N as NH3 + NH4+), strong_base (Na+ spectator), strong_acid (Cl- spectator).
+    Water/H/O and the H+/OH- balance ride on the implicit solvent reservoir + electroneutrality, exactly as the
+    acetate operator.  Na+/Cl- are pure spectators passed through unchanged (their presence sets the charge offset S
+    the speciation solves against)."""
+    components = frozenset({"ammonia", "strong_base", "strong_acid"})
+    species = ("NH3", "NH4+", "H+", "OH-", "Na+", "Cl-")
+
+    def speciate(self, component_amounts: dict, *, volume_L: float,
+                 temperature_K: float = 298.15) -> EquilibriumState:
+        self._validate(component_amounts, volume_L, temperature_K)
+        ammonia_mol = float(component_amounts.get("ammonia", 0.0))
+        base_mol = float(component_amounts.get("strong_base", 0.0))
+        acid_mol = float(component_amounts.get("strong_acid", 0.0))
+        V = float(volume_L)
+
+        system = ammonia_equilibrium.AmmoniaWaterSystem(
+            total_ammonia_M=ammonia_mol / V, strong_base_M=base_mol / V, strong_acid_M=acid_mol / V,
+            temperature_K=temperature_K)
+        res = ammonia_equilibrium.solve(system)                           # the VERIFIED two-route numerics, verbatim
+
+        amounts = {
+            "NH3": res.nh3_M * V, "NH4+": res.nh4_M * V, "H+": res.h_M * V, "OH-": res.oh_M * V,
+            "Na+": base_mol, "Cl-": acid_mol,                              # strong ions: inert spectators, passed through
+        }
+        ammonia_out = amounts["NH3"] + amounts["NH4+"]
+        residuals = {"ammonia": abs(ammonia_out - ammonia_mol),
+                     "strong_base": abs(amounts["Na+"] - base_mol), "strong_acid": abs(amounts["Cl-"] - acid_mol)}
+        tol = 1e-9 * max(1.0, ammonia_mol, base_mol, acid_mol)
+        structural_tier = STRUCTURALLY_CONSERVING if all(r <= tol for r in residuals.values()) else REFUSED
+
+        derived = {"pH": res.pH, "ionic_strength_M": res.ionic_strength_M,
+                   "charge_balance_residual": res.charge_balance_residual,
+                   "solver_agreement_residual": res.solver_agreement_residual}
+        return EquilibriumState(
+            species_amounts=amounts, volume_L=V, temperature_K=float(temperature_K),
+            component_inputs={"ammonia": ammonia_mol, "strong_base": base_mol, "strong_acid": acid_mol},
+            component_residuals=residuals, derived=derived, structural_tier=structural_tier,
+            solver_verdict=res.verdict,
+            assumptions=("water is an implicit solvent reservoir; H+/OH- set by the base + water equilibria and "
+                         "electroneutrality; ideal concentration standard state (Davies is a declared P4 extension)",),
+            caveats=tuple(res.caveats))
+
+    def component_totals(self, species_amounts: dict) -> dict:
+        """ammonia = NH3 + NH4+; strong_base = Na+; strong_acid = Cl- (the operator's own conservation law)."""
+        g = species_amounts.get
+        return {"ammonia": g("NH3", 0.0) + g("NH4+", 0.0),
+                "strong_base": g("Na+", 0.0), "strong_acid": g("Cl-", 0.0)}

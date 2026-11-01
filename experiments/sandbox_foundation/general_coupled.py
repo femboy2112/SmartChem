@@ -407,33 +407,14 @@ class CoupledWorld:
                 continue
             ec = c.equilibrium
             V = c.system.volume_L
-            # component inventories the operator consumes, summed from the current kernel inventory
-            totals = {}
-            for comp in ec.operator.components:
-                totals[comp] = 0.0
-            # the operator keys on its own component names; the acetate operator reads 'acetate'/'sodium' totals, which
-            # we reconstruct from the explicit species it produces (mass-balance of its own species table)
+            # re-key the current inventory onto the operator's conserved components via the operator's OWN
+            # conservation law (operator.component_totals) -- generic, so the coupled integrator carries no chemistry
             amounts = {nm: out[self._slot[(c.name, sp)]] for nm, sp in ec.species_table.items()}
-            totals = self._operator_totals(ec, amounts)
+            totals = ec.operator.component_totals(amounts)
             state = ec.operator.speciate(totals, volume_L=V, temperature_K=298.15)
             for nm, sp in ec.species_table.items():
                 out[self._slot[(c.name, sp)]] = state.species_amounts[nm]
         return out
-
-    @staticmethod
-    def _operator_totals(ec: EquilibriumCoupling, amounts: dict) -> dict:
-        """Reconstruct the operator's conserved-component inventories from its current species amounts.  Generic: the
-        operator declares (via its adapter) the component each species contributes to; here we use the acetate-water
-        operator's known mass balance (acetate = HAc + Ac- + NaAc; sodium = Na+ + NaAc), which is the operator's own
-        conservation law -- the same one Wave B closes on."""
-        comps = ec.operator.components
-        totals = {c: 0.0 for c in comps}
-        # acetate / sodium mass balance of the Wave B operator's species set
-        if "acetate" in comps:
-            totals["acetate"] = amounts.get("HAc", 0.0) + amounts.get("Ac-", 0.0) + amounts.get("NaAc", 0.0)
-        if "sodium" in comps:
-            totals["sodium"] = amounts.get("Na+", 0.0) + amounts.get("NaAc", 0.0)
-        return totals
 
     # ---------------------------------------------------------------- the stepper
     def _step(self, y: np.ndarray, dt: float, scheme: str, rtol: float, atol: float) -> np.ndarray:
@@ -494,8 +475,18 @@ class CoupledWorld:
             if b.mode == "feed":
                 j = self._slot[(b.compartment, b.species)]
                 feed_rate_comp += self._Eg[:, j] * b.rate
-        cons_idx = [i for i, lab in enumerate(self.component_labels) if lab not in self.reservoir_components]
-        res_idx = [i for i, lab in enumerate(self.component_labels) if lab in self.reservoir_components]
+        # a fixed-activity boundary EXCHANGES its species' components with an external reservoir (an open sweep/purge),
+        # so those components are ledgered, not asserted conserved -- same status as an implicit-solvent reservoir
+        fixed_activity_components = set()
+        for b in self.boundaries:
+            if b.mode == "fixed_activity":
+                j = self._slot[(b.compartment, b.species)]
+                for i, lab in enumerate(self.component_labels):
+                    if self._Eg[i, j] != 0.0:
+                        fixed_activity_components.add(lab)
+        ledgered = set(self.reservoir_components) | fixed_activity_components
+        cons_idx = [i for i, lab in enumerate(self.component_labels) if lab not in ledgered]
+        res_idx = [i for i, lab in enumerate(self.component_labels) if lab in ledgered]
 
         max_conserved_drift = 0.0
         max_feed_residual = 0.0
@@ -535,9 +526,10 @@ class CoupledWorld:
             caveats += (f"the feed ledger did not close (residual {max_feed_residual:.3e} > tol {tol:.3e})",)
         if not positivity_held:
             caveats += (f"an inventory went negative (min {min_amount:.3e})",)
-        if self.reservoir_components:
-            notes += (f"reservoir-coupled components {sorted(self.reservoir_components)} exchange with an external/"
-                      f"implicit reservoir and are not claimed conserved; net exchange reported",)
+        if ledgered:
+            notes += (f"ledgered components {sorted(ledgered)} exchange with an external/implicit reservoir "
+                      f"(fast-equilibrium solvent and/or a fixed-activity boundary) and are not claimed conserved; "
+                      f"net exchange reported",)
 
         receipt = CoupledReceipt(
             solver_completed=solver_completed, positivity_held=positivity_held,

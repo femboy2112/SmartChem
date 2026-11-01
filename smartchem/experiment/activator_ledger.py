@@ -533,16 +533,26 @@ _assert_ledger_keys_are_live_classes()
 #: rename guard above protects the PAST (a key that vanished); THIS protects the FUTURE (a class that APPEARED).
 #: The base-rate argument -- "among the recognized classes, the Claisen condensation always needs a stoichiometric
 #: enolizing base; the hydrogenation and the neutral-oxygen SN2 need a step-conditional activator" -- is a SNAPSHOT
-#: over exactly these 24 classes (Mega-Round XI reviewed hydrogenation + oxoacid ester; 1.5 consolidation reviewed
+#: over exactly these 25 classes (Mega-Round XI reviewed hydrogenation + oxoacid ester; 1.5 consolidation reviewed
 #: SN2 + imine condensation; OPERATION XII 1A moved hydrogenation from a class-keyed TRANSITION_METAL_CATALYST to the
-#: step-conditional H2-activation split -- see the ledger table and :func:`_conditional_required_roles`). The audit
+#: step-conditional H2-activation split; OPERATION XIV reviewed the 25th class, intramolecular lactonization -- see
+#: the ledger table and :func:`_conditional_required_roles`). The audit
 #: roadmap still plans aldol /
 #: Knoevenagel / Michael (enolizing base) and the metal
 #: cross-couplings (catalyst): each WOULD need an entry when its recognizer lands, and a forgotten one is a
 #: false-VOUCH on growth. If any recognizer is added / removed / renamed, this digest moves and import fails LOUD,
 #: forcing a ledger re-decision rather than a silent gap.
-_REVIEWED_CLASS_COUNT = 24
-_REVIEWED_REGISTRY_DIGEST = "0dfb95140ad927ef"
+#:
+#: OPERATION XIV REVIEW (the 25th-class bump, 24 @ 0dfb95140ad927ef -> 25 @ d9f7e867e8f1a1d2). The new class is
+#: intramolecular lactonization (a hydroxy acid closing to a cyclic ester + water). DECISION: it adds NO ledger
+#: entry. Lactonization is an intramolecular DEHYDRATIVE ESTERIFICATION; like its intermolecular sibling "acyl
+#: condensation (esterification/amidation)" -- which is itself NOT in REQUIRED_ACTIVATORS -- it is proton-CATALYSED
+#: (a catalytic acid, or thermal for favourable ring sizes), never driven by a STOICHIOMETRIC activator the kitchen
+#: lacks. It forms no enolate and needs no metal, so "unrecognized activator" would be the wrong demotion. The
+#: base-rate holds: among the now-25 classes, only Claisen (enolizing base) and the step-conditional hydrogenation /
+#: neutral-O SN2 carry a stoichiometric/catalytic activator requirement.
+_REVIEWED_CLASS_COUNT = 25
+_REVIEWED_REGISTRY_DIGEST = "d9f7e867e8f1a1d2"
 
 
 def _assert_registry_unchanged_since_ledger_review() -> None:

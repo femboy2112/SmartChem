@@ -42,13 +42,13 @@ _NEW_CLASS_STEPS = [
 ]
 
 
-def test_oracle_has_twenty_four_recognizers():
+def test_oracle_has_twenty_five_recognizers():
     # 1.1.0 base 20 (#110 activated acyl 18th, #111 sulfonate-ester 19th, #115 Claisen 20th) + #114 hydrogenation
     # (21st) + #111 oxoacid (nitrate/phosphate) ester (22nd) + #112 SN2 substitution at sp3 carbon (23rd) + #119
-    # imine condensation (24th) -- MINOR coverage expansions. The version-independent golden stays UNMOVED (no
-    # corpus case is a hydrogenation, oxoacid ester, SN2 or imine condensation), so this is a pure coverage add,
-    # not a semantic re-freeze.
-    assert len(_RECOGNIZERS) == 24
+    # imine condensation (24th) + OPERATION XIV intramolecular lactonization (25th) -- MINOR coverage expansions.
+    # The version-independent golden stays UNMOVED (no corpus case is a hydrogenation, oxoacid ester, SN2, imine or
+    # lactonization), so this is a pure coverage add, not a semantic re-freeze.
+    assert len(_RECOGNIZERS) == 25
 
 
 @pytest.mark.parametrize("label,step,expect", _NEW_CLASS_STEPS, ids=[c[0] for c in _NEW_CLASS_STEPS])

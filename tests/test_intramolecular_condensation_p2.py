@@ -138,12 +138,15 @@ def test_charged_or_stateful_target_yields_no_edge():
     assert retro_lactonization_edges(charged) == ()
 
 
-def test_recognition_is_separate_from_reachability():
-    """The generator is a REACHABILITY producer; the 24-class oracle has no lactonization recognizer, so it honestly
-    DEMOTES the step as unrecognized (None) rather than false-vouching a structurally-valid-but-unrecognized event.
-    This pins that the generator never mints recognition -- adding a recognizer is a separate, gated step."""
+def test_recognition_is_now_vouched_by_the_xiv_recognizer():
+    """REVIEWED TRANSITION (OPERATION XIV): the lactonization RECOGNIZER (the 25th oracle class) has landed, so a
+    generated lactonization step is now VOUCHED -- recognized as the lactonization class -- rather than demoted.
+    (Before XIV the 24-class oracle demoted it as unrecognized; that was honest coverage loss, not a false claim.)
+    The generator STILL never mints recognition: recognition is the oracle's INDEPENDENT, content-deterministic
+    verdict, re-derived from the step's molecules (:func:`smartchem...reaction_type_oracle._intramolecular_lactonization`
+    -> the forward re-derivation), never read from the edge that produced the step."""
     step = _only_step(GBL)
-    assert recognize_reaction_type(step) is None
+    assert recognize_reaction_type(step) == LACTONIZATION_CLASS
 
 
 def test_generated_step_conserves_and_round_trips_through_the_certificate():

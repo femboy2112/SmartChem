@@ -18,9 +18,11 @@ from experiments.sandbox_foundation.solid_bicarbonate import (
     NAHCO3_SOLUBILITY_25C,
     SolidBicarbonateError,
     SolidBicarbonateSystem,
+    _tier,
     dissolution_step,
     dissolve_to_saturation,
     saturation_index,
+    within_empirical_solubility_domain,
 )
 
 
@@ -31,19 +33,25 @@ def _sys(**kw):
     return SolidBicarbonateSystem(**base)
 
 
-def test_sourced_solubility_and_derived_ksp_provenance():
+def test_sourced_solubility_and_empirical_qsp_provenance():
     assert NAHCO3_SOLUBILITY_25C.status == "SOURCED" and NAHCO3_SOLUBILITY_25C.uncertainty > 0
     assert KSP_NAHCO3_25C.status == "DERIVED"
     assert abs(KSP_NAHCO3_25C.value - NAHCO3_SOLUBILITY_25C.value ** 2) < 1e-12
+    # OPERATION XIV P0-1B: it is labelled an EMPIRICAL concentration product, NOT a thermodynamic activity Ksp.
+    assert "EMPIRICAL" in KSP_NAHCO3_25C.units and "Ksp" in KSP_NAHCO3_25C.units  # "...NOT an activity-based Ksp"
 
 
-def test_excess_solid_leaves_undissolved_remainder_at_saturation():
+def test_excess_solid_at_saturation_is_out_of_domain_so_tier_demotes():
+    # OPERATION XIV P0-1B: dissolving to saturation drives [Na+]=[HCO3-]~1.2 M, an ionic strength FAR outside the
+    # dilute domain where the empirical Qsp = S^2 proxy is defensible.  The conservation + the SI=1 bound still hold
+    # (STRUCTURALLY conserving), but the saturation CLAIM demotes to UNVERIFIED -- it is model-level, never a
+    # source-validated out-of-domain prediction.  (The old test over-claimed NUMERICALLY_VERIFIED here.)
     s = _sys(n_solid_mol=2.0)
     r = dissolve_to_saturation(s)
     assert r.saturated and not r.exhausted
     assert r.system_after.n_solid_mol > 0                 # a remainder stays undissolved
-    assert abs(r.saturation_index_after - 1.0) < 1e-6     # the solubility bound
-    assert r.claim_tier == claim_tiers.NUMERICALLY_VERIFIED
+    assert abs(r.saturation_index_after - 1.0) < 1e-6     # the solubility bound (conservation is unaffected)
+    assert r.claim_tier == claim_tiers.UNVERIFIED         # ~1.2 M is out of the dilute Qsp domain -> demoted
 
 
 def test_insufficient_solid_dissolves_fully():
@@ -119,3 +127,42 @@ def test_input_validation():
         _sys(volume_L=0.0, n_solid_mol=1.0)
     with pytest.raises(SolidBicarbonateError):
         _sys(n_solid_mol=-1.0)
+
+
+# ---------------------------------------------- OPERATION XIV P0-1B: the empirical Qsp applicability-domain matrix
+def test_dilute_undersaturation_is_within_domain_and_verified():
+    # a dilute solution (low ionic strength, undersaturated) is WHERE the empirical Qsp proxy is defensible.
+    s = _sys(n_carbon_aqueous_mol=0.05, n_sodium_aqueous_mol=0.05, n_solid_mol=0.0)
+    assert within_empirical_solubility_domain(s)
+    assert saturation_index(s) < 1.0
+    assert _tier(s) == claim_tiers.NUMERICALLY_VERIFIED
+
+
+def test_high_ionic_strength_is_out_of_domain_and_demotes_even_in_ideal_model():
+    # a high-salt matrix (common-ion sodium) pushes the ionic strength past the Davies domain; the ideal
+    # concentration-product proxy is model-level only there, so the tier demotes regardless of activity_model.
+    s = _sys(n_carbon_aqueous_mol=0.1, n_sodium_aqueous_mol=1.0, n_solid_mol=0.0, activity_model="ideal")
+    assert not within_empirical_solubility_domain(s)
+    assert _tier(s) == claim_tiers.UNVERIFIED
+
+
+def test_dissolving_NaHCO3_raises_SI_but_bare_sodium_alkalinity_lowers_it():
+    # The honest common-ion behaviour in this speciation model (OPERATION XIV P0-1B; measured, not assumed):
+    #   * DISSOLVING NaHCO3 adds Na+ AND inorganic carbon 1:1, holding pH at the bicarbonate buffer point (~8.34),
+    #     so [Na+][HCO3-] -- and thus SI -- rises monotonically toward saturation.  This is the ordering the
+    #     dissolution solver (_si_after_dissolving / dissolve_to_saturation) relies on.
+    #   * BARE sodium at FIXED carbon is NOT an inert common ion: with no counter-anion it is alkalinity, driving the
+    #     pH past the HCO3- (Bjerrum) maximum so carbon converts HCO3- -> CO3^2- and [HCO3-] -- and SI -- FALL.  The
+    #     naive "add Na+, SI goes up" intuition is wrong in this system, and the proxy is honest about it.
+    base = saturation_index(_sys(n_carbon_aqueous_mol=0.05, n_sodium_aqueous_mol=0.05))
+    co_dissolved = saturation_index(_sys(n_carbon_aqueous_mol=0.30, n_sodium_aqueous_mol=0.30))
+    bare_sodium = saturation_index(_sys(n_carbon_aqueous_mol=0.05, n_sodium_aqueous_mol=0.30))
+    assert co_dissolved > base               # dissolving more NaHCO3 (Na + C together) approaches saturation
+    assert bare_sodium < base                # bare Na+ alkalinity past the bicarbonate maximum depletes HCO3-
+
+
+def test_undersaturated_solid_fully_dissolves_within_domain_is_verified():
+    # a small amount of solid into water: dissolves fully, stays dilute+undersaturated -> within domain, verified.
+    r = dissolve_to_saturation(_sys(n_solid_mol=0.2))
+    assert r.exhausted and r.saturation_index_after < 1.0
+    assert r.claim_tier == claim_tiers.NUMERICALLY_VERIFIED       # dilute enough to stay in the Qsp domain

@@ -160,9 +160,12 @@ class MixedGasResult:
     p_co2_atm: float                 # fixed input (open); diagnostic/output (closed/sealed)
     gas_carbon_mol: float            # headspace CO2 (mol); 0 for closed; NaN-free: 0 for open (infinite reservoir)
     dissolved_carbon_mol: float      # aqueous carbon (mol) for sealed; NaN otherwise
-    exported_carbon_mol: float       # carbon crossing the OPEN boundary to/from the external reservoir (signed):
-    #   output - (the dissolved carbon that WOULD be present in the matched closed system).  0 for closed/sealed
-    #   (both are carbon-closed). For 'open' it is the external-ledger entry, so the whole-world carbon is accounted.
+    exported_carbon_mol: "float | None"   # cumulative carbon that crossed the OPEN boundary, in MOLES.  None for
+    #   'open': a fixed-P_CO2 equilibrium fixes the dissolved CONCENTRATION (total_dissolved_carbon_M) but NOT a
+    #   cumulative mole transfer -- that is identifiable only given a liquid VOLUME and an INITIAL inventory, via
+    #   open_boundary_carbon_ledger().  0.0 for closed/sealed (both carbon-closed -> a MEASURED zero net export).
+    #   (OPERATION XIV P0-1A: the earlier open value -C_C was a mol/L concentration mislabelled as mol -- a
+    #   dimensional error; a cumulative mole count is never fabricated from an instantaneous concentration.)
     ionic_strength_M: float
     gamma_monovalent: float
     gamma_divalent: float
@@ -473,12 +476,12 @@ def solve(system: MixedGasSystem, *, tol: float = DAVIES_FIXED_POINT_TOL) -> Mix
     if not problems and system.activity_model == "davies" and math.isfinite(ionic) and ionic > SALTING_OUT_I_THRESHOLD:
         caveats = (ACETATE_NONVOLATILE_CAVEAT, SALTING_OUT_CAVEAT)
 
-    # external-ledger carbon export for the OPEN boundary: the dissolved carbon the matched CLOSED system would hold
-    # at this pH is C_C itself here (open C_C is the dissolved total); the reservoir supplied/absorbed exactly the
-    # difference from a de-gassed start (0). So exported = -C_C*V? -- but open has no V. We report the per-litre
-    # dissolved carbon that crossed the boundary into solution as the signed ledger entry (negative = absorbed from
-    # reservoir). closed/sealed are carbon-closed => 0.
-    exported = -C_C if system.mode == "open" else 0.0
+    # OPEN-boundary carbon (OPERATION XIV P0-1A): a fixed-P_CO2 equilibrium fixes the dissolved CONCENTRATION
+    # (total_dissolved_carbon_M = C_C), but a cumulative MOLES transferred across the boundary is NOT identifiable
+    # from the instantaneous equilibrium alone -- it needs a declared liquid volume AND the liquid's initial carbon
+    # inventory (open_boundary_carbon_ledger).  So report UNKNOWN (None), never a fabricated mole count from C_C (the
+    # earlier `-C_C` was mol/L mislabelled as mol).  closed/sealed are carbon-closed => a MEASURED 0.0.
+    exported = None if system.mode == "open" else 0.0
 
     charge_resid = abs((Na + h) - (oh + ac + hco3 + 2.0 * co3))
     acetate_resid = abs(C_Ac - (hac + ac))
@@ -501,6 +504,40 @@ def solve(system: MixedGasSystem, *, tol: float = DAVIES_FIXED_POINT_TOL) -> Mix
         activity_model=system.activity_model, solver_agreement_residual=agreement,
         charge_balance_residual=charge_resid, carbon_balance_residual=carbon_resid,
         acetate_conservation_residual=acetate_resid, davies_iterations=davies_iters, caveats=caveats)
+
+
+def open_boundary_carbon_ledger(result: "MixedGasResult", *, volume_L: float,
+                                initial_carbon_mol: float) -> dict:
+    """The cumulative carbon transferred across an OPEN boundary, in MOLES -- the typed companion to the
+    instantaneous open equilibrium (OPERATION XIV P0-1A).
+
+    An open equilibrium alone fixes the dissolved CONCENTRATION (``result.total_dissolved_carbon_M``), NOT a mole
+    transfer; the transfer is identifiable ONLY against a declared liquid ``volume_L`` and the liquid's
+    ``initial_carbon_mol`` (what it held before equilibrating with the reservoir).  This enforces the ledger identity
+
+        internal_after - internal_before = inflow - outflow = - exported
+
+    with ``exported > 0`` meaning carbon LEFT the liquid to the reservoir.  ``internal_after = C_C * volume_L``
+    (mol/L x L = mol -- the unit fix).  ``ledger_residual_mol`` is the identity's defect, 0 by construction and
+    reported so a caller can ASSERT the books close.  Unknown initial inventory stays UNKNOWN upstream: this
+    function demands it be supplied, never invents it."""
+    if result.mode != "open":
+        raise InvalidParameterError("open_boundary_carbon_ledger is only defined for an 'open' result")
+    if not (isinstance(volume_L, (int, float)) and math.isfinite(volume_L) and volume_L > 0):
+        raise InvalidParameterError("volume_L must be finite and > 0")
+    if not (isinstance(initial_carbon_mol, (int, float)) and math.isfinite(initial_carbon_mol)
+            and initial_carbon_mol >= 0):
+        raise InvalidParameterError("initial_carbon_mol must be finite and >= 0")
+    internal_after = result.total_dissolved_carbon_M * volume_L        # mol/L x L = mol (the dimensional fix)
+    exported = initial_carbon_mol - internal_after                     # signed: > 0 => carbon left the liquid
+    ledger_residual = abs((internal_after - initial_carbon_mol) - (-exported))
+    return {
+        "internal_before_mol": float(initial_carbon_mol),
+        "internal_after_mol": float(internal_after),
+        "exported_mol": float(exported),
+        "volume_L": float(volume_L),
+        "ledger_residual_mol": float(ledger_residual),
+    }
 
 
 def _admit(system, h, sol, Ka_c, K1_c, K2_c, Kw_c, K_H, RT, Na, C_Ac, ac, hac, oh, ionic, davies_converged,

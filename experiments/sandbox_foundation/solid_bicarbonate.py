@@ -11,11 +11,17 @@ conserved across any dissolution; the solid is electroneutral, so dissolving it 
 
 EQUILIBRIUM vs RATE are different questions and kept separate (section 6):
 
-  * EQUILIBRIUM (thermodynamic): a solubility / saturation limit.  NaHCO3(s) <-> Na+ + HCO3-, Ksp = [Na+][HCO3-]
-    (ideal-solubility-product approximation; activity corrections omitted -> a stated caveat).  Ksp is DERIVED from
-    the SOURCED molar solubility S (Ksp = S^2).  The saturation index SI = [Na+][HCO3-]/Ksp: SI < 1 undersaturated
-    (solid can dissolve), SI >= 1 saturated (no net dissolution).  `dissolve_to_saturation` is the fast-dissolution
-    limit: dissolve until SI = 1 or the solid is exhausted.
+  * EQUILIBRIUM: a solubility / saturation limit.  NaHCO3(s) <-> Na+ + HCO3-.  What is used here is an EMPIRICAL
+    ION-CONCENTRATION product Qsp = [Na+][HCO3-] = S^2, DERIVED from the SOURCED bulk molar solubility S -- NOT a
+    transferable thermodynamic activity-based Ksp (OPERATION XIV P0-1B).  A true Ksp is written in ACTIVITIES; the
+    analytical solubility S folds in that solution's own activity coefficients, ion pairing, carbonate speciation,
+    temperature and composition, so S^2 is a saturation PROXY valid only in the DILUTE, ~25 C regime S was measured
+    in.  The saturation index SI = [Na+][HCO3-]/Qsp: SI < 1 undersaturated (solid can dissolve), SI >= 1 saturated.
+    `dissolve_to_saturation` is the fast-dissolution limit: dissolve until SI = 1 or the solid is exhausted.
+    APPLICABILITY: outside the dilute (Davies) ionic-strength domain the proxy is model-level only -- `_tier`
+    DEMOTES the saturation claim to UNVERIFIED there (regardless of activity_model), so it can NEVER present a
+    supposedly source-validated prediction out of domain.  (Near saturation ~1.2 M IS out of that domain, so a
+    saturation-limit claim is honestly model-level, not independently validated.)
 
   * RATE (kinetic): the dissolution TIMESCALE depends on particle size, surface area, agitation, temperature and
     mass transfer -- apparatus-specific.  `dissolution_step` implements a finite first-order-in-undersaturation
@@ -36,7 +42,7 @@ from dataclasses import dataclass, replace
 from scipy.optimize import brentq
 
 from experiments.sandbox_foundation import claim_tiers
-from experiments.sandbox_foundation.aqueous_equilibrium import InvalidParameterError, SourcedConstant
+from experiments.sandbox_foundation.aqueous_equilibrium import DAVIES_I_MAX, InvalidParameterError, SourcedConstant
 from experiments.sandbox_foundation.coupled_gas_equilibrium import MixedGasSystem
 from experiments.sandbox_foundation.coupled_gas_equilibrium import solve as gas_solve
 
@@ -50,13 +56,21 @@ NAHCO3_SOLUBILITY_25C = SourcedConstant(
     "Solubility rises with temperature; this value is 25 C-anchored.  The +/-0.15 is an inter-source/temperature "
     "spread, not a statistical sigma.")
 
-# Ksp = S^2 (ideal solubility product), DERIVED from the sourced solubility; uncertainty propagated 2 S sigma_S.
+# Qsp = S^2: an EMPIRICAL ion-CONCENTRATION saturation product, DERIVED from the sourced bulk solubility S (NOT a
+# thermodynamic activity Ksp -- see the module docstring).  Uncertainty propagated 2 S sigma_S.  The symbol keeps
+# its historical name KSP_NAHCO3_25C for its consumers, but its MEANING is the concentration proxy, and its tier
+# demotes out of the dilute domain (OPERATION XIV P0-1B).
 KSP_NAHCO3_25C = SourcedConstant(
-    "Ksp_NaHCO3", NAHCO3_SOLUBILITY_25C.value ** 2, 2 * NAHCO3_SOLUBILITY_25C.value * NAHCO3_SOLUBILITY_25C.uncertainty,
-    "mol^2/L^2 (molar solubility product)", 298.15,
-    f"DERIVED Ksp = S^2 from the sourced NaHCO3 molar solubility S = {NAHCO3_SOLUBILITY_25C.value} mol/L.", "DERIVED",
-    "IDEAL solubility product [Na+][HCO3-]; the activity-coefficient (Davies) correction to Ksp is OMITTED -- a "
-    "stated approximation, so the saturation limit is model-level, not independently validated.")
+    "Qsp_NaHCO3(empirical concentration product)",
+    NAHCO3_SOLUBILITY_25C.value ** 2, 2 * NAHCO3_SOLUBILITY_25C.value * NAHCO3_SOLUBILITY_25C.uncertainty,
+    "mol^2/L^2 (EMPIRICAL concentration product, NOT an activity-based Ksp)", 298.15,
+    f"DERIVED Qsp = S^2 from the sourced NaHCO3 bulk molar solubility S = {NAHCO3_SOLUBILITY_25C.value} mol/L.",
+    "DERIVED",
+    "EMPIRICAL ion-CONCENTRATION product [Na+][HCO3-], NOT a transferable thermodynamic (activity-based) Ksp: a "
+    "true Ksp is in activities, and the analytical solubility S already folds in this solution's activity "
+    "coefficients, ion pairing, carbonate speciation, temperature and composition.  So S^2 is a saturation PROXY "
+    "valid only in the dilute, ~25 C regime S was measured in; outside the Davies ionic-strength domain it is "
+    "model-level only and the saturation tier DEMOTES (never a source-validated out-of-domain prediction).")
 
 
 class SolidBicarbonateError(InvalidParameterError):
@@ -109,11 +123,27 @@ def saturation_index(system: SolidBicarbonateSystem) -> float:
     return (na * sp.hco3_M) / KSP_NAHCO3_25C.value
 
 
+def within_empirical_solubility_domain(system: SolidBicarbonateSystem) -> bool:
+    """Is the aqueous ionic strength within the DILUTE (Davies) domain where the empirical Qsp = S^2 saturation
+    proxy is defensible?  Independent of activity_model: the concentration-product proxy itself is only meaningful
+    at low ionic strength (OPERATION XIV P0-1B)."""
+    sp = system.speciate()
+    return bool(math.isfinite(sp.ionic_strength_M) and sp.ionic_strength_M <= DAVIES_I_MAX)
+
+
 def _tier(system: SolidBicarbonateSystem) -> str:
-    """NUMERICALLY_VERIFIED only if the after-state speciation is admitted; else UNVERIFIED (e.g. a near-saturated
-    solution outside the Davies activity domain -- the model demotes rather than vouch)."""
-    return (claim_tiers.NUMERICALLY_VERIFIED if "UNVERIFIED" not in system.speciate().verdict
-            else claim_tiers.UNVERIFIED)
+    """NUMERICALLY_VERIFIED only if the after-state speciation is admitted AND the aqueous ionic strength is within
+    the dilute domain where the empirical Qsp = S^2 proxy is defensible; else UNVERIFIED.  Two independent demotions
+    (OPERATION XIV P0-1B): the speciation carries UNVERIFIED (e.g. outside the Davies activity domain under davies),
+    OR the ionic strength exceeds the Davies domain so the CONCENTRATION-product proxy is model-level only even
+    under the ideal model -- so a saturation claim can never present a source-validated out-of-domain prediction.
+    (A near-saturated solution ~1.2 M is out of domain, so its saturation tier is honestly UNVERIFIED.)"""
+    sp = system.speciate()
+    if "UNVERIFIED" in sp.verdict:
+        return claim_tiers.UNVERIFIED
+    if not (math.isfinite(sp.ionic_strength_M) and sp.ionic_strength_M <= DAVIES_I_MAX):
+        return claim_tiers.UNVERIFIED
+    return claim_tiers.NUMERICALLY_VERIFIED
 
 
 @dataclass(frozen=True)

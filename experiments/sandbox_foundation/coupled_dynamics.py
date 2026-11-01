@@ -143,6 +143,11 @@ class Trajectory:
     steady_state_flux: float
     max_carbon_residual_mol: float
     integrator: str
+    # OPERATION XIV P0-1C: positivity is enforced by a clamp, which can HIDE an invalid integrator excursion.  These
+    # report the RAW (pre-clamp) excursions SEPARATELY so a clamped violation is MEASURED, never silently absorbed.
+    max_negative_excursion_mol: float = 0.0   # largest RAW negative n_gas the integrator produced (0 = none)
+    max_overshoot_mol: float = 0.0            # largest RAW n_gas above the total carbon inventory (0 = none)
+    solver_success: bool = True
     note: str = ""
     caveats: tuple = field(default_factory=tuple)
 
@@ -170,15 +175,33 @@ def _rhs(n_C_gas: float, vessel: DynamicVessel, kLa: float, K_H: float, RT: floa
     return flux, caq, p_co2, pH, verdict
 
 
+#: solve_ivp methods we allow, split by stiff-capability (OPERATION XIV P0-1C: RK45 is EXPLICIT and NON-stiff-stable;
+#: BDF/Radau/LSODA are implicit and stiff-capable).  The honest default stays RK45, but a stiff regime (very fast
+#: kLa) should use an implicit method -- `simulate` does not pretend RK45 is stiff-stable.
+_EXPLICIT_METHODS = ("RK45", "RK23", "DOP853")
+_IMPLICIT_METHODS = ("BDF", "Radau", "LSODA")
+_SOLVE_IVP_METHODS = _EXPLICIT_METHODS + _IMPLICIT_METHODS
+
+
 def simulate(vessel: DynamicVessel, kLa: GasTransferParameter, *, duration_s: float, n_samples: int = 50,
-             rtol: float = 1e-8, atol: float = 1e-14) -> Trajectory:
-    """Integrate the coupled gas-transfer / acid-base dynamics with an adaptive stiff-capable RK (scipy RK45) and
-    sample it at n_samples uniform times.  Total carbon is conserved by construction; positivity is enforced in the
-    RHS.  The trajectory's claim tier is weakest(equilibrium-solve tier, kLa tier)."""
+             rtol: float = 1e-8, atol: float = 1e-14, method: str = "RK45") -> Trajectory:
+    """Integrate the coupled gas-transfer / acid-base dynamics with scipy ``solve_ivp`` and sample at n_samples
+    uniform times.  Total carbon is conserved by construction (we evolve n_gas and set n_liq = n_tot - n_gas).
+
+    INTEGRATOR HONESTY (OPERATION XIV P0-1C).  ``method`` defaults to RK45, which is an EXPLICIT adaptive
+    Runge-Kutta -- NOT stiff-stable; the earlier docstring's "stiff-capable RK" was wrong.  For a STIFF regime (a
+    very fast kLa, where the transfer timescale 1/kLa is tiny next to the duration) pass an IMPLICIT, stiff-capable
+    method (``'BDF'``, ``'Radau'``, ``'LSODA'``).  Positivity is still enforced by a clamp inside the RHS, but a
+    clamp can HIDE an invalid excursion, so this measures the RAW (pre-clamp) solution and reports the largest
+    negative excursion and overshoot SEPARATELY on the Trajectory: a clamped positivity violation is MEASURED, never
+    silently presented as a clean solution.  The trajectory's claim tier is weakest(equilibrium-solve tier, kLa
+    tier)."""
     if not (math.isfinite(duration_s) and duration_s > 0):
         raise InvalidParameterError("duration_s must be finite and > 0")
     if n_samples < 2:
         raise InvalidParameterError("n_samples must be >= 2")
+    if method not in _SOLVE_IVP_METHODS:
+        raise InvalidParameterError(f"method must be one of {_SOLVE_IVP_METHODS}")
     K_H = KH_CO2_25C.value
     RT = R_GAS_L_ATM.value * float(vessel.temperature_K)
     n_tot = vessel.n_carbon_total_mol
@@ -188,16 +211,21 @@ def simulate(vessel: DynamicVessel, kLa: GasTransferParameter, *, duration_s: fl
         return [flux]
 
     t_eval = np.linspace(0.0, duration_s, n_samples)
-    sol = solve_ivp(ode, (0.0, duration_s), [vessel.initial_carbon_gas_mol], method="RK45",
+    sol = solve_ivp(ode, (0.0, duration_s), [vessel.initial_carbon_gas_mol], method=method,
                     t_eval=t_eval, rtol=rtol, atol=atol, max_step=duration_s / 10.0)
     if not sol.success:
-        raise InvalidParameterError(f"integration failed: {sol.message}")
+        raise InvalidParameterError(f"integration failed ({method}): {sol.message}")
 
     states = []
     eq_tier = claim_tiers.NUMERICALLY_VERIFIED   # the equilibrium solve is cross-checked (P0); capped by kLa below
     max_resid = 0.0
-    for t, n_gas in zip(sol.t, sol.y[0]):
-        n_gas = min(max(float(n_gas), 0.0), n_tot)
+    max_neg = 0.0        # largest RAW (pre-clamp) negative excursion of n_gas
+    max_over = 0.0       # largest RAW overshoot of n_gas above the total inventory
+    for t, raw_n_gas in zip(sol.t, sol.y[0]):
+        raw = float(raw_n_gas)
+        max_neg = max(max_neg, -raw if raw < 0.0 else 0.0)                 # measure BEFORE the clamp
+        max_over = max(max_over, raw - n_tot if raw > n_tot else 0.0)
+        n_gas = min(max(raw, 0.0), n_tot)
         n_liq = n_tot - n_gas
         flux, caq, p_co2, pH, verdict = _rhs(n_gas, vessel, kLa.kLa_per_s, K_H, RT)
         resid = abs((n_liq + n_gas) - n_tot)
@@ -213,9 +241,16 @@ def simulate(vessel: DynamicVessel, kLa: GasTransferParameter, *, duration_s: fl
         caveats += ("activity pH is Davies-model-only; see the equilibrium solver's own caveats",)
     if kLa.tier == claim_tiers.ASSUMED_PARAMETER:
         caveats += ("kLa is an assumed/uncalibrated parameter (CALIBRATION_REQUIRED for a real apparatus)",)
+    # a RAW positivity violation that the clamp restored is a numerical-quality signal, surfaced not hidden.
+    excursion_tol = max(atol * 10.0, 1e-12 * max(n_tot, 1.0))
+    if max_neg > excursion_tol or max_over > excursion_tol:
+        caveats += (f"the {method} integrator produced a RAW positivity/inventory excursion "
+                    f"(max negative {max_neg:.3e} mol, max overshoot {max_over:.3e} mol) restored only by "
+                    f"clamping; use an implicit stiff method (method='BDF'/'Radau') or a smaller max_step",)
     return Trajectory(states=tuple(states), kLa=kLa, claim_tier=tier,
                       steady_state_flux=states[-1].flux_mol_per_s, max_carbon_residual_mol=max_resid,
-                      integrator="scipy.solve_ivp/RK45", caveats=caveats)
+                      integrator=f"scipy.solve_ivp/{method}", max_negative_excursion_mol=max_neg,
+                      max_overshoot_mol=max_over, solver_success=bool(sol.success), caveats=caveats)
 
 
 # ------------------------------------------------------------------------- independent integrator cross-check
@@ -271,3 +306,32 @@ def steady_state_cross_check(vessel: DynamicVessel, kLa: GasTransferParameter, *
         "delta_n_gas": abs(end.n_carbon_gas_mol - sealed.gas_carbon_mol),
         "residual_flux": end.flux_mol_per_s,
     }
+
+
+def stiffness_stress(vessel: DynamicVessel, kLa: GasTransferParameter, *, duration_s: float,
+                     methods: tuple = ("RK45", "BDF", "Radau"), n_samples: int = 50) -> dict:
+    """Run the SAME (possibly stiff) problem under several integrators and report, SEPARATELY per method, the
+    numerical-quality facts the positivity clamp would otherwise hide (OPERATION XIV P0-1C): solver success, the max
+    RAW negative excursion and overshoot (pre-clamp positivity violations), the global carbon-conservation residual,
+    and the end state (steady n_gas, pH, residual flux).  RK45 is explicit/non-stiff-stable; BDF/Radau are implicit
+    stiff solvers -- on a very fast kLa the explicit method is expected to need tiny steps or to show excursions the
+    implicit methods do not.  The caller COMPARES; nothing is averaged away, and a method that fails is reported as
+    failed rather than silently dropped."""
+    out: dict = {}
+    for m in methods:
+        try:
+            traj = simulate(vessel, kLa, duration_s=duration_s, n_samples=n_samples, method=m)
+            end = traj.states[-1]
+            out[m] = {
+                "failed": False,
+                "solver_success": traj.solver_success,
+                "max_negative_excursion_mol": traj.max_negative_excursion_mol,
+                "max_overshoot_mol": traj.max_overshoot_mol,
+                "max_carbon_residual_mol": traj.max_carbon_residual_mol,
+                "end_n_gas_mol": end.n_carbon_gas_mol,
+                "end_pH": end.pH,
+                "residual_flux": end.flux_mol_per_s,
+            }
+        except InvalidParameterError as exc:
+            out[m] = {"failed": True, "message": str(exc)}
+    return out

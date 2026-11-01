@@ -136,13 +136,20 @@ def test_gas_pressure_boundary_regimes_are_sane():
 
 
 # ------------------------------------------------------------------- conservation identity across full runs
-def test_open_system_exported_carbon_closes_the_world_ledger():
-    # open: the liquid is not carbon-closed, but internal + exported must account for the whole world.
+def test_open_system_carbon_ledger_closes_the_world_in_moles():
+    # OPERATION XIV P0-1A: the instantaneous open result reports UNKNOWN cumulative export (None) -- a mole transfer
+    # is not identifiable without a volume + initial inventory.  Given those, the ledger closes the world IN MOLES:
+    # internal_after - internal_before = -exported, exactly.
+    from experiments.sandbox_foundation.coupled_gas_equilibrium import open_boundary_carbon_ledger
     r = gas_solve(MixedGasSystem(mode="open", total_acetate_M=0.1, sodium_M=0.1, p_co2_atm=1e-2,
                                  activity_model="ideal"))
-    # exported = -(dissolved carbon that came in from the reservoir); internal + (-exported) balances.
-    assert math.isclose(r.exported_carbon_mol, -r.total_dissolved_carbon_M, rel_tol=1e-12)
-    assert r.exported_carbon_mol != 0.0
+    assert r.exported_carbon_mol is None                         # instantaneous equilibrium: cumulative moles UNKNOWN
+    led = open_boundary_carbon_ledger(r, volume_L=0.5, initial_carbon_mol=0.0)
+    assert math.isclose(led["internal_after_mol"], r.total_dissolved_carbon_M * 0.5, rel_tol=1e-15)
+    # the whole-world identity holds to machine zero (carbon in + out of the liquid is fully accounted).
+    assert math.isclose((led["internal_after_mol"] - led["internal_before_mol"]) + led["exported_mol"], 0.0,
+                        abs_tol=1e-18)
+    assert led["exported_mol"] < 0.0                             # carbon came IN from the reservoir
 
 
 def test_sealed_and_closed_are_carbon_closed_zero_export():

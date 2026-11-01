@@ -95,7 +95,9 @@ def vinegar_frame(scenario_id: str, title: str, result, *, dynamic=None, extra_c
             "headspace_carbon_mol": _finite(r.gas_carbon_mol),
             "dissolved_carbon_mol": (None if (r.mode != "sealed" or not math.isfinite(r.dissolved_carbon_mol))
                                      else _finite(r.dissolved_carbon_mol)),
-            "exported_carbon_mol": _finite(r.exported_carbon_mol)},
+            # OPERATION XIV P0-1A: open-mode cumulative export is UNKNOWN from an instantaneous equilibrium (needs a
+            # volume + initial inventory) -> null, never a fabricated mol value off a mol/L concentration.
+            "exported_carbon_mol": (None if r.exported_carbon_mol is None else _finite(r.exported_carbon_mol))},
         "residuals": {"charge_M": _finite(r.charge_balance_residual),
                       "carbon": _finite(r.carbon_balance_residual),
                       "acetate": _finite(r.acetate_conservation_residual),

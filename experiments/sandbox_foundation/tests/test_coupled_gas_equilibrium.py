@@ -54,16 +54,37 @@ def test_open_pure_water_to_atmosphere_is_pH_5p6():
     assert r.total_dissolved_carbon_M > 0   # carbon absorbed from the reservoir
 
 
-def test_open_boundary_records_exported_carbon_in_the_ledger():
-    # the open reservoir supplies/absorbs carbon; that crossing MUST appear in the external ledger, so the whole
-    # world is accounted even though the liquid alone is not carbon-closed.
+def test_open_cumulative_export_is_unknown_without_volume_and_inventory():
+    # OPERATION XIV P0-1A: an instantaneous open equilibrium fixes the dissolved CONCENTRATION, not a cumulative
+    # mole transfer.  So exported_carbon_mol is None (UNKNOWN) for 'open' -- never a mol value fabricated from a
+    # mol/L concentration (the earlier -C_C bug).  closed/sealed are carbon-closed: a MEASURED 0.0.
     r = solve(MixedGasSystem(mode="open", p_co2_atm=_P_ATM, activity_model="ideal"))
-    assert r.exported_carbon_mol != 0.0
-    # it equals -(dissolved carbon): carbon came IN from the reservoir (negative export) to reach C_C.
-    assert math.isclose(r.exported_carbon_mol, -r.total_dissolved_carbon_M, rel_tol=1e-12)
-    # closed/sealed are carbon-closed: zero export.
+    assert r.exported_carbon_mol is None
+    assert r.total_dissolved_carbon_M > 0           # the dissolved CONCENTRATION is the identifiable output
     closed = solve(MixedGasSystem(mode="closed", total_carbon_M=0.1, sodium_M=0.1))
     assert closed.exported_carbon_mol == 0.0
+
+
+def test_open_boundary_carbon_ledger_is_moles_and_closes_the_identity():
+    # the cumulative transfer IS identifiable once a liquid volume + initial inventory are declared; it is in MOLES
+    # (mol/L x L) and obeys internal_after - internal_before = -exported, exactly.
+    from experiments.sandbox_foundation.coupled_gas_equilibrium import open_boundary_carbon_ledger
+    r = solve(MixedGasSystem(mode="open", p_co2_atm=_P_ATM, activity_model="ideal"))
+    # start DE-GASSED (0 mol); the reservoir fills the liquid to C_C over a 2 L vessel.
+    led = open_boundary_carbon_ledger(r, volume_L=2.0, initial_carbon_mol=0.0)
+    assert math.isclose(led["internal_after_mol"], r.total_dissolved_carbon_M * 2.0, rel_tol=1e-15)
+    assert led["exported_mol"] < 0.0                                   # carbon came IN from the reservoir
+    assert math.isclose(led["ledger_residual_mol"], 0.0, abs_tol=1e-18)
+    # UNIT/VOLUME scaling: doubling the volume doubles the moles transferred (mol = mol/L x L).
+    led2 = open_boundary_carbon_ledger(r, volume_L=4.0, initial_carbon_mol=0.0)
+    assert math.isclose(led2["exported_mol"], 2.0 * led["exported_mol"], rel_tol=1e-15)
+    # a NON-zero initial inventory shifts the signed transfer by exactly that amount (the ledger identity).
+    led3 = open_boundary_carbon_ledger(r, volume_L=2.0, initial_carbon_mol=1.0)
+    assert math.isclose(led3["exported_mol"], led["exported_mol"] + 1.0, rel_tol=1e-12)
+    # the ledger is open-only; a closed result has no boundary transfer to compute.
+    closed = solve(MixedGasSystem(mode="closed", total_carbon_M=0.1, sodium_M=0.1))
+    with pytest.raises(Exception):
+        open_boundary_carbon_ledger(closed, volume_L=1.0, initial_carbon_mol=0.0)
 
 
 def test_open_higher_pco2_lowers_pH_and_raises_dissolved_carbon():

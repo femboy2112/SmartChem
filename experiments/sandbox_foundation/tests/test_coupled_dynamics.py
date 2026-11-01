@@ -25,6 +25,7 @@ from experiments.sandbox_foundation.coupled_dynamics import (
     integrate_fixed_step,
     simulate,
     steady_state_cross_check,
+    stiffness_stress,
 )
 
 # a supersaturated liquid (0.1 M dissolved carbon) over an empty headspace -- it must degas
@@ -123,3 +124,45 @@ def test_level_A_helper_is_assumed_parameter():
     p = assumed_kLa(0.02)
     assert p.tier == claim_tiers.ASSUMED_PARAMETER
     assert p.kLa_per_s == 0.02
+
+
+# ---------------------------------------------- OPERATION XIV P0-1C: integrator honesty (no stiff over-claim, no
+#                                                hidden positivity excursion, explicit-vs-implicit comparison)
+def test_simulate_reports_excursion_and_solver_diagnostics_clean_on_a_well_behaved_run():
+    # the diagnostics are PRESENT and REPORT no hidden violation here: the 1-D relaxation keeps n_gas within
+    # [0, n_tot], so the clamp never fires and the raw excursions are exactly 0 (measured, not assumed).
+    traj = simulate(_SUPERSAT, _KLA, duration_s=3000.0, n_samples=12)
+    assert traj.solver_success is True
+    assert traj.max_negative_excursion_mol == 0.0
+    assert traj.max_overshoot_mol == 0.0
+    assert traj.integrator == "scipy.solve_ivp/RK45"
+
+
+def test_rk45_and_implicit_stiff_methods_agree_on_the_steady_state():
+    # RK45 is explicit/non-stiff-stable; BDF/Radau are implicit stiff solvers.  On this problem all three relax to
+    # the SAME fixed point -- the honest claim is agreement, never that RK45 is itself stiff-stable.
+    ends = {}
+    for m in ("RK45", "BDF", "Radau"):
+        ends[m] = simulate(_SUPERSAT, _KLA, duration_s=3000.0, n_samples=4, method=m).states[-1].n_carbon_gas_mol
+    n_tot = _SUPERSAT.n_carbon_total_mol
+    assert abs(ends["BDF"] - ends["RK45"]) < 1e-4 * n_tot
+    assert abs(ends["Radau"] - ends["RK45"]) < 1e-4 * n_tot
+
+
+def test_unknown_integrator_method_is_refused():
+    with pytest.raises(InvalidParameterError):
+        simulate(_SUPERSAT, _KLA, duration_s=100.0, n_samples=3, method="PRETTY_STABLE")
+
+
+def test_stiffness_stress_reports_each_method_separately_and_they_agree():
+    # the discriminating instrument: each method's success, raw excursions, conservation residual and end state are
+    # reported SEPARATELY (nothing averaged).  A method that fails would be flagged failed, not dropped.
+    res = stiffness_stress(_SUPERSAT, _KLA, duration_s=2000.0, methods=("RK45", "BDF", "Radau"), n_samples=5)
+    assert set(res) == {"RK45", "BDF", "Radau"}
+    for m, d in res.items():
+        assert d["failed"] is False, (m, d)
+        assert d["solver_success"] is True
+        assert d["max_negative_excursion_mol"] == 0.0 and d["max_overshoot_mol"] == 0.0
+        assert d["max_carbon_residual_mol"] < 1e-12
+    n_tot = _SUPERSAT.n_carbon_total_mol
+    assert abs(res["BDF"]["end_n_gas_mol"] - res["RK45"]["end_n_gas_mol"]) < 1e-4 * n_tot

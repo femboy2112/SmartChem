@@ -216,9 +216,18 @@ def _carboxyl_sites(mol: Molecule, adj, atoms) -> list[tuple[int, int, int]]:
 
 def _hydroxyl_sites(mol: Molecule, adj, atoms) -> list[tuple[int, int]]:
     """Every ALCOHOL hydroxyl as ``(o_alk, h_alk)``: an O with exactly one heavy neighbour (a carbon) and exactly one
-    H, whose carbon is NOT a carbonyl.  The carbonyl exclusion is load-bearing and now actually enforced (it was
-    promised in prose but absent -- evil-morty P2 review): without it a carboxyl -OH satisfies every other condition,
-    so a DIACID's second acid would be read as an 'alcohol' and lactonize into an anhydride under this label."""
+    H, whose carbon is NOT a carbonyl AND bears NO OTHER heteroatom.  Two exclusions, both load-bearing:
+      * the carbon is not a carbonyl (promised in prose but once absent -- evil-morty P2 review): without it a carboxyl
+        -OH satisfies every other condition, so a DIACID's second acid would be read as an 'alcohol' and lactonize into
+        an anhydride under this label;
+      * the carbinol carbon carries no SECOND O or N (dalembert XV-P8 kill): a hemiacetal / hemiketal / gem-diol /
+        hemiaminal -OH is a carbinol with a second heteroatom -- the MASKED form of a carbonyl, not an isolable
+        hydroxy-acid alcohol -- so lactonising it ``hydroxy acid -> lactone + water`` is a type-fiction (the precursor
+        really needs an alcohol/acetalisation, not dehydrative esterification).  This mirrors
+        ``feasibility._alkyl_carbinol_alcohol_count`` on the N-alkylation side; because the GENERATOR
+        (``_forward_lactonizations``) and the RECOGNIZER (``reaction_type_oracle._intramolecular_lactonization``) both
+        route through this one helper, the single guard closes the common-mode false-VOUCH at BOTH call sites.  It does
+        NOT exclude a phenol or an enol (no extra heteroatom on the carbinol carbon) -- those genuinely esterify."""
     out: list[tuple[int, int]] = []
     for o in range(len(atoms)):
         if atoms[o] != "O":
@@ -226,7 +235,8 @@ def _hydroxyl_sites(mol: Molecule, adj, atoms) -> list[tuple[int, int]]:
         heavy = [x for x, _o in adj[o] if atoms[x] != "H"]
         hs = [x for x, _o in adj[o] if atoms[x] == "H"]
         if (len(heavy) == 1 and atoms[heavy[0]] == "C" and len(hs) == 1 and len(adj[o]) == 2
-                and not _is_carbonyl(heavy[0], atoms, adj)):
+                and not _is_carbonyl(heavy[0], atoms, adj)
+                and not any(x != o and atoms[x] not in ("C", "H") for x, _o in adj[heavy[0]])):
             out.append((o, hs[0]))
     return out
 

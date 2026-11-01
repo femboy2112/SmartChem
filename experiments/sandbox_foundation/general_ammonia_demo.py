@@ -51,14 +51,14 @@ from experiments.sandbox_foundation.general_kernel import (
 PKA_NH4 = 9.25
 KA_NH4 = 10.0 ** (-PKA_NH4)
 
-NH3 = Species.of("NH3", {"N": 1, "H": 3}, charge=0, phase=Phase.AQUEOUS)
+NH3 = Species.of("NH3", {"N": 1, "H": 3}, charge=0, phase=Phase.AQUEOUS, substance="NH3")
 NH4 = Species.of("NH4+", {"N": 1, "H": 4}, charge=1, phase=Phase.AQUEOUS)
 Hp = Species.of("H+", {"H": 1}, charge=1, phase=Phase.AQUEOUS)
 OHm = Species.of("OH-", {"H": 1, "O": 1}, charge=-1, phase=Phase.AQUEOUS)
 H2O = Species.of("H2O", {"H": 2, "O": 1}, charge=0, phase=Phase.AQUEOUS)
 Nap = Species.of("Na+", {"Na": 1}, charge=1, phase=Phase.AQUEOUS)
 Clm = Species.of("Cl-", {"Cl": 1}, charge=-1, phase=Phase.AQUEOUS)
-NH3g = Species.of("NH3(g)", {"N": 1, "H": 3}, charge=0, phase=Phase.GAS)   # same composition as NH3(aq); differs only in phase
+NH3g = Species.of("NH3(g)", {"N": 1, "H": 3}, charge=0, phase=Phase.GAS, substance="NH3")   # same substance as NH3(aq), differs only in phase (XVI-P0.1: the shared substance licenses the Henry transfer)
 
 # a dimensionless gas/liquid partition for ammonia is an ASSUMED_PARAMETER here (literature conventions span ~6e-6 to
 # ~1e-3 for c_gas/c_aq); the stripping demo proves the coupling ARCHITECTURE + conservation, not a validated rate/fraction

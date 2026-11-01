@@ -143,9 +143,14 @@ class InterfaceTransfer:
     """A conservative transport flux between two compartments: J_{a->b} = k_transfer * (c_a - partition * c_b) (mol/s),
     with c = n/V the concentration in each compartment.  At the flux zero, c_a = partition * c_b -- the declared
     interface equilibrium (partition = 1 for simple diffusion toward equal concentration; partition encodes a Henry /
-    distribution ratio for a phase boundary).  ``species_a`` and ``species_b`` MUST have identical elemental
-    composition and charge (only name/phase may differ) so the transfer conserves every element and charge globally;
-    an identity-changing transfer is a reaction, not an interface, and is refused at world construction."""
+    distribution ratio for a phase boundary).  ``species_a`` and ``species_b`` MUST (a) have identical elemental
+    composition and charge -- NECESSARY so the transfer conserves every element and charge globally -- AND (b) share
+    the same phase-independent ``substance`` identity (XVI-P0.1) -- the constitutional discriminator that composition
+    alone cannot supply.  (a) alone is insufficient: ethanol and dimethyl ether are both C2H6O/charge 0, so a transfer
+    passing only (a) would launder one constitutional isomer into another -- a REACTION smuggled in as transport, yet
+    stamped conserving because atoms balance.  With (b), only genuine same-substance phase/compartment transfers
+    (CO2(aq)<->CO2(g); A in cell 0 <-> A in cell 1) are admitted; an identity-changing transfer is a reaction, not an
+    interface, and is refused at construction.  CONSERVATION NEVER SUBSTITUTES FOR CHEMICAL IDENTITY."""
     name: str
     a: str                            # compartment name (source side for a positive flux)
     b: str                            # compartment name (sink side for a positive flux)
@@ -167,6 +172,18 @@ class InterfaceTransfer:
                 f"({self.species_a.name!r} {self.species_a.composition} q={self.species_a.charge} vs "
                 f"{self.species_b.name!r} {self.species_b.composition} q={self.species_b.charge}); a transfer that "
                 f"changes chemical identity is a reaction, not an interface")
+        # XVI-P0.1: composition+charge is NECESSARY BUT NOT SUFFICIENT.  A passive interface moves ONE substance; two
+        # species of equal formula but different substance (ethanol vs dimethyl ether -- both C2H6O) are constitutional
+        # isomers / distinct compounds, and transferring one into the other is a REACTION, not transport.  The shared-
+        # substance requirement is the constitutional discriminator; because it is only reached after the composition/
+        # charge gate above, a substance tag can never license a stoichiometry change (it cannot "launder" a formula).
+        if self.species_a.substance != self.species_b.substance:
+            raise CoupledError(
+                f"interface {self.name!r} transfers between species of the SAME formula but DIFFERENT substance "
+                f"({self.species_a.name!r} substance={self.species_a.substance!r} vs {self.species_b.name!r} "
+                f"substance={self.species_b.substance!r}); same elemental composition is not chemical identity -- "
+                f"these are constitutional isomers or distinct compounds. A transformation between them is a reaction "
+                f"(declare it inside a compartment); a genuine phase transfer must declare a shared substance identity")
         if isinstance(self.k_transfer, bool) or not (isinstance(self.k_transfer, (int, float))
                                                      and math.isfinite(self.k_transfer) and self.k_transfer >= 0):
             raise CoupledError("k_transfer must be a finite L/s coefficient >= 0")

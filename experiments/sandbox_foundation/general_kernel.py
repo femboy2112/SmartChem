@@ -117,21 +117,39 @@ def _as_strict_positive_int(value, what: str) -> int:
 
 @dataclass(frozen=True)
 class Species:
-    """A typed chemical species: its identity is (name, composition, charge, phase) TOGETHER -- never formula alone.
+    """A typed chemical species: its identity is (name, composition, charge, phase, substance) TOGETHER -- never
+    formula alone.
 
     ``composition`` is stored as a sorted tuple of (element, count) pairs with UNIQUE elements (XV-1B), so the species
     is hashable and its elemental content is explicit, canonical and conserved.  ``data_status`` records whether the
     thermodynamic/transport data a future model would need is present; ``NONE`` is a first-class value, never silently
-    treated as 0 (missing data stays missing)."""
+    treated as 0 (missing data stays missing).
+
+    ``substance`` (XVI-P0.1) is a PHASE-INDEPENDENT chemical-substance identity: two species with the same
+    ``substance`` are declared to be the same chemical compound, differing only in phase/solvation label (CO2(aq) and
+    CO2(g) share substance "CO2"; an aqueous A in cell 0 and in cell 1 share substance "A").  It exists because
+    elemental composition + charge is NECESSARY BUT NOT SUFFICIENT for chemical identity -- ethanol and dimethyl ether
+    are both C2H6O, charge 0, yet are different substances, and a passive interface transfer between them would be a
+    REACTION smuggled in as transport.  It is an EXPLICITLY-TYPED, auditable declaration, NOT a structure inferred from
+    the free-text ``name``; the kernel carries no bond graph, so the burden that a shared ``substance`` is chemically
+    faithful rests on the declaration, and is guarded consistent with composition+charge wherever it licenses a
+    transfer (InterfaceTransfer refuses a substance key that would span a different composition/charge).  It DEFAULTS
+    to the species ``name`` -- fail-closed: two differently-named same-formula species are NOT silently identified, so
+    a cross-species transfer must be explicitly licensed by declaring a shared substance."""
     name: str
     composition: tuple           # ((element, count), ...) sorted by element, elements unique
     charge: int
     phase: Phase
     data_status: str = "NONE"    # NONE | PARTIAL | SOURCED -- what thermodynamic data is attached (none faked)
+    substance: str | None = None  # XVI-P0.1 phase-independent substance identity; defaults to ``name`` (fail-closed)
 
     def __post_init__(self):
         if not isinstance(self.name, str) or not self.name.strip():
             raise KernelError("a Species needs a non-empty name")
+        if self.substance is None:
+            object.__setattr__(self, "substance", self.name)     # fail-closed default: each species is its own substance
+        elif not isinstance(self.substance, str) or not self.substance.strip():
+            raise KernelError("substance must be a non-empty string (a phase-independent substance identity) or None")
         if type(self.composition) is not tuple or not all(
                 type(p) is tuple and len(p) == 2 and isinstance(p[0], str) and p[0].strip()
                 and type(p[1]) is int and not isinstance(p[1], bool) and p[1] > 0
@@ -152,16 +170,17 @@ class Species:
 
     @classmethod
     def of(cls, name: str, composition: dict, charge: int = 0, phase: Phase = Phase.AQUEOUS,
-           data_status: str = "NONE") -> "Species":
+           data_status: str = "NONE", substance: str | None = None) -> "Species":
         """Build a Species from a {element: count} dict (sorted into the canonical tuple).  Counts must be strictly
-        positive integers -- a float count is rejected, never truncated (XV-1B)."""
+        positive integers -- a float count is rejected, never truncated (XV-1B).  ``substance`` is the phase-
+        independent substance identity (XVI-P0.1); omit it to default to ``name`` (fail-closed)."""
         if type(composition) is not dict or not composition:
             raise KernelError("composition must be a non-empty {element: count} dict")
         comp = tuple(sorted((str(e), _as_strict_positive_int(c, f"count for element {e!r}"))
                             for e, c in composition.items()))
         if isinstance(charge, bool) or type(charge) is not int:
             raise KernelError("charge must be an int")
-        return cls(name, comp, int(charge), phase, data_status)
+        return cls(name, comp, int(charge), phase, data_status, substance)
 
     @property
     def elements(self) -> frozenset:

@@ -67,6 +67,22 @@ def test_sealed_vessel_exports_no_carbon():
     assert abs(res["whole_run"]["raw_material_change_total"].get("C", 0.0)) < 1e-6
 
 
+def test_timestep_splitting_is_characterized():
+    """§5: characterize the operator-split behavior across resolutions.  The signed material balance is a dt-INDEPENDENT
+    identity (it must close at EVERY resolution); the first-order SNIA trajectory CONVERGES as dt shrinks, so the
+    exported-carbon observable moves less between the two finer grids than between the two coarser ones."""
+    carbon = {}
+    for n in (20, 40, 80):
+        phases = (Phase_("open", valve_open=True, sealed=False, duration_s=20.0, n_steps=n),)
+        res = simulate(UnifiedParams(), phases, acid_mol=0.5, bicarb_solid_mol=0.2, bicarb_dissolved_mol=0.1)
+        assert res["whole_run"]["material_balance_closed_every_phase"] is True, f"balance must close at n_steps={n}"
+        assert res["whole_run"]["worst_ledger_residual"] < 1e-9
+        carbon[n] = res["whole_run"]["external_flux_total"]["C"]
+    coarse_gap = abs(carbon[40] - carbon[20])
+    fine_gap = abs(carbon[80] - carbon[40])
+    assert fine_gap <= coarse_gap + 1e-12, f"not converging: coarse {coarse_gap:.3e} vs fine {fine_gap:.3e}"
+
+
 def test_no_carbon_makes_no_gas():
     phases = (Phase_("open", valve_open=True, sealed=False, duration_s=30.0, n_steps=45),)
     res = simulate(UnifiedParams(), phases, acid_mol=0.5, bicarb_solid_mol=0.0, bicarb_dissolved_mol=0.0)

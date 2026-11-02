@@ -15,20 +15,21 @@ def test_no_false_vouch_full_recall_and_no_drift():
     m = bench.measure()
     assert m["false_vouch"] == 0, (
         f"CARDINAL: a fiction/mutation was vouched -- {[r[0].name for r in m['rows'] if r[4] == bench.FALSE_VOUCH]}")
-    assert m["recall_hits"] == m["recall_total"] == 10, f"recall regressed: {m['recall_hits']}/{m['recall_total']}"
+    assert m["recall_hits"] == m["recall_total"] == 12, f"recall regressed: {m['recall_hits']}/{m['recall_total']}"
     assert not m["mismatches"], f"coverage drifted from the recorded labels: {m['mismatches']}"
     assert bench.validate() is True
 
 
-def test_documented_coverage_gaps_are_the_expected_four():
+def test_documented_coverage_gaps_are_the_expected_three():
     # These are REAL reactions with NO attested recognizer: honest abstention, surfaced as findings.  When a
-    # recognizer is added for one (e.g. #110 Friedel-Crafts / #114 hydrogenation), remove it here deliberately.
+    # recognizer is added for one, remove it here DELIBERATELY -- #114 hydrogenation was removed from this set
+    # when its recognizer landed (CI repair, plan 1B), which is the intended loud signal, not an accident.
     gaps = set(bench.measure()["coverage_gaps"])
     assert any("Friedel-Crafts" in g for g in gaps), "#110 activated acyl transfer should still be an open gap"
-    assert any("hydrogenation" in g for g in gaps), "#114 hydrogenation should still be an open gap"
+    assert not any("hydrogenation" in g for g in gaps), "#114 hydrogenation is now RECOGNIZED, not a gap"
     assert any("aldol" in g for g in gaps)
     assert any("nucleophilic substitution (charged)" in g for g in gaps)
-    assert len(gaps) == 4, f"coverage-gap set changed: {sorted(gaps)}"
+    assert len(gaps) == 3, f"coverage-gap set changed: {sorted(gaps)}"
 
 
 def test_pericyclic_centreless_residual_is_closed_by_132():

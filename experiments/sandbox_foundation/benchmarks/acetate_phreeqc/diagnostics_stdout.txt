@@ -1,0 +1,12 @@
+DIAGNOSTICS (NOT part of the pre-registered verdict).  all pH; PH=PHREEQC molar-matched; dpH vs PHREEQC-with-pair
+case DB        |      PH | code(dav)     dpH | D1:    code     dpH | D2 noPair:     PH     dpH | D1+D2 dpH | ideal(conc) vs PH conc-pH
+C1   minteq.v4 |  6.9985 |   7.0000  0.0015 |   6.9985  0.0000 |  6.9985  0.0015 |  0.0000 | ideal  7.0000 vs PHconc  6.9996 (d=0.0004)  ideal-vs-PH-activity-pH d=0.0015
+C1   llnl      |  7.0081 |   7.0000  0.0081 |   7.0081  0.0000 |  7.0081  0.0081 |  0.0000 | ideal  7.0000 vs PHconc  7.0079 (d=0.0079)  ideal-vs-PH-activity-pH d=0.0081
+C2   minteq.v4 |  2.8808 |   2.8815  0.0006 |   2.8815  0.0006 |  2.8808  0.0006 |  0.0006 | ideal  2.8814 vs PHconc  2.8641 (d=0.0172)  ideal-vs-PH-activity-pH d=0.0005
+C2   llnl      |  2.8886 |   2.8815  0.0071 |   2.8890  0.0004 |  2.8886  0.0071 |  0.0004 | ideal  2.8814 vs PHconc  2.8718 (d=0.0096)  ideal-vs-PH-activity-pH d=0.0073
+C3   minteq.v4 |  4.6630 |   4.6720  0.0090 |   4.6721  0.0090 |  4.6718  0.0002 |  0.0003 | ideal  4.7573 vs PHconc  4.5793 (d=0.1779)  ideal-vs-PH-activity-pH d=0.0942
+C3   llnl      |  4.6773 |   4.6720  0.0053 |   4.6872  0.0100 |  4.6887  0.0167 |  0.0015 | ideal  4.7573 vs PHconc  4.6110 (d=0.1462)  ideal-vs-PH-activity-pH d=0.0800
+C4   minteq.v4 |  8.7586 |   8.7715  0.0129 |   8.7700  0.0114 |  8.7656  0.0059 |  0.0045 | ideal  8.8785 vs PHconc  8.6538 (d=0.2247)  ideal-vs-PH-activity-pH d=0.1199
+C4   llnl      |  8.7732 |   8.7715  0.0017 |   8.7872  0.0141 |  8.7825  0.0110 |  0.0048 | ideal  8.8785 vs PHconc  8.6946 (d=0.1839)  ideal-vs-PH-activity-pH d=0.1053
+C5   minteq.v4 |  9.0177 |   9.0695  0.0517 |   9.0680  0.0503 |  9.0430  0.0264 |  0.0250 | ideal  9.2051 vs PHconc  8.8826 (d=0.3225)  ideal-vs-PH-activity-pH d=0.1874
+C5   llnl      |  9.0168 |   9.0695  0.0527 |   9.0852  0.0684 |  9.0521  0.0173 |  0.0330 | ideal  9.2051 vs PHconc  8.9207 (d=0.2844)  ideal-vs-PH-activity-pH d=0.1883

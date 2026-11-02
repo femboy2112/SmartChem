@@ -1,0 +1,53 @@
+{
+  "operation": "XIX-4 measured-validation rung",
+  "conditions": {
+    "total_carbon_M": 0.05,
+    "sodium_M": 0.07500000000000001,
+    "temperature_K": 298.15,
+    "mode": "closed (no gas phase), CO2-free"
+  },
+  "certified": {
+    "material": "NIST SRM 191d (0.025 mol/kg NaHCO3 + 0.025 mol/kg Na2CO3, pH standard)",
+    "certificate_issue_date": "2025-02-05",
+    "certificate_url": "https://tsapps.nist.gov/srmext/certificates/191D.pdf",
+    "certificate_sha256": "ea316fb1368d0563882a2b6926fe8a6bb07736e9d5fc1b24bb70c2317cc02d38",
+    "method": "primary Harned-cell emf (cells without liquid junction); pH(S) on the molality scale",
+    "certified_pH_S_25C": 10.014,
+    "u_c": 0.0052,
+    "U_k1_96": 0.01,
+    "coverage_factor_k": 1.96
+  },
+  "model": {
+    "ideal": {
+      "pH_activity": 10.322832828194715,
+      "pH_concentration": 10.322832828194715,
+      "ionic_strength_M": 0.09979238641343235,
+      "verdict": "SOLVED_WITHIN_IDEAL_MODEL",
+      "residual_vs_certified": 0.30883282819471525,
+      "abs_residual": 0.30883282819471525,
+      "within_certified_U": false
+    },
+    "davies": {
+      "pH_activity": 10.004792621208969,
+      "pH_concentration": 9.897812815300616,
+      "ionic_strength_M": 0.09987499615761249,
+      "verdict": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
+      "residual_vs_certified": -0.009207378791030507,
+      "abs_residual": 0.009207378791030507,
+      "within_certified_U": true
+    }
+  },
+  "headline": {
+    "comparator": "davies activity pH vs certified pH(S) 10.014 +/- 0.010 (U, k=1.96)",
+    "model_pH": 10.004792621208969,
+    "residual": -0.009207378791030507,
+    "within_U": true,
+    "status": "MEASURED_CORROBORATED_WITHIN_U (blind prediction, zero fitted parameters; PARTIAL common-mode via the shared Debye-Huckel/Bates-Guggenheim activity-convention family -- NOT an independent derivation of K2)"
+  },
+  "caveats": [
+    "PARTIAL common-mode: our K1/K2 are Harned-lineage and Davies shares the Debye-Huckel family with the certificate's Bates-Guggenheim convention (the certificate's dominant uncertainty, 0.0050 pH).",
+    "UNITS: 0.025 mol/kg molalities treated as mol/L (dilute; ~0.001-0.002 pH effect).",
+    "Na-carbonate ion pairs (NaCO3-, NaHCO3(0)) omitted from the carbonate base model (second-order here).",
+    "Only the 25 C row is validatable (the model is 25 C-sourced and fail-closes off-domain, XIX-1C)."
+  ]
+}

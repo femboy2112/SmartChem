@@ -1,6 +1,57 @@
 # SmartChem roadmap
 
-> ## ▶ CURRENT STATUS (2026-10-23)
+> ## ▶ PRESENT STATE (2026-11-02) — OPERATION XIX consolidation
+> The authoritative current picture. Every block below (from the 2026-10-23 status down) is kept intact for its
+> reasoning; where it says a 2.0 feature is "not implemented", read it against this section — several are now
+> implemented on a research branch (and none of those is therefore "released").
+>
+> **RELEASED**
+> - **1.1.0** — `main` `9e8fa5f`, tag `v1.1.0`, GitHub Release. 20-class production reaction-type oracle. No PyPI.
+>
+> **RELEASE CANDIDATE**
+> - **1.5** — `integration/v1.5-candidate` (**PR #149**, `61d91aa`), **24 recognized reaction classes**; 7/7 hosted CI
+>   green on the final SHA (run `41198440406`). Maintainer-ready verdict: **ship Option A (24 classes)** — full gate
+>   review in [`docs/research/OPERATION_XIX_CONSOLIDATION.md`](docs/research/OPERATION_XIX_CONSOLIDATION.md).
+>   ⛔ not merged to `main`, not tagged, not published (awaiting maintainer sign-off).
+>
+> **REVIEW-ONLY FEATURE**
+> - **The 25th-class lactonization / type-3 event-search branch** — `feat/lactonization-exhaustiveness`
+>   (**PR #151**, `38e9186`, DRAFT); CI green on the final SHA (run `41339208272`). Held for a NEXT minor (1.6), NOT
+>   folded into 1.5 scope. A prior adversarial audit found no false-VOUCH but a MEDIUM common-mode fragility in the
+>   "generator-independent" recognizer. ⛔ not merged.
+>
+> **RESEARCH IMPLEMENTED** — the 2.0 physicalization stack, all under `experiments/` (EXCLUDED from the package
+> build), consolidated on `integration/2.0-alpha` (draft integration PR). ⛔ nothing wired into `smartchem/`
+> (`git diff v1.1.0..<stack> -- smartchem/` is EMPTY), nothing merged/tagged/published:
+> - a general kinetic/equilibrium/transport **kernel** (typed species; exact `E·N=0` at construction; generic
+>   dn/dt = N·r + q; fail-closed RATE_UNKNOWN);
+> - a **unified solid–liquid–gas simulation** through ONE generic operator-split integrator, zero chemistry branches;
+> - a **signed external-flux ledger** (material balance checked vs an independently-integrated boundary flux);
+> - a **mixed PHREEQC benchmark** (executed; honest narrow domain of agreement);
+> - a **categorical→physical bridge** (OpenChemDiagram → kernel ChemicalSystem; kernel re-proves `E·N=0`, the diagram
+>   conservation only cross-checked);
+> - XIX **identity/immutability/temperature P0 hardening** (injective model/run/evidence digests, a world execution
+>   certificate, one threaded temperature with off-25 °C fail-closed, authoritative activity-pH reporting, a
+>   recorded/bounded phase-stitch);
+> - the **first MEASURED-validation rung** — the carbonate model reproduces the NIST SRM 191d certified pH
+>   (10.014 ± 0.010) to within its uncertainty as a blind, zero-parameter prediction (partial common-mode, bounded).
+>
+> **SCIENTIFICALLY PARTIAL** — implemented but NOT yet trustworthy as a predictor:
+> - ion-pair / aqueous-activity modeling (NaAc opt-in exists; Na-carbonate pairs not modeled; high-Na PHREEQC
+>   divergence remains);
+> - solid thermodynamics (NaHCO₃ saturation = empirical S² product, not an activity Ksp; dilute-regime only);
+> - calibration of dynamic parameters (k_diss, kLa, k_export are ASSUMED/synthetic — a numerical simulation, not a
+>   fizzing-rate predictor);
+> - charge / implicit-reservoir closure (the flagship world is charge-safe by construction; the charge claim stays
+>   DEMOTED pending an independent global-neutrality assertion or an explicit charge-carrying boundary);
+> - model-domain identification (the validated regime is sharper, still narrow).
+>
+> **FUTURE**
+> - a stable 2.0 simulation API; expanded chemically-supported mechanisms; non-isothermal energy accounting; general
+>   precipitation; charged transport / electrochemistry;
+> - the **3.0** interactive falling-sand chemistry laboratory using LibGibson as a downstream observer.
+
+> ## CURRENT STATUS (2026-10-23) — superseded by PRESENT STATE above
 > **1.1.0 — the chemical-graph / synthesis-coverage release.** The reaction-type oracle grows **17 → 20 classes**
 > (#110 activated acyl transfer, #111 sulfonate-ester transfer, #115 Claisen condensation) and gains the typed
 > chemical-graph / synthesis workbench and the `smartchem graph` verb, cut from the production prefix on

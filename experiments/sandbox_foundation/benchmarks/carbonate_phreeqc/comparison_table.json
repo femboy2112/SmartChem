@@ -1,0 +1,123 @@
+{
+  "metric": "dpH = |pH_activity(code, davies) - pH(PHREEQC)|",
+  "database": "phreeqc.dat",
+  "database_sha256": "6bb5ebc1d0ecca0e921c13a2241d05d3a3333b142d1d740b2ed03a786442bdf5",
+  "thresholds": {
+    "AGREE_max": 0.05,
+    "MARGINAL_max": 0.15
+  },
+  "rung": "VERIFICATION (shared constant lineage; not independent experimental validation)",
+  "worst_dpH": 0.1283023727419188,
+  "rows": {
+    "O1": {
+      "desc": "pure water, P_CO2 = 1e-4 atm",
+      "ph_phreeqc": 5.908764844659466,
+      "I_phreeqc": 1.2360344526204255e-06,
+      "ph_code_davies": 5.90529589148372,
+      "ph_code_ideal": 5.905295955182908,
+      "I_code_davies": 1.2453390103038932e-06,
+      "dpH": 0.0034689531757452485,
+      "class": "AGREE"
+    },
+    "O2": {
+      "desc": "pure water, atmospheric CO2 (log P = -3.5)",
+      "ph_phreeqc": 5.659667308914897,
+      "I_phreeqc": 2.193888724815078e-06,
+      "ph_code_davies": 5.656265118328775,
+      "ph_code_ideal": 5.6562651663825605,
+      "I_code_davies": 2.210545360531719e-06,
+      "dpH": 0.0034021905861223445,
+      "class": "AGREE"
+    },
+    "O3": {
+      "desc": "pure water, P_CO2 = 1e-3 atm",
+      "ph_phreeqc": 5.409932671367109,
+      "I_phreeqc": 3.900693124873514e-06,
+      "ph_code_davies": 5.406574294170249,
+      "ph_code_ideal": 5.406574330288402,
+      "I_code_davies": 3.930406119397952e-06,
+      "dpH": 0.0033583771968599407,
+      "class": "AGREE"
+    },
+    "O4": {
+      "desc": "pure water, P_CO2 = 1e-2 atm",
+      "ph_phreeqc": 4.910030090672211,
+      "I_phreeqc": 1.2352848094160168e-05,
+      "ph_code_davies": 4.906704988518967,
+      "ph_code_ideal": 4.906705008877478,
+      "I_code_davies": 1.244756102625731e-05,
+      "dpH": 0.0033251021532443303,
+      "class": "AGREE"
+    },
+    "O5": {
+      "desc": "pure water, P_CO2 = 1e-1 atm",
+      "ph_phreeqc": 4.410141559948685,
+      "I_phreeqc": 3.917418154945012e-05,
+      "ph_code_davies": 4.406718835859588,
+      "ph_code_ideal": 4.4067188473412,
+      "I_code_davies": 3.9487003648124835e-05,
+      "dpH": 0.003422724089096718,
+      "class": "AGREE"
+    },
+    "O6": {
+      "desc": "pure water, P_CO2 = 1 atm (soda)",
+      "ph_phreeqc": 3.911311192747034,
+      "I_phreeqc": 0.00012422077228419897,
+      "ph_code_davies": 3.906720467036372,
+      "ph_code_ideal": 3.9067204735249614,
+      "I_code_davies": 0.00012557441760210027,
+      "dpH": 0.004590725710661658,
+      "class": "AGREE"
+    },
+    "C1": {
+      "desc": "0.01 M NaHCO3",
+      "ph_phreeqc": 8.224189566427283,
+      "I_phreeqc": 0.01004597431377756,
+      "ph_code_davies": 8.246267023454728,
+      "ph_code_ideal": 8.335323293817007,
+      "I_code_davies": 0.010110007607443221,
+      "dpH": 0.02207745702744468,
+      "class": "AGREE"
+    },
+    "C2": {
+      "desc": "0.1 M NaHCO3",
+      "ph_phreeqc": 8.015851418220974,
+      "I_phreeqc": 0.09719116851627531,
+      "ph_code_davies": 8.124883348962985,
+      "ph_code_ideal": 8.339527751955426,
+      "I_code_davies": 0.10127612410464007,
+      "dpH": 0.10903193074201134,
+      "class": "MARGINAL"
+    },
+    "C3": {
+      "desc": "half-neutralized (0.1 C, 0.05 Na) CO2/HCO3 buffer",
+      "ph_phreeqc": 6.259434204873152,
+      "I_phreeqc": 0.04908746959195499,
+      "ph_code_davies": 6.264422289779554,
+      "ph_code_ideal": 6.3498710057146175,
+      "I_code_davies": 0.050008414337630425,
+      "dpH": 0.004988084906401902,
+      "class": "AGREE"
+    },
+    "C4": {
+      "desc": "0.1 M Na2CO3",
+      "ph_phreeqc": 11.260971389594653,
+      "I_phreeqc": 0.20594583906175662,
+      "ph_code_davies": 11.389273762336572,
+      "ph_code_ideal": 11.654962569897995,
+      "I_code_davies": 0.29666228166829706,
+      "dpH": 0.1283023727419188,
+      "class": "MARGINAL"
+    },
+    "C5": {
+      "desc": "0.01 M dissolved CO2, no base",
+      "ph_phreeqc": 4.177486261698486,
+      "I_phreeqc": 6.707991754757763e-05,
+      "ph_code_davies": 4.176464349074647,
+      "ph_code_ideal": 4.176450491695669,
+      "I_code_davies": 6.724588742660071e-05,
+      "dpH": 0.0010219126238393272,
+      "class": "AGREE"
+    }
+  }
+}

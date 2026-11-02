@@ -32,12 +32,27 @@ def test_tables_parse_under_a_strict_constant_rejecting_parser():
         json.loads(json.dumps(obj, allow_nan=False))   # round-trips without allow_nan
 
 
-def test_phreeqc_column_is_honestly_null_not_fabricated():
+def test_phreeqc_column_is_filled_verified_and_sha_pinned():
+    """OPERATION XVIII §6: the mixed benchmark has now been RUN against both supported databases (phreeqpython), so the
+    PHREEQC column is FILLED with values verified against raw PHREEQC and the DB SHA256s are pinned.  The status is
+    BENCHMARKED_AGAINST_REFERENCE_SOLVER, and the caveat is loud that this is reference-SOLVER corroboration
+    (common-mode on the shared Ka/K1/K2/Kw constant lineage), NOT measured-chemistry validation."""
     obj = json.loads(TABLE.read_text(), parse_constant=_reject)
-    assert obj["reference_status"] == EXTERNAL_VALIDATION_UNAVAILABLE
+    assert obj["reference_status"] == claim_tiers.BENCHMARKED_AGAINST_REFERENCE_SOLVER
+    # both supported databases are SHA-pinned to the known upstream (usgs-coupled/phreeqc3) hashes
+    dbs = obj["databases"]
+    assert dbs["minteq.v4.dat"]["sha256"] == "4a48bf5c357b3da3084606a5e322426c3ab1e969dd1c86f9c62a3a7995836ca3"
+    assert dbs["llnl.dat"]["sha256"] == "1324b807f0f864806fc42df308f6ca7c5e8ce2ed8060d76351452f76beeb819b"
+    # the PHREEQC pH column is filled per-database for EVERY case, and abs_dpH is exactly |code - phreeqc|
+    # (an independent recompute -- catches a merge that mangled the column)
     for cid, row in obj["rows"].items():
-        assert row["phreeqc_pH"] is None, f"{cid}: a PHREEQC pH appeared but PHREEQC was never run"
-        assert row["abs_dpH"] is None
+        for db in ("minteq.v4.dat", "llnl.dat"):
+            assert isinstance(row["phreeqc_pH"][db], float), f"{cid}/{db}: PHREEQC pH missing"
+            assert abs(row["abs_dpH"][db] - abs(row["code_pH_davies"] - row["phreeqc_pH"][db])) < 1e-9, cid
+    # the honest narrow domain of agreement (AGREE vs BOTH DBs, code-admitted) and the common-mode caveat
+    assert set(obj["domain_of_agreement"]["cases"]) == {"M1", "M2", "M4", "M5", "M7"}
+    caveat = obj["status_caveat"].lower()
+    assert "common-mode" in caveat and "not the chemistry" in caveat
 
 
 def test_code_column_and_holdout_tier_are_present_for_admitted_cases():

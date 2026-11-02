@@ -1,8 +1,38 @@
 {
   "target": "experiments/sandbox_foundation/coupled_equilibrium.py :: VinegarBicarbonateSystem.solve",
-  "reference_solver": "PHREEQC (minteq.v4.dat primary, llnl.dat secondary)",
-  "reference_status": "EXTERNAL_VALIDATION_UNAVAILABLE",
-  "note": "PHREEQC is absent on the committed baseline; the inputs/*.pqi decks are the reproducible probe. The code column + the arbitrary-precision holdout tier are filled; the PHREEQC pH column is null until an external run signs it (never fabricated).",
+  "reference_solver": "PHREEQC via phreeqpython (minteq.v4.dat, llnl.dat; minteq.v4 primary)",
+  "reference_status": "BENCHMARKED_AGAINST_REFERENCE_SOLVER",
+  "status_caveat": "Solver / activity-model CORROBORATION ONLY. PHREEQC and this model share the Ka/K1/K2/Kw thermodynamic lineage, so agreement is COMMON-MODE on the constants: it verifies the SOLVER, not the chemistry. This is NOT measured-chemistry validation -- that would require a MEASURED mixed vinegar/bicarbonate pH with defensible provenance; none is used and none is back-computed from the code's constants. External (experimental) validation remains UNKNOWN.",
+  "metric": "abs_dpH = |code pH_activity(davies) - PHREEQC pH(molar-matched)|, per database",
+  "thresholds": {
+    "AGREE_max": 0.02,
+    "MARGINAL_max": 0.05,
+    "rule": "DIVERGE > MARGINAL_max"
+  },
+  "databases": {
+    "minteq.v4.dat": {
+      "sha256": "4a48bf5c357b3da3084606a5e322426c3ab1e969dd1c86f9c62a3a7995836ca3",
+      "role": "primary"
+    },
+    "llnl.dat": {
+      "sha256": "1324b807f0f864806fc42df308f6ca7c5e8ce2ed8060d76351452f76beeb819b",
+      "role": "secondary"
+    }
+  },
+  "molar_match": "fixed point on mol/kgw input until sum-of-species molarity reproduces requested mol/L (PREREGISTRATION.md:39-41)",
+  "domain_of_agreement": {
+    "definition": "code verdict == SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL AND class == AGREE vs BOTH databases",
+    "cases": [
+      "M1",
+      "M2",
+      "M4",
+      "M5",
+      "M7"
+    ],
+    "code_demoted_excluded": [
+      "M11"
+    ]
+  },
   "rows": {
     "M1": {
       "desc": "pure water (control)",
@@ -12,8 +42,22 @@
       "code_pH_davies": 7.0,
       "code_verdict_davies": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
       "hp_tier_davies": "NUMERICALLY_VERIFIED",
-      "phreeqc_pH": null,
-      "abs_dpH": null
+      "phreeqc_pH": {
+        "minteq.v4.dat": 6.998499996932542,
+        "llnl.dat": 7.008079724280813
+      },
+      "phreeqc_I_molal": {
+        "minteq.v4.dat": 1.0038331405504074e-07,
+        "llnl.dat": 9.819296506484075e-08
+      },
+      "abs_dpH": {
+        "minteq.v4.dat": 0.0015000030674583442,
+        "llnl.dat": 0.008079724280812606
+      },
+      "phreeqc_class": {
+        "minteq.v4.dat": "AGREE",
+        "llnl.dat": "AGREE"
+      }
     },
     "M2": {
       "desc": "vinegar only (acetate limit)",
@@ -23,8 +67,22 @@
       "code_pH_davies": 2.881474778474802,
       "code_verdict_davies": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
       "hp_tier_davies": "NUMERICALLY_VERIFIED",
-      "phreeqc_pH": null,
-      "abs_dpH": null
+      "phreeqc_pH": {
+        "minteq.v4.dat": 2.8808465502751552,
+        "llnl.dat": 2.8886071694912165
+      },
+      "phreeqc_I_molal": {
+        "minteq.v4.dat": 0.0013713756817023597,
+        "llnl.dat": 0.0013435333944965425
+      },
+      "abs_dpH": {
+        "minteq.v4.dat": 0.0006282281996465855,
+        "llnl.dat": 0.007132391016414719
+      },
+      "phreeqc_class": {
+        "minteq.v4.dat": "AGREE",
+        "llnl.dat": "AGREE"
+      }
     },
     "M3": {
       "desc": "bicarbonate only (carbonate limit)",
@@ -34,8 +92,22 @@
       "code_pH_davies": 8.124883348962989,
       "code_verdict_davies": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
       "hp_tier_davies": "NUMERICALLY_VERIFIED",
-      "phreeqc_pH": null,
-      "abs_dpH": null
+      "phreeqc_pH": {
+        "minteq.v4.dat": 8.01634047956859,
+        "llnl.dat": 8.116326650271084
+      },
+      "phreeqc_I_molal": {
+        "minteq.v4.dat": 0.09746498452611513,
+        "llnl.dat": 0.09368155425599527
+      },
+      "abs_dpH": {
+        "minteq.v4.dat": 0.10854286939439817,
+        "llnl.dat": 0.008556698691904785
+      },
+      "phreeqc_class": {
+        "minteq.v4.dat": "DIVERGE",
+        "llnl.dat": "AGREE"
+      }
     },
     "M4": {
       "desc": "stoichiometric mixed",
@@ -45,8 +117,22 @@
       "code_pH_davies": 5.446531361070232,
       "code_verdict_davies": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
       "hp_tier_davies": "NUMERICALLY_VERIFIED",
-      "phreeqc_pH": null,
-      "abs_dpH": null
+      "phreeqc_pH": {
+        "minteq.v4.dat": 5.434882966917454,
+        "llnl.dat": 5.430559216937144
+      },
+      "phreeqc_I_molal": {
+        "minteq.v4.dat": 0.09659385785981069,
+        "llnl.dat": 0.09482667146984693
+      },
+      "abs_dpH": {
+        "minteq.v4.dat": 0.011648394152778074,
+        "llnl.dat": 0.01597214413308734
+      },
+      "phreeqc_class": {
+        "minteq.v4.dat": "AGREE",
+        "llnl.dat": "AGREE"
+      }
     },
     "M5": {
       "desc": "acid in excess -> BICARBONATE-LIMITED",
@@ -56,8 +142,22 @@
       "code_pH_davies": 4.1904702247141685,
       "code_verdict_davies": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
       "hp_tier_davies": "NUMERICALLY_VERIFIED",
-      "phreeqc_pH": null,
-      "abs_dpH": null
+      "phreeqc_pH": {
+        "minteq.v4.dat": 4.181581506090731,
+        "llnl.dat": 4.1955896394041625
+      },
+      "phreeqc_I_molal": {
+        "minteq.v4.dat": 0.04915235132144157,
+        "llnl.dat": 0.04869858478451856
+      },
+      "abs_dpH": {
+        "minteq.v4.dat": 0.008888718623437875,
+        "llnl.dat": 0.005119414689993995
+      },
+      "phreeqc_class": {
+        "minteq.v4.dat": "AGREE",
+        "llnl.dat": "AGREE"
+      }
     },
     "M6": {
       "desc": "bicarbonate in excess -> acid-limited",
@@ -67,8 +167,22 @@
       "code_pH_davies": 6.70398260696117,
       "code_verdict_davies": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
       "hp_tier_davies": "NUMERICALLY_VERIFIED",
-      "phreeqc_pH": null,
-      "abs_dpH": null
+      "phreeqc_pH": {
+        "minteq.v4.dat": 6.681295621825625,
+        "llnl.dat": 6.643626441348497
+      },
+      "phreeqc_I_molal": {
+        "minteq.v4.dat": 0.18886726666381307,
+        "llnl.dat": 0.1779010010490721
+      },
+      "abs_dpH": {
+        "minteq.v4.dat": 0.0226869851355449,
+        "llnl.dat": 0.06035616561267343
+      },
+      "phreeqc_class": {
+        "minteq.v4.dat": "MARGINAL",
+        "llnl.dat": "DIVERGE"
+      }
     },
     "M7": {
       "desc": "dilute mixed",
@@ -78,8 +192,22 @@
       "code_pH_davies": 5.509345400852299,
       "code_verdict_davies": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
       "hp_tier_davies": "NUMERICALLY_VERIFIED",
-      "phreeqc_pH": null,
-      "abs_dpH": null
+      "phreeqc_pH": {
+        "minteq.v4.dat": 5.508922233973274,
+        "llnl.dat": 5.520687794041298
+      },
+      "phreeqc_I_molal": {
+        "minteq.v4.dat": 0.00998066361363029,
+        "llnl.dat": 0.009929467737947558
+      },
+      "abs_dpH": {
+        "minteq.v4.dat": 0.00042316687902488326,
+        "llnl.dat": 0.011342393188999544
+      },
+      "phreeqc_class": {
+        "minteq.v4.dat": "AGREE",
+        "llnl.dat": "AGREE"
+      }
     },
     "M8": {
       "desc": "intermediate ionic strength",
@@ -89,8 +217,22 @@
       "code_pH_davies": 11.38541838377897,
       "code_verdict_davies": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
       "hp_tier_davies": "NUMERICALLY_VERIFIED",
-      "phreeqc_pH": null,
-      "abs_dpH": null
+      "phreeqc_pH": {
+        "minteq.v4.dat": 11.211819644152579,
+        "llnl.dat": 11.34806923958162
+      },
+      "phreeqc_I_molal": {
+        "minteq.v4.dat": 0.27983960548067105,
+        "llnl.dat": 0.3506125456458713
+      },
+      "abs_dpH": {
+        "minteq.v4.dat": 0.17359873962639227,
+        "llnl.dat": 0.03734914419735169
+      },
+      "phreeqc_class": {
+        "minteq.v4.dat": "DIVERGE",
+        "llnl.dat": "MARGINAL"
+      }
     },
     "M9": {
       "desc": "high I near the Davies boundary",
@@ -100,8 +242,22 @@
       "code_pH_davies": 8.073268226284153,
       "code_verdict_davies": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
       "hp_tier_davies": "NUMERICALLY_VERIFIED",
-      "phreeqc_pH": null,
-      "abs_dpH": null
+      "phreeqc_pH": {
+        "minteq.v4.dat": 7.8386321720400245,
+        "llnl.dat": 7.9849100684444725
+      },
+      "phreeqc_I_molal": {
+        "minteq.v4.dat": 0.35916196255662886,
+        "llnl.dat": 0.3382114071088206
+      },
+      "abs_dpH": {
+        "minteq.v4.dat": 0.23463605424412837,
+        "llnl.dat": 0.08835815783968037
+      },
+      "phreeqc_class": {
+        "minteq.v4.dat": "DIVERGE",
+        "llnl.dat": "DIVERGE"
+      }
     },
     "M10": {
       "desc": "extreme basicity numerical control",
@@ -111,8 +267,22 @@
       "code_pH_davies": 12.864374692632628,
       "code_verdict_davies": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL",
       "hp_tier_davies": "NUMERICALLY_VERIFIED",
-      "phreeqc_pH": null,
-      "abs_dpH": null
+      "phreeqc_pH": {
+        "minteq.v4.dat": 12.832856516276964,
+        "llnl.dat": 12.843509178953552
+      },
+      "phreeqc_I_molal": {
+        "minteq.v4.dat": 0.2863707246321967,
+        "llnl.dat": 0.3608004619902501
+      },
+      "abs_dpH": {
+        "minteq.v4.dat": 0.03151817635566445,
+        "llnl.dat": 0.02086551367907674
+      },
+      "phreeqc_class": {
+        "minteq.v4.dat": "MARGINAL",
+        "llnl.dat": "MARGINAL"
+      }
     },
     "M11": {
       "desc": "refusal probe (I > Davies domain)",
@@ -122,8 +292,22 @@
       "code_pH_davies": 8.084823141268215,
       "code_verdict_davies": "NUMERICALLY_UNVERIFIED",
       "hp_tier_davies": "NUMERICALLY_VERIFIED",
-      "phreeqc_pH": null,
-      "abs_dpH": null
+      "phreeqc_pH": {
+        "minteq.v4.dat": 7.779307421111774,
+        "llnl.dat": 7.940635310901032
+      },
+      "phreeqc_I_molal": {
+        "minteq.v4.dat": 0.5152800797948832,
+        "llnl.dat": 0.479873369020004
+      },
+      "abs_dpH": {
+        "minteq.v4.dat": 0.3055157201564409,
+        "llnl.dat": 0.14418783036718263
+      },
+      "phreeqc_class": {
+        "minteq.v4.dat": "DIVERGE",
+        "llnl.dat": "DIVERGE"
+      }
     }
   }
 }

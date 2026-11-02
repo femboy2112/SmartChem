@@ -1,3 +1,5 @@
 *.sel
 phreeqc_results.json
+db_dl/
+db_variants/
 __pycache__/

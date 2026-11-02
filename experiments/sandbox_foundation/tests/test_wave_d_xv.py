@@ -111,13 +111,18 @@ def test_open_stripping_removes_ammonia_ledgers_N_and_preserves_sodium():
     oworld, _o, oinit = build_ammonia_stripping_world(purge=True)
     opent = oworld.integrate(oinit, duration=200.0, n_steps=200, scheme="strang",
                              declared_kinetic_tier=ASSUMED_PARAMETER)
-    # the closed world conserves N exactly; the open (swept) world strips it, and the loss is LEDGERED (not hidden)
+    # the closed world conserves N exactly; the open (swept) world strips it, and the loss is INDEPENDENTLY LEDGERED
+    # (XVIII-3): the stripped nitrogen is no longer dumped into the tautological reservoir_exchange bucket -- it is
+    # accumulated as a signed external flux and reconciled against the measured inventory change.
     assert closed.max_conserved_drift < 1e-11
     n0 = oinit["liq"][NH3] + oinit["liq"][NH4]
     nf = opent.amounts["liq"][-1][NH3] + opent.amounts["liq"][-1][NH4]
     assert nf < n0 - 1e-3                                       # meaningful stripping occurred
-    assert opent.receipt.reservoir_exchange["N"] < -1e-3       # nitrogen left via the ledgered sweep
-    assert abs(opent.receipt.reservoir_exchange["charge"]) < 1e-9
+    assert "N" not in opent.receipt.reservoir_exchange         # XVIII-3: N is a BOUNDARY flux now, not an implicit reservoir
+    assert opent.receipt.external_flux["N"] < -1e-3            # nitrogen left via the independently-integrated sweep
+    assert opent.receipt.ledger_adjusted_residual["N"] < 1e-5  # and the swept N reconciles with the measured change
+    assert opent.receipt.material_balance_closed               # the whole open-world material balance closes
+    assert abs(opent.receipt.reservoir_exchange["charge"]) < 1e-9   # charge stays implicit-solvent-coupled (endpoint)
     # sodium is a spectator: not stripped, not reservoir-coupled -> conserved
     assert abs(opent.amounts["liq"][-1][Nap] - oinit["liq"][Nap]) < 1e-9
 

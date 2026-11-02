@@ -270,7 +270,12 @@ class CoupledReceipt:
     structural_tier: str                  # STRUCTURALLY_CONSERVING if every check passed, else REFUSED
     declared_kinetic_tier: str            # weakest declared tier over all compartments' rate laws
     admitted_tier: str                    # DERIVED = weakest(structural_tier, declared_kinetic_tier)
-    reservoir_exchange: dict = field(default_factory=dict)   # {component: net moles exchanged with a reservoir}
+    reservoir_exchange: dict = field(default_factory=dict)   # {implicit-solvent component: endpoint net change (NOT independently verifiable)}
+    external_flux: dict = field(default_factory=dict)            # XVIII-3 {component: independently-integrated E * q_ext over the run}
+    raw_material_change: dict = field(default_factory=dict)      # XVIII-3 {component: measured E (n_final - n0)}
+    ledger_adjusted_residual: dict = field(default_factory=dict)  # XVIII-3 {component: |raw_material_change - external_flux|}
+    material_balance_closed: bool = True   # XVIII-3: every non-implicit-reservoir component's measured change == its integrated external flux
+    charge_balance_claim: str = ""         # XVIII-3: CONSERVED (independently checked) | DEMOTED (implicit-solvent electroneutrality) | N/A
     notes: tuple = ()
 
 
@@ -402,9 +407,11 @@ class CoupledWorld:
                         dy[self._slot[(c.name, sp)]] += molar * coeff
         return dy
 
-    def _transport_rhs(self, y: np.ndarray) -> np.ndarray:
-        """T: interface fluxes + external boundaries (feed and fixed-activity).  Conservative across interfaces by
-        construction; feed/fixed-activity inject or exchange with the exterior."""
+    def _transport_rhs_and_flux(self, y: np.ndarray):
+        """T plus the per-boundary signed EXTERNAL flux (mol/s into the world).  Interface transfers are INTERNAL
+        (conservative, a->b) and contribute to dy but NOT to the external accumulators; only ExternalBoundary terms are
+        external flux.  Returns (dy, dflux) where dflux[k] is the signed mol/s boundary k injects into its species --
+        the quantity XVIII-3 integrates independently of the inventory to close the material balance."""
         dy = np.zeros_like(y)
         for iface in self.interfaces:
             ia = self._slot[(iface.a, iface.species_a)]
@@ -414,34 +421,53 @@ class CoupledWorld:
             J = iface.k_transfer * (y[ia] / Va - iface.partition * y[ib] / Vb)   # mol/s, a -> b
             dy[ia] -= J
             dy[ib] += J
-        for b in self.boundaries:
+        dflux = np.zeros(len(self.boundaries))
+        for k, b in enumerate(self.boundaries):
             i = self._slot[(b.compartment, b.species)]
             if b.mode == "feed":
-                dy[i] += b.rate
+                fl = b.rate
             else:   # fixed_activity
                 V = self._comp[b.compartment].system.volume_L
-                dy[i] += b.k_transfer * (b.target_conc - y[i] / V)
-        return dy
+                fl = b.k_transfer * (b.target_conc - y[i] / V)
+            dy[i] += fl
+            dflux[k] = fl
+        return dy, dflux
 
-    def _flow(self, y: np.ndarray, which: str, dt: float, rtol: float, atol: float) -> np.ndarray:
-        """Integrate one continuous operator ('reaction' | 'transport' | 'both') over [0, dt]."""
-        if dt == 0.0:
-            return y.copy()
-        if which == "reaction":
-            def f(_t, s):
-                return self._reaction_rhs(s)
-        elif which == "transport":
-            def f(_t, s):
-                return self._transport_rhs(s)
-        elif which == "both":
-            def f(_t, s):
-                return self._reaction_rhs(s) + self._transport_rhs(s)
-        else:
+    def _transport_rhs(self, y: np.ndarray) -> np.ndarray:
+        """T only (species RHS), for callers that do not track the external flux accumulators."""
+        return self._transport_rhs_and_flux(y)[0]
+
+    def _flow(self, y: np.ndarray, acc: np.ndarray, which: str, dt: float, rtol: float, atol: float):
+        """Integrate one continuous operator ('reaction' | 'transport' | 'both') over [0, dt], carrying the per-boundary
+        external-flux accumulators ``acc`` as AUGMENTED ODE state (XVIII-3) so each boundary's integral of q_ext is
+        measured by the SAME quadrature that moves the inventory -- independent of the resulting inventory change.
+        Returns (y_next, acc_next).  A reaction-only flow leaves the accumulators flat (boundaries are transport)."""
+        if which not in ("reaction", "transport", "both"):
             raise CoupledError(f"unknown flow {which!r}")
-        sol = solve_ivp(f, (0.0, dt), y, method="BDF", rtol=rtol, atol=atol, t_eval=[dt])
+        if dt == 0.0:
+            return y.copy(), acc.copy()
+        ny = len(y)
+        want_reaction = which in ("reaction", "both")
+        want_transport = which in ("transport", "both")
+        nb = len(self.boundaries)
+
+        def f(_t, z):
+            yy = z[:ny]
+            dy = np.zeros(ny)
+            dflux = np.zeros(nb)
+            if want_reaction:
+                dy = dy + self._reaction_rhs(yy)
+            if want_transport:
+                t_dy, dflux = self._transport_rhs_and_flux(yy)
+                dy = dy + t_dy
+            return np.concatenate([dy, dflux])
+
+        z0 = np.concatenate([y, acc])
+        sol = solve_ivp(f, (0.0, dt), z0, method="BDF", rtol=rtol, atol=atol, t_eval=[dt])
         if not sol.success:
             raise CoupledError(f"{which} sub-integration failed: {sol.message}")
-        return sol.y[:, -1]
+        zf = sol.y[:, -1]
+        return zf[:ny], zf[ny:]
 
     def _project(self, y: np.ndarray) -> np.ndarray:
         """P: re-speciate every fast-equilibrium compartment onto g(n) = 0 (instantaneous SNIA projection).
@@ -481,6 +507,11 @@ class CoupledWorld:
     _PROJECTION_RTOL = 1e-9
     _PROJECTION_ATOL = 1e-15      # mol: float-dust floor for the conservation observable (scale -> 0)
     _NONNEG_CONC_ATOL = 1e-12     # mol/L: the wrapped solvers' own nonnegativity floor; * volume -> a mol floor
+    # XVIII-4A: the OUTER material-balance / feed-ledger tolerance -- scale-aware, NO 1-mol floor (the pre-XVIII
+    # 1e-6*max(1.0, scale) pinned a 1e-6 mol ABSOLUTE floor that passed a trace-scale fabrication).  atol is a pure
+    # float-dust floor; rtol keeps the prior relative sensitivity, now applied to the ACTUAL conserved inventory.
+    _MATERIAL_RTOL = 1e-6
+    _MATERIAL_ATOL = 1e-12
 
     @classmethod
     def _projection_tol(cls, totals_in: dict) -> float:
@@ -586,22 +617,25 @@ class CoupledWorld:
                     f"fabricates or destroys atoms")
 
     # ---------------------------------------------------------------- the stepper
-    def _step(self, y: np.ndarray, dt: float, scheme: str, rtol: float, atol: float) -> np.ndarray:
+    def _step(self, y: np.ndarray, acc: np.ndarray, dt: float, scheme: str, rtol: float, atol: float):
+        """Advance one macro-step of the chosen operator-split scheme, threading the external-flux accumulators ``acc``
+        through each continuous flow (XVIII-3).  The fast-equilibrium projection P re-speciates the inventory but does
+        NOT exchange with an external boundary, so it leaves the accumulators unchanged.  Returns (y_next, acc_next)."""
         if scheme == "lie":
-            y = self._flow(y, "reaction", dt, rtol, atol)
-            y = self._flow(y, "transport", dt, rtol, atol)
+            y, acc = self._flow(y, acc, "reaction", dt, rtol, atol)
+            y, acc = self._flow(y, acc, "transport", dt, rtol, atol)
         elif scheme == "strang":
-            y = self._flow(y, "reaction", dt / 2.0, rtol, atol)
-            y = self._flow(y, "transport", dt, rtol, atol)
-            y = self._flow(y, "reaction", dt / 2.0, rtol, atol)
+            y, acc = self._flow(y, acc, "reaction", dt / 2.0, rtol, atol)
+            y, acc = self._flow(y, acc, "transport", dt, rtol, atol)
+            y, acc = self._flow(y, acc, "reaction", dt / 2.0, rtol, atol)
         elif scheme == "monolithic":
             if self._has_equilibrium:
                 raise CoupledError("monolithic integration is undefined when a compartment has a fast-equilibrium "
                                    "projection (the world is a DAE, not an ODE); use lie or strang")
-            y = self._flow(y, "both", dt, rtol, atol)
+            y, acc = self._flow(y, acc, "both", dt, rtol, atol)
         else:
             raise CoupledError("scheme must be 'lie', 'strang' or 'monolithic'")
-        return self._project(y)
+        return self._project(y), acc
 
     def integrate(self, initial: dict, *, duration: float, n_steps: int, scheme: str = "strang",
                   n_samples: int | None = None, rtol: float = 1e-10, atol: float = 1e-14,
@@ -628,92 +662,125 @@ class CoupledWorld:
         y = self._pack(initial)
         y = self._project(y)                              # project the initial state onto equilibrium if declared
         comp0 = self._Eg @ y
+        acc = np.zeros(len(self.boundaries))              # XVIII-3: per-boundary integrated external flux (mol)
 
         sample_every = 1 if not n_samples else max(1, n_steps // max(1, n_samples))
         times = [0.0]
         ys = [y.copy()]
         for step in range(1, n_steps + 1):
-            y = self._step(y, dt, scheme, rtol, atol)
+            y, acc = self._step(y, acc, dt, scheme, rtol, atol)
             if step % sample_every == 0 or step == n_steps:
                 times.append(step * dt)
                 ys.append(y.copy())
 
-        # feed ledger: the DECLARED constant feed integral (component basis), independent of the trajectory
-        feed_rate_comp = np.zeros(len(self.component_labels))
+        # XVIII-3 SIGNED EXTERNAL-FLUX LEDGER.  Each boundary's flux was accumulated INDEPENDENTLY as augmented ODE
+        # state (acc[k] = integral of q_ext,k dt), so the material balance d(E n)/dt = E q_ext is CHECKED, not inferred
+        # from the endpoint inventory diff.  external_flux maps each component to E * (integrated boundary flux);
+        # raw_material_change is the MEASURED E (n_final - n0); their difference is the ledger residual.  A component
+        # touched ONLY by an implicit-solvent reservoir (fast-equilibrium H/O/charge) has no boundary accumulator, so it
+        # is reported (endpoint) but excluded from the strict balance -- that exclusion is now NARROW (implicit solvent
+        # only), where the pre-XVIII ledger also exempted every fixed-activity-boundary component (the tautology).
+        labels = self.component_labels
+        comp_final = self._Eg @ ys[-1]
+        raw_change_vec = comp_final - comp0
+        ext_comp = np.zeros(len(labels))
+        for k, b in enumerate(self.boundaries):
+            ext_comp += self._Eg[:, self._slot[(b.compartment, b.species)]] * acc[k]
+
+        implicit_reservoir = set(self.reservoir_components)     # fast-equilibrium solvent components (no boundary flux)
+        checked_idx = [i for i, lab in enumerate(labels) if lab not in implicit_reservoir]
+
+        scale = 0.0
+        for i in checked_idx:
+            scale = max(scale, abs(float(comp0[i])), abs(float(ext_comp[i])))
+        tol = self._MATERIAL_ATOL + self._MATERIAL_RTOL * scale          # XVIII-4A: scale-aware, NO 1-mol floor
+
+        external_flux = {labels[i]: float(ext_comp[i]) for i in range(len(labels))}
+        raw_material_change = {labels[i]: float(raw_change_vec[i]) for i in range(len(labels))}
+        ledger_residual = {labels[i]: abs(float(raw_change_vec[i] - ext_comp[i])) for i in range(len(labels))}
+
+        min_amount = float("inf")
+        max_conserved_drift = 0.0
+        for yj in ys:
+            min_amount = min(min_amount, float(yj.min()))
+            comp_j = self._Eg @ yj
+            for i in checked_idx:
+                if abs(float(ext_comp[i])) == 0.0:          # a purely-internal (no external flux) component: drift only
+                    max_conserved_drift = max(max_conserved_drift, abs(float(comp_j[i] - comp0[i])))
+
+        max_material_residual = max([0.0] + [ledger_residual[labels[i]] for i in checked_idx])
+        material_balance_closed = max_material_residual <= tol
+
+        fed_components = set()
         for b in self.boundaries:
             if b.mode == "feed":
                 j = self._slot[(b.compartment, b.species)]
-                feed_rate_comp += self._Eg[:, j] * b.rate
-        # a fixed-activity boundary EXCHANGES its species' components with an external reservoir (an open sweep/purge),
-        # so those components are ledgered, not asserted conserved -- same status as an implicit-solvent reservoir
-        fixed_activity_components = set()
-        for b in self.boundaries:
-            if b.mode == "fixed_activity":
-                j = self._slot[(b.compartment, b.species)]
-                for i, lab in enumerate(self.component_labels):
+                for i, lab in enumerate(labels):
                     if self._Eg[i, j] != 0.0:
-                        fixed_activity_components.add(lab)
-        ledgered = set(self.reservoir_components) | fixed_activity_components
-        cons_idx = [i for i, lab in enumerate(self.component_labels) if lab not in ledgered]
-        res_idx = [i for i, lab in enumerate(self.component_labels) if lab in ledgered]
+                        fed_components.add(lab)
+        checked_labels = {labels[i] for i in checked_idx}
+        feed_ledger_residual = max([0.0] + [ledger_residual[lab] for lab in fed_components if lab in checked_labels])
 
-        max_conserved_drift = 0.0
-        max_feed_residual = 0.0
-        min_amount = float("inf")
-        for t, yj in zip(times, ys):
-            min_amount = min(min_amount, float(yj.min()))
-            comp_j = self._Eg @ yj
-            change = comp_j - comp0
-            for i in cons_idx:
-                # a conserved (non-reservoir) component changes ONLY by its feed integral
-                resid = abs(change[i] - feed_rate_comp[i] * t)
-                max_feed_residual = max(max_feed_residual, resid)
-                if feed_rate_comp[i] == 0.0:
-                    max_conserved_drift = max(max_conserved_drift, abs(change[i]))
-        reservoir_exchange = {}
-        if res_idx:
-            comp_final = self._Eg @ ys[-1]
-            for i in res_idx:
-                reservoir_exchange[self.component_labels[i]] = float(comp_final[i] - comp0[i])
+        # implicit-solvent reservoir exchange: reported (endpoint), NOT independently verifiable (no boundary flux)
+        reservoir_exchange = {labels[i]: float(raw_change_vec[i])
+                              for i in range(len(labels)) if labels[i] in implicit_reservoir}
 
-        scale = max(1.0, float(np.max(np.abs(comp0))) if comp0.size else 1.0)
-        tol = 1e-6 * scale
+        # XVIII-3 charge/water: neutral water supplies H/O but cannot source NET charge.  Where "charge" is implicit-
+        # reservoir-coupled, the charge-conservation claim is DEMOTED (a labeled electroneutrality approximation),
+        # never silently exempted; otherwise charge is in the checked set and conserved independently.
+        if "charge" not in labels:
+            charge_balance_claim = "N/A (no charged species declared)"
+        elif "charge" in implicit_reservoir:
+            charge_balance_claim = ("DEMOTED: net charge is balanced against an implicit NEUTRAL-water reservoir via "
+                                    "electroneutrality; neutral water sources H and O but cannot source net charge, so "
+                                    "this is a LABELED charge-balance approximation, not an independently conserved "
+                                    "quantity -- a conservation claim needs explicit counterions or a charge-carrying "
+                                    "boundary/electrode.")
+        else:
+            charge_balance_claim = "CONSERVED (independently checked in the material balance)"
+
         pos_tol = max(atol * 100.0, 1e-10)
         positivity_held = min_amount >= -pos_tol
-        conserved_components_held = max_conserved_drift <= tol
-        feed_ledger_closed = max_feed_residual <= tol
+        conserved_components_held = material_balance_closed
+        feed_ledger_closed = feed_ledger_residual <= tol
         solver_completed = True
-        structural_ok = solver_completed and positivity_held and conserved_components_held and feed_ledger_closed
+        structural_ok = solver_completed and positivity_held and material_balance_closed
         structural_tier = STRUCTURALLY_CONSERVING if structural_ok else REFUSED
         admitted_tier = weakest(structural_tier, declared_kinetic_tier)
 
         notes = ()
         caveats = ()
-        if not conserved_components_held:
-            caveats += (f"a conserved component drifted by {max_conserved_drift:.3e} > tol {tol:.3e}",)
-        if not feed_ledger_closed:
-            caveats += (f"the feed ledger did not close (residual {max_feed_residual:.3e} > tol {tol:.3e})",)
+        if not material_balance_closed:
+            worst = max(checked_idx, key=lambda i: ledger_residual[labels[i]])
+            lab = labels[worst]
+            caveats += (f"the material balance did NOT close for component {lab!r}: measured change "
+                        f"{raw_material_change[lab]:.3e} vs integrated external flux {external_flux[lab]:.3e} "
+                        f"(ledger residual {ledger_residual[lab]:.3e} > tol {tol:.3e})",)
         if not positivity_held:
             caveats += (f"an inventory went negative (min {min_amount:.3e})",)
-        if ledgered:
-            notes += (f"ledgered components {sorted(ledgered)} exchange with an external/implicit reservoir "
-                      f"(fast-equilibrium solvent and/or a fixed-activity boundary) and are not claimed conserved; "
-                      f"net exchange reported",)
+        if implicit_reservoir:
+            note = (f"implicit-solvent reservoir components {sorted(implicit_reservoir)} exchange H/O/charge with a "
+                    f"fast-equilibrium solvent and are reported (endpoint), not independently ledgered")
+            if "charge" in implicit_reservoir:
+                note += "; " + charge_balance_claim
+            notes += (note,)
 
         receipt = CoupledReceipt(
             solver_completed=solver_completed, positivity_held=positivity_held,
             conserved_components_held=conserved_components_held, feed_ledger_closed=feed_ledger_closed,
-            max_conserved_drift=max_conserved_drift, feed_ledger_residual=max_feed_residual,
+            max_conserved_drift=max_conserved_drift, feed_ledger_residual=feed_ledger_residual,
             min_inventory=min_amount, tolerance=tol, scheme=scheme, structural_tier=structural_tier,
             declared_kinetic_tier=declared_kinetic_tier, admitted_tier=admitted_tier,
-            reservoir_exchange=reservoir_exchange, notes=notes)
+            reservoir_exchange=reservoir_exchange, external_flux=external_flux,
+            raw_material_change=raw_material_change, ledger_adjusted_residual=ledger_residual,
+            material_balance_closed=material_balance_closed, charge_balance_claim=charge_balance_claim, notes=notes)
 
         amounts = {c.name: tuple({sp: float(yj[self._slot[(c.name, sp)]]) for sp in c.system.species} for yj in ys)
                    for c in self.compartments}
         return CoupledTrajectory(
             times=tuple(times), compartments=tuple(c.name for c in self.compartments), amounts=amounts,
             component_labels=self.component_labels, scheme=scheme, steps=n_steps,
-            max_conserved_drift=max_conserved_drift, feed_ledger_residual=max_feed_residual, min_amount=min_amount,
+            max_conserved_drift=max_conserved_drift, feed_ledger_residual=feed_ledger_residual, min_amount=min_amount,
             solver_success=solver_completed, receipt=receipt, tier=admitted_tier, caveats=caveats)
 
 
@@ -731,7 +798,8 @@ def splitting_convergence(world: CoupledWorld, initial: dict, *, duration: float
         raise CoupledError("splitting_convergence needs a monolithic reference, which is undefined with a fast-"
                            "equilibrium projection; run it on the pure-kinetic (reaction+transport) world")
     y0 = world._pack(initial)
-    reference = world._flow(y0, "both", float(duration), rtol, atol)     # the un-split truth (tight tolerance)
+    acc0 = np.zeros(len(world.boundaries))
+    reference, _ = world._flow(y0, acc0, "both", float(duration), rtol, atol)   # the un-split truth (tight tolerance)
     out = {"reference_linf": float(np.max(np.abs(reference)))}
     for scheme in schemes:
         dts, errs = [], []

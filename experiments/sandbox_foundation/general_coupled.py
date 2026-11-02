@@ -365,6 +365,8 @@ class CoupledWorld:
         y = np.zeros(self.n_slots)
         for j, (cname, sp) in enumerate(self._slots):
             y[j] = float(initial.get(cname, {}).get(sp, 0.0))
+        if not np.all(np.isfinite(y)):                                   # XVII-D3: a NaN/Inf inventory slips `< 0`
+            raise CoupledError("initial inventories must be finite (no NaN/Inf)")
         if np.any(y < 0):
             raise CoupledError("initial inventories must be >= 0")
         return y

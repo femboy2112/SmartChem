@@ -380,6 +380,13 @@ class ChemicalSystem:
         self.E = np.array(self._E_int, dtype=float)
         self.N = (np.array(self._N_int, dtype=float) if self.reactions
                   else np.zeros((len(self.species), 0), dtype=float))
+        # XVII-D2: FREEZE the execution basis.  E.N=0 was proven above on the integer authorities; the integrator then
+        # executes against these float matrices.  If they stayed writable, an in-place mutation after construction
+        # would make the EXECUTED stoichiometry diverge from the CERTIFIED one, silently.  Read-only => the original
+        # certificate still describes the exact matrices execution uses.  (Rebinding the attribute is a different
+        # object, not a mutation of a certified model.)
+        self.E.flags.writeable = False
+        self.N.flags.writeable = False
 
     def _assert_conservation(self) -> None:
         """Prove E N = 0 with UNBOUNDED PYTHON INTEGERS (XV-1A): a fixed-width int64 product can wrap on large
@@ -454,6 +461,8 @@ class ChemicalSystem:
             return dn
 
         y0 = np.array([float(n0.get(sp, 0.0)) for sp in order])
+        if not np.all(np.isfinite(y0)):                                  # XV-1D/XVII-D3: NaN slips `< 0` (NaN<0 False)
+            raise KernelError("initial inventories must be finite (no NaN/Inf)")
         if np.any(y0 < 0):
             raise KernelError("initial inventories must be >= 0")
         t_eval = np.linspace(0.0, float(duration), n_samples)

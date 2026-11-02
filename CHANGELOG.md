@@ -9,9 +9,9 @@ This file summarises the finite chemical-compiler release arc. The exhaustive pe
 
 ---
 
-## [1.5.0] — 2026-10-30 (release candidate — unreleased; not tagged or published)
+## [1.5.0] — 2026-11-02
 
-**Minor release candidate: the full 20 → 24 reaction-class coverage expansion, consolidated from four review
+**Minor release: the full 20 → 24 reaction-class coverage expansion, consolidated from four review
 forks, under an unchanged 1.x machine contract.** From 1.0.0 the stable wire schema ids, `semantic_digest`, route
 digests, the verdict vocabulary and the readiness/capability semantics remain **byte-invariant**; only the declared
 version-bound identity moves (`result_digest`, `tool_version`, the implementation digest, the `--version` banner).
@@ -260,6 +260,7 @@ Verification work is **budgeted in deterministic units** (`VerificationBudget`);
 - clean-install matrix exercised across Python **3.10 / 3.11 / 3.12 / 3.13**, wheel and sdist, with no source tree on
   `sys.path`.
 
+[1.5.0]: https://github.com/femboy2112/SmartChem/releases/tag/v1.5.0
 [1.1.0]: https://github.com/femboy2112/SmartChem/releases/tag/v1.1.0
 [1.0.0]: https://github.com/femboy2112/SmartChem/releases/tag/v1.0.0
 [1.0.0rc1]: https://github.com/femboy2112/SmartChem/tree/release/1.0.0

@@ -85,7 +85,10 @@ def _ratelaw_payload(rl):
 
 
 def _species_payload(sp):
-    return [sp.name, [list(p) for p in sp.composition], sp.charge, sp.phase.value, sp.data_status]
+    # XVII-B: bind the phase-independent SUBSTANCE identity (XVI-P0.1).  It is chemically operative -- the coupled
+    # world uses it to decide which passive transfers are legitimate (ethanol vs dimethyl ether, both C2H6O) -- so a
+    # model digest that omitted it would make that distinction, which the engine executes, invisible to the identity.
+    return [sp.name, [list(p) for p in sp.composition], sp.charge, sp.phase.value, sp.data_status, sp.substance]
 
 
 def model_identity(system) -> dict:

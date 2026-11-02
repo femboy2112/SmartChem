@@ -32,7 +32,7 @@ import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
-from experiments.sandbox_foundation import ammonia_equilibrium, aqueous_equilibrium
+from experiments.sandbox_foundation import ammonia_equilibrium, aqueous_equilibrium, coupled_equilibrium
 from experiments.sandbox_foundation.claim_tiers import REFUSED, STRUCTURALLY_CONSERVING
 from experiments.sandbox_foundation.general_kernel import KernelError
 
@@ -238,3 +238,83 @@ class AmmoniaWaterEquilibriumOperator(EquilibriumOperator):
         g = species_amounts.get
         return {"ammonia": g("NH3", 0.0) + g("NH4+", 0.0),
                 "strong_base": g("Na+", 0.0), "strong_acid": g("Cl-", 0.0)}
+
+
+class MixedAcetateCarbonateEquilibriumOperator(EquilibriumOperator):
+    """Adapter: the verified coupled_equilibrium.solve(VinegarBicarbonateSystem) -- the mixed acetic-acid/acetate +
+    carbonic-acid/bicarbonate/carbonate LIQUID speciation -- as a general EquilibriumOperator.  This is the operator
+    the unified vinegar/bicarbonate world (XVIII-5) needs in a cell holding BOTH acid and inorganic carbon; because the
+    wrapped solver handles the carbon=0 (pure acetate) and acetate=0 (pure carbonate) limits, ONE operator serves both
+    cells before and after the valve opens -- no chemistry branch in the integrator.  The numerics are the existing
+    coupled solver's, unchanged.  CO2(aq) is a LIQUID species here; its gas exchange is a separate Henry
+    InterfaceTransfer in the coupled world, never folded into this closed-liquid speciation."""
+    components = frozenset({"acetate", "carbon", "sodium"})
+    species = ("HAc", "Ac-", "CO2(aq)", "HCO3-", "CO3-2", "H+", "OH-", "Na+")
+    species_signature = {                                    # XVI-P0.2 (composition, charge) per returned species name
+        "HAc": ((("C", 2), ("H", 4), ("O", 2)), 0),
+        "Ac-": ((("C", 2), ("H", 3), ("O", 2)), -1),
+        "CO2(aq)": ((("C", 1), ("O", 2)), 0),
+        "HCO3-": ((("C", 1), ("H", 1), ("O", 3)), -1),
+        "CO3-2": ((("C", 1), ("O", 3)), -2),
+        "H+": ((("H", 1),), 1),
+        "OH-": ((("H", 1), ("O", 1)), -1),
+        "Na+": ((("Na", 1),), 1),
+    }
+    accepted_solver_verdicts = frozenset({                   # XVII-A1: the coupled solver's "the math closed" verdicts
+        coupled_equilibrium.SOLVED_WITHIN_IDEAL_MODEL,
+        coupled_equilibrium.SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL,
+    })
+
+    def __init__(self, *, activity_model: str = "davies"):
+        if activity_model not in ("ideal", "davies"):
+            raise EquilibriumError("activity_model must be 'ideal' or 'davies'")
+        self.activity_model = activity_model
+
+    def speciate(self, component_amounts: dict, *, volume_L: float,
+                 temperature_K: float = 298.15) -> EquilibriumState:
+        self._validate(component_amounts, volume_L, temperature_K)
+        acetate_mol = float(component_amounts.get("acetate", 0.0))
+        carbon_mol = float(component_amounts.get("carbon", 0.0))
+        sodium_mol = float(component_amounts.get("sodium", 0.0))
+        V = float(volume_L)
+
+        system = coupled_equilibrium.VinegarBicarbonateSystem(
+            total_acetate_M=acetate_mol / V, total_carbon_M=carbon_mol / V, sodium_M=sodium_mol / V,
+            activity_model=self.activity_model, T_K=temperature_K)          # T domain guarded by the wrapped solver
+        res = coupled_equilibrium.solve(system)                             # the VERIFIED coupled numerics, verbatim
+
+        amounts = {
+            "HAc": res.hac_M * V, "Ac-": res.ac_minus_M * V, "CO2(aq)": res.co2aq_M * V,
+            "HCO3-": res.hco3_M * V, "CO3-2": res.co3_M * V, "H+": res.h_plus_M * V,
+            "OH-": res.oh_minus_M * V, "Na+": res.na_plus_M * V,
+        }
+        acetate_out = amounts["HAc"] + amounts["Ac-"]
+        carbon_out = amounts["CO2(aq)"] + amounts["HCO3-"] + amounts["CO3-2"]
+        sodium_out = amounts["Na+"]
+        residuals = {"acetate": abs(acetate_out - acetate_mol), "carbon": abs(carbon_out - carbon_mol),
+                     "sodium": abs(sodium_out - sodium_mol)}
+        tol = 1e-9 * max(1.0, acetate_mol, carbon_mol, sodium_mol)
+        structural_tier = STRUCTURALLY_CONSERVING if all(r <= tol for r in residuals.values()) else REFUSED
+
+        derived = {
+            "pH": res.pH, "pH_concentration": res.pH_concentration, "pH_activity": res.pH_activity,
+            "ionic_strength_M": res.ionic_strength_M, "gamma_monovalent": res.gamma_monovalent,
+            "charge_balance_residual": res.charge_balance_residual,
+            "solver_agreement_residual": res.solver_agreement_residual,
+        }
+        return EquilibriumState(
+            species_amounts=amounts, volume_L=V, temperature_K=float(temperature_K),
+            component_inputs={"acetate": acetate_mol, "carbon": carbon_mol, "sodium": sodium_mol},
+            component_residuals=residuals, derived=derived, structural_tier=structural_tier,
+            solver_verdict=res.verdict,
+            assumptions=("water is an implicit solvent reservoir; H+/OH- set by the acid/carbonate + water equilibria "
+                         "and electroneutrality; CO2(aq) is a LIQUID species -- gas exchange is a separate Henry "
+                         "interface, not folded into this closed-liquid speciation",),
+            caveats=tuple(res.caveats))
+
+    def component_totals(self, species_amounts: dict) -> dict:
+        """acetate = HAc + Ac-; carbon = CO2(aq) + HCO3- + CO3-2; sodium = Na+ (the operator's own conservation law)."""
+        g = species_amounts.get
+        return {"acetate": g("HAc", 0.0) + g("Ac-", 0.0),
+                "carbon": g("CO2(aq)", 0.0) + g("HCO3-", 0.0) + g("CO3-2", 0.0),
+                "sodium": g("Na+", 0.0)}

@@ -67,10 +67,19 @@ class EquilibriumOperator(ABC):
     integer charge.  It lets a consumer (EquilibriumCoupling) verify that the kernel Species a name is mapped to is
     chemically FAITHFUL to the name (so "NH4+" cannot be aliased onto a sodium Species), fail-closed: a coupling
     refuses an operator that does not declare a complete signature.  An empty default forces every real operator to
-    declare it."""
+    declare it.
+
+    ``accepted_solver_verdicts`` (XVII-A1) is the TYPED whitelist of ``solver_verdict`` strings this operator's wrapped
+    numerical solver is entitled to emit for a state that genuinely CLOSED -- bound to that solver's source and
+    applicability domain.  A structural (mass-balance) verdict and a NUMERICAL (solver) verdict are independent facets:
+    a projection can be perfectly mass-balanced yet rest on a solve the solver itself REFUSED (routes disagreed, a
+    balance did not close, a constant was requested out of its sourced temperature domain).  A consumer admits a
+    projection only if its ``solver_verdict`` is in this set; an empty default is fail-closed (an operator that
+    declares no accepted verdict cannot have its numerical state judged, so it cannot be coupled)."""
     components: frozenset = frozenset()
     species: tuple = ()
     species_signature: dict = {}     # {species_name: (composition_tuple, charge)} -- for faithfulness checking
+    accepted_solver_verdicts: frozenset = frozenset()   # XVII-A1: solver_verdict strings a closed solve may carry
 
     @abstractmethod
     def speciate(self, component_amounts: dict, *, volume_L: float,
@@ -112,6 +121,10 @@ class AcetateWaterEquilibriumOperator(EquilibriumOperator):
         "Na+": ((("Na", 1),), 1),
         "NaAc": ((("C", 2), ("H", 3), ("Na", 1), ("O", 2)), 0),
     }
+    accepted_solver_verdicts = frozenset({                   # XVII-A1: the aqueous solver's "the math closed" verdicts
+        aqueous_equilibrium.SOLVED_WITHIN_IDEAL_MODEL,
+        aqueous_equilibrium.SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL,
+    })   # NUMERICALLY_UNVERIFIED / OUT_OF_SOURCE_DOMAIN ride on raised exceptions; if one ever reaches a state, refuse
 
     def __init__(self, *, activity_model: str = "ideal", include_ion_pair: bool = False):
         if activity_model not in ("ideal", "davies"):
@@ -183,6 +196,7 @@ class AmmoniaWaterEquilibriumOperator(EquilibriumOperator):
         "Na+": ((("Na", 1),), 1),
         "Cl-": ((("Cl", 1),), -1),
     }
+    accepted_solver_verdicts = frozenset({ammonia_equilibrium.SOLVED_IDEAL})   # XVII-A1; REFUSED is not admissible
 
     def speciate(self, component_amounts: dict, *, volume_L: float,
                  temperature_K: float = 298.15) -> EquilibriumState:

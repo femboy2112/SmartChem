@@ -128,6 +128,12 @@ class EquilibriumCoupling:
                     f"species_table[{nm!r}] maps to {sp.name!r} {sp.composition} q={sp.charge}, which does NOT match "
                     f"the operator's declared signature for {nm!r} ({tuple(sig_comp)} q={sig_charge}); a nominal "
                     f"species cannot be aliased onto a chemically incompatible element/charge signature")
+        # XVII-A1: the operator must declare the typed whitelist of numerical solver verdicts it certifies as "closed".
+        # Fail-closed: without it the world cannot tell a genuinely-solved state from a solver-refused one, so the
+        # projection's numerical admissibility is unprovable and the coupling is refused.
+        if not getattr(self.operator, "accepted_solver_verdicts", frozenset()):
+            raise CoupledError(f"operator {type(self.operator).__name__} declares no accepted_solver_verdicts; its "
+                               f"projections' numerical solver verdict cannot be judged (fail-closed)")
         if type(self.reservoir_components) is not frozenset:
             object.__setattr__(self, "reservoir_components", frozenset(self.reservoir_components))
 
@@ -455,21 +461,41 @@ class CoupledWorld:
             # conservation law (operator.component_totals) -- generic, so the coupled integrator carries no chemistry
             amounts = {nm: out[self._slot[(c.name, sp)]] for nm, sp in ec.species_table.items()}
             totals = ec.operator.component_totals(amounts)
-            state = ec.operator.speciate(totals, volume_L=V, temperature_K=298.15)
-            self._admit_projection(c, ec, state, totals)          # fail-closed: refuse a bad projection, never install it
+            T = 298.15
+            state = ec.operator.speciate(totals, volume_L=V, temperature_K=T)
+            # fail-closed: refuse a bad projection, never install it.  Pass the pre-projection species amounts and the
+            # posed (V, T) so the gate can check elemental closure and metadata consistency independently.
+            self._admit_projection(c, ec, state, totals, amounts, requested_volume_L=V, requested_temperature_K=T)
             for nm, sp in ec.species_table.items():
                 out[self._slot[(c.name, sp)]] = state.species_amounts[nm]
         return out
 
-    @staticmethod
-    def _projection_tol(totals_in: dict) -> float:
-        scale = max([1.0] + [abs(float(v)) for v in totals_in.values()])
-        return 1e-6 * scale
+    # XVII-A2: a scale-aware conservation tolerance.  The OLD 1e-6*max(1.0, |totals|) policy pinned a 1e-6 mol ABSOLUTE
+    # floor even for a ~1e-12 mol trace inventory, so fabricating 1e-7 mol passed as "balanced".  The honest policy is
+    # atol + rtol*scale, scaled to the ACTUAL conserved inventory (NO 1-mol floor): rtol = 1e-9 matches the wrapped
+    # solvers' mass-balance closure target, and atol = 1e-15 mol (sub-femtomole) is a pure float-roundoff floor for the
+    # scale -> 0 case.  For a 0.1 mol inventory tol ~ 1e-10; for a 1e-12 mol inventory tol ~ 1e-15 -- so a 1e-7 creation
+    # is caught at every scale, while an honest machine-zero residual is never refused.
+    _PROJECTION_RTOL = 1e-9
+    _PROJECTION_ATOL = 1e-15      # mol: float-dust floor for the conservation observable (scale -> 0)
+    _NONNEG_CONC_ATOL = 1e-12     # mol/L: the wrapped solvers' own nonnegativity floor; * volume -> a mol floor
 
-    def _admit_projection(self, c, ec, state, totals_in: dict) -> None:
-        """XVI-P0.2 fail-closed admission of a fast-equilibrium projection.  The world verifies the CODOMAIN itself --
-        it does not trust the operator's self-reported residuals or tier blindly: it recomputes the conserved-component
-        closure from the RETURNED species.  Raises CoupledError on any violation (no partial install)."""
+    @classmethod
+    def _projection_tol(cls, totals_in: dict) -> float:
+        scale = max([0.0] + [abs(float(v)) for v in totals_in.values()])
+        return cls._PROJECTION_ATOL + cls._PROJECTION_RTOL * scale
+
+    def _admit_projection(self, c, ec, state, totals_in, amounts_in, *,
+                          requested_volume_L, requested_temperature_K) -> None:
+        """XVI-P0.2 + XVII-A1/A2/A3 fail-closed admission of a fast-equilibrium projection.  The world verifies the
+        CODOMAIN itself; it never trusts the operator's self-reported residuals, tier, verdict or metadata.  In order:
+        state type/shape; completeness; per-species finiteness + nonnegativity; (A1) the NUMERICAL solver verdict is one
+        the operator certifies as a closed solve; (A1) the state's self-reported (volume, temperature, component inputs)
+        match the problem the world posed; the operator's structural (mass-balance) tier is accepted; and TWO
+        independent conservation checks -- the operator's own component law recomputed on the returned species, AND (A3)
+        the kernel's EXACT element/charge map recomputed on the returned species, which does not consult the operator's
+        component law at all (so a complicit/wrong law that makes input and output agree on a false invariant is still
+        caught).  Raises CoupledError on any violation (no partial install)."""
         from experiments.sandbox_foundation.general_equilibrium import EquilibriumState
         if type(state) is not EquilibriumState:
             raise CoupledError(f"compartment {c.name!r} fast-equilibrium returned a {type(state).__name__}, "
@@ -482,21 +508,52 @@ class CoupledWorld:
         if missing:
             raise CoupledError(f"compartment {c.name!r} projection is missing required species {sorted(missing)}")
         tol = self._projection_tol(totals_in)
-        # finiteness + nonnegativity of every installed amount
+        # finiteness + nonnegativity of every installed amount.  Nonnegativity gets its OWN floor (a solver may dip a
+        # concentration a roundoff below zero: _NONNEG_CONC_ATOL * volume), separate from the conservation tol -- the
+        # two numerical facets (physical nonnegativity vs component loss) are not the same observable (XVII-A2).
+        neg_tol = self._NONNEG_CONC_ATOL * float(c.system.volume_L) + self._PROJECTION_ATOL
         for nm in ec.species_table:
             v = sa[nm]
             if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
                 raise CoupledError(f"compartment {c.name!r} projection returned a non-finite amount for {nm!r}: {v!r}")
-            if float(v) < -tol:
+            if float(v) < -neg_tol:
                 raise CoupledError(f"compartment {c.name!r} projection returned a negative amount for {nm!r}: "
-                                   f"{float(v):.3e} (tol {tol:.3e})")
-        # the operator's own structural verdict must be an ACCEPTED one (not REFUSED / unverified)
+                                   f"{float(v):.3e} (nonnegativity tol {neg_tol:.3e})")
+        # XVII-A1: the NUMERICAL solver verdict is an INDEPENDENT facet from the structural mass-balance tier.  A
+        # perfectly mass-balanced projection resting on a solve the solver itself REFUSED is not scientifically
+        # admissible.  The accepted set is the operator's typed whitelist (bound to its source/domain), not "nonempty".
+        accepted = getattr(ec.operator, "accepted_solver_verdicts", frozenset())
+        if not accepted:
+            raise CoupledError(f"compartment {c.name!r} operator {type(ec.operator).__name__} declares no "
+                               f"accepted_solver_verdicts; its numerical solve cannot be judged (fail-closed)")
+        if state.solver_verdict not in accepted:
+            raise CoupledError(f"compartment {c.name!r} projection carries solver_verdict {state.solver_verdict!r}, "
+                               f"not an accepted verdict for {type(ec.operator).__name__} ({sorted(accepted)}); a "
+                               f"numerically refused / out-of-domain solve is not admissible even if it is balanced")
+        # XVII-A1 metadata: the returned state must describe the problem the world POSED (no forged provenance)
+        if state.volume_L != requested_volume_L:
+            raise CoupledError(f"compartment {c.name!r} projection reports volume_L {state.volume_L!r} != the posed "
+                               f"{requested_volume_L!r}; it claims to have solved a different problem")
+        if state.temperature_K != requested_temperature_K:
+            raise CoupledError(f"compartment {c.name!r} projection reports temperature_K {state.temperature_K!r} != "
+                               f"the posed {requested_temperature_K!r}; it claims to have solved a different problem")
+        ci = state.component_inputs
+        if type(ci) is not dict or set(ci) != set(totals_in):
+            raise CoupledError(f"compartment {c.name!r} projection reports component_inputs over {sorted(ci) if isinstance(ci, dict) else ci!r}, "
+                               f"not the components the projection was keyed on {sorted(totals_in)}")
+        for k, tin in totals_in.items():
+            cv = ci[k]
+            if isinstance(cv, bool) or not isinstance(cv, (int, float)) or not math.isfinite(float(cv)) \
+                    or abs(float(cv) - float(tin)) > tol:
+                raise CoupledError(f"compartment {c.name!r} projection reports component_inputs[{k!r}]={cv!r}, which "
+                                   f"does not match the inventory it was keyed on ({float(tin):.6g})")
+        # the operator's own structural (mass-balance) verdict must be an ACCEPTED one (not REFUSED / unverified)
         if state.structural_tier != STRUCTURALLY_CONSERVING:
             raise CoupledError(f"compartment {c.name!r} projection returned structural_tier "
                                f"{state.structural_tier!r}, not {STRUCTURALLY_CONSERVING!r}; the solve is refused or "
                                f"unverified and its vector is not admitted")
-        # INDEPENDENT closure (do NOT trust the operator's self-reported residuals): recompute the operator's conserved
-        # components from the RETURNED species and require they equal the inputs the projection was keyed on
+        # INDEPENDENT closure #1 -- the operator's OWN component law recomputed on the RETURNED species == keyed inputs
+        # (catches a wrong species map / operator self-inconsistency)
         totals_out = ec.operator.component_totals(sa)
         for comp, tin in totals_in.items():
             tout = float(totals_out.get(comp, 0.0))
@@ -505,6 +562,26 @@ class CoupledWorld:
                     f"compartment {c.name!r} projection does NOT conserve component {comp!r}: keyed on {float(tin):.6g} "
                     f"but the returned species recompute to {tout:.6g} (residual {abs(tout - float(tin)):.3e} > tol "
                     f"{tol:.3e}); refusing to install a non-conserving speciation")
+        # INDEPENDENT closure #2 (XVII-A3) -- the kernel's EXACT element/charge map, computed straight from the mapped
+        # kernel Species' compositions.  This does NOT consult the operator's component_totals at all, so a complicit or
+        # simply wrong component law (one that makes input and output agree on a false invariant) cannot hide a
+        # fabricated/destroyed atom.  Every element/charge the table species carry EXCEPT the declared reservoir
+        # components (set by the implicit solvent + electroneutrality) must be conserved across the projection.
+        elements = {el for sp in ec.species_table.values() for el, _ in sp.composition}
+        elements.add("charge")
+        for el in sorted(elements):
+            if el in ec.reservoir_components:
+                continue
+            e_in = sum(float(amounts_in[nm]) * (float(sp.charge) if el == "charge" else float(sp.count(el)))
+                       for nm, sp in ec.species_table.items())
+            e_out = sum(float(sa[nm]) * (float(sp.charge) if el == "charge" else float(sp.count(el)))
+                        for nm, sp in ec.species_table.items())
+            if not math.isfinite(e_out) or abs(e_out - e_in) > tol:
+                raise CoupledError(
+                    f"compartment {c.name!r} projection does NOT conserve element/charge {el!r} (checked independently "
+                    f"of the operator's component law, via the kernel's exact composition map): {e_in:.6g} in -> "
+                    f"{e_out:.6g} out (residual {abs(e_out - e_in):.3e} > tol {tol:.3e}); refusing a speciation that "
+                    f"fabricates or destroys atoms")
 
     # ---------------------------------------------------------------- the stepper
     def _step(self, y: np.ndarray, dt: float, scheme: str, rtol: float, atol: float) -> np.ndarray:

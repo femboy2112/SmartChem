@@ -54,6 +54,8 @@ discipline): a coupled prediction is never stronger than its least-verified piec
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from dataclasses import dataclass, field
 
@@ -71,7 +73,25 @@ from experiments.sandbox_foundation.general_kernel import (
     ChemicalSystem,
     KernelError,
     Species,
+    StaleCertificateError,
 )
+
+
+def _canon_num(x) -> str:
+    """Lossless canonical encoding of a finite float for a certificate/identity digest (XIX-1D): float.hex() round-
+    trips the exact IEEE-754 bits, so two coefficients that differ in the last ULP get distinct keys (unlike a rounded
+    repr).  Non-finite values are refused upstream; a bool is encoded distinctly from the int it would coerce to."""
+    if isinstance(x, bool):
+        return f"bool:{x}"
+    return float(x).hex()
+
+
+def _species_key(sp: Species) -> tuple:
+    """A collision-resistant identity key for a kernel Species: name + phase + charge + EXACT composition + substance.
+    This is the same full identity the kernel's model digest binds (XVIII-1A) -- composition/charge/phase alone are not
+    identity (ethanol vs dimethyl ether), so substance is carried too."""
+    phase = getattr(sp.phase, "name", str(sp.phase))
+    return (sp.name, phase, int(sp.charge), tuple((e, int(n)) for e, n in sp.composition), sp.substance)
 
 
 class CoupledError(KernelError):
@@ -295,6 +315,11 @@ class CoupledTrajectory:
     receipt: CoupledReceipt
     tier: str
     caveats: tuple = ()
+    # XIX-1B: per-compartment, per-sample fast-equilibrium DERIVED scalars (pH_activity, pH_concentration, ionic
+    # strength, activity model, ...) captured FROM THE PROJECTION THAT PRODUCED THE SAMPLE -- the authoritative values
+    # the chemical solver computed, so an observer reads them instead of recomputing an approximate pH in the renderer.
+    # {compartment_name: (per-sample {scalar: value}, ...)}; a compartment with no fast equilibrium maps to ({}, ...).
+    equilibrium_derived: dict = field(default_factory=dict)
 
 
 class CoupledWorld:
@@ -305,12 +330,21 @@ class CoupledWorld:
     only when no compartment carries a fast-equilibrium projection (then the world is a pure ODE and can be integrated
     without splitting -- the reference for the convergence study)."""
 
-    def __init__(self, compartments: list, interfaces: list = (), boundaries: list = ()):
+    def __init__(self, compartments: list, interfaces: list = (), boundaries: list = (), *,
+                 temperature_K: float = 298.15):
         if not compartments or any(type(c) is not Compartment for c in compartments):
             raise CoupledError("compartments must be a non-empty list of Compartment")
         names = [c.name for c in compartments]
         if len(set(names)) != len(names):
             raise CoupledError("duplicate compartment name")
+        # XIX-1C: ONE world temperature, threaded into every fast-equilibrium projection (the integrator no longer
+        # hard-codes 298.15 K in _project).  An operator whose constants are sourced only at 25 C fail-closes off its
+        # domain through its own wrapped solver -- so an off-domain world temperature is REFUSED, never silently run
+        # with gas physics at T and acid/base equilibria pinned at 25 C (a mixed-temperature simulation).
+        if isinstance(temperature_K, bool) or not (isinstance(temperature_K, (int, float))
+                                                   and math.isfinite(temperature_K) and temperature_K > 0):
+            raise CoupledError("temperature_K must be a finite temperature > 0")
+        self.temperature_K = float(temperature_K)
         self.compartments = list(compartments)
         self._comp = {c.name: c for c in compartments}
         self.interfaces = list(interfaces)
@@ -357,6 +391,71 @@ class CoupledWorld:
             for i, lab in enumerate(self.component_labels):
                 self._Eg[i, j] = float(sp.charge) if lab == "charge" else float(sp.count(lab))
         self._has_equilibrium = any(c.equilibrium is not None for c in self.compartments)
+
+        # XIX-1D: snapshot a world-level execution certificate NOW -- every compartment's kernel certificate + species
+        # order + volume + equilibrium-operator identity, every interface and boundary descriptor, and the world
+        # temperature.  integrate() re-verifies it before advancing, so a post-construction mutation or rebind of ANY of
+        # these (the coupled execution path reads compartment matrices / rate laws / interfaces directly, bypassing the
+        # per-system integrate() guard) cannot silently execute a changed world under the stale certificate.
+        self._world_certificate = self._compute_world_certificate()
+
+    # ---------------------------------------------------------------- XIX-1D world execution certificate
+    def _equilibrium_descriptor(self, c: Compartment):
+        """A stable identity for a compartment's fast-equilibrium coupling: the operator TYPE, its activity model, the
+        exact name->Species table (full species keys), and the declared reservoir components.  A rebind that swaps the
+        operator, its activity model, or re-aliases a species moves this descriptor and is caught at integrate()."""
+        if c.equilibrium is None:
+            return None
+        ec = c.equilibrium
+        return {
+            "operator_type": type(ec.operator).__name__,
+            "activity_model": getattr(ec.operator, "activity_model", None),
+            "table": sorted((nm, _species_key(sp)) for nm, sp in ec.species_table.items()),
+            "reservoir_components": sorted(ec.reservoir_components),
+        }
+
+    def _compute_world_certificate(self) -> str:
+        """Hash the whole executable world: temperature, every compartment (name, volume, species order, the kernel
+        ChemicalSystem's own XVIII-2 certificate, equilibrium descriptor), and every interface/boundary descriptor.
+        The per-compartment kernel certificate binds that compartment's float E/N and species identity+order; this
+        world certificate binds everything ABOVE the single-compartment level that the coupled integrator executes."""
+        comp = []
+        for c in self.compartments:
+            comp.append({
+                "name": c.name,
+                "volume_L": _canon_num(c.system.volume_L),
+                "species": [_species_key(sp) for sp in c.system.species],
+                "system_certificate": c.system._model_certificate,       # XVIII-2 per-system float E/N + species cert
+                "equilibrium": self._equilibrium_descriptor(c),
+            })
+        ifaces = [{
+            "name": i.name, "a": i.a, "b": i.b,
+            "species_a": _species_key(i.species_a), "species_b": _species_key(i.species_b),
+            "k_transfer": _canon_num(i.k_transfer), "partition": _canon_num(i.partition),
+        } for i in self.interfaces]
+        bounds = [{
+            "name": b.name, "compartment": b.compartment, "species": _species_key(b.species), "mode": b.mode,
+            "rate": _canon_num(b.rate), "k_transfer": _canon_num(b.k_transfer),
+            "target_conc": _canon_num(b.target_conc),
+        } for b in self.boundaries]
+        payload = {"temperature_K": _canon_num(self.temperature_K),
+                   "slots": [(cn, _species_key(sp)) for cn, sp in self._slots],
+                   "compartments": comp, "interfaces": ifaces, "boundaries": bounds}
+        blob = json.dumps(payload, sort_keys=True, default=str)
+        return hashlib.sha256(blob.encode()).hexdigest()
+
+    def _verify_world_certificate(self) -> None:
+        """XIX-1D: refuse to integrate if the live world no longer matches the certificate proven at construction.
+        First re-verify EACH compartment's own kernel certificate (catches an in-place or rebound E/N on a compartment
+        system -- the per-system check the coupled path would otherwise skip), then re-verify the world-level structure
+        (operator / interface / boundary / temperature / species-order rebinds)."""
+        for c in self.compartments:
+            c.system._verify_certificate()                              # XVIII-2, now reached on the coupled path too
+        if self._compute_world_certificate() != self._world_certificate:
+            raise StaleCertificateError(
+                "the coupled world's execution basis (compartments / interfaces / boundaries / operators / "
+                "temperature) no longer matches the certificate proven at construction; it was mutated afterward and "
+                "must not integrate under the stale world certificate (XIX-1D).")
 
     # ---------------------------------------------------------------- state <-> global vector
     def _pack(self, initial: dict) -> np.ndarray:
@@ -469,8 +568,10 @@ class CoupledWorld:
         zf = sol.y[:, -1]
         return zf[:ny], zf[ny:]
 
-    def _project(self, y: np.ndarray) -> np.ndarray:
-        """P: re-speciate every fast-equilibrium compartment onto g(n) = 0 (instantaneous SNIA projection).
+    def _project(self, y: np.ndarray):
+        """P: re-speciate every fast-equilibrium compartment onto g(n) = 0 (instantaneous SNIA projection).  Returns
+        ``(out, derived_by_comp)`` (XIX-1B): the projected inventory, and a {compartment: derived-scalars} map carrying
+        the AUTHORITATIVE pH_activity / pH_concentration / ionic strength / activity model the chemical solver computed.
 
         XVI-P0.2: the returned species vector is NOT trusted on the operator's word.  Every projection result passes a
         fail-closed admission gate (``_admit_projection``) -- completeness, finiteness, nonnegativity, an accepted
@@ -478,8 +579,9 @@ class CoupledWorld:
         a single amount is installed.  An inadmissible projection raises CoupledError and aborts the run rather than
         laundering an unverified or non-conserving vector into the world and certifying the trajectory."""
         if not self._has_equilibrium:
-            return y
+            return y, {}
         out = y.copy()
+        derived_by_comp = {}
         for c in self.compartments:
             if c.equilibrium is None:
                 continue
@@ -489,14 +591,23 @@ class CoupledWorld:
             # conservation law (operator.component_totals) -- generic, so the coupled integrator carries no chemistry
             amounts = {nm: out[self._slot[(c.name, sp)]] for nm, sp in ec.species_table.items()}
             totals = ec.operator.component_totals(amounts)
-            T = 298.15
+            T = self.temperature_K            # XIX-1C: the world temperature, NOT a hard-coded 298.15 (a 25 C-only
+            #                                   operator fail-closes off-domain through its own wrapped solver)
             state = ec.operator.speciate(totals, volume_L=V, temperature_K=T)
             # fail-closed: refuse a bad projection, never install it.  Pass the pre-projection species amounts and the
             # posed (V, T) so the gate can check elemental closure and metadata consistency independently.
             self._admit_projection(c, ec, state, totals, amounts, requested_volume_L=V, requested_temperature_K=T)
             for nm, sp in ec.species_table.items():
                 out[self._slot[(c.name, sp)]] = state.species_amounts[nm]
-        return out
+            # XIX-1B: capture the AUTHORITATIVE derived scalars THIS projection computed (pH_activity, pH_concentration,
+            # ionic strength, ...) so the observer reads the solver's result rather than recomputing an approximate pH;
+            # tag the activity model and the posed V/T the gate verified the state against.
+            d = dict(state.derived)
+            d["activity_model"] = getattr(ec.operator, "activity_model", None)
+            d["temperature_K"] = float(state.temperature_K)
+            d["volume_L"] = float(state.volume_L)
+            derived_by_comp[c.name] = d
+        return out, derived_by_comp
 
     # XVII-A2: a scale-aware conservation tolerance.  The OLD 1e-6*max(1.0, |totals|) policy pinned a 1e-6 mol ABSOLUTE
     # floor even for a ~1e-12 mol trace inventory, so fabricating 1e-7 mol passed as "balanced".  The honest policy is
@@ -620,7 +731,8 @@ class CoupledWorld:
     def _step(self, y: np.ndarray, acc: np.ndarray, dt: float, scheme: str, rtol: float, atol: float):
         """Advance one macro-step of the chosen operator-split scheme, threading the external-flux accumulators ``acc``
         through each continuous flow (XVIII-3).  The fast-equilibrium projection P re-speciates the inventory but does
-        NOT exchange with an external boundary, so it leaves the accumulators unchanged.  Returns (y_next, acc_next)."""
+        NOT exchange with an external boundary, so it leaves the accumulators unchanged.  Returns (y_next, acc_next,
+        derived_by_comp) -- the last being the projection's authoritative derived scalars for this step (XIX-1B)."""
         if scheme == "lie":
             y, acc = self._flow(y, acc, "reaction", dt, rtol, atol)
             y, acc = self._flow(y, acc, "transport", dt, rtol, atol)
@@ -635,7 +747,8 @@ class CoupledWorld:
             y, acc = self._flow(y, acc, "both", dt, rtol, atol)
         else:
             raise CoupledError("scheme must be 'lie', 'strang' or 'monolithic'")
-        return self._project(y), acc
+        y_proj, derived = self._project(y)
+        return y_proj, acc, derived
 
     def integrate(self, initial: dict, *, duration: float, n_steps: int, scheme: str = "strang",
                   n_samples: int | None = None, rtol: float = 1e-10, atol: float = 1e-14,
@@ -645,6 +758,7 @@ class CoupledWorld:
         Every macro-step records the state (or every (n_steps // n_samples)th, if n_samples is given).  Conservation,
         the feed ledger and positivity are MEASURED and the tier DERIVED (capped at STRUCTURALLY_CONSERVING, weakest-
         premise'd with the declared kinetic tier).  Missing kinetics anywhere fail closed (Wave A invariant)."""
+        self._verify_world_certificate()          # XIX-1D: never integrate under a stale world/compartment certificate
         for c in self.compartments:
             miss = [r.name for r in c.system.reactions if r.rate_law is None]
             if miss:
@@ -660,18 +774,20 @@ class CoupledWorld:
 
         dt = float(duration) / n_steps
         y = self._pack(initial)
-        y = self._project(y)                              # project the initial state onto equilibrium if declared
+        y, derived0 = self._project(y)                    # project the initial state onto equilibrium if declared
         comp0 = self._Eg @ y
         acc = np.zeros(len(self.boundaries))              # XVIII-3: per-boundary integrated external flux (mol)
 
         sample_every = 1 if not n_samples else max(1, n_steps // max(1, n_samples))
         times = [0.0]
         ys = [y.copy()]
+        derived_samples = [derived0]                       # XIX-1B: derived scalars aligned with each sampled state
         for step in range(1, n_steps + 1):
-            y, acc = self._step(y, acc, dt, scheme, rtol, atol)
+            y, acc, derived = self._step(y, acc, dt, scheme, rtol, atol)
             if step % sample_every == 0 or step == n_steps:
                 times.append(step * dt)
                 ys.append(y.copy())
+                derived_samples.append(derived)
 
         # XVIII-3 SIGNED EXTERNAL-FLUX LEDGER.  Each boundary's flux was accumulated INDEPENDENTLY as augmented ODE
         # state (acc[k] = integral of q_ext,k dt), so the material balance d(E n)/dt = E q_ext is CHECKED, not inferred
@@ -777,11 +893,16 @@ class CoupledWorld:
 
         amounts = {c.name: tuple({sp: float(yj[self._slot[(c.name, sp)]]) for sp in c.system.species} for yj in ys)
                    for c in self.compartments}
+        # XIX-1B: per-compartment derived scalars, one entry per SAMPLED state (a compartment without fast equilibrium
+        # maps to an empty dict each sample).
+        equilibrium_derived = {c.name: tuple(ds.get(c.name, {}) for ds in derived_samples)
+                               for c in self.compartments}
         return CoupledTrajectory(
             times=tuple(times), compartments=tuple(c.name for c in self.compartments), amounts=amounts,
             component_labels=self.component_labels, scheme=scheme, steps=n_steps,
             max_conserved_drift=max_conserved_drift, feed_ledger_residual=feed_ledger_residual, min_amount=min_amount,
-            solver_success=solver_completed, receipt=receipt, tier=admitted_tier, caveats=caveats)
+            solver_success=solver_completed, receipt=receipt, tier=admitted_tier, caveats=caveats,
+            equilibrium_derived=equilibrium_derived)
 
 
 def splitting_convergence(world: CoupledWorld, initial: dict, *, duration: float, steps_list: list,

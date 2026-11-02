@@ -241,7 +241,7 @@ def test_real_acetate_projection_still_runs_and_is_idempotent():
     traj = world.integrate(initial, duration=50.0, n_steps=100, scheme="strang")
     assert traj.receipt.structural_tier == STRUCTURALLY_CONSERVING
     y = world._pack(initial)
-    y1 = world._project(y)
-    y2 = world._project(y1)
+    y1, _d1 = world._project(y)                             # XIX-1B: _project now also returns derived scalars
+    y2, _d2 = world._project(y1)
     import numpy as np
     assert float(np.max(np.abs(y2 - y1))) < 1e-9            # idempotent on the admitted domain

@@ -85,20 +85,35 @@ def _ratelaw_payload(rl):
 
 
 def _species_payload(sp):
-    # XVII-B: bind the phase-independent SUBSTANCE identity (XVI-P0.1).  It is chemically operative -- the coupled
-    # world uses it to decide which passive transfers are legitimate (ethanol vs dimethyl ether, both C2H6O) -- so a
-    # model digest that omitted it would make that distinction, which the engine executes, invisible to the identity.
-    return [sp.name, [list(p) for p in sp.composition], sp.charge, sp.phase.value, sp.data_status, sp.substance]
+    # XVII-B / XVIII-1C: the MODEL identity binds CHEMICAL identity -- name, composition, charge, phase, and the
+    # phase-independent SUBSTANCE (XVI-P0.1), which the engine executes.  It does NOT bind data_status: that is
+    # EVIDENCE provenance (XVIII-1C), carried in a SEPARATE source/evidence digest so a provenance update never moves
+    # the chemical/model identity.  This payload doubles as the collision-resistant species KEY a reaction's
+    # stoichiometry references (XVIII-1A), so X(aq) and X(g) -- same name, different phase -- never serialize alike.
+    return [sp.name, [list(p) for p in sp.composition], sp.charge, sp.phase.value, sp.substance]
+
+
+def _canon_num(x):
+    """XVIII-1B: an EXACT, lossless, versioned canonical encoding of an operative float input.  float.hex() round-trips
+    every distinct double to a distinct string, so two trace inputs (1e-13 vs 2e-13 mol) can never collide the way
+    round(x, 12) collapsed both to 0.0.  NaN/Inf are refused -- not admissible numeric inputs."""
+    xf = float(x)
+    if not math.isfinite(xf):
+        raise ValueError(f"a model/run identity input must be finite (got {x!r}); NaN/Inf are not admissible")
+    return xf.hex()
 
 
 def model_identity(system) -> dict:
-    """Every numerically operative MODEL input -- species (composition/charge/phase), reactions (signed stoichiometry
-    + rate-law parameters), reactor volume.  Changing kf, kr, a coefficient, or the volume changes this (XV-1E)."""
+    """Every numerically operative MODEL input -- species (composition/charge/phase/substance), reactions (signed
+    stoichiometry + rate-law parameters), reactor volume.  Changing kf, kr, a coefficient, the volume, OR which species
+    a reaction consumes changes this (XV-1E / XVIII-1A).  A reaction references species by their full collision-
+    resistant key (``_species_payload``), never the display name alone, so X(aq) and X(g) stay distinct."""
     return {
+        "identity_version": "xviii-1",
         "species": [_species_payload(sp) for sp in system.species],
-        "reactions": [[r.name, [[sp.name, coeff] for sp, coeff in r.stoich], _ratelaw_payload(r.rate_law),
-                       bool(r.elementary)] for r in system.reactions],
-        "volume_L": round(float(system.volume_L), 12),
+        "reactions": [[r.name, [[_species_payload(sp), coeff] for sp, coeff in r.stoich],
+                       _ratelaw_payload(r.rate_law), bool(r.elementary)] for r in system.reactions],
+        "volume_L": _canon_num(system.volume_L),
     }
 
 
@@ -108,18 +123,38 @@ def model_identity_digest(system) -> str:
 
 def run_identity(system, n0: dict, duration: float, source: dict | None = None) -> dict:
     """The MODEL plus the initial-value problem: initial amounts, external source, duration and solver config.
-    Changing any initial amount changes the RUN digest while the MODEL digest stays fixed (XV-1E)."""
+    Changing any initial amount changes the RUN digest while the MODEL digest stays fixed (XV-1E).  Amounts are keyed
+    by the full species key (XVIII-1A) and encoded losslessly (XVIII-1B), so same-named species and trace inventories
+    never collide."""
     return {
+        "identity_version": "xviii-1",
         "model": model_identity(system),
-        "initial_amounts": sorted([sp.name, round(float(v), 12)] for sp, v in n0.items()),
-        "source": sorted([sp.name, round(float(v), 12)] for sp, v in (source or {}).items()),
-        "duration_s": round(float(duration), 12),
+        "initial_amounts": sorted([_species_payload(sp), _canon_num(v)] for sp, v in n0.items()),
+        "source": sorted([_species_payload(sp), _canon_num(v)] for sp, v in (source or {}).items()),
+        "duration_s": _canon_num(duration),
         "solver": dict(_SOLVER),
     }
 
 
 def run_identity_digest(system, n0: dict, duration: float, source: dict | None = None) -> str:
     return hashlib.sha256(json.dumps(run_identity(system, n0, duration, source), sort_keys=True).encode()).hexdigest()
+
+
+def source_evidence_identity(system) -> dict:
+    """XVIII-1C/1D: the SOURCE/EVIDENCE provenance, kept SEPARATE from chemical/model identity.  Records each species'
+    data_status and each rate law's declared tier/source, keyed by the species' chemical identity.  A provenance update
+    (NONE -> SOURCED, or a re-sourced rate constant) moves THIS digest while leaving the model digest fixed -- evidence
+    is not chemistry."""
+    return {
+        "identity_version": "xviii-1",
+        "species_evidence": sorted([_species_payload(sp), sp.data_status] for sp in system.species),
+        "rate_law_evidence": [[r.name, getattr(r.rate_law, "tier", None), getattr(r.rate_law, "source", None)]
+                              for r in system.reactions],
+    }
+
+
+def source_evidence_digest(system) -> str:
+    return hashlib.sha256(json.dumps(source_evidence_identity(system), sort_keys=True).encode()).hexdigest()
 
 
 def model_source_digest() -> dict:

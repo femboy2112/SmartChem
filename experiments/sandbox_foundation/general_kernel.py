@@ -58,6 +58,7 @@ and a weak-acid dissociation run through this SAME kernel with no solver edit.
 """
 from __future__ import annotations
 
+import hashlib
 import math
 from dataclasses import dataclass, field
 from enum import Enum
@@ -84,6 +85,17 @@ class ConservationError(KernelError):
 
 class MissingKineticsError(KernelError):
     """A reaction has no rate law (RATE_UNKNOWN) and cannot be integrated -- never silently treated as k = 0."""
+
+
+class ExecutionBasisError(KernelError):
+    """A declared coefficient cannot be represented EXACTLY in the float64 execution basis (|coeff| > 2**53).  The
+    conservation law was proven in unbounded integers, but the solver runs the float cast -- an inexact coefficient
+    would silently execute a stoichiometry the integer certificate never proved, so such a model is refused (XVIII-2)."""
+
+
+class StaleCertificateError(KernelError):
+    """The live execution basis (species / E / N / volume) no longer matches the certificate proven at construction --
+    the certified model was mutated afterward and must not integrate under the stale certificate (XVIII-2)."""
 
 
 class Phase(Enum):
@@ -140,7 +152,10 @@ class Species:
     composition: tuple           # ((element, count), ...) sorted by element, elements unique
     charge: int
     phase: Phase
-    data_status: str = "NONE"    # NONE | PARTIAL | SOURCED -- what thermodynamic data is attached (none faked)
+    # XVIII-1C: data_status is EVIDENCE provenance, NOT chemical identity -- compare=False keeps it out of the frozen
+    # dataclass's __eq__/__hash__, so the same substance with an updated evidence tier stays the SAME species rather
+    # than silently forging a second one.  It is carried in a SEPARATE source/evidence digest (general_chemistry_demo).
+    data_status: str = field(default="NONE", compare=False)   # NONE | PARTIAL | SOURCED (no thermo data faked)
     substance: str | None = None  # XVI-P0.1 phase-independent substance identity; defaults to ``name`` (fail-closed)
 
     def __post_init__(self):
@@ -361,32 +376,42 @@ class ChemicalSystem:
             for sp, _ in r.stoich:
                 if sp not in species:
                     raise KernelError(f"reaction {r.name!r} references species {sp.name!r} not in the system")
-        self.species = list(species)
-        self.reactions = list(reactions)
+        self.species = tuple(species)
+        self.reactions = tuple(reactions)
         self.volume_L = float(volume_L)
         self._index = {sp: i for i, sp in enumerate(self.species)}
         self.elements = sorted({e for sp in self.species for e in sp.elements})
         self.component_labels = tuple(self.elements) + ("charge",)
-        # the EXACT (unbounded-integer) authorities for the conservation proof:
-        self._E_int = [[sp.count(el) for sp in self.species] for el in self.elements]
-        self._E_int.append([sp.charge for sp in self.species])          # the charge-conservation row
-        self._N_int = [[0] * len(self.reactions) for _ in self.species]
+        # the EXACT (unbounded-integer) authorities for the conservation proof, frozen as tuples of tuples so the
+        # integer certificate itself cannot be rewritten in place after it is proven:
+        E_int = [[sp.count(el) for sp in self.species] for el in self.elements]
+        E_int.append([sp.charge for sp in self.species])                # the charge-conservation row
+        N_int = [[0] * len(self.reactions) for _ in self.species]
         for k, r in enumerate(self.reactions):
             for sp, coeff in r.stoich:
-                self._N_int[self._index[sp]][k] = coeff
-        self._assert_conservation()                                     # proven (exactly) BEFORE any numpy cast
-        # derived EXECUTION artifacts for the float RHS (NOT the conservation authority -- float64 so a genuinely
-        # balanced huge-coefficient system, already certified exactly above, does not overflow a C long):
-        self.E = np.array(self._E_int, dtype=float)
-        self.N = (np.array(self._N_int, dtype=float) if self.reactions
+                N_int[self._index[sp]][k] = coeff
+        self._E_int = tuple(tuple(row) for row in E_int)
+        self._N_int = tuple(tuple(row) for row in N_int)
+        self._assert_conservation()                                     # E N = 0 proven (exactly) BEFORE any numpy cast
+        # XVIII-2: the SYMBOLIC model is valid for ANY balanced integer coefficients (XV-1A), but a coefficient with
+        # |v| > 2**53 is not float64-exact, so it is not NUMERICALLY EXECUTABLE -- flag it here and refuse it at
+        # integrate() ("a symbolic certificate does not imply a numerically executable model"), never over-refusing
+        # construction (a huge balanced system is still a legitimate object for conservation analysis).
+        self._float_exact = self._is_float_exact()
+        # derived EXECUTION artifacts for the float RHS (NOT the conservation authority).  XVIII-2: freeze them as
+        # read-only VIEWS over read-only bases.  A view of a non-writeable base cannot have writeable re-enabled -- an
+        # OWNING array CAN (the XVII hole), so viewing is what makes the thaw-then-mutate attack impossible.
+        E_base = np.array(self._E_int, dtype=float)
+        E_base.flags.writeable = False
+        self.E = E_base[:]
+        N_base = (np.array(self._N_int, dtype=float) if self.reactions
                   else np.zeros((len(self.species), 0), dtype=float))
-        # XVII-D2: FREEZE the execution basis.  E.N=0 was proven above on the integer authorities; the integrator then
-        # executes against these float matrices.  If they stayed writable, an in-place mutation after construction
-        # would make the EXECUTED stoichiometry diverge from the CERTIFIED one, silently.  Read-only => the original
-        # certificate still describes the exact matrices execution uses.  (Rebinding the attribute is a different
-        # object, not a mutation of a certified model.)
-        self.E.flags.writeable = False
-        self.N.flags.writeable = False
+        N_base.flags.writeable = False
+        self.N = N_base[:]
+        # XVIII-2: a model certificate over the EXACT execution basis (species identity+order, float E, float N,
+        # volume).  integrate() re-derives it from the LIVE attributes and refuses to run under a stale one, so a
+        # rebind of self.N / self.E or a species reorder after construction cannot execute silently.
+        self._model_certificate = self._compute_certificate()
 
     def _assert_conservation(self) -> None:
         """Prove E N = 0 with UNBOUNDED PYTHON INTEGERS (XV-1A): a fixed-width int64 product can wrap on large
@@ -408,6 +433,40 @@ class ChemicalSystem:
         if bad:
             raise ConservationError("reaction(s) do not conserve elements/charge (E N != 0): " + "; ".join(bad))
 
+    def _is_float_exact(self) -> bool:
+        """XVIII-2: whether every integer-authority entry survives the float64 cast EXACTLY (|v| <= 2**53).  The
+        symbolic conservation proof (E N = 0 in unbounded integers) holds for ANY balanced coefficients, but the solver
+        executes the float cast -- a coefficient beyond 2**53 would run a matrix diverging from the certified one.
+        Construction stays valid (XV-1A); integrate() consults this flag and refuses a non-executable model."""
+        limit = 2 ** 53
+        for rows in (self._E_int, self._N_int):
+            for row in rows:
+                for v in row:
+                    if abs(int(v)) > limit:
+                        return False
+        return True
+
+    def _compute_certificate(self) -> str:
+        """A deterministic hash over the EXACT execution basis the integrator runs against: species identity (name,
+        composition, charge, phase, substance) in column order, the float E and N matrices, and the reactor volume."""
+        h = hashlib.sha256()
+        keys = [(sp.name, sp.composition, sp.charge, sp.phase.value, sp.substance) for sp in self.species]
+        h.update(repr(keys).encode())
+        for m in (self.E, self.N):
+            arr = np.ascontiguousarray(m, dtype=float)
+            h.update(str(arr.shape).encode())
+            h.update(arr.tobytes())
+        h.update(repr(float(self.volume_L)).encode())
+        return h.hexdigest()
+
+    def _verify_certificate(self) -> None:
+        """XVIII-2: refuse to execute if the live execution basis no longer matches the certificate proven at
+        construction (self.E/self.N rebound, species reordered, or the volume changed afterward)."""
+        if self._compute_certificate() != self._model_certificate:
+            raise StaleCertificateError(
+                "the model's execution basis (species / E / N / volume) was mutated after certification; refusing to "
+                "integrate under a stale certificate (XVIII-2 deep-immutability).")
+
     def component_amounts(self, amounts: dict) -> dict:
         """E n: the conserved element + charge totals of an inventory dict."""
         for sp in amounts:
@@ -428,6 +487,12 @@ class ChemicalSystem:
         network with disparate rate constants is typically stiff.  Conservation, the external ledger and positivity
         are VERIFIED on the trajectory (XV-1E) and the evidential tier is DERIVED from those checks, never the
         caller's word (``declared_kinetic_tier`` can only lower the admitted tier, never inflate it)."""
+        self._verify_certificate()                                      # XVIII-2: never integrate under a stale certificate
+        if not self._float_exact:                                       # XVIII-2: symbolic cert != numerically executable
+            raise ExecutionBasisError(
+                "this model carries a coefficient with |coeff| > 2**53: the symbolic conservation certificate holds, "
+                "but the float64 execution basis cannot represent it exactly, so the integrated trajectory would "
+                "diverge from the certified model. Refusing to integrate (XVIII-2).")
         missing = [r.name for r in self.reactions if r.rate_law is RATE_UNKNOWN]
         if missing:
             raise MissingKineticsError(

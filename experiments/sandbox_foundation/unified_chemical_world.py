@@ -45,14 +45,27 @@ import math
 import sys
 from dataclasses import dataclass
 
+from experiments.sandbox_foundation.aqueous_equilibrium import (
+    SOURCE_T_K,
+    SOURCE_T_TOL_K,
+    OutOfSourceDomainError,
+)
 from experiments.sandbox_foundation.carbonate_equilibrium import KH_CO2_25C, R_GAS_L_ATM
 from experiments.sandbox_foundation.claim_tiers import ASSUMED_PARAMETER, weakest
+from experiments.sandbox_foundation.coupled_equilibrium import (   # the 25 C K-set the mixed operator defaults to
+    KA_ACETIC_25C,
+    K1_CARBONIC_25C,
+    K2_CARBONIC_25C,
+    KW_25C,
+)
 from experiments.sandbox_foundation.general_coupled import (
     Compartment,
     CoupledWorld,
     EquilibriumCoupling,
     ExternalBoundary,
     InterfaceTransfer,
+    _canon_num,          # XIX-1A: lossless float.hex() identity encoding (one source of truth with the world cert)
+    _species_key,        # XIX-1A: full species identity key (name/phase/charge/composition/substance)
 )
 from experiments.sandbox_foundation.general_equilibrium import MixedAcetateCarbonateEquilibriumOperator
 from experiments.sandbox_foundation.general_kernel import (
@@ -192,7 +205,8 @@ def build_unified_world(params: UnifiedParams, sp: _Species, *, valve_open: bool
     if not sealed:
         boundaries.append(ExternalBoundary("co2_export", "gas", sp.CO2g, "fixed_activity",
                                            k_transfer=params.k_export_Lps, target_conc=0.0))
-    return _Build(CoupledWorld([cell_a, cell_b, gas], interfaces=interfaces, boundaries=boundaries), sp)
+    return _Build(CoupledWorld([cell_a, cell_b, gas], interfaces=interfaces, boundaries=boundaries,
+                               temperature_K=params.temperature_K), sp)   # XIX-1C: ONE temperature, no 298.15 hard-code
 
 
 # ============================================================ initial state + the phase-driven simulation
@@ -217,7 +231,9 @@ class Phase_:
 
 
 def _ph_of_cell(frame: dict, sp: _Species, cell: str, volume_L: float):
-    """pH = -log10([H+]); [H+] = n(H+)/V.  None if H+ is non-positive (below the model's resolution)."""
+    """CONCENTRATION pH = -log10([H+]), [H+] = n(H+)/V.  Kept ONLY as an internal cross-check against the solver's own
+    pH_concentration (XIX-1B); it is NOT the value the frame reports.  The AUTHORITATIVE pH comes from the equilibrium
+    solver's activity model (captured in the trajectory's equilibrium_derived), never recomputed in the renderer."""
     h = frame[cell].get(sp.Hp, 0.0)
     c = h / volume_L
     return -math.log10(c) if c > 0 else None
@@ -227,20 +243,172 @@ def _finite(x):
     return float(x) if (isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)) else None
 
 
-def world_identity(params: UnifiedParams, phases: tuple) -> dict:
-    """MODEL/RUN identity: every operative parameter + the phase schedule, bound so a frame ties to its governing
-    configuration.  (Chemistry identities live in the kernel systems' own digests; here we bind the world config.)"""
+# XIX-1E: the phase-stitch clamp is a MEASURED, BOUNDED roundoff correction, not a silent clip.  A phase-final negative
+# within this scale-aware budget is numerical dust (clamped to 0 and its magnitude logged); a larger negative is a REAL
+# positivity excursion and is REFUSED, never clipped away and reported as a clean state.
+_STITCH_ATOL = 1e-12
+_STITCH_RTOL = 1e-9
+
+# XIX-1A: the solver configuration the flagship integrates with -- bound into the RUN identity so it can never drift
+# from what simulate() actually passes to CoupledWorld.integrate.
+_SCHEME = "strang"
+_RTOL = 1e-10
+_ATOL = 1e-14
+
+
+def _require_params(params: UnifiedParams) -> None:
+    """XIX-1E: refuse a physically invalid world configuration up front; XIX-1C: refuse an off-25 C temperature -- the
+    acid/carbonate K-set, the CO2 Henry constant AND the empirical NaHCO3 Qsp are ALL sourced only at 25 C."""
+    for name in ("V_A_L", "V_B_L", "V_gas_L"):
+        v = getattr(params, name)
+        if isinstance(v, bool) or not (isinstance(v, (int, float)) and math.isfinite(v) and v > 0):
+            raise ValueError(f"UnifiedParams.{name} must be a finite volume > 0 (got {v!r})")
+    for name in ("k_valve_Lps", "kLa_per_s", "k_diss_molpLps", "k_export_Lps"):
+        v = getattr(params, name)
+        if isinstance(v, bool) or not (isinstance(v, (int, float)) and math.isfinite(v) and v >= 0):
+            raise ValueError(f"UnifiedParams.{name} must be a finite coefficient >= 0 (got {v!r})")
+    T = params.temperature_K
+    if isinstance(T, bool) or not (isinstance(T, (int, float)) and math.isfinite(T) and T > 0):
+        raise ValueError(f"UnifiedParams.temperature_K must be a finite temperature > 0 (got {T!r})")
+    if abs(float(T) - SOURCE_T_K) > SOURCE_T_TOL_K:
+        raise OutOfSourceDomainError(
+            f"temperature {T} K is outside the 25 C sourced-data domain {SOURCE_T_K} +/- {SOURCE_T_TOL_K} K; the "
+            f"acid/carbonate Ka/K1/K2/Kw, the CO2 Henry constant and the empirical NaHCO3 Qsp are ALL tabulated at "
+            f"25 C only -- an off-domain temperature is refused rather than run as a mixed-temperature simulation "
+            f"(scaling Henry's law while pinning Ka/K1/K2/Kw at 25 C).  Extending beyond 25 C needs a sourced "
+            f"temperature dependence threaded through every constant (XIX-1C).")
+
+
+def _require_phases(phases) -> tuple:
+    """XIX-1E: a non-empty schedule of well-formed phases (duration > 0, integer n_steps >= 1)."""
+    if not isinstance(phases, (tuple, list)) or len(phases) == 0:
+        raise ValueError("phases must be a non-empty sequence of Phase_")
+    for p in phases:
+        if type(p) is not Phase_:
+            raise ValueError(f"every phase must be a Phase_ (got {type(p).__name__})")
+        if isinstance(p.duration_s, bool) or not (isinstance(p.duration_s, (int, float))
+                                                  and math.isfinite(p.duration_s) and p.duration_s > 0):
+            raise ValueError(f"phase {p.name!r} duration_s must be finite and > 0 (got {p.duration_s!r})")
+        if isinstance(p.n_steps, bool) or not (isinstance(p.n_steps, int) and p.n_steps >= 1):
+            raise ValueError(f"phase {p.name!r} n_steps must be an int >= 1 (got {p.n_steps!r})")
+    return tuple(phases)
+
+
+def _require_inventories(acid_mol, bicarb_solid_mol, bicarb_dissolved_mol) -> None:
+    """XIX-1E: initial inventories must be finite and >= 0 (the kernel refuses negatives/NaN too, but a clear flagship
+    message beats a deep traceback)."""
+    for name, v in (("acid_mol", acid_mol), ("bicarb_solid_mol", bicarb_solid_mol),
+                    ("bicarb_dissolved_mol", bicarb_dissolved_mol)):
+        if isinstance(v, bool) or not (isinstance(v, (int, float)) and math.isfinite(v) and v >= 0):
+            raise ValueError(f"{name} must be a finite mol value >= 0 (got {v!r})")
+
+
+def _restitch(final_amounts: dict, vols: dict):
+    """XIX-1E: re-pack a phase's final amounts as the next phase's initial inventory.  Each negative amount is a
+    BOUNDED roundoff correction: within a scale-aware budget it is clamped to 0 and its magnitude logged; a negative
+    larger than the budget is a REAL positivity excursion returned as a violation (the caller raises -- never clips it
+    away silently).  Returns (clean_state, clamp_total_mol, clamp_max_mol, violations)."""
+    clean, clamp_total, clamp_max, violations = {}, 0.0, 0.0, []
+    for c, inv in final_amounts.items():
+        scale = max([0.0] + [abs(float(v)) for v in inv.values()])
+        budget = _STITCH_ATOL + _STITCH_RTOL * scale
+        cc = {}
+        for s, v in inv.items():
+            fv = float(v)
+            if fv < 0.0:
+                mag = -fv
+                clamp_total += mag
+                clamp_max = max(clamp_max, mag)
+                if mag > budget:
+                    violations.append((c, getattr(s, "name", str(s)), fv, budget))
+                cc[s] = 0.0
+            else:
+                cc[s] = fv
+        clean[c] = cc
+    return clean, clamp_total, clamp_max, violations
+
+
+# ============================================================ XIX-1A model / run / evidence identity
+def model_identity(params: UnifiedParams, phases: tuple) -> dict:
+    """XIX-1A MODEL identity: the physical model, independent of initial inventories.  Binds the FULL species identity
+    keys, the dissolution reaction + its rate-law parameters, the equilibrium operator + its 25 C K-set (Ka/K1/K2/Kw),
+    the Henry/gas constants, every operative parameter, and the phase TOPOLOGY (which interfaces/boundaries are live).
+    Lossless float.hex() encoding.  The XVIII digest bound neither the inventories nor the K-set; this does."""
+    sp = _build_species()
+    species = sorted(_species_key(s) for s in sp.__dict__.values())
+    dissolution = {
+        "name": "NaHCO3(s)->Na+ + HCO3-",
+        "stoich": sorted([[list(_species_key(sp.solid)), -1], [list(_species_key(sp.Nap)), 1],
+                          [list(_species_key(sp.HCO3)), 1]]),
+        "rate_law": {"type": "BicarbonateDissolutionRate", "k_diss": _canon_num(params.k_diss_molpLps),
+                     "Qsp": _canon_num(KSP_NAHCO3_25C.value)},
+    }
     return {
-        "identity_version": "xviii-5",
-        "params": {k: (float(v) if isinstance(v, (int, float)) else v) for k, v in params.__dict__.items()},
-        "phases": [[p.name, bool(p.valve_open), bool(p.sealed), float(p.duration_s), int(p.n_steps)] for p in phases],
-        "constants": {"KH_CO2_25C": float(KH_CO2_25C.value), "R_GAS_L_ATM": float(R_GAS_L_ATM.value),
-                      "Qsp_NaHCO3": float(KSP_NAHCO3_25C.value)},
+        "identity_version": "xix-1",
+        "species": [list(k) for k in species],
+        "reactions": [dissolution],
+        "equilibrium_operator": {
+            "type": "MixedAcetateCarbonateEquilibriumOperator",
+            "activity_model": params.activity_model,
+            "K_set": {"Ka": _canon_num(KA_ACETIC_25C.value), "K1": _canon_num(K1_CARBONIC_25C.value),
+                      "K2": _canon_num(K2_CARBONIC_25C.value), "Kw": _canon_num(KW_25C.value)},
+        },
+        "constants": {"KH_CO2_25C": _canon_num(KH_CO2_25C.value), "R_GAS_L_ATM": _canon_num(R_GAS_L_ATM.value),
+                      "Qsp_NaHCO3": _canon_num(KSP_NAHCO3_25C.value)},
+        "params": {k: (_canon_num(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v)
+                   for k, v in params.__dict__.items()},
+        "phase_topology": [[p.name, bool(p.valve_open), bool(p.sealed)] for p in phases],
     }
 
 
+def run_identity(params: UnifiedParams, phases: tuple, *, acid_mol: float, bicarb_solid_mol: float,
+                 bicarb_dissolved_mol: float, n_samples, scheme: str, rtol: float, atol: float) -> dict:
+    """XIX-1A RUN identity: the MODEL identity PLUS everything defining the specific initial-value problem -- the
+    initial inventories (the XVIII collision), the full temporal schedule (durations + step counts), the sample
+    cadence and the solver config.  Two runs differing in ANY operative input get distinct run digests."""
+    return {
+        "model": model_identity(params, phases),
+        "initial_inventories": {"acid_mol": _canon_num(acid_mol), "bicarb_solid_mol": _canon_num(bicarb_solid_mol),
+                                "bicarb_dissolved_mol": _canon_num(bicarb_dissolved_mol)},
+        "schedule": [[p.name, _canon_num(p.duration_s), int(p.n_steps)] for p in phases],
+        "solver": {"scheme": scheme, "rtol": _canon_num(rtol), "atol": _canon_num(atol),
+                   "n_samples": (int(n_samples) if n_samples is not None else None)},
+    }
+
+
+def evidence_identity(params: UnifiedParams) -> dict:
+    """XIX-1A EVIDENCE identity: the model's SOURCE/scope provenance, separate from its physical identity.  A change in
+    evidence (a calibration, a re-sourced constant) moves THIS digest without touching the model identity, and vice
+    versa.  No caller-provided tier mints authority -- this records what is sourced vs assumed vs unvalidated."""
+    return {
+        "scope": "25 C aqueous, dilute-to-moderate ionic strength; Davies activity; closed-liquid speciation",
+        "parameter_tiers": {
+            "k_diss": "ASSUMED_PARAMETER (synthetic dissolution timescale; CALIBRATION_REQUIRED per apparatus)",
+            "kLa": "ASSUMED_PARAMETER (synthetic gas-transfer coefficient)",
+            "k_export": "ASSUMED_PARAMETER (synthetic open-vessel export coefficient)",
+            "Qsp_NaHCO3": "EMPIRICAL concentration product S^2 (NOT an activity Ksp); dilute-regime only",
+            "KH_CO2_25C": "SOURCED (Henry constant, 25 C)",
+            "K_set(Ka,K1,K2,Kw)": "SOURCED (25 C; Harned-lineage, shared with PHREEQC -- common-mode)",
+        },
+        "external_validation": "BENCHMARKED_AGAINST_REFERENCE_SOLVER (PHREEQC, common-mode on constants); no "
+                               "independent MEASURED validation wired in (candidate rung: NIST SRM 191d carbonate pH "
+                               "10.014 +/- 0.010 at 25 C -- not yet calibrated against)",
+        "activity_model": params.activity_model,
+    }
+
+
+def _digest(obj) -> str:
+    return hashlib.sha256(json.dumps(obj, sort_keys=True, default=str).encode()).hexdigest()
+
+
+# Back-compat aliases: the old world_identity/world_identity_digest signature (params, phases) is preserved as the
+# MODEL identity (a pure function of params+phases, as before -- but now richer and collision-resistant).
+def world_identity(params: UnifiedParams, phases: tuple) -> dict:
+    return model_identity(params, phases)
+
+
 def world_identity_digest(params: UnifiedParams, phases: tuple) -> str:
-    return hashlib.sha256(json.dumps(world_identity(params, phases), sort_keys=True).encode()).hexdigest()
+    return _digest(model_identity(params, phases))
 
 
 def simulate(params: UnifiedParams, phases: tuple, *, acid_mol: float, bicarb_solid_mol: float,
@@ -249,6 +417,11 @@ def simulate(params: UnifiedParams, phases: tuple, *, acid_mol: float, bicarb_so
     phase's conservation + signed-flux ledger is MEASURED (XVIII-3); the whole-run external flux is the sum over
     phases.  Returns a strict-JSON-able result."""
     sp = _build_species()
+    # XIX-1E: fail-closed input validation (clear messages) + XIX-1C off-25 C refusal, BEFORE any integration.
+    _require_params(params)
+    phases = _require_phases(phases)
+    _require_inventories(acid_mol, bicarb_solid_mol, bicarb_dissolved_mol)
+
     state = initial_state(sp, acid_mol=acid_mol, bicarb_solid_mol=bicarb_solid_mol,
                           bicarb_dissolved_mol=bicarb_dissolved_mol)
     vols = {"A": params.V_A_L, "B": params.V_B_L, "gas": params.V_gas_L}
@@ -262,21 +435,32 @@ def simulate(params: UnifiedParams, phases: tuple, *, acid_mol: float, bicarb_so
     tiers = []
     all_closed = True
     all_positive = True
+    stitch_total_run = 0.0
+    stitch_max_run = 0.0
     for ph in phases:
         build = build_unified_world(params, sp, valve_open=ph.valve_open, sealed=ph.sealed)
-        traj = build.world.integrate(state, duration=ph.duration_s, n_steps=ph.n_steps, scheme="strang",
-                                     n_samples=n_samples)
+        traj = build.world.integrate(state, duration=ph.duration_s, n_steps=ph.n_steps, scheme=_SCHEME,
+                                     rtol=_RTOL, atol=_ATOL, n_samples=n_samples)
         rc = traj.receipt
-        # stitch: the phase's final amounts become the next phase's initial state; clamp float-dust negatives at solid
-        # exhaustion (the per-phase positivity_held / min_inventory independently surface any REAL negative excursion).
-        state = {c: {s: max(0.0, float(v)) for s, v in traj.amounts[c][-1].items()} for c in traj.compartments}
+        der = traj.equilibrium_derived      # XIX-1B: the solver's AUTHORITATIVE per-cell pH/ionic strength, per sample
+        dA_series, dB_series = der.get("A", ()), der.get("B", ())
         # frames (time-shifted onto the global clock)
         for j, t in enumerate(traj.times):
             fr = {c: traj.amounts[c][j] for c in traj.compartments}
+            dA = dA_series[j] if j < len(dA_series) else {}
+            dB = dB_series[j] if j < len(dB_series) else {}
             frames.append({
                 "time_s": _finite(t0 + t), "phase": ph.name,
-                "pH_A": _finite(_ph_of_cell(fr, sp, "A", params.V_A_L)),
-                "pH_B": _finite(_ph_of_cell(fr, sp, "B", params.V_B_L)),
+                # XIX-1B: primary pH = the solver's CHOSEN convention (its activity model); both conventions are
+                # emitted explicitly so the reported value can never be read as the wrong one.
+                "pH_A": _finite(dA.get("pH")), "pH_B": _finite(dB.get("pH")),
+                "pH_A_activity": _finite(dA.get("pH_activity")), "pH_B_activity": _finite(dB.get("pH_activity")),
+                "pH_A_concentration": _finite(dA.get("pH_concentration")),
+                "pH_B_concentration": _finite(dB.get("pH_concentration")),
+                "ionic_strength_A_M": _finite(dA.get("ionic_strength_M")),
+                "ionic_strength_B_M": _finite(dB.get("ionic_strength_M")),
+                "activity_model": dA.get("activity_model") or dB.get("activity_model"),
+                "temperature_K": _finite(params.temperature_K),
                 "solid_NaHCO3_mol": _finite(fr["B"].get(sp.solid, 0.0)),
                 "CO2aq_B_mol": _finite(fr["B"].get(sp.CO2aq, 0.0)),
                 "CO2_gas_mol": _finite(fr["gas"].get(sp.CO2g, 0.0)),
@@ -284,6 +468,18 @@ def simulate(params: UnifiedParams, phases: tuple, *, acid_mol: float, bicarb_so
                                      * params.temperature_K),
                 "HAc_A_mol": _finite(fr["A"].get(sp.HAc, 0.0)), "HAc_B_mol": _finite(fr["B"].get(sp.HAc, 0.0)),
             })
+        # XIX-1E: stitch the phase's final state into the next phase, recording the bounded roundoff clamp and
+        # REFUSING any clamp beyond the scale-aware dust budget (a real positivity excursion, never clipped silently).
+        last = {c: traj.amounts[c][-1] for c in traj.compartments}
+        state, clamp_total, clamp_max, violations = _restitch(last, vols)
+        if violations:
+            w = min(violations, key=lambda v: v[2])     # most negative
+            raise ValueError(
+                f"phase {ph.name!r} ended with a negative inventory beyond the roundoff budget -- a REAL positivity "
+                f"excursion, not dust: compartment {w[0]!r} species {w[1]!r} = {w[2]:.3e} mol (budget {w[3]:.3e} "
+                f"mol).  Refusing to clip it away and report a clean state (XIX-1E).")
+        stitch_total_run += clamp_total
+        stitch_max_run = max(stitch_max_run, clamp_max)
         for comp, v in rc.external_flux.items():
             combined_external[comp] = combined_external.get(comp, 0.0) + v
         for comp, v in rc.raw_material_change.items():
@@ -305,15 +501,21 @@ def simulate(params: UnifiedParams, phases: tuple, *, acid_mol: float, bicarb_so
             "reservoir_exchange": {k: _finite(v) for k, v in rc.reservoir_exchange.items()},
             "charge_balance_claim": rc.charge_balance_claim,
             "positivity_held": bool(rc.positivity_held), "min_inventory": _finite(rc.min_inventory),
+            "stitch_clamp_total_mol": _finite(clamp_total), "stitch_clamp_max_mol": _finite(clamp_max),
             "admitted_tier": rc.admitted_tier, "tolerance": _finite(rc.tolerance),
             "caveats": list(traj.caveats),
         })
         t0 += ph.duration_s
 
+    run_id = run_identity(params, phases, acid_mol=acid_mol, bicarb_solid_mol=bicarb_solid_mol,
+                          bicarb_dissolved_mol=bicarb_dissolved_mol, n_samples=n_samples,
+                          scheme=_SCHEME, rtol=_RTOL, atol=_ATOL)
     return {
         "scenario_inputs": {"acid_mol": _finite(acid_mol), "bicarb_solid_mol": _finite(bicarb_solid_mol),
                             "bicarb_dissolved_mol": _finite(bicarb_dissolved_mol)},
         "volumes_L": {k: _finite(v) for k, v in vols.items()},
+        "temperature_K": _finite(params.temperature_K),
+        "activity_model": params.activity_model,
         "frames": frames,
         "phase_reports": phase_reports,
         "whole_run": {
@@ -322,10 +524,19 @@ def simulate(params: UnifiedParams, phases: tuple, *, acid_mol: float, bicarb_so
             "worst_ledger_residual": _finite(worst_residual),
             "material_balance_closed_every_phase": bool(all_closed),
             "positivity_held_every_phase": bool(all_positive),
+            "stitch_clamp_total_mol": _finite(stitch_total_run),
+            "stitch_clamp_max_mol": _finite(stitch_max_run),
             "admitted_tier": weakest(*tiers) if tiers else ASSUMED_PARAMETER,
         },
-        "identity": {"model_run_digest": world_identity_digest(params, phases),
-                     "world_identity": world_identity(params, phases)},
+        "identity": {
+            "model_digest": _digest(model_identity(params, phases)),
+            "run_digest": _digest(run_id),
+            "evidence_digest": _digest(evidence_identity(params)),
+            "model_run_digest": _digest(run_id),   # back-compat alias = run_digest (NOW varies with inventories)
+            "model_identity": model_identity(params, phases),
+            "run_identity": run_id,
+            "evidence_identity": evidence_identity(params),
+        },
         "assumptions": [
             "k_diss, kLa, k_export are ASSUMED synthetic coefficients (CALIBRATION_REQUIRED); this is a numerical "
             "simulation, not a predictor of real fizzing RATES",
@@ -365,30 +576,39 @@ def _scenario(name: str) -> dict:
 
 def _dashboard(result: dict) -> str:
     out = io.StringIO()
-    out.write("=== SmartChem unified vinegar/bicarbonate world (OPERATION XVIII §5) ===\n")
+    out.write("=== SmartChem unified vinegar/bicarbonate world (OPERATION XIX §7) ===\n")
     si = result["scenario_inputs"]
     out.write(f"inputs: acid={si['acid_mol']} mol, solid NaHCO3={si['bicarb_solid_mol']} mol, "
-              f"dissolved={si['bicarb_dissolved_mol']} mol\n")
+              f"dissolved={si['bicarb_dissolved_mol']} mol  |  T={result['temperature_K']} K  "
+              f"activity={result['activity_model']}\n")
     f0, fN = result["frames"][0], result["frames"][-1]
-    out.write(f"start:  pH_A={f0['pH_A']}  pH_B={f0['pH_B']}  solid={f0['solid_NaHCO3_mol']:.4g}  "
-              f"CO2(g)={f0['CO2_gas_mol']:.3g}\n")
-    out.write(f"end:    pH_A={fN['pH_A']}  pH_B={fN['pH_B']}  solid={fN['solid_NaHCO3_mol']:.4g}  "
-              f"CO2(g)={fN['CO2_gas_mol']:.3g}  p_CO2={fN['p_CO2_atm']:.3g} atm\n")
+    out.write("pH convention = ACTIVITY (-log10 a_H+); concentration pH also emitted per frame\n")
+    out.write(f"start:  pH_A(act)={f0['pH_A']}  pH_B(act)={f0['pH_B']}  I_B={f0['ionic_strength_B_M']}  "
+              f"solid={f0['solid_NaHCO3_mol']:.4g}  CO2(g)={f0['CO2_gas_mol']:.3g}\n")
+    out.write(f"end:    pH_A(act)={fN['pH_A']}  pH_B(act)={fN['pH_B']}  I_B={fN['ionic_strength_B_M']}  "
+              f"solid={fN['solid_NaHCO3_mol']:.4g}  CO2(g)={fN['CO2_gas_mol']:.3g}  "
+              f"p_CO2={fN['p_CO2_atm']:.3g} atm\n")
     wr = result["whole_run"]
     out.write(f"ledger: material balance closed every phase = {wr['material_balance_closed_every_phase']}  "
               f"worst residual = {wr['worst_ledger_residual']:.2e}\n")
     out.write(f"        external flux total (component -> mol) = {wr['external_flux_total']}\n")
+    out.write(f"        stitch clamp total = {wr['stitch_clamp_total_mol']:.2e} mol "
+              f"(max {wr['stitch_clamp_max_mol']:.2e}); positivity every phase = "
+              f"{wr['positivity_held_every_phase']}\n")
     out.write(f"        admitted tier = {wr['admitted_tier']}  (charge: "
               f"{result['phase_reports'][-1]['charge_balance_claim'].split(':')[0]})\n")
-    out.write(f"identity: {result['identity']['model_run_digest'][:16]}...\n")
+    idy = result["identity"]
+    out.write(f"identity: model={idy['model_digest'][:16]}  run={idy['run_digest'][:16]}  "
+              f"evidence={idy['evidence_digest'][:16]}\n")
     return out.getvalue()
 
 
 def _write_csv(result: dict, path: str) -> None:
     with open(path, "w", newline="") as fh:
         w = csv.writer(fh)
-        cols = ["time_s", "phase", "pH_A", "pH_B", "solid_NaHCO3_mol", "CO2aq_B_mol", "CO2_gas_mol", "p_CO2_atm",
-                "HAc_A_mol", "HAc_B_mol"]
+        cols = ["time_s", "phase", "pH_A", "pH_B", "pH_A_concentration", "pH_B_concentration",
+                "ionic_strength_A_M", "ionic_strength_B_M", "activity_model", "temperature_K",
+                "solid_NaHCO3_mol", "CO2aq_B_mol", "CO2_gas_mol", "p_CO2_atm", "HAc_A_mol", "HAc_B_mol"]
         w.writerow(cols)
         for fr in result["frames"]:
             w.writerow([fr[c] for c in cols])

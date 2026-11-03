@@ -109,6 +109,13 @@ class BicarbonateDissolutionRate(RateLaw):
         si = (concentrations[self.na] * concentrations[self.hco3]) / self.Qsp
         return self.k_diss * max(0.0, 1.0 - si)          # undersaturated only; never precipitates
 
+    def descriptor(self):
+        # XX-2B: bind every operative parameter (k_diss, Qsp) AND the species the RHS reads (solid/Na+/HCO3-),
+        # so a post-construction mutation of any of them moves the world certificate (general_coupled XIX-1D).
+        return ("BicarbonateDissolutionRate", _canon_num(self.k_diss), _canon_num(self.Qsp),
+                _species_key(self.solid), _species_key(self.na), _species_key(self.hco3),
+                self.tier, self.source)
+
 
 @dataclass(frozen=True)
 class _Species:

@@ -94,6 +94,24 @@ def _species_key(sp: Species) -> tuple:
     return (sp.name, phase, int(sp.charge), tuple((e, int(n)) for e, n in sp.composition), sp.substance)
 
 
+def _rate_law_descriptor(rl):
+    """XX-2B: a canonical descriptor of a reaction's rate law for the world certificate.  RATE_UNKNOWN has no
+    kinetics (a system containing it refuses to integrate anyway).  A law exposing ``descriptor()`` binds its
+    operative parameters -- so a post-construction mutation of a rate constant / Qsp / species reference moves
+    the certificate and is caught at integrate().  A law that CANNOT supply one is marked UNVERIFIABLE
+    (fail-closed): the certificate makes NO validity claim about it, rather than forging a stable identity from
+    a mutable object's ``repr()`` (two distinct opaque laws must not silently share a descriptor)."""
+    if rl is None:                                       # RATE_UNKNOWN
+        return "RATE_UNKNOWN"
+    desc = getattr(rl, "descriptor", None)
+    if callable(desc):
+        try:
+            return list(rl.descriptor())
+        except NotImplementedError:
+            pass
+    return ["UNVERIFIABLE_RATE_LAW", type(rl).__qualname__]
+
+
 class CoupledError(KernelError):
     """Fail-closed error for the general coupled world."""
 
@@ -427,6 +445,8 @@ class CoupledWorld:
                 "species": [_species_key(sp) for sp in c.system.species],
                 "system_certificate": c.system._model_certificate,       # XVIII-2 per-system float E/N + species cert
                 "equilibrium": self._equilibrium_descriptor(c),
+                "rate_laws": [_rate_law_descriptor(r.rate_law)           # XX-2B: bind each reaction's OPERATIVE kinetics
+                              for r in c.system.reactions],              # (the XVIII-2 cert binds stoichiometry, not rate params)
             })
         ifaces = [{
             "name": i.name, "a": i.a, "b": i.b,

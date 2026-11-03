@@ -96,10 +96,10 @@ class ExperimentStep(Digestible):
       ``dataclasses.replace``, a fake :meth:`from_transform` transform, and the bare constructor all route through
       the public constructor), the precise guarantee:
 
-      * **Recognition is a PURE FUNCTION of the conserved ``reactants``/``products`` multisets, for ALL 19
+      * **Recognition is a PURE FUNCTION of the conserved ``reactants``/``products`` multisets, for ALL 20
         recognizers.**  No caller-supplied annotation can MINT a vouch nor, now, block one: the condensation /
-        transfer recognizers (acyl / ether / N-alkylation / activated acyl transfer / sulfonate-ester transfer)
-        RE-DERIVE an elementary single-cut transformation from the molecules;
+        transfer recognizers (acyl / ether / N-alkylation / activated acyl transfer / sulfonate-ester transfer /
+        Claisen 1,3-dicarbonyl condensation) RE-DERIVE an elementary single-cut transformation from the molecules;
         the 14 pericyclic recognizers RE-DERIVE their family's guarded retro (``_reactant_*_disconnects_to`` /
         ``_reactant_rewrites_to``).  A forged centre on a non-matching step is refused by the molecular re-derivation,
         and a genuine step built WITHOUT a centre is recognized.  This single content-determinism invariant replaces

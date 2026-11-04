@@ -315,6 +315,8 @@ class CoupledReceipt:
     material_balance_closed: bool = True   # XVIII-3: every non-implicit-reservoir component's measured change == its integrated external flux
     charge_balance_claim: str = ""         # XVIII-3: CONSERVED (independently checked) | DEMOTED (implicit-solvent electroneutrality) | N/A
     notes: tuple = ()
+    max_step_material_residual: float = 0.0   # XX-3: max |E n(t) - E n0 - E integral(q_ext dt)| over EVERY accepted step (observer-invariant, not endpoint-only)
+    first_violation: tuple = ()               # XX-3: (time, kind, compartment, species/component, value) of the FIRST step to breach positivity or the ledger (() if none)
 
 
 @dataclass(frozen=True)
@@ -772,7 +774,7 @@ class CoupledWorld:
 
     def integrate(self, initial: dict, *, duration: float, n_steps: int, scheme: str = "strang",
                   n_samples: int | None = None, rtol: float = 1e-10, atol: float = 1e-14,
-                  declared_kinetic_tier: str | None = None) -> CoupledTrajectory:
+                  declared_kinetic_tier: str | None = None, _observer_perturb=None) -> CoupledTrajectory:
         """Advance the coupled world over ``duration`` seconds in ``n_steps`` equal macro-steps of the chosen scheme.
 
         Every macro-step records the state (or every (n_steps // n_samples)th, if n_samples is given).  Conservation,
@@ -798,12 +800,40 @@ class CoupledWorld:
         comp0 = self._Eg @ y
         acc = np.zeros(len(self.boundaries))              # XVIII-3: per-boundary integrated external flux (mol)
 
+        # XX-3 OBSERVER-INVARIANT VERIFICATION.  Sampling (``ys``/``times``, for rendering) and verification (every
+        # accepted macro-step, for certification) are SEPARATE cadences.  The numerical verdict is computed over the
+        # full per-step record below, never over the sampled subset, so two observers who request different snapshot
+        # densities of the SAME integration receive the SAME verdict.  ``comps``/``accs``/``step_min`` are the per-step
+        # certification record (cheap: component-space, O(n_steps x n_components)); ``_observer_perturb`` is a test-only
+        # hook (default unused) to inject a controlled excursion -- in production it is None.
+        labels = self.component_labels
+        implicit_reservoir = set(self.reservoir_components)     # fast-equilibrium solvent components (no boundary flux)
+        checked_idx = [i for i, lab in enumerate(labels) if lab not in implicit_reservoir]
+        pos_tol = max(atol * 100.0, 1e-10)
+        fed_components = set()
+        for b in self.boundaries:
+            if b.mode == "feed":
+                jb = self._slot[(b.compartment, b.species)]
+                for i, lab in enumerate(labels):
+                    if self._Eg[i, jb] != 0.0:
+                        fed_components.add(lab)
+
         sample_every = 1 if not n_samples else max(1, n_steps // max(1, n_samples))
         times = [0.0]
         ys = [y.copy()]
         derived_samples = [derived0]                       # XIX-1B: derived scalars aligned with each sampled state
+        comps = [self._Eg @ y]                             # XX-3: E n(t) at EVERY accepted step (verification cadence)
+        accs = [acc.copy()]                                # XX-3: integrated external flux at EVERY accepted step
+        step_min = [float(y.min())]                        # XX-3: min inventory at EVERY step (not just the sampled set)
+        step_argmin = [int(np.argmin(y))]
         for step in range(1, n_steps + 1):
             y, acc, derived = self._step(y, acc, dt, scheme, rtol, atol)
+            if _observer_perturb is not None:              # XX-3: test-only controlled perturbation (default: no-op)
+                y = _observer_perturb(step, y)
+            comps.append(self._Eg @ y)
+            accs.append(acc.copy())
+            step_min.append(float(y.min()))
+            step_argmin.append(int(np.argmin(y)))
             if step % sample_every == 0 or step == n_steps:
                 times.append(step * dt)
                 ys.append(y.copy())
@@ -811,20 +841,15 @@ class CoupledWorld:
 
         # XVIII-3 SIGNED EXTERNAL-FLUX LEDGER.  Each boundary's flux was accumulated INDEPENDENTLY as augmented ODE
         # state (acc[k] = integral of q_ext,k dt), so the material balance d(E n)/dt = E q_ext is CHECKED, not inferred
-        # from the endpoint inventory diff.  external_flux maps each component to E * (integrated boundary flux);
-        # raw_material_change is the MEASURED E (n_final - n0); their difference is the ledger residual.  A component
-        # touched ONLY by an implicit-solvent reservoir (fast-equilibrium H/O/charge) has no boundary accumulator, so it
-        # is reported (endpoint) but excluded from the strict balance -- that exclusion is now NARROW (implicit solvent
-        # only), where the pre-XVIII ledger also exempted every fixed-activity-boundary component (the tautology).
-        labels = self.component_labels
-        comp_final = self._Eg @ ys[-1]
+        # from the endpoint inventory diff.  The per-component ``ledger_residual`` dict is the ENDPOINT snapshot
+        # (retained for the receipt); the GATE is the per-step maximum computed in the XX-3 verdict pass below.  A
+        # component touched ONLY by an implicit-solvent reservoir (fast-equilibrium H/O/charge) has no boundary
+        # accumulator, so it is reported (endpoint) but excluded from the strict balance -- NARROW (implicit solvent).
+        comp_final = comps[-1]
         raw_change_vec = comp_final - comp0
         ext_comp = np.zeros(len(labels))
         for k, b in enumerate(self.boundaries):
             ext_comp += self._Eg[:, self._slot[(b.compartment, b.species)]] * acc[k]
-
-        implicit_reservoir = set(self.reservoir_components)     # fast-equilibrium solvent components (no boundary flux)
-        checked_idx = [i for i, lab in enumerate(labels) if lab not in implicit_reservoir]
 
         scale = 0.0
         for i in checked_idx:
@@ -835,27 +860,46 @@ class CoupledWorld:
         raw_material_change = {labels[i]: float(raw_change_vec[i]) for i in range(len(labels))}
         ledger_residual = {labels[i]: abs(float(raw_change_vec[i] - ext_comp[i])) for i in range(len(labels))}
 
+        # XX-3 THE PER-STEP VERDICT PASS.  min inventory, the purely-internal conservation drift, the independent-ledger
+        # residual |E n(t) - E n(0) - E integral(q_ext dt)| and the feed-ledger residual are each taken over EVERY
+        # accepted step (index s over the full per-step record), NOT over the sampled subset; the FIRST step/species/
+        # component to breach positivity or the ledger is captured.  tol is the endpoint scale-aware tolerance (the
+        # largest accumulated-flux scale of the run), so the endpoint gate is unchanged while earlier steps are ALSO
+        # checked -- a mid-trajectory create-then-remove that closes at the endpoint (XX-3B) can no longer pass.
         min_amount = float("inf")
         max_conserved_drift = 0.0
-        for yj in ys:
-            min_amount = min(min_amount, float(yj.min()))
-            comp_j = self._Eg @ yj
+        max_step_material_residual = 0.0
+        max_step_feed_residual = 0.0
+        first_violation = None
+        for s in range(len(comps)):
+            t_s = s * dt
+            m = step_min[s]
+            if m < min_amount:
+                min_amount = m
+            if first_violation is None and m < -pos_tol:
+                cn, spj = self._slots[step_argmin[s]]
+                first_violation = (t_s, "positivity", cn, str(spj), float(m))
+            ext_t = np.zeros(len(labels))
+            for k, b in enumerate(self.boundaries):
+                ext_t += self._Eg[:, self._slot[(b.compartment, b.species)]] * accs[s][k]
+            resid_vec = comps[s] - comp0 - ext_t
             for i in checked_idx:
+                r = abs(float(resid_vec[i]))
+                if r > max_step_material_residual:
+                    max_step_material_residual = r
+                if labels[i] in fed_components and r > max_step_feed_residual:
+                    max_step_feed_residual = r
+                if first_violation is None and r > tol:
+                    first_violation = (t_s, "material_ledger", "-", labels[i], float(resid_vec[i]))
                 if abs(float(ext_comp[i])) == 0.0:          # a purely-internal (no external flux) component: drift only
-                    max_conserved_drift = max(max_conserved_drift, abs(float(comp_j[i] - comp0[i])))
+                    d = abs(float(comps[s][i] - comp0[i]))
+                    if d > max_conserved_drift:
+                        max_conserved_drift = d
 
-        max_material_residual = max([0.0] + [ledger_residual[labels[i]] for i in checked_idx])
+        max_material_residual = max_step_material_residual
         material_balance_closed = max_material_residual <= tol
 
-        fed_components = set()
-        for b in self.boundaries:
-            if b.mode == "feed":
-                j = self._slot[(b.compartment, b.species)]
-                for i, lab in enumerate(labels):
-                    if self._Eg[i, j] != 0.0:
-                        fed_components.add(lab)
-        checked_labels = {labels[i] for i in checked_idx}
-        feed_ledger_residual = max([0.0] + [ledger_residual[lab] for lab in fed_components if lab in checked_labels])
+        feed_ledger_residual = max_step_feed_residual     # XX-3: per-step max over fed components (observer-invariant)
 
         # implicit-solvent reservoir exchange: reported (endpoint), NOT independently verifiable (no boundary flux)
         reservoir_exchange = {labels[i]: float(raw_change_vec[i])
@@ -875,7 +919,6 @@ class CoupledWorld:
         else:
             charge_balance_claim = "CONSERVED (independently checked in the material balance)"
 
-        pos_tol = max(atol * 100.0, 1e-10)
         positivity_held = min_amount >= -pos_tol
         conserved_components_held = material_balance_closed
         feed_ledger_closed = feed_ledger_residual <= tol
@@ -887,13 +930,21 @@ class CoupledWorld:
         notes = ()
         caveats = ()
         if not material_balance_closed:
-            worst = max(checked_idx, key=lambda i: ledger_residual[labels[i]])
-            lab = labels[worst]
-            caveats += (f"the material balance did NOT close for component {lab!r}: measured change "
-                        f"{raw_material_change[lab]:.3e} vs integrated external flux {external_flux[lab]:.3e} "
-                        f"(ledger residual {ledger_residual[lab]:.3e} > tol {tol:.3e})",)
+            if first_violation is not None and first_violation[1] == "material_ledger":
+                caveats += (f"the material balance did NOT close: the independent PER-STEP ledger residual reached "
+                            f"{max_step_material_residual:.3e} (> tol {tol:.3e}); first breach at t={first_violation[0]:.3e}s "
+                            f"on component {first_violation[3]!r} (residual {first_violation[4]:.3e}) -- a mid-trajectory "
+                            f"violation the endpoint snapshot can hide",)
+            else:
+                worst = max(checked_idx, key=lambda i: ledger_residual[labels[i]])
+                lab = labels[worst]
+                caveats += (f"the material balance did NOT close for component {lab!r}: measured change "
+                            f"{raw_material_change[lab]:.3e} vs integrated external flux {external_flux[lab]:.3e} "
+                            f"(per-step ledger residual {max_step_material_residual:.3e} > tol {tol:.3e})",)
         if not positivity_held:
-            caveats += (f"an inventory went negative (min {min_amount:.3e})",)
+            where = (f" (first at t={first_violation[0]:.3e}s, {first_violation[2]}/{first_violation[3]})"
+                     if first_violation is not None and first_violation[1] == "positivity" else "")
+            caveats += (f"an inventory went negative (min {min_amount:.3e}){where}",)
         if implicit_reservoir:
             note = (f"implicit-solvent reservoir components {sorted(implicit_reservoir)} exchange H/O/charge with a "
                     f"fast-equilibrium solvent and are reported (endpoint), not independently ledgered")
@@ -909,7 +960,8 @@ class CoupledWorld:
             declared_kinetic_tier=declared_kinetic_tier, admitted_tier=admitted_tier,
             reservoir_exchange=reservoir_exchange, external_flux=external_flux,
             raw_material_change=raw_material_change, ledger_adjusted_residual=ledger_residual,
-            material_balance_closed=material_balance_closed, charge_balance_claim=charge_balance_claim, notes=notes)
+            material_balance_closed=material_balance_closed, charge_balance_claim=charge_balance_claim, notes=notes,
+            max_step_material_residual=max_step_material_residual, first_violation=(first_violation or ()))
 
         amounts = {c.name: tuple({sp: float(yj[self._slot[(c.name, sp)]]) for sp in c.system.species} for yj in ys)
                    for c in self.compartments}

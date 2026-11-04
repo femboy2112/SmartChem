@@ -1,0 +1,216 @@
+{
+  "operation": "XX-5 unit repair + convention-matched comparison (NIST SRM 191d)",
+  "certificate": {
+    "sha256": "ea316fb1368d0563882a2b6926fe8a6bb07736e9d5fc1b24bb70c2317cc02d38",
+    "issue": "2025-02-05",
+    "table1_certified": {
+      "pH_S_25C": 10.014,
+      "u_c": 0.0052,
+      "U": 0.01,
+      "k": 1.96,
+      "includes_bates_guggenheim_convention_uncertainty": true
+    },
+    "tableA1_noncertified": {
+      "pH_S_25C": 10.0137,
+      "u_c_measurement": 0.0015,
+      "U_R": 0.0029,
+      "k_R": 2.01,
+      "includes_bates_guggenheim_convention_uncertainty": false
+    },
+    "bates_guggenheim_component": 0.005
+  },
+  "basis": {
+    "molality_each_mol_per_kg_water": 0.025,
+    "solution_mass_g_per_1000g_water": 1004.7531,
+    "M_NaHCO3": 84.007,
+    "M_Na2CO3": 105.988,
+    "implied_molality_from_mass_NaHCO3": 0.025015772495149215,
+    "implied_molality_from_mass_Na2CO3": 0.025017926557723516
+  },
+  "density": {
+    "interval_g_per_mL": [
+      1.0007,
+      1.0018
+    ],
+    "midpoint_g_per_mL": 1.00125,
+    "derived_edges_g_per_mL": [
+      1.0007882311921545,
+      1.0017860640957
+    ],
+    "phi_V_pair_bracket_cm3_per_mol": [
+      0.0,
+      40.0
+    ],
+    "source": "Derived bracket: rho = 1004.753 g / (1000.0 g / 0.997047 g/mL + 0.025 mol * phi_V_pair), phi_V_pair = phi_V(NaHCO3)+phi_V(Na2CO3) in [0, 40] cm3/mol (0 = ions add no volume; 40 = generous ceiling ~2x the largest ordinary 1:1-electrolyte apparent molar volume). Cross-checks: PHREEQC phreeqc.dat density ~1.0014; literature-magnitude phi_V(NaHCO3)~+24, phi_V(Na2CO3)~-5 cm3/mol -> ~1.0013. Tertiary/derived, NOT measured; the certificate states no density."
+  },
+  "xix_baseline_davies_pH_molality_fed_as_molarity": 10.004792621208969,
+  "corrected_davies": {
+    "lo": {
+      "pH": 10.005150724216492,
+      "residual_vs_table1": -0.008849275783507693,
+      "table1_U": 0.01,
+      "within_table1_U": true,
+      "residual_vs_tableA1": -0.008549275783508392,
+      "tableA1_U_R": 0.0029,
+      "within_tableA1_U_R": false,
+      "rho_g_per_mL": 1.0007,
+      "molarity_each_M": 0.024899151841382722,
+      "C_T_M": 0.049798303682765444,
+      "Na_M": 0.07469745552414817,
+      "pH_shift_from_units_vs_XIX": 0.0003581030075228142
+    },
+    "mid": {
+      "pH": 10.005102041495633,
+      "residual_vs_table1": -0.008897958504366699,
+      "table1_U": 0.01,
+      "within_table1_U": true,
+      "residual_vs_tableA1": -0.008597958504367398,
+      "tableA1_U_R": 0.0029,
+      "within_tableA1_U_R": false,
+      "rho_g_per_mL": 1.00125,
+      "molarity_each_M": 0.024912836795427655,
+      "C_T_M": 0.04982567359085531,
+      "Na_M": 0.07473851038628296,
+      "pH_shift_from_units_vs_XIX": 0.0003094202866638085
+    },
+    "hi": {
+      "pH": 10.005053386649102,
+      "residual_vs_table1": -0.008946613350897081,
+      "table1_U": 0.01,
+      "within_table1_U": true,
+      "residual_vs_tableA1": -0.00864661335089778,
+      "tableA1_U_R": 0.0029,
+      "within_tableA1_U_R": false,
+      "rho_g_per_mL": 1.0018,
+      "molarity_each_M": 0.024926521749472585,
+      "C_T_M": 0.04985304349894517,
+      "Na_M": 0.07477956524841775,
+      "pH_shift_from_units_vs_XIX": 0.00026076544013342584
+    }
+  },
+  "verdict": {
+    "units_repair_shift_pH_interval": [
+      0.00026076544013342584,
+      0.0003581030075228142
+    ],
+    "units_repair_shift_below_0p001": true,
+    "vs_table1_certified": {
+      "residual_interval": [
+        -0.008946613350897081,
+        -0.008849275783507693
+      ],
+      "within_U_over_whole_density_interval": true,
+      "status": "SURVIVES (within the convention-INCLUSIVE certified U)"
+    },
+    "vs_tableA1_convention_matched": {
+      "residual_interval": [
+        -0.00864661335089778,
+        -0.008549275783508392
+      ],
+      "within_U_R_over_whole_density_interval": false,
+      "status": "REFUTED -- leaves Table A1 +/-0.0029: the within-U pass survives ONLY against the convention-INCLUSIVE band"
+    },
+    "margin_to_table1_U_edge_pH": 0.0010533866491029189,
+    "scale_consistency_flag": {
+      "a_molar_K_with_aH_converted_to_molality_scale_within_table1_U": false,
+      "b_molal_K_molality_fed_within_table1_U": true,
+      "note": "The Table-1 pass is FRAGILE: margin ~0.001 pH to the U edge, and the pure-molar-scale convention (a) lands OUTSIDE Table-1 U. The prescribed headline is a mixed-scale choice."
+    },
+    "scope": "Corroborates 'K2 + Davies reproduce a Harned-cell result within the convention-inclusive certified U'. Does NOT corroborate agreement at the measurement-only level (Table A1). PARTIAL common-mode preserved: K1/K2 are Harned-lineage and Davies shares the Debye-Huckel family with the Bates-Guggenheim convention; single-ion a_H+ is NOT independently derived."
+  },
+  "sensitivity_scale_consistency_NOT_headline": {
+    "lo": {
+      "rho_g_per_mL": 1.0007,
+      "kg_water_per_L": 0.9959660736553089,
+      "a_molar_K_converted_to_molality_scale": {
+        "pH": 10.003395269191158,
+        "residual_vs_table1": -0.010604730808841722,
+        "table1_U": 0.01,
+        "within_table1_U": false,
+        "residual_vs_tableA1": -0.010304730808842422,
+        "tableA1_U_R": 0.0029,
+        "within_tableA1_U_R": false
+      }
+    },
+    "mid": {
+      "rho_g_per_mL": 1.00125,
+      "kg_water_per_L": 0.996513471817106,
+      "a_molar_K_converted_to_molality_scale": {
+        "pH": 10.00358521577778,
+        "residual_vs_table1": -0.010414784222218643,
+        "table1_U": 0.01,
+        "within_table1_U": false,
+        "residual_vs_tableA1": -0.010114784222219342,
+        "tableA1_U_R": 0.0029,
+        "within_tableA1_U_R": false
+      }
+    },
+    "hi": {
+      "rho_g_per_mL": 1.0018,
+      "kg_water_per_L": 0.9970608699789033,
+      "a_molar_K_converted_to_molality_scale": {
+        "pH": 10.003775059192453,
+        "residual_vs_table1": -0.010224940807546545,
+        "table1_U": 0.01,
+        "within_table1_U": false,
+        "residual_vs_tableA1": -0.009924940807547245,
+        "tableA1_U_R": 0.0029,
+        "within_tableA1_U_R": false
+      }
+    },
+    "b_molal_K_molality_fed_is_the_XIX_run": {
+      "pH": 10.004792621208969,
+      "residual_vs_table1": -0.009207378791030507,
+      "table1_U": 0.01,
+      "within_table1_U": true,
+      "residual_vs_tableA1": -0.008907378791031206,
+      "tableA1_U_R": 0.0029,
+      "within_tableA1_U_R": false
+    }
+  },
+  "sensitivity_density_band": {
+    "1.000": {
+      "pH": 10.005212724392097,
+      "residual_vs_table1": -0.0087872756079026,
+      "table1_U": 0.01,
+      "within_table1_U": true,
+      "residual_vs_tableA1": -0.0084872756079033,
+      "tableA1_U_R": 0.0029,
+      "within_tableA1_U_R": false
+    },
+    "1.002": {
+      "pH": 10.005035700884306,
+      "residual_vs_table1": -0.008964299115692853,
+      "table1_U": 0.01,
+      "within_table1_U": true,
+      "residual_vs_tableA1": -0.008664299115693552,
+      "tableA1_U_R": 0.0029,
+      "within_tableA1_U_R": false
+    },
+    "1.004": {
+      "pH": 10.004859045564308,
+      "residual_vs_table1": -0.00914095443569174,
+      "table1_U": 0.01,
+      "within_table1_U": true,
+      "residual_vs_tableA1": -0.008840954435692439,
+      "tableA1_U_R": 0.0029,
+      "within_tableA1_U_R": false
+    },
+    "1.006": {
+      "pH": 10.004682757371972,
+      "residual_vs_table1": -0.009317242628027245,
+      "table1_U": 0.01,
+      "within_table1_U": true,
+      "residual_vs_tableA1": -0.009017242628027944,
+      "tableA1_U_R": 0.0029,
+      "within_tableA1_U_R": false
+    }
+  },
+  "caveats": [
+    "PARTIAL common-mode: K1/K2 Harned-lineage; Davies shares the Debye-Huckel family with Bates-Guggenheim.",
+    "Density is a derived bracket (the certificate gives none); the molarity conversion inherits it.",
+    "MIXED-SCALE FLAG: the headline feeds molarity but compares to a molality-scale pH(S); see sensitivity_scale_consistency_NOT_headline for the two pure conventions.",
+    "Na-carbonate ion pairs still omitted from the base model (unchanged from XIX).",
+    "No model constant was altered; carbonate_equilibrium.py is byte-identical."
+  ]
+}

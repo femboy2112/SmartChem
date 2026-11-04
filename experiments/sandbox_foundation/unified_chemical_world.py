@@ -109,6 +109,13 @@ class BicarbonateDissolutionRate(RateLaw):
         si = (concentrations[self.na] * concentrations[self.hco3]) / self.Qsp
         return self.k_diss * max(0.0, 1.0 - si)          # undersaturated only; never precipitates
 
+    def descriptor(self):
+        # XX-2B: bind every operative parameter (k_diss, Qsp) AND the species the RHS reads (solid/Na+/HCO3-),
+        # so a post-construction mutation of any of them moves the world certificate (general_coupled XIX-1D).
+        return ("BicarbonateDissolutionRate", _canon_num(self.k_diss), _canon_num(self.Qsp),
+                _species_key(self.solid), _species_key(self.na), _species_key(self.hco3),
+                self.tier, self.source)
+
 
 @dataclass(frozen=True)
 class _Species:
@@ -303,12 +310,29 @@ def _require_inventories(acid_mol, bicarb_solid_mol, bicarb_dissolved_mol) -> No
             raise ValueError(f"{name} must be a finite mol value >= 0 (got {v!r})")
 
 
+def _component_totals(amounts_by_comp: dict) -> dict:
+    """XX-4: the global element/charge inventory of a state {compartment: {species: mol}}, summed over every compartment
+    from each species' exact composition -- the same E @ n the per-phase ledger uses, computed here at the flagship
+    level so the whole-run balance can be closed explicitly."""
+    tot: dict = {}
+    for inv in amounts_by_comp.values():
+        for s, v in inv.items():
+            fv = float(v)
+            for el, cnt in s.composition:
+                tot[el] = tot.get(el, 0.0) + fv * cnt
+            tot["charge"] = tot.get("charge", 0.0) + fv * float(s.charge)
+    return tot
+
+
 def _restitch(final_amounts: dict, vols: dict):
-    """XIX-1E: re-pack a phase's final amounts as the next phase's initial inventory.  Each negative amount is a
-    BOUNDED roundoff correction: within a scale-aware budget it is clamped to 0 and its magnitude logged; a negative
-    larger than the budget is a REAL positivity excursion returned as a violation (the caller raises -- never clips it
-    away silently).  Returns (clean_state, clamp_total_mol, clamp_max_mol, violations)."""
-    clean, clamp_total, clamp_max, violations = {}, 0.0, 0.0, []
+    """XIX-1E / XX-4: re-pack a phase's final amounts as the next phase's initial inventory.  Each negative amount is a
+    BOUNDED roundoff correction: within a scale-aware budget it is clamped to 0 and recorded as an EXPLICIT numerical-
+    adjustment EVENT; a negative beyond the budget is a REAL positivity excursion returned as a violation (the caller
+    raises -- never clipped away silently).  Clamping a negative UP to 0 ADDS matter, so each event carries the signed
+    amount AND its per-element/charge impact (XX-4) -- a numerical adjustment is a distinct ledger category, never
+    disguised as chemistry or as physical boundary flux.  Returns (clean_state, clamp_total_mol, clamp_max_mol,
+    violations, adjustment_events)."""
+    clean, clamp_total, clamp_max, violations, events = {}, 0.0, 0.0, [], []
     for c, inv in final_amounts.items():
         scale = max([0.0] + [abs(float(v)) for v in inv.values()])
         budget = _STITCH_ATOL + _STITCH_RTOL * scale
@@ -316,16 +340,27 @@ def _restitch(final_amounts: dict, vols: dict):
         for s, v in inv.items():
             fv = float(v)
             if fv < 0.0:
-                mag = -fv
+                mag = -fv                                   # matter ADDED by clamping this negative up to 0
                 clamp_total += mag
                 clamp_max = max(clamp_max, mag)
                 if mag > budget:
                     violations.append((c, getattr(s, "name", str(s)), fv, budget))
+                else:
+                    events.append({
+                        "compartment": c,
+                        "species": getattr(s, "name", str(s)),
+                        "added_mol": mag,                   # signed: positive == created to reach 0
+                        "element_impact": {el: mag * cnt for el, cnt in s.composition},
+                        "charge_impact": mag * float(s.charge),
+                        "budget": budget,
+                        "reason": "positivity roundoff clamp: a negative inventory within the scale-aware stitch "
+                                  "budget was set to 0 -- a numerical adjustment, NOT chemistry or boundary flux",
+                    })
                 cc[s] = 0.0
             else:
                 cc[s] = fv
         clean[c] = cc
-    return clean, clamp_total, clamp_max, violations
+    return clean, clamp_total, clamp_max, violations, events
 
 
 # ============================================================ XIX-1A model / run / evidence identity
@@ -426,6 +461,7 @@ def simulate(params: UnifiedParams, phases: tuple, *, acid_mol: float, bicarb_so
                           bicarb_dissolved_mol=bicarb_dissolved_mol)
     vols = {"A": params.V_A_L, "B": params.V_B_L, "gas": params.V_gas_L}
 
+    run_initial_totals = _component_totals(state)      # XX-4: the TRUE initial global inventory (before any phase)
     t0 = 0.0
     frames = []
     phase_reports = []
@@ -437,6 +473,10 @@ def simulate(params: UnifiedParams, phases: tuple, *, acid_mol: float, bicarb_so
     all_positive = True
     stitch_total_run = 0.0
     stitch_max_run = 0.0
+    numerical_adjustments = []          # XX-4: explicit per-species roundoff-clamp events over the whole run
+    numerical_adjustment_total = {}     # XX-4: per-component (element/charge) matter ADDED by clamping, summed
+    run_reservoir = frozenset()         # XX-4: implicit-solvent reservoir components (captured from the world)
+    max_phase_tol = 0.0                 # XX-4: the loosest per-phase material tolerance (for the whole-run gate)
     for ph in phases:
         build = build_unified_world(params, sp, valve_open=ph.valve_open, sealed=ph.sealed)
         traj = build.world.integrate(state, duration=ph.duration_s, n_steps=ph.n_steps, scheme=_SCHEME,
@@ -471,7 +511,7 @@ def simulate(params: UnifiedParams, phases: tuple, *, acid_mol: float, bicarb_so
         # XIX-1E: stitch the phase's final state into the next phase, recording the bounded roundoff clamp and
         # REFUSING any clamp beyond the scale-aware dust budget (a real positivity excursion, never clipped silently).
         last = {c: traj.amounts[c][-1] for c in traj.compartments}
-        state, clamp_total, clamp_max, violations = _restitch(last, vols)
+        state, clamp_total, clamp_max, violations, adj_events = _restitch(last, vols)
         if violations:
             w = min(violations, key=lambda v: v[2])     # most negative
             raise ValueError(
@@ -480,6 +520,24 @@ def simulate(params: UnifiedParams, phases: tuple, *, acid_mol: float, bicarb_so
                 f"mol).  Refusing to clip it away and report a clean state (XIX-1E).")
         stitch_total_run += clamp_total
         stitch_max_run = max(stitch_max_run, clamp_max)
+        if run_reservoir == frozenset():
+            run_reservoir = frozenset(build.world.reservoir_components)
+        max_phase_tol = max(max_phase_tol, float(rc.tolerance))
+        # XX-4: each roundoff clamp is an explicit numerical-adjustment EVENT in the whole-run ledger -- time-stamped at
+        # the phase boundary where it was applied, kept a DISTINCT category from external_flux (never disguised as
+        # boundary flux), carrying the per-element/charge matter it added (which feeds the whole-run balance below).
+        t_boundary = _finite(t0 + ph.duration_s)
+        phase_events = []
+        for ev in adj_events:
+            pub = {"phase": ph.name, "time_s": t_boundary, "compartment": ev["compartment"], "species": ev["species"],
+                   "added_mol": _finite(ev["added_mol"]), "charge_impact": _finite(ev["charge_impact"]),
+                   "element_impact": {k: _finite(v) for k, v in ev["element_impact"].items()},
+                   "budget": _finite(ev["budget"]), "reason": ev["reason"]}
+            phase_events.append(pub)
+            numerical_adjustments.append(pub)
+            for el, d in ev["element_impact"].items():
+                numerical_adjustment_total[el] = numerical_adjustment_total.get(el, 0.0) + d
+            numerical_adjustment_total["charge"] = numerical_adjustment_total.get("charge", 0.0) + ev["charge_impact"]
         for comp, v in rc.external_flux.items():
             combined_external[comp] = combined_external.get(comp, 0.0) + v
         for comp, v in rc.raw_material_change.items():
@@ -502,6 +560,7 @@ def simulate(params: UnifiedParams, phases: tuple, *, acid_mol: float, bicarb_so
             "charge_balance_claim": rc.charge_balance_claim,
             "positivity_held": bool(rc.positivity_held), "min_inventory": _finite(rc.min_inventory),
             "stitch_clamp_total_mol": _finite(clamp_total), "stitch_clamp_max_mol": _finite(clamp_max),
+            "numerical_adjustments": phase_events,
             "admitted_tier": rc.admitted_tier, "tolerance": _finite(rc.tolerance),
             "caveats": list(traj.caveats),
         })
@@ -510,6 +569,28 @@ def simulate(params: UnifiedParams, phases: tuple, *, acid_mol: float, bicarb_so
     run_id = run_identity(params, phases, acid_mol=acid_mol, bicarb_solid_mol=bicarb_solid_mol,
                           bicarb_dissolved_mol=bicarb_dissolved_mol, n_samples=n_samples,
                           scheme=_SCHEME, rtol=_RTOL, atol=_ATOL)
+
+    # XX-4 WHOLE-RUN GLOBAL BALANCE.  The true end-to-end inventory change (final clamped state vs the true initial)
+    # equals the integrated external flux PLUS the numerical adjustments.  The flux-ONLY residual is therefore left
+    # EXACTLY equal to the numerical-adjustment total -- the roundoff clamps are the gap you get if you pretend they
+    # were not there -- and accounting for them explicitly closes the balance.  Checked (non-implicit-reservoir)
+    # components only; the implicit solvent reservoir legitimately exchanges H/O/charge.  `state` is the last clamped
+    # state after the final phase.
+    run_final_totals = _component_totals(state)
+    comp_keys = (set(run_initial_totals) | set(run_final_totals)
+                 | set(combined_external) | set(numerical_adjustment_total)) - set(run_reservoir)
+    gb_measured, gb_flux_only, gb_accounted = {}, {}, {}
+    global_balance_closed = True
+    gb_tol = len(phases) * max_phase_tol + _STITCH_ATOL
+    for k in sorted(comp_keys):
+        measured = run_final_totals.get(k, 0.0) - run_initial_totals.get(k, 0.0)
+        ext = combined_external.get(k, 0.0)
+        adj = numerical_adjustment_total.get(k, 0.0)
+        gb_measured[k] = _finite(measured)
+        gb_flux_only[k] = _finite(measured - ext)             # == adj: the clamp is the gap flux alone cannot explain
+        gb_accounted[k] = _finite(measured - ext - adj)       # ~0 once the numerical adjustment is counted
+        if abs(measured - ext - adj) > gb_tol + 1e-6 * abs(measured):
+            global_balance_closed = False
     return {
         "scenario_inputs": {"acid_mol": _finite(acid_mol), "bicarb_solid_mol": _finite(bicarb_solid_mol),
                             "bicarb_dissolved_mol": _finite(bicarb_dissolved_mol)},
@@ -526,6 +607,17 @@ def simulate(params: UnifiedParams, phases: tuple, *, acid_mol: float, bicarb_so
             "positivity_held_every_phase": bool(all_positive),
             "stitch_clamp_total_mol": _finite(stitch_total_run),
             "stitch_clamp_max_mol": _finite(stitch_max_run),
+            "numerical_adjustments": numerical_adjustments,
+            "numerical_adjustment_total": {k: _finite(v) for k, v in numerical_adjustment_total.items()},
+            "global_balance": {
+                "checked_components": sorted(comp_keys),
+                "measured_change": gb_measured,
+                "external_flux_total": {k: _finite(combined_external.get(k, 0.0)) for k in sorted(comp_keys)},
+                "residual_flux_only": gb_flux_only,       # XX-4: equals numerical_adjustment_total over checked comps
+                "residual_accounted": gb_accounted,       # XX-4: ~0 -- the clamps are explicitly accounted, not hidden
+                "closed": bool(global_balance_closed),
+                "tolerance": _finite(gb_tol),
+            },
             "admitted_tier": weakest(*tiers) if tiers else ASSUMED_PARAMETER,
         },
         "identity": {

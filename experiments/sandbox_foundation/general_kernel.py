@@ -220,6 +220,16 @@ class RateLaw:
     def evaluate(self, reaction: "Reaction", concentrations: dict) -> float:
         raise NotImplementedError
 
+    def descriptor(self) -> tuple:
+        """XX-2B: a canonical, lossless, order-stable descriptor of EVERY parameter that changes what
+        ``evaluate`` returns -- the unit a model/world certificate hashes so a post-construction mutation of
+        the law is DETECTED rather than executed under a stale certificate.  A subclass that drives the RHS
+        MUST override this and bind all its operative parameters (rate constants, equilibrium quotients, the
+        species it reads).  The base REFUSES (NotImplementedError): an un-descriptor'd law is certified as
+        UNVERIFIABLE -- the certificate makes no validity claim about it -- rather than hashed by a forgeable,
+        collision-prone ``repr()`` of a mutable object."""
+        raise NotImplementedError
+
     @staticmethod
     def _reactant_order(reaction: "Reaction") -> int:
         return sum(-coeff for _, coeff in reaction.stoich if coeff < 0)
@@ -245,6 +255,10 @@ class MassActionIrreversible(RateLaw):
             if coeff < 0:
                 r *= concentrations[sp] ** (-coeff)
         return r
+
+    def descriptor(self):
+        # XX-2B: bind the rate constant and provenance (repr(float) round-trips the exact IEEE-754 bits).
+        return ("MassActionIrreversible", repr(float(self.k)), self.tier, self.source)
 
 
 @dataclass(frozen=True)
@@ -273,6 +287,10 @@ class MassActionReversible(RateLaw):
             elif coeff > 0:
                 rev *= concentrations[sp] ** coeff
         return fwd - rev
+
+    def descriptor(self):
+        # XX-2B: bind BOTH rate constants (kf, kr encode Kc) and provenance.
+        return ("MassActionReversible", repr(float(self.kf)), repr(float(self.kr)), self.tier, self.source)
 
 
 #: Sentinel: a reaction whose kinetics are unknown.  It is NOT a rate of 0 -- a system containing it refuses to

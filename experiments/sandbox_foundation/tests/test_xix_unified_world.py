@@ -136,9 +136,9 @@ def test_1e_restitch_clamps_dust_but_refuses_a_real_excursion():
     negative larger than the budget is flagged as a violation (simulate then raises instead of clipping it away)."""
     sp = _build_species()
     vols = {"B": 1.0}
-    clean, tot, mx, viol = _restitch({"B": {sp.HCO3: -1e-14, sp.Nap: 0.1}}, vols)
+    clean, tot, mx, viol, _events = _restitch({"B": {sp.HCO3: -1e-14, sp.Nap: 0.1}}, vols)
     assert not viol and clean["B"][sp.HCO3] == 0.0 and tot == pytest.approx(1e-14)
-    clean2, _tot2, _mx2, viol2 = _restitch({"B": {sp.HCO3: -0.3, sp.Nap: 0.1}}, vols)
+    clean2, _tot2, _mx2, viol2, _events2 = _restitch({"B": {sp.HCO3: -0.3, sp.Nap: 0.1}}, vols)
     assert viol2 and clean2["B"][sp.HCO3] == 0.0          # clamped in the returned state, but flagged for refusal
 
 

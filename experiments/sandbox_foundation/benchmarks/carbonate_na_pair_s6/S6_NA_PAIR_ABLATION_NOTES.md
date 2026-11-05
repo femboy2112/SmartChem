@@ -1,8 +1,8 @@
 # OPERATION XXI section 6 -- Na-carbonate ion-pair ablation: RAW TABLES + OBSERVATIONS
 
-Ooh yeah, can do!  Raw numbers from `run_na_pair_ablation_s6.py` -> `result_s6_na_pair_ablation.json` (deterministic: two consecutive re-runs gave an identical result-file sha256).  Observations are factual statements about the tables.  **No claim ledger here.**
+Ooh yeah, can do!  Raw numbers from `run_na_pair_ablation_s6.py` -> `result_s6_na_pair_ablation.json` (deterministic: two consecutive re-runs gave an identical result-file sha256).  Observations are factual statements about the tables.  **No claim ledger here** (the verdict below was written by the orchestrator after verifying the DB diff, the no-tune git check, and re-running the suite).
 
-**VERDICT: (left to orchestrator)**
+**VERDICT (orchestrator): H2 CORROBORATED model-vs-model — the Na-carbonate pairs ARE the dominant high-Na SmartChem-vs-minteq.v4 gap; the measurement-level correction is REFUTED — adding the DB pairs moves PHREEQC ~0.14 pH AWAY from the NIST certified value (the §6D warning, realized). No constant tuned. Full ledger at the foot of this file.**
 
 ## 0. Instrument and databases
 
@@ -87,4 +87,16 @@ Na speciation (WITH pairs, molal): free Na+ 0.06633, NaCO3- 0.00809, NaHCO3 0.00
 * minteq.v4.dat is not shipped with phreeqpython; the copy in `db/` is the PHREEQC 3 release file whose sha256 is pinned above.
 * `get_selected_output_array` takes the LAST row for EQUILIBRIUM_PHASES runs (as in the existing benchmark); closed cases are single-row.
 
-**VERDICT: (left to orchestrator)**
+## VERDICT (orchestrator claim ledger)
+
+Verified before writing: the no-pairs DB differs from minteq.v4 by exactly the two Na-carbonate reactions (16-line deletion, nothing added); no model constant touched (git diff empty for carbonate_equilibrium / general_coupled / bridge / smartchem); result JSON numbers reproduced; full suite re-run.
+
+1. **H2 CORROBORATED (model-vs-model, within the PHREEQC comparison domain): the Na-carbonate pairs ARE the dominant cause of the high-Na SmartChem-vs-PHREEQC(minteq.v4) divergence.** The controlled contrast is clean: SmartChem (no pairs) tracks PHREEQC-NO-pairs to |SC−no| ≤ 0.017 pH across every in-domain case, while the SmartChem-vs-PHREEQC-WITH-pairs gap is almost entirely the pair term (C2: SC−with +0.108 vs SC−no −0.000; C4: SC−with +0.126 vs SC−no +0.017). Dose-response confirms mechanism: delta_pH and the Na-bound fraction grow monotonically with Na (holdout 0.5/1.0/1.5 → −0.004/−0.073/−0.142; bound 0.010/0.022/0.116), and the Na=0 cases are an exact null (delta_pH = 0). The pairs bind Na⁺ (up to 23% at C4) and lower pH; NaHCO3 dominates the binding at low-moderate Na, NaCO3⁻ at high Na.
+
+2. **The pair correction is REFUTED at the measurement level (the §6D warning, realized).** For the NIST SRM 191d buffer, adding the pairs moves PHREEQC from 9.999 → 9.857, i.e. ~0.14 pH AWAY from the certified 10.014 (|residual| 0.015 → 0.157) and from Table A1 (0.015 → 0.156). A Na-pair model that improves agreement with minteq.v4's own self-consistent speciation DEGRADES agreement with the measured anchor. A correction preferred only because it matches another MODEL better, while moving away from the MEASUREMENT, is not an improvement in predictive validity — it must be co-calibrated with the activity model and the measured anchor, not bolted on.
+
+3. **DISCLOSED — the low-Na floor offset is a SEPARATE, smaller effect, not resolved here.** SmartChem sits ~0.0023 pH below PHREEQC even at Na=0, where the pairs do nothing; and the ablation isolates ONLY the two pair reactions — the Davies-vs-b-dot activity model, the molal-vs-molar basis, and the K1/K2 lineage are NOT separated from one another (they sit, small, in the SC−no column). So H2 is corroborated as the dominant HIGH-Na cause; the residual low-Na offset is H3/H4 territory, DARK here.
+
+4. **Domain admission (§6E).** Numerical-convergence domain: in-domain across the grid (max I 0.30). Activity-model / reference-solver-agreement domain: coincident here (PHREEQC is both the ablated model and the reference), so this is NOT an independent derivation of the pair constants. **Experimental-validation domain: EMPTY — the one measured anchor says the pairs move the wrong way.** Net: "Na-carbonate pairs explain the high-Na model-vs-model gap" is CORROBORATED; "Na-carbonate pairs improve the physical prediction" is REFUTED by the only measurement available.
+
+This is a truth-debt result: the obvious "add the missing ion pairs" fix explains the benchmark divergence yet does NOT improve — it worsens — the measured prediction. Reported, not tuned away.

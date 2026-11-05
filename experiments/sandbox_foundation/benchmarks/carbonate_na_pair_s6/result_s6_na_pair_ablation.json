@@ -1,0 +1,715 @@
+{
+  "section": "OPERATION XXI section 6 -- Na-carbonate ion-pair ablation (raw numbers; NO verdict here)",
+  "temperature_K": 298.15,
+  "pressure_atm": 1.0,
+  "instrument": "PHREEQC via phreeqpython; same program/input, database differs by deletion of 2 reactions",
+  "databases": {
+    "with_pairs": {
+      "file": "db/minteq.v4.dat",
+      "sha256": "4a48bf5c357b3da3084606a5e322426c3ab1e969dd1c86f9c62a3a7995836ca3"
+    },
+    "no_pairs": {
+      "file": "db/minteq.v4.nopairs.dat",
+      "sha256": "6ada9d3f17bd1a101b446ed5eb67cb520bd923e842f3b0547a5261f3493a3082"
+    },
+    "removed_reactions": [
+      "Na+ + CO3-2 = NaCO3-",
+      "Na+ + H+ + CO3-2 = NaHCO3"
+    ],
+    "removed_constants": {
+      "Na+ + CO3-2 = NaCO3-": {
+        "log_k": 1.27,
+        "delta_h_kJ": -20.35
+      },
+      "Na+ + H+ + CO3-2 = NaHCO3": {
+        "log_k": 10.079,
+        "delta_h_kJ": -28.3301
+      }
+    },
+    "removed_line_spans_1based_in_original": [
+      [
+        4872,
+        4879
+      ],
+      [
+        4880,
+        4887
+      ]
+    ],
+    "removed_text": "Na+ + CO3-2 = NaCO3-\n          log_k 1.27\n          delta_h -20.35 kJ\n          -gamma 5.4 0\n                    #                  Id:        5001400\n                    #        log K source:        NIST46.3\n                    #      Delta H source:        NIST2.1.1\n                    #T and ionic strength:         0.00 25.0\nNa+ + H+ + CO3-2 = NaHCO3\n          log_k 10.079\n          delta_h -28.3301 kJ\n          -gamma 0 0\n                    #                  Id:        5001401\n                    #        log K source:        NIST46.3\n                    #      Delta H source:        NIST2.1.1\n                    #T and ionic strength:         0.00 25.0\n"
+  },
+  "no_tuning": true,
+  "carbonate_grid": {
+    "O1": {
+      "pH_with": 5.907672072946901,
+      "pH_no": 5.907672072946901,
+      "delta_pH": 0.0,
+      "I_with": 1.2388901296582617e-06,
+      "I_no": 1.2388901296582617e-06,
+      "delta_I": 0.0,
+      "speciation_with": {
+        "Na_total_molal": 0.0,
+        "m_Na_free": 0.0,
+        "m_CO2": 0.0,
+        "m_HCO3": 1.2309448512640285e-06,
+        "m_CO3": 4.683942562543048e-11,
+        "m_NaCO3-": 0.0,
+        "m_NaHCO3": 0.0,
+        "Na_bound_fraction": 0.0
+      },
+      "speciation_no": {
+        "Na_total_molal": 0.0,
+        "m_Na_free": 0.0,
+        "m_CO2": 0.0,
+        "m_HCO3": 1.2309448512640285e-06,
+        "m_CO3": 4.683942562543048e-11
+      },
+      "finite": true,
+      "mode": "open",
+      "desc": "pure water, P_CO2 = 1e-4 atm",
+      "sodium": 0.0,
+      "smartchem_no_pairs_davies": {
+        "pH_activity": 5.90529589148372,
+        "I": 1.2453390103038932e-06,
+        "verdict": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL"
+      },
+      "phreeqc_dat_context_pH": 5.908764844659466,
+      "three_way": {
+        "smartchem": 5.90529589148372,
+        "phreeqc_no_pairs": 5.907672072946901,
+        "phreeqc_with_pairs": 5.907672072946901,
+        "smartchem_minus_phreeqc_no": -0.0023761814631804157,
+        "smartchem_minus_phreeqc_with": -0.0023761814631804157,
+        "phreeqc_with_minus_no": 0.0
+      }
+    },
+    "O2": {
+      "pH_with": 5.658605245050097,
+      "pH_no": 5.658605245050097,
+      "delta_pH": 0.0,
+      "I_with": 2.199011071652539e-06,
+      "I_no": 2.199011071652539e-06,
+      "delta_I": 0.0,
+      "speciation_with": {
+        "Na_total_molal": 0.0,
+        "m_Na_free": 0.0,
+        "m_CO2": 0.0,
+        "m_HCO3": 2.1946206810531412e-06,
+        "m_CO3": 4.712266331337501e-11,
+        "m_NaCO3-": 0.0,
+        "m_NaHCO3": 0.0,
+        "Na_bound_fraction": 0.0
+      },
+      "speciation_no": {
+        "Na_total_molal": 0.0,
+        "m_Na_free": 0.0,
+        "m_CO2": 0.0,
+        "m_HCO3": 2.1946206810531412e-06,
+        "m_CO3": 4.712266331337501e-11
+      },
+      "finite": true,
+      "mode": "open",
+      "desc": "pure water, atmospheric CO2 (log P = -3.5)",
+      "sodium": 0.0,
+      "smartchem_no_pairs_davies": {
+        "pH_activity": 5.656265118328775,
+        "I": 2.210545360531719e-06,
+        "verdict": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL"
+      },
+      "phreeqc_dat_context_pH": 5.659667308914897,
+      "three_way": {
+        "smartchem": 5.656265118328775,
+        "phreeqc_no_pairs": 5.658605245050097,
+        "phreeqc_with_pairs": 5.658605245050097,
+        "smartchem_minus_phreeqc_no": -0.002340126721322555,
+        "smartchem_minus_phreeqc_with": -0.002340126721322555,
+        "phreeqc_with_minus_no": 0.0
+      }
+    },
+    "O3": {
+      "pH_with": 5.408890137252106,
+      "pH_no": 5.408890137252106,
+      "delta_pH": 0.0,
+      "I_with": 3.909844957960967e-06,
+      "I_no": 3.909844957960967e-06,
+      "delta_I": 0.0,
+      "speciation_with": {
+        "Na_total_molal": 0.0,
+        "m_Na_free": 0.0,
+        "m_CO2": 0.0,
+        "m_HCO3": 3.907462248947968e-06,
+        "m_CO3": 4.7293729773572866e-11,
+        "m_NaCO3-": 0.0,
+        "m_NaHCO3": 0.0,
+        "Na_bound_fraction": 0.0
+      },
+      "speciation_no": {
+        "Na_total_molal": 0.0,
+        "m_Na_free": 0.0,
+        "m_CO2": 0.0,
+        "m_HCO3": 3.907462248947968e-06,
+        "m_CO3": 4.7293729773572866e-11
+      },
+      "finite": true,
+      "mode": "open",
+      "desc": "pure water, P_CO2 = 1e-3 atm",
+      "sodium": 0.0,
+      "smartchem_no_pairs_davies": {
+        "pH_activity": 5.406574294170249,
+        "I": 3.930406119397952e-06,
+        "verdict": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL"
+      },
+      "phreeqc_dat_context_pH": 5.409932671367109,
+      "three_way": {
+        "smartchem": 5.406574294170249,
+        "phreeqc_no_pairs": 5.408890137252106,
+        "phreeqc_with_pairs": 5.408890137252106,
+        "smartchem_minus_phreeqc_no": -0.0023158430818570608,
+        "smartchem_minus_phreeqc_with": -0.0023158430818570608,
+        "phreeqc_with_minus_no": 0.0
+      }
+    },
+    "O4": {
+      "pH_with": 4.90899893793958,
+      "pH_no": 4.90899893793958,
+      "delta_pH": 0.0,
+      "I_with": 1.238230248696258e-05,
+      "I_no": 1.238230248696258e-05,
+      "delta_I": 0.0,
+      "speciation_with": {
+        "Na_total_molal": 0.0,
+        "m_Na_free": 0.0,
+        "m_CO2": 0.0,
+        "m_HCO3": 1.2381686337516275e-05,
+        "m_CO3": 4.765859329417687e-11,
+        "m_NaCO3-": 0.0,
+        "m_NaHCO3": 0.0,
+        "Na_bound_fraction": 0.0
+      },
+      "speciation_no": {
+        "Na_total_molal": 0.0,
+        "m_Na_free": 0.0,
+        "m_CO2": 0.0,
+        "m_HCO3": 1.2381686337516275e-05,
+        "m_CO3": 4.765859329417687e-11
+      },
+      "finite": true,
+      "mode": "open",
+      "desc": "pure water, P_CO2 = 1e-2 atm",
+      "sodium": 0.0,
+      "smartchem_no_pairs_davies": {
+        "pH_activity": 4.906704988518967,
+        "I": 1.244756102625731e-05,
+        "verdict": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL"
+      },
+      "phreeqc_dat_context_pH": 4.910030090672211,
+      "three_way": {
+        "smartchem": 4.906704988518967,
+        "phreeqc_no_pairs": 4.90899893793958,
+        "phreeqc_with_pairs": 4.90899893793958,
+        "smartchem_minus_phreeqc_no": -0.0022939494206131172,
+        "smartchem_minus_phreeqc_with": -0.0022939494206131172,
+        "phreeqc_with_minus_no": 0.0
+      }
+    },
+    "O5": {
+      "pH_with": 4.409019389782997,
+      "pH_no": 4.409019389782997,
+      "delta_pH": 0.0,
+      "I_with": 3.927855645558417e-05,
+      "I_no": 3.927855645558417e-05,
+      "delta_I": 0.0,
+      "speciation_with": {
+        "Na_total_molal": 0.0,
+        "m_Na_free": 0.0,
+        "m_CO2": 0.0,
+        "m_HCO3": 3.92784983144307e-05,
+        "m_CO3": 4.8271979953301264e-11,
+        "m_NaCO3-": 0.0,
+        "m_NaHCO3": 0.0,
+        "Na_bound_fraction": 0.0
+      },
+      "speciation_no": {
+        "Na_total_molal": 0.0,
+        "m_Na_free": 0.0,
+        "m_CO2": 0.0,
+        "m_HCO3": 3.92784983144307e-05,
+        "m_CO3": 4.8271979953301264e-11
+      },
+      "finite": true,
+      "mode": "open",
+      "desc": "pure water, P_CO2 = 1e-1 atm",
+      "sodium": 0.0,
+      "smartchem_no_pairs_davies": {
+        "pH_activity": 4.406718835859588,
+        "I": 3.9487003648124835e-05,
+        "verdict": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL"
+      },
+      "phreeqc_dat_context_pH": 4.410141559948685,
+      "three_way": {
+        "smartchem": 4.406718835859588,
+        "phreeqc_no_pairs": 4.409019389782997,
+        "phreeqc_with_pairs": 4.409019389782997,
+        "smartchem_minus_phreeqc_no": -0.0023005539234084438,
+        "smartchem_minus_phreeqc_with": -0.0023005539234084438,
+        "phreeqc_with_minus_no": 0.0
+      }
+    },
+    "O6": {
+      "pH_with": 3.9091423618942702,
+      "pH_no": 3.9091423618942702,
+      "delta_pH": 0.0,
+      "I_with": 0.00012487523727225782,
+      "I_no": 0.00012487523727225782,
+      "delta_I": 0.0,
+      "speciation_with": {
+        "Na_total_molal": 0.0,
+        "m_Na_free": 0.0,
+        "m_CO2": 0.0,
+        "m_HCO3": 0.0001248753539394469,
+        "m_CO3": 4.937415954631459e-11,
+        "m_NaCO3-": 0.0,
+        "m_NaHCO3": 0.0,
+        "Na_bound_fraction": 0.0
+      },
+      "speciation_no": {
+        "Na_total_molal": 0.0,
+        "m_Na_free": 0.0,
+        "m_CO2": 0.0,
+        "m_HCO3": 0.0001248753539394469,
+        "m_CO3": 4.937415954631459e-11
+      },
+      "finite": true,
+      "mode": "open",
+      "desc": "pure water, P_CO2 = 1 atm (soda)",
+      "sodium": 0.0,
+      "smartchem_no_pairs_davies": {
+        "pH_activity": 3.906720467036372,
+        "I": 0.00012557441760210027,
+        "verdict": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL"
+      },
+      "phreeqc_dat_context_pH": 3.911311192747034,
+      "three_way": {
+        "smartchem": 3.906720467036372,
+        "phreeqc_no_pairs": 3.9091423618942702,
+        "phreeqc_with_pairs": 3.9091423618942702,
+        "smartchem_minus_phreeqc_no": -0.0024218948578980104,
+        "smartchem_minus_phreeqc_with": -0.0024218948578980104,
+        "phreeqc_with_minus_no": 0.0
+      }
+    },
+    "C1": {
+      "pH_with": 8.222221092912726,
+      "pH_no": 8.24657304715943,
+      "delta_pH": -0.02435195424670411,
+      "I_with": 0.010047010511081892,
+      "I_no": 0.010110780967424944,
+      "delta_I": -6.377045634305134e-05,
+      "speciation_with": {
+        "Na_total_molal": 0.0100000000025059,
+        "m_Na_free": 0.009942962152064999,
+        "m_CO2": 0.0,
+        "m_HCO3": 0.009720328526836535,
+        "m_CO3": 0.00010404171327185882,
+        "m_NaCO3-": 1.2690836842306855e-05,
+        "m_NaHCO3": 4.4347013598594155e-05,
+        "Na_bound_fraction": 0.00570378504266079
+      },
+      "speciation_no": {
+        "Na_total_molal": 0.01,
+        "m_Na_free": 0.01,
+        "m_CO2": 0.0,
+        "m_HCO3": 0.009776482709553875,
+        "m_CO3": 0.00011077467991738885
+      },
+      "finite": true,
+      "mode": "closed",
+      "desc": "0.01 M NaHCO3",
+      "sodium": 0.01,
+      "smartchem_no_pairs_davies": {
+        "pH_activity": 8.246267023454728,
+        "I": 0.010110007607443221,
+        "verdict": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL"
+      },
+      "phreeqc_dat_context_pH": 8.224189566427283,
+      "three_way": {
+        "smartchem": 8.246267023454728,
+        "phreeqc_no_pairs": 8.24657304715943,
+        "phreeqc_with_pairs": 8.222221092912726,
+        "smartchem_minus_phreeqc_no": -0.00030602370470234064,
+        "smartchem_minus_phreeqc_with": 0.02404593054200177,
+        "phreeqc_with_minus_no": -0.02435195424670411
+      }
+    },
+    "C2": {
+      "pH_with": 8.016698249582745,
+      "pH_no": 8.124935814479809,
+      "delta_pH": -0.10823756489706327,
+      "I_with": 0.09718560384459435,
+      "I_no": 0.10129225990598827,
+      "delta_I": -0.004106656061393918,
+      "speciation_with": {
+        "Na_total_molal": 0.09999999999956803,
+        "m_Na_free": 0.09622562886535957,
+        "m_CO2": 0.0,
+        "m_HCO3": 0.09366428828517474,
+        "m_CO3": 0.000959962687430192,
+        "m_NaCO3-": 0.000640061991847779,
+        "m_NaHCO3": 0.003134309142360678,
+        "Na_bound_fraction": 0.03774371134224761
+      },
+      "speciation_no": {
+        "Na_total_molal": 0.09999999999915701,
+        "m_Na_free": 0.09999999999915701,
+        "m_CO2": 0.0,
+        "m_HCO3": 0.09741374964984258,
+        "m_CO3": 0.0012922504904233287
+      },
+      "finite": true,
+      "mode": "closed",
+      "desc": "0.1 M NaHCO3",
+      "sodium": 0.1,
+      "smartchem_no_pairs_davies": {
+        "pH_activity": 8.124883348962985,
+        "I": 0.10127612410464007,
+        "verdict": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL"
+      },
+      "phreeqc_dat_context_pH": 8.015851418220974,
+      "three_way": {
+        "smartchem": 8.124883348962985,
+        "phreeqc_no_pairs": 8.124935814479809,
+        "phreeqc_with_pairs": 8.016698249582745,
+        "smartchem_minus_phreeqc_no": -5.2465516823474445e-05,
+        "smartchem_minus_phreeqc_with": 0.10818509938023979,
+        "phreeqc_with_minus_no": -0.10823756489706327
+      }
+    },
+    "C3": {
+      "pH_with": 6.262514368834988,
+      "pH_no": 6.27014224385769,
+      "delta_pH": -0.007627875022702568,
+      "I_with": 0.04908165945849404,
+      "I_no": 0.05000860716855101,
+      "delta_I": -0.000926947710056969,
+      "speciation_with": {
+        "Na_total_molal": 0.05,
+        "m_Na_free": 0.04907335579184958,
+        "m_CO2": 0.0,
+        "m_HCO3": 0.04905555655060323,
+        "m_CO3": 7.639196000295625e-06,
+        "m_NaCO3-": 3.1627012179998816e-06,
+        "m_NaHCO3": 0.0009234815069324269,
+        "Na_bound_fraction": 0.018532884163008537
+      },
+      "speciation_no": {
+        "Na_total_molal": 0.049999999999999996,
+        "m_Na_free": 0.049999999999999996,
+        "m_CO2": 0.0,
+        "m_HCO3": 0.0499847238801791,
+        "m_CO3": 7.953411191715124e-06
+      },
+      "finite": true,
+      "mode": "closed",
+      "desc": "half-neutralized (0.1 C, 0.05 Na) CO2/HCO3 buffer",
+      "sodium": 0.05,
+      "smartchem_no_pairs_davies": {
+        "pH_activity": 6.264422289779554,
+        "I": 0.050008414337630425,
+        "verdict": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL"
+      },
+      "phreeqc_dat_context_pH": 6.259434204873152,
+      "three_way": {
+        "smartchem": 6.264422289779554,
+        "phreeqc_no_pairs": 6.27014224385769,
+        "phreeqc_with_pairs": 6.262514368834988,
+        "smartchem_minus_phreeqc_no": -0.005719954078136524,
+        "smartchem_minus_phreeqc_with": 0.0019079209445660439,
+        "phreeqc_with_minus_no": -0.007627875022702568
+      }
+    },
+    "C4": {
+      "pH_with": 11.263312579871952,
+      "pH_no": 11.372739419907585,
+      "delta_pH": -0.10942684003563308,
+      "I_with": 0.20573953205955298,
+      "I_no": 0.2964982649042961,
+      "delta_I": -0.09075873284474312,
+      "speciation_with": {
+        "Na_total_molal": 0.19999999999998658,
+        "m_Na_free": 0.1541143726256391,
+        "m_CO2": 0.0,
+        "m_HCO3": 0.0024891904715605255,
+        "m_CO3": 0.05162515942648167,
+        "m_NaCO3-": 0.04576594372645113,
+        "m_NaHCO3": 0.00011968364789634967,
+        "Na_bound_fraction": 0.2294281368717528
+      },
+      "speciation_no": {
+        "Na_total_molal": 0.20000000000000004,
+        "m_Na_free": 0.20000000000000004,
+        "m_CO2": 0.0,
+        "m_HCO3": 0.0035017109872672075,
+        "m_CO3": 0.09649826489852426
+      },
+      "finite": true,
+      "mode": "closed",
+      "desc": "0.1 M Na2CO3",
+      "sodium": 0.2,
+      "smartchem_no_pairs_davies": {
+        "pH_activity": 11.389273762336572,
+        "I": 0.29666228166829706,
+        "verdict": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL"
+      },
+      "phreeqc_dat_context_pH": 11.260971389594653,
+      "three_way": {
+        "smartchem": 11.389273762336572,
+        "phreeqc_no_pairs": 11.372739419907585,
+        "phreeqc_with_pairs": 11.263312579871952,
+        "smartchem_minus_phreeqc_no": 0.016534342428986548,
+        "smartchem_minus_phreeqc_with": 0.12596118246461963,
+        "phreeqc_with_minus_no": -0.10942684003563308
+      }
+    },
+    "C5": {
+      "pH_with": 4.177468769470893,
+      "pH_no": 4.177468769470893,
+      "delta_pH": 0.0,
+      "I_with": 6.709109957814395e-05,
+      "I_no": 6.709109957814396e-05,
+      "delta_I": -1.3552527156068805e-20,
+      "speciation_with": {
+        "Na_total_molal": 0.0,
+        "m_Na_free": 0.0,
+        "m_CO2": 0.0,
+        "m_HCO3": 6.709080058752842e-05,
+        "m_CO3": 4.870207444188525e-11,
+        "m_NaCO3-": 0.0,
+        "m_NaHCO3": 0.0,
+        "Na_bound_fraction": 0.0
+      },
+      "speciation_no": {
+        "Na_total_molal": 0.0,
+        "m_Na_free": 0.0,
+        "m_CO2": 0.0,
+        "m_HCO3": 6.709080058752842e-05,
+        "m_CO3": 4.870207444188525e-11
+      },
+      "finite": true,
+      "mode": "closed",
+      "desc": "0.01 M dissolved CO2, no base",
+      "sodium": 0.0,
+      "smartchem_no_pairs_davies": {
+        "pH_activity": 4.176464349074647,
+        "I": 6.724588742660071e-05,
+        "verdict": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL"
+      },
+      "phreeqc_dat_context_pH": 4.177486261698486,
+      "three_way": {
+        "smartchem": 4.176464349074647,
+        "phreeqc_no_pairs": 4.177468769470893,
+        "phreeqc_with_pairs": 4.177468769470893,
+        "smartchem_minus_phreeqc_no": -0.001004420396246708,
+        "smartchem_minus_phreeqc_with": -0.001004420396246708,
+        "phreeqc_with_minus_no": 0.0
+      }
+    }
+  },
+  "nist_srm191d": {
+    "pH_with": 9.857312409795306,
+    "pH_no": 9.999162481869059,
+    "delta_pH": -0.141850072073753,
+    "I_with": 0.08315892275184958,
+    "I_no": 0.09987280045165182,
+    "delta_I": -0.016713877699802246,
+    "speciation_with": {
+      "Na_total_molal": 0.075000000003377,
+      "m_Na_free": 0.06633386594043568,
+      "m_CO2": 0.0,
+      "m_HCO3": 0.024502691469550347,
+      "m_CO3": 0.016825056646743674,
+      "m_NaCO3-": 0.008087755731416842,
+      "m_NaHCO3": 0.0005783783315244852,
+      "Na_bound_fraction": 0.11554845416734827
+    },
+    "speciation_no": {
+      "Na_total_molal": 0.07500000000000001,
+      "m_Na_free": 0.07500000000000001,
+      "m_CO2": 0.0,
+      "m_HCO3": 0.025122736729920984,
+      "m_CO3": 0.024872800323454472
+    },
+    "finite": true,
+    "composition": {
+      "Na_molal": 0.07500000000000001,
+      "C4_molal": 0.05,
+      "each_salt_molality": 0.025
+    },
+    "certified": {
+      "table1_pH_S": 10.014,
+      "table1_U": 0.01,
+      "tableA1_pH_S": 10.0137,
+      "tableA1_U_R": 0.0029
+    },
+    "residual_with_vs_table1": -0.1566875902046938,
+    "residual_no_vs_table1": -0.014837518130940808,
+    "residual_with_vs_tableA1": -0.1563875902046945,
+    "residual_no_vs_tableA1": -0.014537518130941507,
+    "abs_residual_with_vs_table1": 0.1566875902046938,
+    "abs_residual_no_vs_table1": 0.014837518130940808,
+    "abs_residual_with_vs_tableA1": 0.1563875902046945,
+    "abs_residual_no_vs_tableA1": 0.014537518130941507,
+    "pairs_move_pH_toward_table1": false,
+    "pairs_move_pH_toward_tableA1": false,
+    "within_table1_U": {
+      "with": false,
+      "no": false
+    },
+    "within_tableA1_U_R": {
+      "with": false,
+      "no": false
+    },
+    "smartchem_unchanged_davies": {
+      "molality_fed_XIX_pH": 10.004792621208969,
+      "molarity_fed_density_interval_pH": {
+        "lo": 10.005150724216492,
+        "mid": 10.005102041495633,
+        "hi": 10.005053386649102
+      }
+    }
+  },
+  "holdout_na_sweep": {
+    "NaC_0.5": {
+      "pH_with": 6.28458678632109,
+      "pH_no": 6.288849089736818,
+      "delta_pH": -0.004262303415727864,
+      "I_with": 0.024747097764294637,
+      "I_no": 0.025004211931074872,
+      "delta_I": -0.0002571141667802347,
+      "speciation_with": {
+        "Na_total_molal": 0.025000000000004425,
+        "m_Na_free": 0.02474295926077227,
+        "m_CO2": 0.0,
+        "m_HCO3": 0.024735586512639823,
+        "m_CO3": 3.5346191660374383e-06,
+        "m_NaCO3-": 8.847489294911634e-07,
+        "m_NaHCO3": 0.00025615599030266283,
+        "Na_bound_fraction": 0.01028162956928434
+      },
+      "speciation_no": {
+        "Na_total_molal": 0.025000000000000005,
+        "m_Na_free": 0.025000000000000005,
+        "m_CO2": 0.0,
+        "m_HCO3": 0.024993348332643654,
+        "m_CO3": 3.6135713838475395e-06
+      },
+      "finite": true,
+      "Na_over_C": 0.5,
+      "total_carbon": 0.05,
+      "sodium": 0.025,
+      "out_of_domain": [],
+      "in_domain": true,
+      "smartchem_no_pairs_davies": {
+        "pH_activity": 6.2841566092949295,
+        "I": 0.0250041448207977,
+        "verdict": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL"
+      },
+      "three_way": {
+        "smartchem": 6.2841566092949295,
+        "phreeqc_no_pairs": 6.288849089736818,
+        "phreeqc_with_pairs": 6.28458678632109,
+        "smartchem_minus_phreeqc_no": -0.004692480441888414,
+        "smartchem_minus_phreeqc_with": -0.00043017702616054976,
+        "phreeqc_with_minus_no": -0.004262303415727864
+      }
+    },
+    "NaC_1": {
+      "pH_with": 8.094775102663874,
+      "pH_no": 8.168007322117775,
+      "delta_pH": -0.07323221945390124,
+      "I_with": 0.049403686393112704,
+      "I_no": 0.05061495059672523,
+      "delta_I": -0.0012112642036125262,
+      "speciation_with": {
+        "Na_total_molal": 0.04999999999747741,
+        "m_Na_free": 0.048898382961364804,
+        "m_CO2": 0.0,
+        "m_HCO3": 0.0476782003045668,
+        "m_CO3": 0.0005052936537366668,
+        "m_NaCO3-": 0.00020806579893798495,
+        "m_NaHCO3": 0.0008935512371746226,
+        "Na_bound_fraction": 0.02203234072336372
+      },
+      "speciation_no": {
+        "Na_total_molal": 0.049999999998226886,
+        "m_Na_free": 0.049999999998226886,
+        "m_CO2": 0.0,
+        "m_HCO3": 0.04876829770912306,
+        "m_CO3": 0.0006149425689217763
+      },
+      "finite": true,
+      "Na_over_C": 1.0,
+      "total_carbon": 0.05,
+      "sodium": 0.05,
+      "out_of_domain": [],
+      "in_domain": true,
+      "smartchem_no_pairs_davies": {
+        "pH_activity": 8.167865295349202,
+        "I": 0.050607283882597706,
+        "verdict": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL"
+      },
+      "three_way": {
+        "smartchem": 8.167865295349202,
+        "phreeqc_no_pairs": 8.168007322117775,
+        "phreeqc_with_pairs": 8.094775102663874,
+        "smartchem_minus_phreeqc_no": -0.00014202676857344443,
+        "smartchem_minus_phreeqc_with": 0.07309019268532779,
+        "phreeqc_with_minus_no": -0.07323221945390124
+      }
+    },
+    "NaC_1.5": {
+      "pH_with": 9.857312409795304,
+      "pH_no": 9.999162481869059,
+      "delta_pH": -0.14185007207375477,
+      "I_with": 0.08315892275184956,
+      "I_no": 0.0998728004516518,
+      "delta_I": -0.016713877699802232,
+      "speciation_with": {
+        "Na_total_molal": 0.07500000000337702,
+        "m_Na_free": 0.06633386594043568,
+        "m_CO2": 0.0,
+        "m_HCO3": 0.024502691469550447,
+        "m_CO3": 0.016825056646743664,
+        "m_NaCO3-": 0.008087755731416842,
+        "m_NaHCO3": 0.0005783783315244876,
+        "Na_bound_fraction": 0.11554845416734827
+      },
+      "speciation_no": {
+        "Na_total_molal": 0.07500000000000001,
+        "m_Na_free": 0.07500000000000001,
+        "m_CO2": 0.0,
+        "m_HCO3": 0.025122736729920984,
+        "m_CO3": 0.024872800323454472
+      },
+      "finite": true,
+      "Na_over_C": 1.5,
+      "total_carbon": 0.05,
+      "sodium": 0.075,
+      "out_of_domain": [],
+      "in_domain": true,
+      "smartchem_no_pairs_davies": {
+        "pH_activity": 10.004792621208969,
+        "I": 0.09987499615761246,
+        "verdict": "SOLVED_WITHIN_ADMITTED_ACTIVITY_MODEL"
+      },
+      "three_way": {
+        "smartchem": 10.004792621208969,
+        "phreeqc_no_pairs": 9.999162481869059,
+        "phreeqc_with_pairs": 9.857312409795304,
+        "smartchem_minus_phreeqc_no": 0.005630139339910301,
+        "smartchem_minus_phreeqc_with": 0.14748021141366507,
+        "phreeqc_with_minus_no": -0.14185007207375477
+      }
+    }
+  },
+  "verdict": "(left to orchestrator)"
+}

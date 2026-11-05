@@ -1,0 +1,110 @@
+{
+  "operation": "XXI-4 three-comparator separation + claim ledger (NIST SRM 191d)",
+  "certificate": {
+    "sha256": "ea316fb1368d0563882a2b6926fe8a6bb07736e9d5fc1b24bb70c2317cc02d38",
+    "issue": "2025-02-05"
+  },
+  "model_predictions_pH": {
+    "mixed_scale_molarity_fed_vs_molality_pH_S": {
+      "lo": 10.005150724216492,
+      "mid": 10.005102041495633,
+      "hi": 10.005053386649102
+    },
+    "scale_transported_molar_K_to_molality_scale": {
+      "lo": 10.003395269191158,
+      "mid": 10.00358521577778,
+      "hi": 10.003775059192453
+    },
+    "molal_K_molality_fed_XIX_run": 10.004792621208969
+  },
+  "density_interval_g_per_mL": [
+    1.0007,
+    1.0018
+  ],
+  "comparators": {
+    "A_table1_certified_convention_inclusive": {
+      "what_measured": "NIST SRM 191d certified pH(S) = 10.014, Harned cell, molality scale, 25 C.",
+      "what_modeled": "Davies-closure carbonate speciation (carbonate_equilibrium.py, UNCHANGED constants), 0.025 mol/kg each NaHCO3/Na2CO3 fed as molarity via the XX-5 density interval.",
+      "what_transported": "NONE beyond the molality->molarity unit conversion; a_H left on the solver's scale and compared directly to the molality-scale pH(S) (a MIXED-scale comparison).",
+      "what_assumed": "the model 'molar' K's may be compared to a molality-scale pH(S) without transporting a_H; density interval [1.0007,1.0018] g/mL (derived bracket, not measured).",
+      "uncertainty_retained": "the FULL certified U = 0.010 (k=1.96), which INCLUDES the Bates-Guggenheim convention component 0.0050.",
+      "comparison": {
+        "residual_interval_pH": [
+          -0.008946613350897081,
+          -0.008849275783507693
+        ],
+        "worst_abs_residual_pH": 0.008946613350897081,
+        "U_pH": 0.01,
+        "within_U_over_interval": true,
+        "abs_residual_over_U": 0.8946613350897081
+      },
+      "passes": true,
+      "conclusion": {
+        "corroborated": "K2 + Davies reproduce a Harned-cell pH within the convention-INCLUSIVE certified U (thinly, margin ~0.0011 pH).",
+        "refuted": null,
+        "decisive_next_measurement": "tighten or replace the density assumption with a measured solution density; resolve the K-scale (comparator C) -- the pass is scale-contingent."
+      }
+    },
+    "B_tableA1_noncertified_convention_matched": {
+      "what_measured": "NIST SRM 191d Table A1 pH(S) = 10.0137 with the BG convention uncertainty REMOVED.",
+      "what_modeled": "identical to A (same mixed-scale Davies prediction).",
+      "what_transported": "NONE beyond units; same mixed-scale comparison as A.",
+      "what_assumed": "Table A1 is the convention-matched comparator for a Debye-Huckel-family closure (both share the BG convention family), so removing BG slack from the measurement side is the like-for-like test; NOT reclassified as an independent measurement.",
+      "uncertainty_retained": "U_R = 0.0029 (k_R=2.01), EXCLUDING the BG convention uncertainty.",
+      "comparison": {
+        "residual_interval_pH": [
+          -0.00864661335089778,
+          -0.008549275783508392
+        ],
+        "worst_abs_residual_pH": 0.00864661335089778,
+        "U_pH": 0.0029,
+        "within_U_over_interval": false,
+        "abs_residual_over_U": 2.9815908106544073
+      },
+      "passes": false,
+      "conclusion": {
+        "corroborated": null,
+        "refuted": "agreement at the MEASUREMENT-ONLY level (~0.003 pH): the model sits ~0.0086 pH below Table A1, ~3x U_R.  The A pass exists ONLY because the BG convention slack (0.0050) is in A's band.",
+        "decisive_next_measurement": "an independent single-ion a_H+ determination not sharing the BG convention, or a second measured buffer on a convention that the model does not also assume."
+      }
+    },
+    "C_table1_scale_transported": {
+      "what_measured": "NIST SRM 191d certified pH(S) = 10.014 (molality scale), as in A.",
+      "what_modeled": "same Davies prediction, but made SCALE-CONSISTENT: taking the model K's at their 'molar' label at face value, a_H is transported onto the molality scale (pH_m = pH_c + log10(kg water / L)) before comparison.",
+      "what_transported": "the proton activity from the molar (per-litre) scale to the molality (per-kg-water) scale -- the step the prescribed mixed-scale headline omitted.",
+      "what_assumed": "the labelled 'molar' standard state is taken literally; the alternative is that K1/K2 are actually MOLAL-scale (their Harned-cell provenance), under which the consistent prediction is the XIX molality-fed run (pH 10.00479) -- see conclusion.",
+      "uncertainty_retained": "the FULL certified U = 0.010 (same band as A), so only the SCALE changed vs A.",
+      "comparison": {
+        "residual_interval_pH": [
+          -0.010604730808841722,
+          -0.010224940807546545
+        ],
+        "worst_abs_residual_pH": 0.010604730808841722,
+        "U_pH": 0.01,
+        "within_U_over_interval": false,
+        "abs_residual_over_U": 1.0604730808841722
+      },
+      "passes": false,
+      "alternative_molal_K_reading": {
+        "pH": 10.004792621208969,
+        "residual_vs_table1": -0.009207378791030507,
+        "within_table1_U": true,
+        "note": "molal K's + molality fed (the XIX run): survives Table 1 thinly (margin ~0.001 pH)."
+      },
+      "conclusion": {
+        "corroborated": null,
+        "refuted": "under the 'molar' K label taken at face value, scale-consistency REFUTES even Table 1 (residual ~-0.0104 pH, |.|>0.01); the measurement-level corroboration in A is convention-and-scale-CONTINGENT, surviving only under the molal-K reading.",
+        "decisive_next_measurement": "resolve the standard-state SCALE (molar vs molal) of K1/K2 in carbonate_equilibrium.py from their primary Harned-cell source; that single fact decides whether the model survives (molal) or is refuted (molar) vs Table 1."
+      }
+    }
+  },
+  "overall": {
+    "A_within_table1_U": true,
+    "B_within_tableA1_U_R": false,
+    "C_within_table1_U_under_molar_label": false,
+    "C_within_table1_U_under_molal_reading": true,
+    "headline": "SmartChem's SRM 191d corroboration is NOT a robust physical prediction: it holds only against the convention-INCLUSIVE Table 1 (A), is REFUTED at the measurement-only Table A1 level (B), and is REFUTED against Table 1 itself once the molar-K scale is made self-consistent (C).  The single unresolved fact that decides the measurement-level verdict is the standard-state SCALE of K1/K2.",
+    "no_constant_tuned": true,
+    "common_mode": "PARTIAL: K1/K2 are Harned-lineage and Davies shares the Debye-Huckel family with the Bates-Guggenheim convention; single-ion a_H+ is NOT independently derived -- agreement is not an independent derivation of K2."
+  }
+}

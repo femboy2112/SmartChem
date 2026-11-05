@@ -34,8 +34,6 @@ from collections import Counter
 from dataclasses import dataclass
 from types import MappingProxyType
 
-import numpy as np
-
 from experiments.sandbox_foundation.general_kernel import (
     RATE_UNKNOWN,
     ChemicalSystem,
@@ -205,14 +203,20 @@ def _freeze(net: dict) -> tuple:
     return tuple(sorted(net.items()))
 
 
+def _species_identity(species: Species) -> tuple:
+    """The full identity tuple of a kernel species (matches ``Species`` equality, minus the compare=False data_status)."""
+    return (species.name, species.composition, species.charge, species.phase.value, species.substance)
+
+
 def kernel_signature(system: ChemicalSystem) -> tuple:
     """A presentation-independent signature: (frozenset of species identities, frozenset of (reaction, stoich) pairs).
 
-    Species are keyed by (name, composition, charge, phase, substance); stoichiometry by species name + coefficient.
+    Species are keyed by their FULL identity (name, composition, charge, phase, substance); reaction participants by that
+    SAME full identity + coefficient (XXI-7: a bare display name would merge two distinct species that share one).
     Order of species/reactions (which differs between assemblies) is deliberately NOT part of it; rate laws are not either."""
-    species = frozenset((s.name, s.composition, s.charge, s.phase.value, s.substance) for s in system.species)
+    species = frozenset(_species_identity(s) for s in system.species)
     reactions = frozenset(
-        (r.name, frozenset((s.name, c) for s, c in r.stoich)) for r in system.reactions)
+        (r.name, frozenset((_species_identity(s), c) for s, c in r.stoich)) for r in system.reactions)
     return species, reactions
 
 
@@ -300,9 +304,10 @@ def bridge_to_kernel(d: OpenChemDiagram, *, rate_laws: dict | None = None, phase
     for molecule in net_reaction.dom.species:
         external[species_key(molecule)] -= 1
     external_net = {token: c for token, c in external.items() if c != 0}
-    row_sums = np.rint(system.N @ np.ones(len(system.reactions))).astype(int)
+    # XXI-7: N 1 is summed in plain Python ints straight off the integer stoichiometry -- never read back through float N.
+    row_sums = _exact_net_production(system)
     token_of = {sp: token for token, sp in species_of.items()}
-    kernel_species_net = {token_of[sp]: int(row_sums[i]) for i, sp in enumerate(system.species) if row_sums[i] != 0}
+    kernel_species_net = {token_of[sp]: row_sums[i] for i, sp in enumerate(system.species) if row_sums[i] != 0}
     if kernel_species_net != external_net:
         raise BridgeCrossCheckError(
             f"N.1 {kernel_species_net} != the diagram's net reaction (external out - in) {external_net}: "
@@ -317,12 +322,36 @@ def bridge_to_kernel(d: OpenChemDiagram, *, rate_laws: dict | None = None, phase
     )
 
 
+def _exact_net_production(system: ChemicalSystem) -> tuple:
+    """(N 1)[i] for every species i, in ``system.species`` order, as plain Python ints (unbounded, so EXACT).
+
+    Summed directly from each reaction's integer ``stoich`` coefficients -- NOT read back through the kernel's float N
+    (XXI-7: a float row sum silently rounds once a partial sum passes 2**53).  The ``ChemicalSystem`` guarantees every
+    stoich species is in ``system.species`` (it refuses a stranger), so the index lookup cannot miss."""
+    index = {sp: i for i, sp in enumerate(system.species)}
+    totals = [0] * len(system.species)
+    for reaction in system.reactions:
+        for species, coeff in reaction.stoich:
+            totals[index[species]] += coeff
+    return tuple(totals)
+
+
 def _matrix_column_sums(system: ChemicalSystem) -> dict:
-    """sum_k (E N)[:, k] read off the kernel's published float E and N matrices (exact for |coeff| <= 2**53)."""
-    if not system.reactions:
-        return {}
-    column_totals = np.rint(system.E @ system.N @ np.ones(len(system.reactions))).astype(int)
-    return {label: int(v) for label, v in zip(system.component_labels, column_totals) if v != 0}
+    """sum_k (E N)[:, k] over ``system.component_labels`` as {label: int}, in plain Python ints (EXACT at any magnitude).
+
+    XXI-7: this used to read the kernel's float E and N and ``np.rint`` the product, which is exact only for
+    |coeff| <= 2**53 -- a balanced reaction with a coefficient like 2**60 + 1 would round to a WRONG non-zero integer and
+    fire a false BridgeCrossCheckError.  It now recomputes E N from the integer data (``Species.count`` per component
+    label, ``Species.charge`` for the charge row, the signed ``stoich`` coefficients).  That is a different route from
+    :func:`column_summed_EN` (which walks each composition) -- a component-first walk, so the pair stays a real
+    cross-check -- and neither touches float numpy.  The kernel's own float E / N stay the kernel's business."""
+    totals = {label: 0 for label in system.component_labels}
+    for reaction in system.reactions:
+        for species, coeff in reaction.stoich:
+            for label in system.component_labels:
+                count = species.charge if label == "charge" else species.count(label)
+                totals[label] += coeff * count
+    return {label: value for label, value in totals.items() if value != 0}
 
 
 # ======================================================================================

@@ -65,6 +65,7 @@ from scipy.integrate import solve_ivp
 from experiments.sandbox_foundation.claim_tiers import (
     REFUSED,
     STRUCTURALLY_CONSERVING,
+    UNVERIFIED,
     rank,
     weakest,
 )
@@ -94,6 +95,14 @@ def _species_key(sp: Species) -> tuple:
     return (sp.name, phase, int(sp.charge), tuple((e, int(n)) for e, n in sp.composition), sp.substance)
 
 
+#: XXI-2: the sentinel head of a rate-law descriptor the certificate cannot bind.  A descriptor beginning with this
+#: token carries NO parameter identity -- only the class name -- so the certificate makes no validity claim about the
+#: law, a mutation of its hidden parameters is INVISIBLE to the certificate, and two distinct opaque instances share it.
+#: integrate() consumes this fact: a world holding such a law has NO certified execution identity (see
+#: ``_uncertified_rate_laws`` and the receipt's ``execution_identity_certified``).
+_UNVERIFIABLE_MARKER = "UNVERIFIABLE_RATE_LAW"
+
+
 def _rate_law_descriptor(rl):
     """XX-2B: a canonical descriptor of a reaction's rate law for the world certificate.  RATE_UNKNOWN has no
     kinetics (a system containing it refuses to integrate anyway).  A law exposing ``descriptor()`` binds its
@@ -109,7 +118,13 @@ def _rate_law_descriptor(rl):
             return list(rl.descriptor())
         except NotImplementedError:
             pass
-    return ["UNVERIFIABLE_RATE_LAW", type(rl).__qualname__]
+    return [_UNVERIFIABLE_MARKER, type(rl).__qualname__]
+
+
+def _descriptor_is_uncertified(desc) -> bool:
+    """True iff ``desc`` is the UNVERIFIABLE sentinel -- the certificate binds the law's class but NONE of its
+    operative parameters, so it cannot witness that the same physical law is still executing (XXI-2)."""
+    return isinstance(desc, list) and len(desc) >= 1 and desc[0] == _UNVERIFIABLE_MARKER
 
 
 class CoupledError(KernelError):
@@ -294,6 +309,65 @@ class ExternalBoundary:
 
 
 @dataclass(frozen=True)
+class ElectroneutralBulkExchange:
+    """A conservative BULK-LIQUID exchange between two constant-volume, well-mixed aqueous compartments (XXI-5).
+
+    Unlike InterfaceTransfer -- a SELECTIVE membrane that moves ONE species (e.g. neutral HAc or CO2(aq)) -- this
+    operator swaps equal LIQUID PARCELS: at volumetric rate ``Q`` (L/s) a parcel leaves A carrying EVERY co-declared
+    dissolved species at its A-concentration while an equal counter-parcel arrives from B at its B-concentration.  Each
+    advected species s moves at J_s = Q*(c_A,s - c_B,s) mol/s (A->b), ALL sharing the SAME Q.  Because the whole
+    solution moves together:
+      * every analytical component is conserved globally (each species leaves A and enters B -- an INTERNAL transfer);
+      * net CHARGE is conserved globally, and because each parcel is a locally electroneutral solution the exchange
+        does not leave either compartment artificially charged -- the charge flux is Q*(rho_q,A - rho_q,B), which is 0
+        for electroneutral bulk solutions -- in deliberate CONTRAST to an unconstrained single-ion flux that would;
+      * the compartments are fixed control volumes and the parcels are equal, so volume is unchanged.
+    The actual speciation is re-established by each compartment's fast-equilibrium projection after the continuous step.
+
+    ``species_pairs`` is ((species_in_A, species_in_B), ...): the co-advected dissolved species, each pair sharing
+    elemental composition, charge AND phase-independent substance identity (the XVI-P0.1 discriminator) -- a parcel
+    carries each substance as itself, it does not transmute one into another (that would be a reaction, not transport).
+    Declaring the FULL dissolved set makes this a genuine bulk mixer; a neutral subset reduces it to a (multi-species)
+    selective transfer -- the two regimes are exactly what XXI-5 contrasts."""
+    name: str
+    a: str                            # compartment name (source side for a positive flux)
+    b: str                            # compartment name (sink side for a positive flux)
+    species_pairs: tuple              # ((Species_a, Species_b), ...) co-advected, same substance per pair
+    Q_L_per_s: float                  # volumetric parcel-exchange rate, L/s; >= 0
+
+    def __post_init__(self):
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise CoupledError("an ElectroneutralBulkExchange needs a non-empty name")
+        if self.a == self.b:
+            raise CoupledError(f"bulk exchange {self.name!r} connects compartment {self.a!r} to itself")
+        if type(self.species_pairs) is not tuple or not self.species_pairs:
+            raise CoupledError(f"bulk exchange {self.name!r} needs a non-empty tuple of (species_a, species_b) pairs")
+        for pair in self.species_pairs:
+            if type(pair) is not tuple or len(pair) != 2:
+                raise CoupledError(f"bulk exchange {self.name!r}: each pair must be a (species_a, species_b) tuple")
+            sa, sb = pair
+            if type(sa) is not Species or type(sb) is not Species:
+                raise CoupledError(f"bulk exchange {self.name!r}: species pairs must contain Species")
+            # same discipline as InterfaceTransfer: composition+charge NECESSARY, shared substance the constitutional
+            # discriminator -- a bulk parcel moves a substance as itself; transmuting it is a reaction, not transport.
+            if sa.composition != sb.composition or sa.charge != sb.charge:
+                raise CoupledError(
+                    f"bulk exchange {self.name!r} pairs species of different composition/charge "
+                    f"({sa.name!r} {sa.composition} q={sa.charge} vs {sb.name!r} {sb.composition} q={sb.charge})")
+            if sa.substance != sb.substance:
+                raise CoupledError(
+                    f"bulk exchange {self.name!r} pairs species of the SAME formula but DIFFERENT substance "
+                    f"({sa.name!r} substance={sa.substance!r} vs {sb.name!r} substance={sb.substance!r}); a bulk "
+                    f"parcel transports a substance as itself, it does not transmute it (that is a reaction)")
+        if len({sa for sa, _ in self.species_pairs}) != len(self.species_pairs) or \
+                len({sb for _, sb in self.species_pairs}) != len(self.species_pairs):
+            raise CoupledError(f"bulk exchange {self.name!r} lists a species more than once (ambiguous flux)")
+        if isinstance(self.Q_L_per_s, bool) or not (isinstance(self.Q_L_per_s, (int, float))
+                                                    and math.isfinite(self.Q_L_per_s) and self.Q_L_per_s >= 0):
+            raise CoupledError("Q_L_per_s must be a finite volumetric rate (L/s) >= 0")
+
+
+@dataclass(frozen=True)
 class CoupledReceipt:
     """DERIVED, non-self-certifying evidence for a coupled trajectory (Wave A/1E discipline, lifted to the world)."""
     solver_completed: bool
@@ -317,6 +391,10 @@ class CoupledReceipt:
     notes: tuple = ()
     max_step_material_residual: float = 0.0   # XX-3: max |E n(t) - E n0 - E integral(q_ext dt)| over EVERY accepted step (observer-invariant, not endpoint-only)
     first_violation: tuple = ()               # XX-3: (time, kind, compartment, species/component, value) of the FIRST step to breach positivity or the ledger (() if none)
+    execution_identity_certified: bool = True  # XXI-2: False iff ANY reaction's rate law is UNVERIFIABLE (no bindable descriptor) -- then the world certificate cannot witness that the SAME physics executed, so no stable execution-identity claim is made (mutating such a law is invisible to the certificate BY CONSTRUCTION)
+    uncertified_rate_laws: tuple = ()          # XXI-2: ((compartment, reaction, rate_law_class), ...) the laws that voided the execution-identity claim -- surfaced so the limitation cannot be hidden behind an otherwise-clean receipt
+    component_tolerance: dict = field(default_factory=dict)       # XXI-3: {conserved component: atol + rtol*scale_component} -- each component judged against ITS OWN scale
+    component_max_residual: dict = field(default_factory=dict)    # XXI-3: {conserved component: max |E n(t) - E n0 - E integral(q_ext dt)| over every step}
 
 
 @dataclass(frozen=True)
@@ -351,7 +429,7 @@ class CoupledWorld:
     without splitting -- the reference for the convergence study)."""
 
     def __init__(self, compartments: list, interfaces: list = (), boundaries: list = (), *,
-                 temperature_K: float = 298.15):
+                 bulk_exchanges: list = (), temperature_K: float = 298.15):
         if not compartments or any(type(c) is not Compartment for c in compartments):
             raise CoupledError("compartments must be a non-empty list of Compartment")
         names = [c.name for c in compartments]
@@ -369,6 +447,7 @@ class CoupledWorld:
         self._comp = {c.name: c for c in compartments}
         self.interfaces = list(interfaces)
         self.boundaries = list(boundaries)
+        self.bulk_exchanges = list(bulk_exchanges)
 
         for iface in self.interfaces:
             if type(iface) is not InterfaceTransfer:
@@ -387,6 +466,19 @@ class CoupledWorld:
             if b.species not in self._comp[b.compartment].system._index:
                 raise CoupledError(f"boundary {b.name!r} references species {b.species.name!r} absent from "
                                    f"compartment {b.compartment!r}")
+        for bx in self.bulk_exchanges:
+            if type(bx) is not ElectroneutralBulkExchange:
+                raise CoupledError("bulk_exchanges must be ElectroneutralBulkExchange objects")
+            for side in (bx.a, bx.b):
+                if side not in self._comp:
+                    raise CoupledError(f"bulk exchange {bx.name!r} references unknown compartment {side!r}")
+            for sa, sb in bx.species_pairs:
+                if sa not in self._comp[bx.a].system._index:
+                    raise CoupledError(f"bulk exchange {bx.name!r} references species {sa.name!r} absent from "
+                                       f"compartment {bx.a!r}")
+                if sb not in self._comp[bx.b].system._index:
+                    raise CoupledError(f"bulk exchange {bx.name!r} references species {sb.name!r} absent from "
+                                       f"compartment {bx.b!r}")
 
         # global slot layout: (compartment_name, Species) in a fixed order
         self._slots = [(c.name, sp) for c in self.compartments for sp in c.system.species]
@@ -418,6 +510,17 @@ class CoupledWorld:
         # these (the coupled execution path reads compartment matrices / rate laws / interfaces directly, bypassing the
         # per-system integrate() guard) cannot silently execute a changed world under the stale certificate.
         self._world_certificate = self._compute_world_certificate()
+
+        # XXI-2: enumerate the reactions whose rate law has NO bindable descriptor.  The world certificate marks each
+        # UNVERIFIABLE but cannot witness a mutation of its hidden parameters -- so a world holding one has NO certified
+        # execution identity.  integrate() consumes this: it REFUSES under require_certified_execution, floors the
+        # kinetic tier to UNVERIFIED regardless of the law's self-declared tier (a label is not a binding), and flags
+        # the receipt so the limitation cannot be hidden behind an otherwise-clean result.
+        self._uncertified_rate_laws = tuple(
+            (c.name, r.name, type(r.rate_law).__qualname__)
+            for c in self.compartments for r in c.system.reactions
+            if r.rate_law is not None and _descriptor_is_uncertified(_rate_law_descriptor(r.rate_law))
+        )
 
     # ---------------------------------------------------------------- XIX-1D world execution certificate
     def _equilibrium_descriptor(self, c: Compartment):
@@ -460,9 +563,13 @@ class CoupledWorld:
             "rate": _canon_num(b.rate), "k_transfer": _canon_num(b.k_transfer),
             "target_conc": _canon_num(b.target_conc),
         } for b in self.boundaries]
+        bulk = [{                                                 # XXI-5: bind each bulk exchange's Q + advected pairs
+            "name": x.name, "a": x.a, "b": x.b, "Q_L_per_s": _canon_num(x.Q_L_per_s),
+            "species_pairs": [[_species_key(sa), _species_key(sb)] for sa, sb in x.species_pairs],
+        } for x in self.bulk_exchanges]
         payload = {"temperature_K": _canon_num(self.temperature_K),
                    "slots": [(cn, _species_key(sp)) for cn, sp in self._slots],
-                   "compartments": comp, "interfaces": ifaces, "boundaries": bounds}
+                   "compartments": comp, "interfaces": ifaces, "boundaries": bounds, "bulk_exchanges": bulk}
         blob = json.dumps(payload, sort_keys=True, default=str)
         return hashlib.sha256(blob.encode()).hexdigest()
 
@@ -542,6 +649,18 @@ class CoupledWorld:
             J = iface.k_transfer * (y[ia] / Va - iface.partition * y[ib] / Vb)   # mol/s, a -> b
             dy[ia] -= J
             dy[ib] += J
+        for bx in self.bulk_exchanges:
+            # XXI-5 bulk-liquid parcel swap: EVERY co-advected species moves at the SAME Q (whole-solution transport),
+            # J_s = Q*(c_A,s - c_B,s) mol/s a->b.  INTERNAL (conservative): what leaves A enters B, for every species,
+            # so each component AND net charge is conserved and no cell is left artificially charged.
+            Va = self._comp[bx.a].system.volume_L
+            Vb = self._comp[bx.b].system.volume_L
+            for sa, sb in bx.species_pairs:
+                ia = self._slot[(bx.a, sa)]
+                ib = self._slot[(bx.b, sb)]
+                J = bx.Q_L_per_s * (y[ia] / Va - y[ib] / Vb)
+                dy[ia] -= J
+                dy[ib] += J
         dflux = np.zeros(len(self.boundaries))
         for k, b in enumerate(self.boundaries):
             i = self._slot[(b.compartment, b.species)]
@@ -774,17 +893,37 @@ class CoupledWorld:
 
     def integrate(self, initial: dict, *, duration: float, n_steps: int, scheme: str = "strang",
                   n_samples: int | None = None, rtol: float = 1e-10, atol: float = 1e-14,
-                  declared_kinetic_tier: str | None = None, _observer_perturb=None) -> CoupledTrajectory:
+                  declared_kinetic_tier: str | None = None, require_certified_execution: bool = False,
+                  _observer_perturb=None) -> CoupledTrajectory:
         """Advance the coupled world over ``duration`` seconds in ``n_steps`` equal macro-steps of the chosen scheme.
 
         Every macro-step records the state (or every (n_steps // n_samples)th, if n_samples is given).  Conservation,
         the feed ledger and positivity are MEASURED and the tier DERIVED (capped at STRUCTURALLY_CONSERVING, weakest-
-        premise'd with the declared kinetic tier).  Missing kinetics anywhere fail closed (Wave A invariant)."""
+        premise'd with the declared kinetic tier).  Missing kinetics anywhere fail closed (Wave A invariant).
+
+        XXI-2 EXECUTION-IDENTITY CONTRACT (three states for a rate law):
+          * CERTIFIABLE          -- the law exposes a bindable ``descriptor()``; its parameters are in the world
+                                    certificate, so a post-construction mutation is DETECTED at this call.
+          * EXECUTABLE-UNVERIFIED -- the law has no bindable descriptor.  The world runs (default), but the receipt's
+                                    ``execution_identity_certified`` is False, the offending laws are named, and the
+                                    kinetic tier is floored to UNVERIFIED irrespective of the law's self-declared tier
+                                    (a caller-supplied label must not forge an evidential claim) -- the certificate
+                                    cannot witness that the same physics executed, and that limitation is not hidden.
+          * REFUSED              -- with ``require_certified_execution=True`` a world holding any unverified law raises
+                                    rather than run; a caller that needs a stable execution identity gets a refusal,
+                                    never a falsely-certified trajectory."""
         self._verify_world_certificate()          # XIX-1D: never integrate under a stale world/compartment certificate
         for c in self.compartments:
             miss = [r.name for r in c.system.reactions if r.rate_law is None]
             if miss:
                 raise CoupledError(f"compartment {c.name!r} has RATE_UNKNOWN reaction(s) {miss}; refusing to integrate")
+        if require_certified_execution and self._uncertified_rate_laws:
+            raise CoupledError(
+                "require_certified_execution=True but this world has no certified execution identity: rate law(s) "
+                f"{list(self._uncertified_rate_laws)} expose no bindable descriptor, so the world certificate cannot "
+                "witness that the same physics executes (a mutation of their hidden parameters is invisible to it). "
+                "Give each such law a descriptor() binding its operative parameters, or run without "
+                "require_certified_execution to execute in the explicitly-flagged, tier-floored research mode.")
         if not (isinstance(duration, (int, float)) and math.isfinite(duration) and duration > 0):
             raise CoupledError("duration must be finite and > 0")
         if not (isinstance(n_steps, int) and not isinstance(n_steps, bool) and n_steps >= 1):
@@ -792,6 +931,10 @@ class CoupledWorld:
         if declared_kinetic_tier is None:
             tiers = [r.rate_law.tier for c in self.compartments for r in c.system.reactions if r.rate_law is not None]
             declared_kinetic_tier = weakest(*tiers) if tiers else STRUCTURALLY_CONSERVING
+        if self._uncertified_rate_laws:
+            # XXI-2: an unbindable law cannot certify its own kinetics; floor the DERIVED claim to UNVERIFIED here,
+            # from the descriptor's unverifiability -- NOT from the law's self-declared tier (a label is not a binding).
+            declared_kinetic_tier = weakest(declared_kinetic_tier, UNVERIFIED)
         rank(declared_kinetic_tier)
 
         dt = float(duration) / n_steps
@@ -851,10 +994,17 @@ class CoupledWorld:
         for k, b in enumerate(self.boundaries):
             ext_comp += self._Eg[:, self._slot[(b.compartment, b.species)]] * acc[k]
 
-        scale = 0.0
+        # XXI-3 COMPONENT-WISE tolerance.  Each conserved component is judged against ITS OWN scale, so a physically
+        # significant defect in a TRACE component cannot disappear under an unrelated BULK component's inventory.  (The
+        # pre-XXI single global scale = max over ALL components let a 1e-8 mol fabrication of a 1e-12 mol component pass
+        # under a 1 mol component's ~1e-6 tol.)  scale_i = max(|C_i(0)|, |integrated external flux_i|);
+        # tol_i = atol + rtol*scale_i.  No numerical-adjustment term A_i: the coupled integrator applies no phase-stitch
+        # clamp, so A_i == 0 here; the unified world's whole-run balance carries A_i explicitly (XX-4).
+        comp_tol = {}
         for i in checked_idx:
-            scale = max(scale, abs(float(comp0[i])), abs(float(ext_comp[i])))
-        tol = self._MATERIAL_ATOL + self._MATERIAL_RTOL * scale          # XVIII-4A: scale-aware, NO 1-mol floor
+            scale_i = max(abs(float(comp0[i])), abs(float(ext_comp[i])))
+            comp_tol[labels[i]] = self._MATERIAL_ATOL + self._MATERIAL_RTOL * scale_i
+        tol = max(comp_tol.values()) if comp_tol else self._MATERIAL_ATOL   # representative scalar (loosest component tol)
 
         external_flux = {labels[i]: float(ext_comp[i]) for i in range(len(labels))}
         raw_material_change = {labels[i]: float(raw_change_vec[i]) for i in range(len(labels))}
@@ -870,6 +1020,8 @@ class CoupledWorld:
         max_conserved_drift = 0.0
         max_step_material_residual = 0.0
         max_step_feed_residual = 0.0
+        comp_max_resid = {labels[i]: 0.0 for i in checked_idx}    # XXI-3: per-component max |ledger residual| over steps
+        feed_max_resid = {lab: 0.0 for lab in fed_components if lab in comp_tol}   # XXI-3: per-component, over CHECKED fed components only (an implicit-reservoir component -- H/O/charge -- has no independent ledger, so it is reported, never gated)
         first_violation = None
         for s in range(len(comps)):
             t_s = s * dt
@@ -884,20 +1036,26 @@ class CoupledWorld:
                 ext_t += self._Eg[:, self._slot[(b.compartment, b.species)]] * accs[s][k]
             resid_vec = comps[s] - comp0 - ext_t
             for i in checked_idx:
+                lab = labels[i]
                 r = abs(float(resid_vec[i]))
+                if r > comp_max_resid[lab]:
+                    comp_max_resid[lab] = r
                 if r > max_step_material_residual:
                     max_step_material_residual = r
-                if labels[i] in fed_components and r > max_step_feed_residual:
-                    max_step_feed_residual = r
-                if first_violation is None and r > tol:
-                    first_violation = (t_s, "material_ledger", "-", labels[i], float(resid_vec[i]))
+                if lab in fed_components:
+                    if r > feed_max_resid[lab]:
+                        feed_max_resid[lab] = r
+                    if r > max_step_feed_residual:
+                        max_step_feed_residual = r
+                if first_violation is None and r > comp_tol[lab]:   # XXI-3: per-component gate, NOT the global tol
+                    first_violation = (t_s, "material_ledger", "-", lab, float(resid_vec[i]))
                 if abs(float(ext_comp[i])) == 0.0:          # a purely-internal (no external flux) component: drift only
                     d = abs(float(comps[s][i] - comp0[i]))
                     if d > max_conserved_drift:
                         max_conserved_drift = d
 
-        max_material_residual = max_step_material_residual
-        material_balance_closed = max_material_residual <= tol
+        # XXI-3: the balance closes iff EVERY conserved component's own max residual is within ITS OWN tolerance.
+        material_balance_closed = all(comp_max_resid[lab] <= comp_tol[lab] for lab in comp_max_resid)
 
         feed_ledger_residual = max_step_feed_residual     # XX-3: per-step max over fed components (observer-invariant)
 
@@ -921,7 +1079,7 @@ class CoupledWorld:
 
         positivity_held = min_amount >= -pos_tol
         conserved_components_held = material_balance_closed
-        feed_ledger_closed = feed_ledger_residual <= tol
+        feed_ledger_closed = all(feed_max_resid[lab] <= comp_tol[lab] for lab in feed_max_resid)   # XXI-3: per-component
         solver_completed = True
         structural_ok = solver_completed and positivity_held and material_balance_closed
         structural_tier = STRUCTURALLY_CONSERVING if structural_ok else REFUSED
@@ -931,20 +1089,28 @@ class CoupledWorld:
         caveats = ()
         if not material_balance_closed:
             if first_violation is not None and first_violation[1] == "material_ledger":
-                caveats += (f"the material balance did NOT close: the independent PER-STEP ledger residual reached "
-                            f"{max_step_material_residual:.3e} (> tol {tol:.3e}); first breach at t={first_violation[0]:.3e}s "
-                            f"on component {first_violation[3]!r} (residual {first_violation[4]:.3e}) -- a mid-trajectory "
+                lab_v = first_violation[3]
+                caveats += (f"the material balance did NOT close: component {lab_v!r}'s independent PER-STEP ledger "
+                            f"residual reached {comp_max_resid.get(lab_v, max_step_material_residual):.3e} "
+                            f"(> ITS OWN component tol {comp_tol.get(lab_v, tol):.3e}); first breach at "
+                            f"t={first_violation[0]:.3e}s (residual {first_violation[4]:.3e}) -- a mid-trajectory "
                             f"violation the endpoint snapshot can hide",)
             else:
-                worst = max(checked_idx, key=lambda i: ledger_residual[labels[i]])
-                lab = labels[worst]
-                caveats += (f"the material balance did NOT close for component {lab!r}: measured change "
-                            f"{raw_material_change[lab]:.3e} vs integrated external flux {external_flux[lab]:.3e} "
-                            f"(per-step ledger residual {max_step_material_residual:.3e} > tol {tol:.3e})",)
+                worst = max(comp_max_resid, key=lambda lab: comp_max_resid[lab] - comp_tol[lab])
+                caveats += (f"the material balance did NOT close for component {worst!r}: per-step ledger residual "
+                            f"{comp_max_resid[worst]:.3e} > its OWN component tol {comp_tol[worst]:.3e} (measured change "
+                            f"{raw_material_change[worst]:.3e} vs integrated external flux {external_flux[worst]:.3e}) "
+                            f"-- not hidden under an unrelated bulk component's scale",)
         if not positivity_held:
             where = (f" (first at t={first_violation[0]:.3e}s, {first_violation[2]}/{first_violation[3]})"
                      if first_violation is not None and first_violation[1] == "positivity" else "")
             caveats += (f"an inventory went negative (min {min_amount:.3e}){where}",)
+        if self._uncertified_rate_laws:
+            caveats += (f"NO certified execution identity: rate law(s) {list(self._uncertified_rate_laws)} expose no "
+                        f"bindable descriptor(), so the world certificate cannot witness that the same physics "
+                        f"executed (a mutation of their hidden parameters is invisible to it); the kinetic tier is "
+                        f"floored to UNVERIFIED and this trajectory must NOT be read as a certified-identity result "
+                        f"(XXI-2)",)
         if implicit_reservoir:
             note = (f"implicit-solvent reservoir components {sorted(implicit_reservoir)} exchange H/O/charge with a "
                     f"fast-equilibrium solvent and are reported (endpoint), not independently ledgered")
@@ -961,7 +1127,10 @@ class CoupledWorld:
             reservoir_exchange=reservoir_exchange, external_flux=external_flux,
             raw_material_change=raw_material_change, ledger_adjusted_residual=ledger_residual,
             material_balance_closed=material_balance_closed, charge_balance_claim=charge_balance_claim, notes=notes,
-            max_step_material_residual=max_step_material_residual, first_violation=(first_violation or ()))
+            max_step_material_residual=max_step_material_residual, first_violation=(first_violation or ()),
+            execution_identity_certified=not self._uncertified_rate_laws,
+            uncertified_rate_laws=self._uncertified_rate_laws,
+            component_tolerance=dict(comp_tol), component_max_residual=dict(comp_max_resid))
 
         amounts = {c.name: tuple({sp: float(yj[self._slot[(c.name, sp)]]) for sp in c.system.species} for yj in ys)
                    for c in self.compartments}

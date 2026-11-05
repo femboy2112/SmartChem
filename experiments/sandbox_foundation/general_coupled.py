@@ -309,6 +309,65 @@ class ExternalBoundary:
 
 
 @dataclass(frozen=True)
+class ElectroneutralBulkExchange:
+    """A conservative BULK-LIQUID exchange between two constant-volume, well-mixed aqueous compartments (XXI-5).
+
+    Unlike InterfaceTransfer -- a SELECTIVE membrane that moves ONE species (e.g. neutral HAc or CO2(aq)) -- this
+    operator swaps equal LIQUID PARCELS: at volumetric rate ``Q`` (L/s) a parcel leaves A carrying EVERY co-declared
+    dissolved species at its A-concentration while an equal counter-parcel arrives from B at its B-concentration.  Each
+    advected species s moves at J_s = Q*(c_A,s - c_B,s) mol/s (A->b), ALL sharing the SAME Q.  Because the whole
+    solution moves together:
+      * every analytical component is conserved globally (each species leaves A and enters B -- an INTERNAL transfer);
+      * net CHARGE is conserved globally, and because each parcel is a locally electroneutral solution the exchange
+        does not leave either compartment artificially charged -- the charge flux is Q*(rho_q,A - rho_q,B), which is 0
+        for electroneutral bulk solutions -- in deliberate CONTRAST to an unconstrained single-ion flux that would;
+      * the compartments are fixed control volumes and the parcels are equal, so volume is unchanged.
+    The actual speciation is re-established by each compartment's fast-equilibrium projection after the continuous step.
+
+    ``species_pairs`` is ((species_in_A, species_in_B), ...): the co-advected dissolved species, each pair sharing
+    elemental composition, charge AND phase-independent substance identity (the XVI-P0.1 discriminator) -- a parcel
+    carries each substance as itself, it does not transmute one into another (that would be a reaction, not transport).
+    Declaring the FULL dissolved set makes this a genuine bulk mixer; a neutral subset reduces it to a (multi-species)
+    selective transfer -- the two regimes are exactly what XXI-5 contrasts."""
+    name: str
+    a: str                            # compartment name (source side for a positive flux)
+    b: str                            # compartment name (sink side for a positive flux)
+    species_pairs: tuple              # ((Species_a, Species_b), ...) co-advected, same substance per pair
+    Q_L_per_s: float                  # volumetric parcel-exchange rate, L/s; >= 0
+
+    def __post_init__(self):
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise CoupledError("an ElectroneutralBulkExchange needs a non-empty name")
+        if self.a == self.b:
+            raise CoupledError(f"bulk exchange {self.name!r} connects compartment {self.a!r} to itself")
+        if type(self.species_pairs) is not tuple or not self.species_pairs:
+            raise CoupledError(f"bulk exchange {self.name!r} needs a non-empty tuple of (species_a, species_b) pairs")
+        for pair in self.species_pairs:
+            if type(pair) is not tuple or len(pair) != 2:
+                raise CoupledError(f"bulk exchange {self.name!r}: each pair must be a (species_a, species_b) tuple")
+            sa, sb = pair
+            if type(sa) is not Species or type(sb) is not Species:
+                raise CoupledError(f"bulk exchange {self.name!r}: species pairs must contain Species")
+            # same discipline as InterfaceTransfer: composition+charge NECESSARY, shared substance the constitutional
+            # discriminator -- a bulk parcel moves a substance as itself; transmuting it is a reaction, not transport.
+            if sa.composition != sb.composition or sa.charge != sb.charge:
+                raise CoupledError(
+                    f"bulk exchange {self.name!r} pairs species of different composition/charge "
+                    f"({sa.name!r} {sa.composition} q={sa.charge} vs {sb.name!r} {sb.composition} q={sb.charge})")
+            if sa.substance != sb.substance:
+                raise CoupledError(
+                    f"bulk exchange {self.name!r} pairs species of the SAME formula but DIFFERENT substance "
+                    f"({sa.name!r} substance={sa.substance!r} vs {sb.name!r} substance={sb.substance!r}); a bulk "
+                    f"parcel transports a substance as itself, it does not transmute it (that is a reaction)")
+        if len({sa for sa, _ in self.species_pairs}) != len(self.species_pairs) or \
+                len({sb for _, sb in self.species_pairs}) != len(self.species_pairs):
+            raise CoupledError(f"bulk exchange {self.name!r} lists a species more than once (ambiguous flux)")
+        if isinstance(self.Q_L_per_s, bool) or not (isinstance(self.Q_L_per_s, (int, float))
+                                                    and math.isfinite(self.Q_L_per_s) and self.Q_L_per_s >= 0):
+            raise CoupledError("Q_L_per_s must be a finite volumetric rate (L/s) >= 0")
+
+
+@dataclass(frozen=True)
 class CoupledReceipt:
     """DERIVED, non-self-certifying evidence for a coupled trajectory (Wave A/1E discipline, lifted to the world)."""
     solver_completed: bool
@@ -370,7 +429,7 @@ class CoupledWorld:
     without splitting -- the reference for the convergence study)."""
 
     def __init__(self, compartments: list, interfaces: list = (), boundaries: list = (), *,
-                 temperature_K: float = 298.15):
+                 bulk_exchanges: list = (), temperature_K: float = 298.15):
         if not compartments or any(type(c) is not Compartment for c in compartments):
             raise CoupledError("compartments must be a non-empty list of Compartment")
         names = [c.name for c in compartments]
@@ -388,6 +447,7 @@ class CoupledWorld:
         self._comp = {c.name: c for c in compartments}
         self.interfaces = list(interfaces)
         self.boundaries = list(boundaries)
+        self.bulk_exchanges = list(bulk_exchanges)
 
         for iface in self.interfaces:
             if type(iface) is not InterfaceTransfer:
@@ -406,6 +466,19 @@ class CoupledWorld:
             if b.species not in self._comp[b.compartment].system._index:
                 raise CoupledError(f"boundary {b.name!r} references species {b.species.name!r} absent from "
                                    f"compartment {b.compartment!r}")
+        for bx in self.bulk_exchanges:
+            if type(bx) is not ElectroneutralBulkExchange:
+                raise CoupledError("bulk_exchanges must be ElectroneutralBulkExchange objects")
+            for side in (bx.a, bx.b):
+                if side not in self._comp:
+                    raise CoupledError(f"bulk exchange {bx.name!r} references unknown compartment {side!r}")
+            for sa, sb in bx.species_pairs:
+                if sa not in self._comp[bx.a].system._index:
+                    raise CoupledError(f"bulk exchange {bx.name!r} references species {sa.name!r} absent from "
+                                       f"compartment {bx.a!r}")
+                if sb not in self._comp[bx.b].system._index:
+                    raise CoupledError(f"bulk exchange {bx.name!r} references species {sb.name!r} absent from "
+                                       f"compartment {bx.b!r}")
 
         # global slot layout: (compartment_name, Species) in a fixed order
         self._slots = [(c.name, sp) for c in self.compartments for sp in c.system.species]
@@ -490,9 +563,13 @@ class CoupledWorld:
             "rate": _canon_num(b.rate), "k_transfer": _canon_num(b.k_transfer),
             "target_conc": _canon_num(b.target_conc),
         } for b in self.boundaries]
+        bulk = [{                                                 # XXI-5: bind each bulk exchange's Q + advected pairs
+            "name": x.name, "a": x.a, "b": x.b, "Q_L_per_s": _canon_num(x.Q_L_per_s),
+            "species_pairs": [[_species_key(sa), _species_key(sb)] for sa, sb in x.species_pairs],
+        } for x in self.bulk_exchanges]
         payload = {"temperature_K": _canon_num(self.temperature_K),
                    "slots": [(cn, _species_key(sp)) for cn, sp in self._slots],
-                   "compartments": comp, "interfaces": ifaces, "boundaries": bounds}
+                   "compartments": comp, "interfaces": ifaces, "boundaries": bounds, "bulk_exchanges": bulk}
         blob = json.dumps(payload, sort_keys=True, default=str)
         return hashlib.sha256(blob.encode()).hexdigest()
 
@@ -572,6 +649,18 @@ class CoupledWorld:
             J = iface.k_transfer * (y[ia] / Va - iface.partition * y[ib] / Vb)   # mol/s, a -> b
             dy[ia] -= J
             dy[ib] += J
+        for bx in self.bulk_exchanges:
+            # XXI-5 bulk-liquid parcel swap: EVERY co-advected species moves at the SAME Q (whole-solution transport),
+            # J_s = Q*(c_A,s - c_B,s) mol/s a->b.  INTERNAL (conservative): what leaves A enters B, for every species,
+            # so each component AND net charge is conserved and no cell is left artificially charged.
+            Va = self._comp[bx.a].system.volume_L
+            Vb = self._comp[bx.b].system.volume_L
+            for sa, sb in bx.species_pairs:
+                ia = self._slot[(bx.a, sa)]
+                ib = self._slot[(bx.b, sb)]
+                J = bx.Q_L_per_s * (y[ia] / Va - y[ib] / Vb)
+                dy[ia] -= J
+                dy[ib] += J
         dflux = np.zeros(len(self.boundaries))
         for k, b in enumerate(self.boundaries):
             i = self._slot[(b.compartment, b.species)]

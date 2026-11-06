@@ -23,16 +23,19 @@ of (:class:`EventType`):
 * ``CONNECTED_LATERAL`` -- a single connected precursor of the SAME atom count (a [3,3] sigmatropic or an
   electrocyclic ring open/close); rank-flat, reagentless, no coproduct.
 * ``INTRAMOLECULAR_COPRODUCT`` -- a single connected principal precursor LARGER than the target, expelling a
-  conserved coproduct (lactonization, Dieckmann, intramolecular aldol condensation).  A STANDALONE generator for
-  the lactonization subfamily now exists -- :func:`smartchem.intramolecular_condensation.retro_lactonization_edges`
-  (OPERATION XII P2), which proves intramolecularity AT THE GENERATOR (it opens only in-ring ester linkages, so the
-  precursor stays one connected molecule) -- but it is **not wired into THIS bounded search**: ``CappedScission``'s
-  >=2-component contract (#125) still cannot represent it and no lateral family expels a coproduct, so
-  ``search_event_routes`` still yields ZERO type-3 events.  Wiring the generator into the recursive search (with the
-  ``(coproduct_events, atoms, lateral_hops)`` termination proof for the rank-INCREASING retro step, and a
-  lactonization recognizer so the oracle vouches rather than demotes the step) is the deferred follow-on.  The
-  category is DEFINED and :func:`classify_event` recognizes its SHAPE (so the taxonomy is complete and the deferral
-  is exhibited, not hand-waved).  See the findings doc.
+  conserved coproduct (lactonization, Dieckmann, intramolecular aldol condensation).  WIRED LIVE in OPERATION XIV:
+  :func:`smartchem.intramolecular_condensation.retro_lactonization_enumeration` is the bounded event provider for
+  the lactonization subfamily, which proves intramolecularity AT THE GENERATOR (it opens only in-ring ester
+  linkages, so the precursor stays one connected molecule and the forward esterification closes a bond within it)
+  and REPORTS its exhaustiveness (a truncated candidate-site scan cannot feed a COMPLETE receipt).  The oracle now
+  carries a generator-independent lactonization recognizer (the 25th class), so a type-3 step the search emits is
+  VOUCHED, not demoted.  This event is RANK-INCREASING (the hydroxy-acid precursor is larger than the lactone
+  target), which the pure ``(atom_count, hops_left)`` measure could not admit; the termination proof below is
+  extended to the three-component ``(coproduct_events_left, atom_count, hops_left)`` measure (``max_coproduct_events``
+  bounds the type-3 events per route exactly as ``lateral_hops`` bounds the laterals).  ``CappedScission``'s
+  >=2-component contract (#125) still cannot represent it -- this is a SEPARATE typed producer, not an overloaded
+  scission.  :func:`classify_event` still certifies only its SHAPE; the intramolecular connectivity is the
+  PRODUCER's and the RECOGNIZER's proof obligation (both carry the atom-map), never the shape check's.
 
 THE TERMINATION PROOF (#125 acceptance clause 4; the #104 "well-founded non-atom-count measure").  Termination
 is OVERDETERMINED -- two independent well-founded measures each strictly decrease on every recursion edge.  Be
@@ -45,22 +48,35 @@ precise about which one the code OPERATIVELY enforces (d'Alembert's correction -
   (``cut_budget`` bounds the scission candidates, ``lateral_match_budget`` x the family set bounds the lateral
   candidates) the whole search tree is finite.  This is the guard that halts the search in practice.
 
-* THE INDEPENDENT CHEMICAL CERTIFICATE: the LEXICOGRAPHIC pair ``M(t, hops_left) = (len(t.atoms), hops_left)``
-  on ``N x N``.  A SCISSION edge recurses onto a precursor with ``len < len(t.atoms)`` (W1) at the SAME
-  ``hops_left`` (first component drops); a CONNECTED_LATERAL edge recurses onto an isomer of the SAME atom count
-  with ``hops_left - 1`` (first component unchanged, second drops).  ``M`` strictly decreases on every edge, so
-  the search would terminate even with ``max_depth`` UNBOUNDED -- a single monotone atom-count measure could not
-  admit a rank-flat hop, but this lexicographic pair does, WITHOUT weakening W1 for scission.  ``M`` is what
-  makes ``lateral_hops`` a meaningful COMPLETENESS parameter (a genuine per-route bound on lateral events)
-  rather than a termination crutch.
+* THE INDEPENDENT CHEMICAL CERTIFICATE: the LEXICOGRAPHIC TRIPLE
+  ``M(t, cop_left, hops_left) = (cop_left, len(t.atoms), hops_left)`` on ``N x N x N`` (OPERATION XIV extended the
+  pair to a triple to admit the rank-INCREASING coproduct event).  On every recursion edge ``M`` strictly
+  decreases in the lexicographic order, so the search would terminate even with ``max_depth`` UNBOUNDED:
 
-CONSEQUENCE (stated so the prose does not hide it).  Because a lateral hop consumes a depth increment as well
-as a hop, a route of k scissions plus a lateral whose COMBINED recursion depth exceeds ``max_depth`` is
-unreachable even though ``M`` alone would admit it.  This is not silent: such a cut increments ``depth_truncated``
-and the receipt reports ``complete == False`` (fail-closed).  The ISSUE-124 ancestor guard (inherited from
-``search_routes``) additionally refuses a precursor equal to one of the branch's own non-stock ancestors, so a
-rank-flat inverse cycle ``A -> B -> A`` is cut outright (belt and suspenders -- though ``M`` already kills it,
-since every lateral hop spends a hop).
+    - SCISSION recurses onto a precursor with ``len < len(t.atoms)`` (W1) at the SAME ``cop_left`` and
+      ``hops_left``: the 1st component is unchanged, the 2nd strictly DROPS.
+    - CONNECTED_LATERAL recurses onto an isomer of the SAME atom count with ``hops_left - 1`` at the same
+      ``cop_left``: the 1st and 2nd components are unchanged, the 3rd strictly DROPS.
+    - INTRAMOLECULAR_COPRODUCT recurses onto a precursor LARGER than the target (``len > len(t.atoms)``, the
+      hydroxy acid carries the expelled water's atoms) with ``cop_left - 1``: the 1st, MOST-significant component
+      strictly DROPS, so ``M`` decreases regardless of the 2nd component INCREASING.  This is exactly why the
+      coproduct budget must be the most significant component -- it is the only thing that dominates the atom-count
+      growth a rank-increasing step causes.
+
+  ``N x N x N`` under the lexicographic order is well-founded (no infinite strictly-descending chain), so the search
+  halts.  A single monotone atom-count measure could admit NEITHER a rank-flat hop NOR a rank-increasing coproduct;
+  this triple does both, WITHOUT weakening W1 for scission.  ``M`` is what makes ``lateral_hops`` and
+  ``max_coproduct_events`` meaningful per-route COMPLETENESS parameters (genuine bounds on lateral / type-3 events)
+  rather than termination crutches.
+
+CONSEQUENCE (stated so the prose does not hide it).  Because a lateral hop AND a coproduct event each also consume
+a depth increment (every edge recurses through ``_branch`` at ``depth + 1``), a route whose COMBINED recursion depth
+exceeds ``max_depth`` is unreachable even though ``M`` alone would admit it.  This is not silent: such a cut
+increments ``depth_truncated`` and the receipt reports ``complete == False`` (fail-closed).  The ISSUE-124 ancestor
+guard (inherited from ``search_routes``) additionally refuses a precursor equal to one of the branch's own non-stock
+ancestors, so a rank-flat inverse cycle ``A -> B -> A`` is cut outright.  A cycle THROUGH a coproduct event is
+impossible under ``M`` for a stronger reason: ``cop_left`` only ever decreases and never resets, so no state can
+recur across a coproduct step (belt and suspenders -- the ancestor guard, plus the strictly monotone triple).
 
 THE OPT-IN / REPLAY-INTEGRITY BOUNDARY (#125 acceptance clause 4; the V1_5 program's 1.4 scope).
 ``search_routes`` and its frozen :class:`RouteSearchReceipt` schema are **not touched** -- this is a separate
@@ -80,6 +96,7 @@ from enum import Enum
 
 from ..category import Molecule
 from ..contracts import Digestible, canonical_digest
+from ..intramolecular_condensation import retro_lactonization_enumeration
 from ..lateral_rewrite import LATERAL_FAMILIES, _SigmatropicFamily, guarded_isomer_edges
 from ..transform_provider import (
     DEFAULT_TRANSFORM_REGISTRY,
@@ -91,9 +108,12 @@ from ..transform_provider import (
 from .routes import _conditions_for, _ident, _refuse_charged_target
 from .step import ExperimentRoute, ExperimentStep
 
-#: Receipt schema id (opt-in; deliberately NOT the frozen RouteSearchReceipt schema -- replay integrity).
-EVENT_ROUTE_SEARCH_RECEIPT_SCHEMA = "smartchem.experiment.event-route-search-receipt/v1"
-EVENT_ROUTE_SEARCH_RESULT_SCHEMA = "smartchem.experiment.event-route-search-result/v1"
+#: Receipt schema id (opt-in; deliberately NOT the frozen RouteSearchReceipt schema -- replay integrity).  BUMPED to
+#: v2 in OPERATION XIV: the grammar gained a third event producer (INTRAMOLECULAR_COPRODUCT / lactonization) and the
+#: receipt gained its coproduct budget + truncation counters -- an explicit, versioned coverage transition, never a
+#: silent schema mutation.  (This is the opt-in event-route surface, NOT the frozen 1.0 RouteSearchReceipt.)
+EVENT_ROUTE_SEARCH_RECEIPT_SCHEMA = "smartchem.experiment.event-route-search-receipt/v2"
+EVENT_ROUTE_SEARCH_RESULT_SCHEMA = "smartchem.experiment.event-route-search-result/v2"
 
 
 class EventClassificationError(ValueError):
@@ -108,8 +128,8 @@ class EventType(Enum):
     SCISSION = "SCISSION"
     #: one connected precursor, SAME atom count, no coproduct -- a [3,3] sigmatropic / electrocyclic rank-flat hop.
     CONNECTED_LATERAL = "CONNECTED_LATERAL"
-    #: one connected principal precursor LARGER than the target, expelling a conserved coproduct.  DEFERRED
-    #: (no generator emits it here -- the 2.0 event-calculus obligation); defined so the taxonomy is complete.
+    #: one connected principal precursor LARGER than the target, expelling a conserved coproduct.  WIRED LIVE
+    #: (OPERATION XIV): the lactonization provider emits it and the 25th oracle class vouches it.
     #: CERTIFICATE BOUNDARY (recognition vs. the name): classify_event certifies only this SHAPE -- one
     #: connected principal precursor, rank-larger than the target, expelling >=1 coproduct.  It does NOT certify
     #: the "intramolecular" (connectivity-preserving) chemistry the name evokes: distinguishing a genuine
@@ -203,16 +223,21 @@ class EventRouteSearchReceipt(Digestible):
     cut_budget: int
     lateral_hops: int
     lateral_match_budget: int
+    max_coproduct_events: int            # per-route budget of INTRAMOLECULAR_COPRODUCT (type-3) events (OPERATION XIV)
+    coproduct_match_budget: int          # the candidate-site scan budget per coproduct expansion
     expansions_attempted: int
     incomplete_expansions: int           # scission cut-budget hit at some node
     lateral_match_truncated: int         # a lateral family's kernel match enumeration hit lateral_match_budget
+    coproduct_match_truncated: int       # a coproduct candidate-site scan was non-exhaustive (hit coproduct_match_budget)
     depth_truncated: int                 # a linear-expandable branch cut solely by max_depth
     lateral_hops_truncated: int          # a node had lateral edges but hops_left == 0 (declared-bound truncation)
+    coproduct_events_truncated: int      # a node had coproduct edges but cop_left == 0 (declared-bound truncation)
     result_limit_saturated: bool
     results_returned: int
     nodes_visited: int
     scission_events_considered: int
     lateral_events_considered: int
+    coproduct_events_considered: int
     candidates_emitted: int
     target_identity_digest: str
     terminal_policy_digest: str
@@ -221,11 +246,12 @@ class EventRouteSearchReceipt(Digestible):
     def __post_init__(self) -> None:
         if self.schema_version != EVENT_ROUTE_SEARCH_RECEIPT_SCHEMA:
             raise ValueError(f"schema_version must be exactly {EVENT_ROUTE_SEARCH_RECEIPT_SCHEMA!r}")
-        for name in ("max_depth", "max_routes", "cut_budget", "lateral_match_budget"):
+        for name in ("max_depth", "max_routes", "cut_budget", "lateral_match_budget", "coproduct_match_budget"):
             if type(getattr(self, name)) is not int or getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be a positive integer")
-        if type(self.lateral_hops) is not int or self.lateral_hops < 0:
-            raise ValueError("lateral_hops must be a non-negative integer")
+        for name in ("lateral_hops", "max_coproduct_events"):
+            if type(getattr(self, name)) is not int or getattr(self, name) < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
 
     @property
     def complete(self) -> bool:
@@ -233,8 +259,10 @@ class EventRouteSearchReceipt(Digestible):
         return (
             self.incomplete_expansions == 0
             and self.lateral_match_truncated == 0
+            and self.coproduct_match_truncated == 0
             and self.depth_truncated == 0
             and self.lateral_hops_truncated == 0
+            and self.coproduct_events_truncated == 0
             and not self.result_limit_saturated
         )
 
@@ -242,11 +270,13 @@ class EventRouteSearchReceipt(Digestible):
         done = "COMPLETE within grammar" if self.complete else "INCOMPLETE (truncated)"
         return (
             f"event-route search: {self.results_returned} route(s), {done}; depth<={self.max_depth}, "
-            f"lateral_hops<={self.lateral_hops}; nodes visited={self.nodes_visited}; scission events="
-            f"{self.scission_events_considered}, lateral events={self.lateral_events_considered}; "
+            f"lateral_hops<={self.lateral_hops}, coproduct_events<={self.max_coproduct_events}; nodes visited="
+            f"{self.nodes_visited}; scission events={self.scission_events_considered}, lateral events="
+            f"{self.lateral_events_considered}, coproduct events={self.coproduct_events_considered}; "
             f"truncations: scission-budget={self.incomplete_expansions}, lateral-match="
-            f"{self.lateral_match_truncated}, depth={self.depth_truncated}, hops={self.lateral_hops_truncated}, "
-            f"result-limit={self.result_limit_saturated}."
+            f"{self.lateral_match_truncated}, coproduct-match={self.coproduct_match_truncated}, depth="
+            f"{self.depth_truncated}, hops={self.lateral_hops_truncated}, coproduct-events="
+            f"{self.coproduct_events_truncated}, result-limit={self.result_limit_saturated}."
         )
 
 
@@ -287,29 +317,36 @@ def search_event_routes(
     lateral_families: tuple[_SigmatropicFamily, ...] = LATERAL_FAMILIES,
     lateral_hops: int = 1,
     lateral_match_budget: int = 100_000,
+    max_coproduct_events: int = 1,
+    coproduct_match_budget: int = 10_000,
     registry: TransformProviderRegistry = DEFAULT_TRANSFORM_REGISTRY,
 ) -> EventRouteSearchResult:
     """Bounded typed-event retrosynthesis: find routes to ``target`` that interleave rank-descending SCISSION
-    events with up to ``lateral_hops`` rank-flat CONNECTED_LATERAL hops, terminating on the lexicographic
-    ``(atom_count, hops_left)`` measure (see the module docstring's proof).  Opt-in; ``search_routes`` and its
-    frozen receipt are untouched.
+    events with up to ``lateral_hops`` rank-flat CONNECTED_LATERAL hops and up to ``max_coproduct_events``
+    rank-INCREASING INTRAMOLECULAR_COPRODUCT events (lactonization), terminating on the lexicographic
+    ``(coproduct_events_left, atom_count, hops_left)`` measure (see the module docstring's proof).  Opt-in;
+    ``search_routes`` and its frozen receipt are untouched.
 
     ``reagents`` / ``available`` / ``commodities`` terminate a branch exactly as in ``search_routes`` (keyed by
     canonical identity, never by formula).  ``lateral_hops`` is the per-ROUTE budget of lateral events (default
-    1; ``0`` reproduces the pure-scission grammar).  ``lateral_families`` defaults to every vouched lateral
-    family (the [3,3] sigmatropics + electrocyclizations -- the forcing consumers #123 names).  The receipt is
-    an honest completeness fact: INCOMPLETE whenever any budget, the depth, the lateral-hop bound, or the result
+    1; ``0`` reproduces the pure-scission grammar when ``max_coproduct_events`` is also ``0``).
+    ``max_coproduct_events`` is the per-ROUTE budget of type-3 lactonization events (default 1; ``0`` disables the
+    coproduct producer).  ``lateral_families`` defaults to every vouched lateral family (the [3,3] sigmatropics +
+    electrocyclizations -- the forcing consumers #123 names).  The receipt is an honest completeness fact:
+    INCOMPLETE whenever any budget, the depth, the lateral-hop bound, the coproduct-event bound, or the result
     limit truncated the search.
     """
     if type(target) is not Molecule:
         raise TypeError("target must be a Molecule")
     assert_registry_supports_use(registry, ProviderUse.LINEAR_ROUTE)
     for name, value in (("max_depth", max_depth), ("max_routes", max_routes), ("cut_budget", cut_budget),
-                        ("lateral_match_budget", lateral_match_budget)):
+                        ("lateral_match_budget", lateral_match_budget),
+                        ("coproduct_match_budget", coproduct_match_budget)):
         if type(value) is not int or value <= 0:
             raise ValueError(f"{name} must be a positive integer")
-    if type(lateral_hops) is not int or lateral_hops < 0:
-        raise ValueError("lateral_hops must be a non-negative integer")
+    for name, value in (("lateral_hops", lateral_hops), ("max_coproduct_events", max_coproduct_events)):
+        if type(value) is not int or value < 0:
+            raise ValueError(f"{name} must be a non-negative integer")
 
     on_hand = {_ident(m) for m in (*available, *reagents, *commodities)}
     grammar_digest = canonical_digest((
@@ -317,6 +354,7 @@ def search_event_routes(
         search_algebra_digest("linear-route", registry),
         tuple(sorted(f.provider_id for f in lateral_families)),
         lateral_hops,
+        ("coproduct", "lactonization-v1", max_coproduct_events),
     ))
     identity = dict(
         target_identity_digest=_ident(target),
@@ -324,20 +362,22 @@ def search_event_routes(
         transform_grammar_digest=grammar_digest,
     )
 
-    def _receipt(*, expansions, incomplete, lat_trunc, depth_trunc, hops_trunc, result_sat, results,
-                 nodes, scission_ev, lateral_ev, emitted) -> EventRouteSearchReceipt:
+    def _receipt(*, expansions, incomplete, lat_trunc, cop_match_trunc, depth_trunc, hops_trunc, cop_events_trunc,
+                 result_sat, results, nodes, scission_ev, lateral_ev, cop_ev, emitted) -> EventRouteSearchReceipt:
         return EventRouteSearchReceipt(
             EVENT_ROUTE_SEARCH_RECEIPT_SCHEMA, max_depth, max_routes, cut_budget, lateral_hops,
-            lateral_match_budget, expansions, incomplete, lat_trunc, depth_trunc, hops_trunc, result_sat,
-            results, nodes, scission_ev, lateral_ev, emitted, **identity,
+            lateral_match_budget, max_coproduct_events, coproduct_match_budget,
+            expansions, incomplete, lat_trunc, cop_match_trunc, depth_trunc, hops_trunc, cop_events_trunc,
+            result_sat, results, nodes, scission_ev, lateral_ev, cop_ev, emitted, **identity,
         )
 
     if _ident(target) in on_hand:
         # the search ran and terminated immediately: the zero counters are a measurement, not UNKNOWN.
         return EventRouteSearchResult(
             EVENT_ROUTE_SEARCH_RESULT_SCHEMA, (),
-            _receipt(expansions=0, incomplete=0, lat_trunc=0, depth_trunc=0, hops_trunc=0, result_sat=False,
-                     results=0, nodes=0, scission_ev=0, lateral_ev=0, emitted=0),
+            _receipt(expansions=0, incomplete=0, lat_trunc=0, cop_match_trunc=0, depth_trunc=0, hops_trunc=0,
+                     cop_events_trunc=0, result_sat=False, results=0, nodes=0, scission_ev=0, lateral_ev=0,
+                     cop_ev=0, emitted=0),
             True,
         )
 
@@ -345,18 +385,24 @@ def search_event_routes(
     expansions_attempted = 0
     incomplete_expansions = 0
     lateral_match_truncated = 0
+    coproduct_match_truncated = 0
     depth_truncated = 0
     lateral_hops_truncated = 0
+    coproduct_events_truncated = 0
     result_limit_saturated = False
     nodes_visited = 0
     scission_events_considered = 0
     lateral_events_considered = 0
+    coproduct_events_considered = 0
     candidates_emitted = 0
 
-    def _branch(step: ExperimentStep, t: Molecule, depth: int, hops_left: int, ancestors: frozenset[str]):
+    def _branch(step: ExperimentStep, t: Molecule, depth: int, hops_left: int, cop_left: int,
+                ancestors: frozenset[str]):
         """Yield every completed route that ends in ``step`` (which makes ``t``), recursing linearly to make a
-        single still-missing precursor.  Shared by the scission and lateral branches -- the ISSUE-124 ancestor
-        guard (the rank-flat/reversible safety net) and the linear-expansion rule are identical for both."""
+        single still-missing precursor.  Shared by the scission, lateral AND coproduct branches -- the ISSUE-124
+        ancestor guard (the rank-flat/reversible safety net) and the linear-expansion rule are identical for all
+        three; the caller has already decremented ``hops_left`` / ``cop_left`` for the event type it is taking, so
+        ``_branch`` just threads the remaining budgets down."""
         nonlocal depth_truncated
         distinct: dict[str, Molecule] = {}
         for m in step.reactants:
@@ -364,21 +410,23 @@ def search_event_routes(
         # ISSUE-124: a precursor equal to one of this branch's OWN non-stock ancestors is a self-referential
         # (cyclic) dependency -- REFUSE it (never treat it as available).  Under pure W1 scission an ancestor can
         # never reappear; with a rank-flat lateral hop it CAN (a Cope inverse A->B->A), so this guard is what cuts
-        # the inverse cycle rather than merely letting the hop budget bound it.
+        # the inverse cycle rather than merely letting the hop budget bound it.  (A coproduct event cannot close a
+        # cycle at all -- cop_left strictly decreases and never resets -- but the guard covers it uniformly.)
         if any(k in ancestors and k not in on_hand for k in distinct):
             return
         missing = [m for k, m in distinct.items() if k not in on_hand]
         if not missing:
             yield ExperimentRoute.of(step)
         elif len(missing) == 1 and depth < max_depth:
-            for sub in routes_making(missing[0], depth + 1, hops_left, ancestors | {_ident(t)}):
+            for sub in routes_making(missing[0], depth + 1, hops_left, cop_left, ancestors | {_ident(t)}):
                 yield ExperimentRoute.of(*sub.steps, step)
         elif len(missing) == 1:
             depth_truncated += 1
         # len(missing) >= 2 is a convergent (DAG) boundary, not a depth limit -- not this linear search's job.
 
-    def routes_making(t: Molecule, depth: int, hops_left: int, ancestors: frozenset[str]):
+    def routes_making(t: Molecule, depth: int, hops_left: int, cop_left: int, ancestors: frozenset[str]):
         nonlocal expansions_attempted, incomplete_expansions, lateral_match_truncated, lateral_hops_truncated
+        nonlocal coproduct_match_truncated, coproduct_events_truncated, coproduct_events_considered
         nonlocal nodes_visited, scission_events_considered, lateral_events_considered
         nodes_visited += 1
         if depth > max_depth:
@@ -393,7 +441,7 @@ def search_event_routes(
             scission_events_considered += 1
             cs = et.transform
             step = ExperimentStep.from_transform(cs, envelope=_conditions_for(cs))
-            yield from _branch(step, t, depth, hops_left, ancestors)
+            yield from _branch(step, t, depth, hops_left, cop_left, ancestors)
         # -- CONNECTED_LATERAL events (rank-flat; atom_count equal, consume one hop) --
         if hops_left > 0:
             for family in lateral_families:
@@ -404,7 +452,7 @@ def search_event_routes(
                     lateral_events_considered += 1
                     # the forget()-FREE path (#123): envelope=None, so a lateral edge never enters the decompiler.
                     step = ExperimentStep.from_transform(edge, envelope=None)
-                    yield from _branch(step, t, depth, hops_left - 1, ancestors)
+                    yield from _branch(step, t, depth, hops_left - 1, cop_left, ancestors)
         elif lateral_families and lateral_hops > 0:
             # laterals were ENABLED (lateral_hops>0) but this branch spent them all, yet a deeper node could still
             # have a lateral successor -- an honest declared-bound truncation, the lateral analogue of depth_truncated
@@ -427,8 +475,31 @@ def search_event_routes(
                     found_successor = True
             if found_successor:
                 lateral_hops_truncated += 1
+        # -- INTRAMOLECULAR_COPRODUCT events (rank-INCREASING lactonization; the coproduct budget drops) --
+        # The generator is the PRODUCER (it proves intramolecularity at construction + reports exhaustiveness); the
+        # 25th oracle class recognises the emitted step independently.  Like a lateral, a type-3 edge is a typed
+        # event, so it takes the forget()-FREE path (envelope=None): it never enters the W1 scission decompiler.
+        if cop_left > 0:
+            enum = retro_lactonization_enumeration(t, budget=coproduct_match_budget)
+            if not enum.exhaustive:
+                coproduct_match_truncated += 1        # a truncated candidate-site scan cannot feed a COMPLETE receipt
+            for edge in enum.edges:
+                coproduct_events_considered += 1
+                step = ExperimentStep.from_transform(edge, envelope=None)
+                yield from _branch(step, t, depth, hops_left, cop_left - 1, ancestors)
+        elif max_coproduct_events > 0:
+            # coproduct events were ENABLED but this branch spent them all, yet a deeper node could still have a
+            # type-3 successor -- the coproduct analogue of lateral_hops_truncated (fail-closed INCOMPLETE).  When
+            # max_coproduct_events==0 the user opted OUT, so we never pay to probe.  The enumeration REPORTS its own
+            # exhaustiveness, so a non-exhaustive probe flags coproduct_match_truncated even if it found nothing --
+            # honesty must not rest on the unasserted accident that a cut scan happened to return no edges.
+            enum = retro_lactonization_enumeration(t, budget=coproduct_match_budget)
+            if not enum.exhaustive:
+                coproduct_match_truncated += 1
+            if enum.edges:
+                coproduct_events_truncated += 1
 
-    for route in routes_making(target, 1, lateral_hops, frozenset()):
+    for route in routes_making(target, 1, lateral_hops, max_coproduct_events, frozenset()):
         candidates_emitted += 1
         if route.digest in seen_routes:
             continue                                   # repeated-state: distinct histories, same route -> dedup
@@ -441,9 +512,11 @@ def search_event_routes(
     return EventRouteSearchResult(
         EVENT_ROUTE_SEARCH_RESULT_SCHEMA, routes,
         _receipt(expansions=expansions_attempted, incomplete=incomplete_expansions,
-                 lat_trunc=lateral_match_truncated, depth_trunc=depth_truncated, hops_trunc=lateral_hops_truncated,
-                 result_sat=result_limit_saturated, results=len(routes), nodes=nodes_visited,
-                 scission_ev=scission_events_considered, lateral_ev=lateral_events_considered,
+                 lat_trunc=lateral_match_truncated, cop_match_trunc=coproduct_match_truncated,
+                 depth_trunc=depth_truncated, hops_trunc=lateral_hops_truncated,
+                 cop_events_trunc=coproduct_events_truncated, result_sat=result_limit_saturated,
+                 results=len(routes), nodes=nodes_visited, scission_ev=scission_events_considered,
+                 lateral_ev=lateral_events_considered, cop_ev=coproduct_events_considered,
                  emitted=candidates_emitted),
         False,
     )

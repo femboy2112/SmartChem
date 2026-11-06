@@ -111,7 +111,9 @@ def test_ancestor_that_is_genuine_stock_terminates_a_real_route():
 
 def test_lateral_hops_zero_reproduces_the_search_routes_route_set():
     sr = {r.digest for r in search_routes(PARA, **PARA_KW).routes}
-    e0 = {r.digest for r in search_event_routes(PARA, lateral_hops=0, **PARA_KW).routes}
+    # the PURE-scission grammar needs BOTH event budgets off (OPERATION XIV: coproduct defaults to 1); with both at
+    # 0 the event search reproduces search_routes exactly.
+    e0 = {r.digest for r in search_event_routes(PARA, lateral_hops=0, max_coproduct_events=0, **PARA_KW).routes}
     assert e0 == sr and len(sr) >= 1
     e1 = {r.digest for r in search_event_routes(PARA, lateral_hops=1, **PARA_KW).routes}
     assert sr <= e1                                # enabling laterals never DROPS a scission route
@@ -206,13 +208,15 @@ def test_classify_event_recognition_does_not_trust_provenance():
     assert all(len(r.atoms) < len(ac2o.atoms) for r in grammar_shaped.reactants)
 
 
-def test_the_deferred_intramolecular_coproduct_class_has_no_producer_in_the_search():
-    # the category is DEFINED (classifier recognizes its shape) but the shipped SEARCH never YIELDS one: the P2
-    # lactonization generator (smartchem.intramolecular_condensation) exists but is STANDALONE, not wired into
-    # search_event_routes (CappedScission's >=2-component contract #125 cannot represent it; no lateral family
-    # expels a coproduct).  Over the whole paracetamol route set, zero type-3 events appear.
+def test_the_coproduct_producer_is_wired_but_fires_zero_on_a_non_lactone_target():
+    # REVIEWED TRANSITION (OPERATION XIV): the type-3 producer IS now wired into search_event_routes (the
+    # lactonization enumeration, default max_coproduct_events=1).  It is a STRUCTURAL producer: it opens only
+    # in-ring ester linkages, so on a NON-lactone target like paracetamol -- and across every scission precursor in
+    # its route set, none of which is a lactone -- it correctly emits ZERO type-3 events.  (A genuine lactone target
+    # reachable from a hydroxy acid DOES get a vouched type-3 event: see test_lactonization_recognizer_xiv.py.)
     pe = search_event_routes(PARA, lateral_hops=1, **PARA_KW)
     assert pe.event_type_counts()[EventType.INTRAMOLECULAR_COPRODUCT] == 0
+    assert pe.receipt.coproduct_events_considered == 0   # the producer ran and found nothing (a measurement, not OFF)
 
 
 def test_intramolecular_coproduct_certifies_shape_not_connectivity_preservation():

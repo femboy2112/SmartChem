@@ -266,8 +266,8 @@ def test_route_with_a_fiction_step_is_blocked():
 # ====================================================================================================
 # COMPATIBILITY -- the registry grew by exactly one; the recognizer is a total pure boolean
 # ====================================================================================================
-def test_registry_has_twenty_four_recognizers_including_sn2():
-    assert len(_RECOGNIZERS) == 24  # 1.5 consolidation: base 20 + hydrogenation + oxoacid ester + SN2 + imine
+def test_registry_has_twenty_five_recognizers_including_sn2():
+    assert len(_RECOGNIZERS) == 25  # base 20 + hydrogenation + oxoacid ester + SN2 + imine + XIV lactonization (25th)
     assert any(_SN2 in name for name, _ in _RECOGNIZERS)
 
 

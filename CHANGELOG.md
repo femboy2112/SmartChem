@@ -9,6 +9,38 @@ This file summarises the finite chemical-compiler release arc. The exhaustive pe
 
 ---
 
+## [1.6.0] — 2026-11-06
+
+**Minor release: the 25th reaction class — intramolecular lactonization — plus an independent structural witness,
+under an unchanged 1.x machine contract.** The oracle now recognises ring-closing hydroxy-acid → lactone esterification
+(OPERATION XIV/XV), registry count **24 → 25**. As from 1.0, this widens coverage without changing the meaning of any
+existing verdict word: the stable wire schema ids, `semantic_digest`, route digests and the readiness/capability
+semantics remain **byte-invariant** (a recognizer is a readiness-layer demoter; it moves count/readiness, never a
+search identity); only the version-bound identity moves (`tool_version`, the `--version` banner). Full dossier:
+[`OPERATION_SMARTCHEM_XIV_LACTONIZATION_2026-10-31.md`](docs/research/OPERATION_SMARTCHEM_XIV_LACTONIZATION_2026-10-31.md).
+
+### Added
+
+- **Lactonization recognizer (25th class).** Ring-closing `R(OH)…C(=O)OH → lactone + H₂O`, with the dalembert XV-P8
+  **carbinol guard**: the consumed hydroxyl must be a genuine **alkyl carbinol**, not a masked carbonyl
+  (hemiaminal / gem-diol / hemiacetal) posed as an alcohol — closing a false-VOUCH where a lactol / hemiorthoester
+  formation would otherwise be mis-classed as a carbinol lactonization. Exhaustiveness/truncation receipts wired into
+  `search_event_routes`.
+- **Independent lactonization witness** (`smartchem.lactonization_witness`): a standalone structural recogniser
+  (imports only `Molecule`, AST-audited to reference no production recognizer symbol) that cross-checks the oracle on
+  genuine hydroxy-acid → lactone pairs. It is not common-mode with the generator/recognizer.
+
+### Resolved — the witness/recognizer divergence (OPERATION XXII §8)
+
+The witness and the recognizer disagree on exactly one case — a lactone whose alkoxy carbon bears a second hydroxyl,
+formed from a gem-diol (masked-carbonyl) acid. Resolved by independent graph reasoning: the target **is** structurally
+a lactone (witness correct), but the transformation is a **lactol / hemiorthoester formation across a masked carbonyl**,
+not a carbinol lactonization, so the fail-closed reaction-class oracle **correctly refuses the VOUCH** (recognizer
+correct). It is a documented domain boundary, not a defect — not erased by forcing agreement. Full reasoning:
+[`OPERATION_XXII_LACTONIZATION_WITNESS_VERDICT.md`](docs/research/OPERATION_XXII_LACTONIZATION_WITNESS_VERDICT.md).
+
+---
+
 ## [1.5.0] — 2026-11-02
 
 **Minor release: the full 20 → 24 reaction-class coverage expansion, consolidated from four review

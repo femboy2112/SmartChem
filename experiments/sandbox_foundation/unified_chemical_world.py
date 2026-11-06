@@ -74,6 +74,7 @@ from experiments.sandbox_foundation.general_kernel import (
     RateLaw,
     Reaction,
     Species,
+    register_certified_rate_law,
 )
 from experiments.sandbox_foundation.solid_bicarbonate import KSP_NAHCO3_25C
 
@@ -115,6 +116,13 @@ class BicarbonateDissolutionRate(RateLaw):
         return ("BicarbonateDissolutionRate", _canon_num(self.k_diss), _canon_num(self.Qsp),
                 _species_key(self.solid), _species_key(self.na), _species_key(self.hco3),
                 self.tier, self.source)
+
+
+# XXII-2: BicarbonateDissolutionRate is an AUDITED built-in.  It is mutable (not a frozen dataclass), but its
+# descriptor() FAITHFULLY binds every operative parameter (k_diss, Qsp, and the solid/Na+/HCO3- species the RHS
+# reads), so the general_coupled XIX-1D cert-recompute catches any post-construction mutation of those parameters.
+# Registration is the maintainer audit that licenses a CERTIFIABLE execution identity for it (general_kernel XXII-2).
+register_certified_rate_law(BicarbonateDissolutionRate)
 
 
 @dataclass(frozen=True)

@@ -235,6 +235,42 @@ class RateLaw:
         return sum(-coeff for _, coeff in reaction.stoich if coeff < 0)
 
 
+# ---------------------------------------------------------------------- XXII-2: the audited rate-law registry
+# A ``descriptor()`` is PROOF of a law's executable identity only when a maintainer has AUDITED that it faithfully
+# binds every operative parameter ``evaluate`` reads AND that the law holds no hidden mutable dependency the descriptor
+# omits.  An arbitrary user law can return a FROZEN descriptor while ``evaluate`` reads a MUTABLE hidden parameter (a
+# LYING descriptor), so the mere presence of a ``descriptor()`` method cannot elevate a class to CERTIFIABLE -- the
+# descriptor would be a self-attested claim, not proof of code behaviour.  This registry is that audit anchor: a law
+# type earns a CERTIFIABLE execution identity ONLY if its EXACT type is registered here (and it binds a descriptor).
+# Every unregistered law -- including one that supplies a descriptor() -- executes EXPLICITLY UNVERIFIED (XXI-2).
+_CERTIFIED_RATE_LAW_TYPES: set = set()
+
+
+def register_certified_rate_law(cls):
+    """Register a RateLaw subclass as an AUDITED, trusted implementation whose ``descriptor()`` faithfully binds every
+    operative parameter -- so a post-construction mutation of a bound parameter moves the world certificate and is
+    caught at ``integrate`` (the general_coupled XIX-1D cert-recompute is the backstop; the audit is the premise that
+    the descriptor reflects the live parameters, which is what makes that backstop sound).  Fail-closed: the class MUST
+    override both ``evaluate`` and ``descriptor`` -- a class still carrying the base ``NotImplementedError`` descriptor
+    cannot be certified (its parameters are unbindable).  Usable as a decorator; returns the class unchanged."""
+    if not (isinstance(cls, type) and issubclass(cls, RateLaw)):
+        raise KernelError("register_certified_rate_law expects a RateLaw subclass")
+    if cls.evaluate is RateLaw.evaluate:
+        raise KernelError(f"{cls.__qualname__} does not override evaluate(); a law with no kinetics cannot be certified")
+    if cls.descriptor is RateLaw.descriptor:
+        raise KernelError(f"{cls.__qualname__} does not override descriptor(); an un-descriptor'd law cannot be "
+                          f"certified (its operative parameters are unbindable -- it runs EXPLICITLY UNVERIFIED)")
+    _CERTIFIED_RATE_LAW_TYPES.add(cls)
+    return cls
+
+
+def is_certified_rate_law_type(cls) -> bool:
+    """True iff ``cls`` is an AUDITED, registered rate-law implementation (XXII-2).  Registry membership -- NOT the
+    mere presence of a ``descriptor()`` method -- is what licenses a CERTIFIABLE execution identity for its instances."""
+    return isinstance(cls, type) and cls in _CERTIFIED_RATE_LAW_TYPES
+
+
+@register_certified_rate_law
 @dataclass(frozen=True)
 class MassActionIrreversible(RateLaw):
     """r_vol = k * prod(c[reactant]^|coeff|)  (mol L^-1 s^-1).  Forward only (no reverse term).
@@ -261,6 +297,7 @@ class MassActionIrreversible(RateLaw):
         return ("MassActionIrreversible", repr(float(self.k)), self.tier, self.source)
 
 
+@register_certified_rate_law
 @dataclass(frozen=True)
 class MassActionReversible(RateLaw):
     """r_vol = kf * prod(c[reactant]^|coeff|) - kr * prod(c[product]^coeff)  (mol L^-1 s^-1).

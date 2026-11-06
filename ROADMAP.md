@@ -2,10 +2,13 @@
 
 > ## ▶ PRESENT STATE (2026-11-06) — OPERATION XXII
 > The authoritative current picture (supersedes the 2026-11-04 OPERATION XXI block below, kept for its reasoning).
-> Reflects MERGED code and current scientific evidence, not PR descriptions. Live `main` = `9d04894`.
+> Reflects MERGED code and current scientific evidence, not PR descriptions. Live `main` = `6a2686e` (`__version__` **1.6.0**).
 >
 > **RELEASED** (production compiler; tags are GitHub Releases, no PyPI)
 > - **1.0.0** `v1.0.0`; **1.1.0** `v1.1.0` (20-class oracle); **1.5.0** `v1.5.0` = `c3d0d01` (24-class oracle).
+> - **1.6.0** — MERGED to `main` (`6a2686e`, PR #157, 2026-11-06) with the production version bump 1.5.0 → 1.6.0 (25-class
+>   oracle). **NOT tagged / NO GitHub Release / NO PyPI** — the version bump is on `main`, but publishing a 1.6.0 release
+>   requires separate authorization and was NOT taken. This is the production package version that `main` now installs.
 >
 > **MERGED RESEARCH** (on `main`, research-only, `smartchem/` byte-identical to v1.5.0 — the installable package is
 > unchanged; the simulator lives under `experiments/`, outside the build)
@@ -20,12 +23,17 @@
 >   a typed **`NUMERICALLY_UNRESOLVED_AT_REQUESTED_SCALE`** verdict — conservation fails closed below the atol floor
 >   instead of stamping an unresolvable trace "conserved".
 >
+> **MERGED PRODUCTION** (on `main`, the installable package moved)
+> - **1.6.0 (25th class)** — `feat/1.6-candidate-xxii` → **PR #157 MERGED** to `main` (`6a2686e`, provenance-preserving
+>   merge; parents v1.5.0+research `9d04894` + candidate `13c8bab`) on 2026-11-06. The 25th class (lactonization) +
+>   carbinol guard + the independent witness; `__version__` 1.5.0 → 1.6.0 (MINOR; registry 24→25; `semantic_digest`
+>   UNMOVED — the 5 CLI golden updates were purely version-bound, integrity-guarded). The witness/recognizer dispute is
+>   RESOLVED in favour of the guard (hemiacetal target IS a lactone, but the transformation is a lactol formation the
+>   fail-closed oracle rightly refuses — NOT resolved by forcing agreement). All §8 gates satisfied before the merge:
+>   dispute dossier, version-transition correctness, full local suite 8250 pass/50 skip, and hosted CI 7/7 required
+>   contexts job-level green on the exact head `13c8bab` (verified two ways). NO tag / NO release / NO PyPI.
+>
 > **BRANCH-COMPLETE** (finished + independently tested, awaiting integration/merge)
-> - **1.6.0 candidate** — `feat/1.6-candidate-xxii` (**PR #157**): the 25th class (lactonization) + carbinol guard +
->   the independent witness; `__version__` 1.5.0 → 1.6.0 (MINOR; registry 24→25; `semantic_digest` UNMOVED — the 5 CLI
->   golden updates are purely version-bound). The witness/recognizer dispute is RESOLVED in favour of the guard
->   (hemiacetal target IS a lactone, but the transformation is a lactol formation the fail-closed oracle rightly
->   refuses). Merges to `main` with the version bump ONLY on full-suite + hosted-CI green; else 1.5.0 is retained.
 > - **Configurable reactor (§5)** — `research/operation-xxii-reactor`: one vinegar/bicarbonate flagship, three
 >   interchangeable transport laws (closed / selective membrane / electroneutral bulk), physically distinct by
 >   mechanism, all charge-neutral + conserving.

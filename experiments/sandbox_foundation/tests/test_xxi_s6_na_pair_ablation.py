@@ -20,7 +20,10 @@ pytest.importorskip("phreeqpython")
 from experiments.sandbox_foundation.benchmarks.carbonate_na_pair_s6 import run_na_pair_ablation_s6 as H  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[3]
-BASE = "e18e134"
+BASE = "e18e134"        # the §11 commit immediately BEFORE the §6 ablation work
+XXI_TIP = "07afeff"     # the XXI final tip (Wave F).  The no-tune claim is scoped to the §6..XXI range BASE..XXI_TIP
+# so it certifies what §6 ACTUALLY did and stays TRUE as later operations (XXII+) legitimately evolve these files; an
+# open-ended `git diff BASE` to HEAD could not distinguish §6 tuning from an unrelated later change to the same file.
 ORIGINAL_SHA = "4a48bf5c357b3da3084606a5e322426c3ab1e969dd1c86f9c62a3a7995836ca3"
 NOPAIRS_SHA = "6ada9d3f17bd1a101b446ed5eb67cb520bd923e842f3b0547a5261f3493a3082"
 
@@ -114,7 +117,7 @@ def test_three_way_table_present_for_the_grid(res):
 
 def test_no_model_constant_was_touched():
     out = subprocess.run(
-        ["git", "diff", BASE, "--",
+        ["git", "diff", BASE, XXI_TIP, "--",
          "experiments/sandbox_foundation/carbonate_equilibrium.py",
          "experiments/sandbox_foundation/general_coupled.py",
          "experiments/sandbox_foundation/open_diagram_bridge.py",
@@ -122,5 +125,5 @@ def test_no_model_constant_was_touched():
          "smartchem"],
         cwd=REPO, capture_output=True, text=True)
     if out.returncode != 0:
-        pytest.skip("git unavailable or base SHA absent")
+        pytest.skip("git unavailable or base/tip SHA absent")
     assert out.stdout == ""                                          # XXI-6 ablates inside PHREEQC; tunes nothing

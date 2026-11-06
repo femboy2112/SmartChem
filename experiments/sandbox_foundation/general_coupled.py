@@ -73,8 +73,10 @@ from experiments.sandbox_foundation.general_equilibrium import EquilibriumOperat
 from experiments.sandbox_foundation.general_kernel import (
     ChemicalSystem,
     KernelError,
+    Phase,
     Species,
     StaleCertificateError,
+    is_certified_rate_law_type,
 )
 
 
@@ -104,20 +106,27 @@ _UNVERIFIABLE_MARKER = "UNVERIFIABLE_RATE_LAW"
 
 
 def _rate_law_descriptor(rl):
-    """XX-2B: a canonical descriptor of a reaction's rate law for the world certificate.  RATE_UNKNOWN has no
-    kinetics (a system containing it refuses to integrate anyway).  A law exposing ``descriptor()`` binds its
-    operative parameters -- so a post-construction mutation of a rate constant / Qsp / species reference moves
-    the certificate and is caught at integrate().  A law that CANNOT supply one is marked UNVERIFIABLE
-    (fail-closed): the certificate makes NO validity claim about it, rather than forging a stable identity from
-    a mutable object's ``repr()`` (two distinct opaque laws must not silently share a descriptor)."""
+    """XX-2B / XXI-2 / XXII-2: a canonical descriptor of a reaction's rate law for the world certificate.
+    RATE_UNKNOWN has no kinetics (a system containing it refuses to integrate anyway).  A law earns a CERTIFIABLE
+    descriptor ONLY when its exact type is an AUDITED, registered implementation (general_kernel's rate-law registry)
+    whose ``descriptor()`` a maintainer has verified faithfully binds every operative parameter -- then a post-
+    construction mutation of a bound parameter moves the certificate and is caught at integrate().
+
+    XXII-2: the mere PRESENCE of a ``descriptor()`` method is NOT sufficient.  An UNREGISTERED law's descriptor is a
+    self-attested claim, not proof of code behaviour: a custom class can return a FROZEN descriptor while ``evaluate``
+    reads a MUTABLE hidden parameter (a LYING descriptor), so mutating that parameter runs different physics while the
+    descriptor -- and thus the certificate -- is unchanged.  Every unregistered law (descriptor() or not) is therefore
+    marked UNVERIFIABLE (fail-closed): the certificate makes NO validity claim about it, and integrate() runs it only
+    in the explicitly-flagged, tier-floored EXECUTABLE-UNVERIFIED mode (or refuses under require_certified_execution)."""
     if rl is None:                                       # RATE_UNKNOWN
         return "RATE_UNKNOWN"
-    desc = getattr(rl, "descriptor", None)
-    if callable(desc):
-        try:
-            return list(rl.descriptor())
-        except NotImplementedError:
-            pass
+    if is_certified_rate_law_type(type(rl)):             # XXII-2: audited implementation -> its descriptor is trusted
+        desc = getattr(rl, "descriptor", None)
+        if callable(desc):
+            try:
+                return list(rl.descriptor())
+            except NotImplementedError:
+                pass
     return [_UNVERIFIABLE_MARKER, type(rl).__qualname__]
 
 
@@ -125,6 +134,19 @@ def _descriptor_is_uncertified(desc) -> bool:
     """True iff ``desc`` is the UNVERIFIABLE sentinel -- the certificate binds the law's class but NONE of its
     operative parameters, so it cannot witness that the same physical law is still executing (XXI-2)."""
     return isinstance(desc, list) and len(desc) >= 1 and desc[0] == _UNVERIFIABLE_MARKER
+
+
+# XXII-3: the per-component conservation RESOLUTION verdict tokens (exact, stable, caller-branchable).  A conservation
+# certificate must state its REAL precision, never stamp an inaccurate answer "closed".  VERIFIED_WITHIN_RESOLUTION: the
+# residual is within the component's own tolerance AND the component is resolvable at its inventory scale.  VIOLATED:
+# the residual exceeds the tolerance (a proven breach, at any scale).  NUMERICALLY_UNRESOLVED_AT_REQUESTED_SCALE: the
+# residual is within tolerance, but the component's whole inventory scale is at/below the absolute numerical floor, so
+# the tolerance could not even detect a loss of a large FRACTION of that inventory -- "closed" would be vacuous, so the
+# balance fails CLOSED on it and says so DISTINCTLY from a violation (a fourth state, SOURCE_DOMAIN_UNSUPPORTED, is a
+# hard pre-integration refusal raised by the fast-equilibrium admission gate, never a completed-run per-component verdict).
+_CONS_VERIFIED = "VERIFIED_WITHIN_RESOLUTION"
+_CONS_VIOLATED = "VIOLATED"
+_CONS_UNRESOLVED = "NUMERICALLY_UNRESOLVED_AT_REQUESTED_SCALE"
 
 
 class CoupledError(KernelError):
@@ -327,8 +349,16 @@ class ElectroneutralBulkExchange:
     ``species_pairs`` is ((species_in_A, species_in_B), ...): the co-advected dissolved species, each pair sharing
     elemental composition, charge AND phase-independent substance identity (the XVI-P0.1 discriminator) -- a parcel
     carries each substance as itself, it does not transmute one into another (that would be a reaction, not transport).
-    Declaring the FULL dissolved set makes this a genuine bulk mixer; a neutral subset reduces it to a (multi-species)
-    selective transfer -- the two regimes are exactly what XXI-5 contrasts."""
+
+    XXII-1: the electroneutral-bulk guarantee is only EARNED by carrying the WHOLE dissolved solution, so the pairs
+    MUST cover EXACTLY the complete aqueous roster of BOTH compartments (every dissolved species, nothing else), and
+    every paired species MUST be AQUEOUS (a solid/gas is not part of the liquid parcel).  CoupledWorld enforces both at
+    construction -- a partial or non-aqueous roster is REFUSED, never silently run as "electroneutral bulk."  The
+    reason is physical: a subset sweeps only the subset's charge density, so for an electroneutral solution the net
+    swept charge is nonzero and the exchange would leave each compartment LOCALLY charged while conserving charge
+    GLOBALLY.  A deliberately restricted (e.g. neutral-species-only, membrane) transport is a SELECTIVE transfer --
+    declare one InterfaceTransfer per permitted species for that regime; this operator is strictly whole-solution
+    mixing, the regime XXI-5 contrasts with the selective membrane."""
     name: str
     a: str                            # compartment name (source side for a positive flux)
     b: str                            # compartment name (sink side for a positive flux)
@@ -395,6 +425,9 @@ class CoupledReceipt:
     uncertified_rate_laws: tuple = ()          # XXI-2: ((compartment, reaction, rate_law_class), ...) the laws that voided the execution-identity claim -- surfaced so the limitation cannot be hidden behind an otherwise-clean receipt
     component_tolerance: dict = field(default_factory=dict)       # XXI-3: {conserved component: atol + rtol*scale_component} -- each component judged against ITS OWN scale
     component_max_residual: dict = field(default_factory=dict)    # XXI-3: {conserved component: max |E n(t) - E n0 - E integral(q_ext dt)| over every step}
+    component_resolution: dict = field(default_factory=dict)      # XXII-3: {conserved component: VERIFIED_WITHIN_RESOLUTION | VIOLATED | NUMERICALLY_UNRESOLVED_AT_REQUESTED_SCALE}
+    numerically_unresolved_components: tuple = ()                 # XXII-3: components whose inventory scale is at/below the absolute numerical floor -- conservation NOT certified (not stamped conserved, not proven violated)
+    positivity_resolution_limited: bool = False                  # XXII-3: a negative dip passed the ABSOLUTE positivity floor but exceeded the dipping species' own inventory scale -- nonnegativity at that scale is unresolved, not guaranteed
 
 
 @dataclass(frozen=True)
@@ -472,6 +505,7 @@ class CoupledWorld:
             for side in (bx.a, bx.b):
                 if side not in self._comp:
                     raise CoupledError(f"bulk exchange {bx.name!r} references unknown compartment {side!r}")
+            pair_a, pair_b = [], []
             for sa, sb in bx.species_pairs:
                 if sa not in self._comp[bx.a].system._index:
                     raise CoupledError(f"bulk exchange {bx.name!r} references species {sa.name!r} absent from "
@@ -479,6 +513,38 @@ class CoupledWorld:
                 if sb not in self._comp[bx.b].system._index:
                     raise CoupledError(f"bulk exchange {bx.name!r} references species {sb.name!r} absent from "
                                        f"compartment {bx.b!r}")
+                # XXII-1 PHASE GATE: a bulk-LIQUID parcel carries DISSOLVED (aqueous) species only.  A solid or gas
+                # species silently placed in the parcel would advect a non-liquid phase as if it were solution -- a
+                # category error that also breaks the volume/charge accounting.  Refuse it (fail-closed).
+                for sp, side in ((sa, bx.a), (sb, bx.b)):
+                    if sp.phase is not Phase.AQUEOUS:
+                        raise CoupledError(
+                            f"bulk exchange {bx.name!r} would advect {sp.name!r} (phase {sp.phase.name}) from "
+                            f"compartment {side!r} as dissolved liquid; a bulk-liquid parcel carries AQUEOUS solutes "
+                            f"only -- a solid or gas is not part of the dissolved solution (declare a phase-change "
+                            f"reaction or an InterfaceTransfer for it, not a bulk parcel)")
+                pair_a.append(sa)
+                pair_b.append(sb)
+            # XXII-1 COMPLETENESS GATE -- the fix for the false electroneutral-bulk guarantee.  A parcel that carries
+            # only a SUBSET of the dissolved species sweeps only that subset's charge density, so for an electroneutral
+            # solution the swept charge is NONZERO and the exchange leaves each compartment LOCALLY CHARGED while
+            # preserving GLOBAL charge -- exactly the Na+-only counterexample.  The electroneutral-bulk guarantee is
+            # earned ONLY by carrying the COMPLETE dissolved roster of BOTH compartments: then the swept charge density
+            # is the solution's TOTAL (0 for an electroneutral parcel), so local electroneutrality is preserved.  A
+            # genuinely restricted transport is a SELECTIVE membrane (declare InterfaceTransfer per species), not an
+            # electroneutral bulk exchange -- so an incomplete roster is REFUSED, never silently reclassified.
+            for side, carried, want_label in ((bx.a, pair_a, "A"), (bx.b, pair_b, "B")):
+                aqueous = [sp for sp in self._comp[side].system.species if sp.phase is Phase.AQUEOUS]
+                carried_set, aqueous_set = set(carried), set(aqueous)
+                if carried_set != aqueous_set:
+                    missing = sorted(sp.name for sp in aqueous_set - carried_set)
+                    extra = sorted(sp.name for sp in carried_set - aqueous_set)
+                    raise CoupledError(
+                        f"bulk exchange {bx.name!r} does NOT carry the complete dissolved roster of compartment "
+                        f"{side!r}: missing {missing}, extra {extra}.  An ElectroneutralBulkExchange swaps whole "
+                        f"liquid parcels, so it MUST advect EVERY aqueous species of each compartment -- carrying a "
+                        f"subset transports net charge and leaves a compartment locally charged (that is a selective "
+                        f"membrane, not electroneutral bulk transport; declare InterfaceTransfer per species instead)")
 
         # global slot layout: (compartment_name, Species) in a fixed order
         self._slots = [(c.name, sp) for c in self.compartments for sp in c.system.species]
@@ -764,6 +830,10 @@ class CoupledWorld:
     # float-dust floor; rtol keeps the prior relative sensitivity, now applied to the ACTUAL conserved inventory.
     _MATERIAL_RTOL = 1e-6
     _MATERIAL_ATOL = 1e-12
+    # XXII-3: a component is NUMERICALLY RESOLVED at its scale only if its tolerance can detect a loss smaller than
+    # RESOLUTION_FRACTION of its whole inventory; otherwise "within tol" is vacuous and conservation is UNRESOLVED.
+    # 0.5 => we refuse to certify a component whose own tolerance would pass a >=50%-of-inventory error (scale <= ~2*atol).
+    _RESOLUTION_FRACTION = 0.5
 
     @classmethod
     def _projection_tol(cls, totals_in: dict) -> float:
@@ -1001,8 +1071,10 @@ class CoupledWorld:
         # tol_i = atol + rtol*scale_i.  No numerical-adjustment term A_i: the coupled integrator applies no phase-stitch
         # clamp, so A_i == 0 here; the unified world's whole-run balance carries A_i explicitly (XX-4).
         comp_tol = {}
+        comp_scale = {}
         for i in checked_idx:
             scale_i = max(abs(float(comp0[i])), abs(float(ext_comp[i])))
+            comp_scale[labels[i]] = scale_i
             comp_tol[labels[i]] = self._MATERIAL_ATOL + self._MATERIAL_RTOL * scale_i
         tol = max(comp_tol.values()) if comp_tol else self._MATERIAL_ATOL   # representative scalar (loosest component tol)
 
@@ -1054,8 +1126,28 @@ class CoupledWorld:
                     if d > max_conserved_drift:
                         max_conserved_drift = d
 
-        # XXI-3: the balance closes iff EVERY conserved component's own max residual is within ITS OWN tolerance.
-        material_balance_closed = all(comp_max_resid[lab] <= comp_tol[lab] for lab in comp_max_resid)
+        # XXII-3 PER-COMPONENT RESOLUTION VERDICT.  comp_tol_i = atol + rtol*scale_i carries an ABSOLUTE floor (atol):
+        # for a component whose entire inventory scale is at/below that floor, "within tol" cannot distinguish exact
+        # conservation from a gross loss, so it must NOT be read as conservation.  Classify each conserved component:
+        #   VIOLATED                  -- residual exceeds its own tolerance (a proven breach, at any scale).
+        #   NUMERICALLY_UNRESOLVED... -- residual within tol, but tol >= RESOLUTION_FRACTION*scale (a >=50%-of-inventory
+        #                                error would still pass): the solver cannot resolve conservation at this scale.
+        #   VERIFIED_WITHIN_RESOLUTION-- residual within tol AND resolvable (scale==0 is resolvable trivially: tol then
+        #                                bounds absolute creation-from-nothing).
+        component_resolution = {}
+        for lab in comp_max_resid:
+            resid_lab, tol_lab, scale_lab = comp_max_resid[lab], comp_tol[lab], comp_scale[lab]
+            if resid_lab > tol_lab:
+                component_resolution[lab] = _CONS_VIOLATED
+            elif scale_lab > 0.0 and tol_lab >= self._RESOLUTION_FRACTION * scale_lab:
+                component_resolution[lab] = _CONS_UNRESOLVED
+            else:
+                component_resolution[lab] = _CONS_VERIFIED
+        numerically_unresolved_components = tuple(sorted(
+            lab for lab, v in component_resolution.items() if v == _CONS_UNRESOLVED))
+        # XXII-3: "closed" now means EVERY conserved component is VERIFIED_WITHIN_RESOLUTION -- fail-closed on BOTH a
+        # proven violation AND an unresolvable scale (the latter must never be read as conservation).
+        material_balance_closed = all(v == _CONS_VERIFIED for v in component_resolution.values())
 
         feed_ledger_residual = max_step_feed_residual     # XX-3: per-step max over fed components (observer-invariant)
 
@@ -1078,6 +1170,16 @@ class CoupledWorld:
             charge_balance_claim = "CONSERVED (independently checked in the material balance)"
 
         positivity_held = min_amount >= -pos_tol
+        # XXII-3 positivity resolution audit: the negativity gate is an ABSOLUTE floor (pos_tol).  If the deepest dip is
+        # negative, passed that floor, yet the dipping species' own inventory scale is itself <= pos_tol, then the floor
+        # exceeds the species' whole inventory and nonnegativity at that scale is NOT resolvable -- surfaced, not read as
+        # a physical guarantee (the conservation-resolution gate above already fails such a trace component closed).
+        positivity_resolution_limited = False
+        if min_amount < 0.0 and positivity_held:
+            s_star = min(range(len(step_min)), key=lambda s: step_min[s])
+            slot_scale = abs(float(ys[0][step_argmin[s_star]]))
+            if slot_scale <= pos_tol:
+                positivity_resolution_limited = True
         conserved_components_held = material_balance_closed
         feed_ledger_closed = all(feed_max_resid[lab] <= comp_tol[lab] for lab in feed_max_resid)   # XXI-3: per-component
         solver_completed = True
@@ -1087,7 +1189,8 @@ class CoupledWorld:
 
         notes = ()
         caveats = ()
-        if not material_balance_closed:
+        violated_components = [lab for lab, v in component_resolution.items() if v == _CONS_VIOLATED]
+        if violated_components:
             if first_violation is not None and first_violation[1] == "material_ledger":
                 lab_v = first_violation[3]
                 caveats += (f"the material balance did NOT close: component {lab_v!r}'s independent PER-STEP ledger "
@@ -1096,15 +1199,28 @@ class CoupledWorld:
                             f"t={first_violation[0]:.3e}s (residual {first_violation[4]:.3e}) -- a mid-trajectory "
                             f"violation the endpoint snapshot can hide",)
             else:
-                worst = max(comp_max_resid, key=lambda lab: comp_max_resid[lab] - comp_tol[lab])
+                worst = max(violated_components, key=lambda lab: comp_max_resid[lab] - comp_tol[lab])
                 caveats += (f"the material balance did NOT close for component {worst!r}: per-step ledger residual "
                             f"{comp_max_resid[worst]:.3e} > its OWN component tol {comp_tol[worst]:.3e} (measured change "
                             f"{raw_material_change[worst]:.3e} vs integrated external flux {external_flux[worst]:.3e}) "
                             f"-- not hidden under an unrelated bulk component's scale",)
+        if numerically_unresolved_components:
+            caveats += (f"NUMERICALLY_UNRESOLVED_AT_REQUESTED_SCALE: conserved component(s) "
+                        f"{list(numerically_unresolved_components)} have an inventory scale at/below the absolute "
+                        f"numerical floor (material atol {self._MATERIAL_ATOL:.1e} mol), so the conservation tolerance "
+                        f"cannot resolve a loss of a significant fraction of their inventory -- their conservation is "
+                        f"NOT certified: neither verified within resolution nor proven violated.  Refusing to stamp an "
+                        f"unresolved component 'conserved' (XXII-3); raise the modeled inventory scale or widen atol "
+                        f"deliberately if that resolution is genuinely acceptable",)
         if not positivity_held:
             where = (f" (first at t={first_violation[0]:.3e}s, {first_violation[2]}/{first_violation[3]})"
                      if first_violation is not None and first_violation[1] == "positivity" else "")
             caveats += (f"an inventory went negative (min {min_amount:.3e}){where}",)
+        if positivity_resolution_limited:
+            caveats += (f"positivity is resolution-limited: the deepest inventory dip ({min_amount:.3e}) is within the "
+                        f"absolute nonnegativity floor (pos_tol {pos_tol:.1e} mol) but exceeds the dipping species' own "
+                        f"inventory scale, so nonnegativity at this scale is NUMERICALLY_UNRESOLVED, not a physical "
+                        f"guarantee (XXII-3)",)
         if self._uncertified_rate_laws:
             caveats += (f"NO certified execution identity: rate law(s) {list(self._uncertified_rate_laws)} expose no "
                         f"bindable descriptor(), so the world certificate cannot witness that the same physics "
@@ -1130,7 +1246,10 @@ class CoupledWorld:
             max_step_material_residual=max_step_material_residual, first_violation=(first_violation or ()),
             execution_identity_certified=not self._uncertified_rate_laws,
             uncertified_rate_laws=self._uncertified_rate_laws,
-            component_tolerance=dict(comp_tol), component_max_residual=dict(comp_max_resid))
+            component_tolerance=dict(comp_tol), component_max_residual=dict(comp_max_resid),
+            component_resolution=dict(component_resolution),
+            numerically_unresolved_components=numerically_unresolved_components,
+            positivity_resolution_limited=positivity_resolution_limited)
 
         amounts = {c.name: tuple({sp: float(yj[self._slot[(c.name, sp)]]) for sp in c.system.species} for yj in ys)
                    for c in self.compartments}

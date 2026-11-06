@@ -1,6 +1,117 @@
 # SmartChem roadmap
 
-> ## ▶ CURRENT STATUS (2026-10-23)
+> ## ▶ PRESENT STATE (2026-11-04) — OPERATION XXI
+> The authoritative current picture (supersedes the 2026-11-02 OPERATION XIX block below, which is kept intact for its
+> reasoning). Reflects MERGED code and current scientific evidence, not PR descriptions.
+>
+> **RELEASED** (production compiler; `smartchem/` byte-identical across the 2.0 research stack — `git diff v1.5.0 -- smartchem/` is EMPTY)
+> - **1.0.0** — tag `v1.0.0` = `8345bbb`. Stable chemical compiler.
+> - **1.1.0** — tag `v1.1.0` = `9e8fa5f`. 20-class production reaction-type oracle. No PyPI.
+> - **1.5.0** — **RELEASED 2026-11-02**, tag `v1.5.0` = `c3d0d01` (GitHub Release; `main` now `99fce34` with a docs
+>   commit on top). **24 recognized reaction classes.** Frozen 1.x wire semantics; fail-closed readiness; the oracle
+>   is a readiness-DEMOTER (a recognizer moves count/readiness but NOT `semantic_digest`).
+>
+> **NEXT PRODUCTION MILESTONE (1.6, not released)**
+> - The **25th-class lactonization / type-3 event-search** feature — `feat/lactonization-exhaustiveness` (**PR #151**,
+>   `38e9186`, DRAFT), held for 1.6, NOT folded into 1.5. A prior audit found no false-VOUCH but a MEDIUM common-mode
+>   fragility in the "generator-independent" recognizer.
+> - **An INDEPENDENT structural witness now exists** (`candidate/1.6-lactonization-witness`, `1e5bf0f`): imports only
+>   `category.Molecule`, decides via Tarjan bridges (vs the production bond-deletion flood-fill) + stoichiometry + its
+>   own isomorphism — genuinely non-common-mode (it DISAGREES on a hemiacetal lactone the `38e9186` carbinol guard
+>   rejects). NOT merged; `semantic_digest` unmoved. OPEN PROBE: does released v1.5.0 carry the `38e9186` guard?
+>
+> **RESEARCH IMPLEMENTED** — the 2.0 physicalization stack, all under `experiments/` (EXCLUDED from the package build),
+> consolidated on `integration/2.0-alpha` (**PR #156**, `774429e` = released v1.5.0 forward-merged in) with the
+> Operation XX/XXI work on `research/operation-xxi`. ⛔ nothing wired into `smartchem/`, nothing merged to `main`/
+> tagged/published:
+> - a general kinetic/equilibrium/transport **kernel** (typed species; exact `E·N=0` at construction; generic
+>   dn/dt = N·r + q; fail-closed RATE_UNKNOWN);
+> - a **unified solid–liquid–gas simulation** through ONE generic operator-split integrator, zero chemistry branches;
+> - a **signed external-flux ledger** + **component-wise** material balance (each conserved component judged against
+>   its OWN scale, so a trace-component defect cannot hide under a bulk inventory — XXI-3);
+> - an **observer-invariant numerical verdict** (verification cadence separated from sampling — XX-3);
+> - a **world execution certificate** that binds the OPERATIVE rate-law parameters AND refuses to let an opaque
+>   (non-descriptor) law claim a stable execution identity — three states CERTIFIABLE / EXECUTABLE-UNVERIFIED / REFUSED
+>   (XX-2, XXI-2);
+> - **explicit numerical-adjustment events** for phase-stitch roundoff clamps + a whole-run global balance (XX-4);
+> - an **ElectroneutralBulkExchange** bulk-liquid transport operator — whole-solution parcel swap, charge-conserving,
+>   distinct from the selective membrane (XXI-5);
+> - a **categorical→physical bridge** with EXACT unbounded-integer structural cross-checks (no float+round) and full
+>   species-identity signatures; structural composition laws tested; NO numerical-dynamics functor claimed (XXI-7);
+> - XIX **identity/immutability/temperature P0 hardening** (injective model/run/evidence digests, one threaded
+>   temperature with off-25 °C fail-closed, authoritative activity-pH reporting);
+> - **PHREEQC reference comparisons** (executed; honest narrow domain of agreement) and a **MEASURED** NIST SRM 191d
+>   comparison — see below.
+>
+> **SCIENTIFICALLY PARTIAL / REFUTED** — implemented but NOT trustworthy as a predictor; limitations preserved:
+> - the NIST SRM 191d corroboration is **NOT a robust physical prediction** (XXI-4): it holds only against the
+>   convention-INCLUSIVE Table 1 (thinly), is **REFUTED** at the measurement-only Table A1 level (~3× U_R), and is
+>   **REFUTED** against Table 1 itself once the molar-K scale is made self-consistent. The verdict hinges on the
+>   unresolved standard-state SCALE (molar vs molal) of K1/K2. No constant tuned.
+> - ion-pair / aqueous-activity modeling: Na-acetate pairing is DB-sourced and compared; **Na-bicarbonate / Na-carbonate
+>   pairs are not yet modeled** and the high-Na PHREEQC divergence remains (the 2³ factorial ablation is QUEUED — §6);
+> - solid thermodynamics (empirical S² product, dilute-regime only); dynamic parameters (k_diss, kLa, k_export) are
+>   ASSUMED/synthetic — a numerical simulation, not a calibrated fizzing-rate predictor; charge stays DEMOTED where
+>   implicit-reservoir-coupled; the validated model domain is sharper but still narrow.
+>
+> **IN PROGRESS / NEXT** — Na-ion-pair 2³ factorial ablation + fresh holdouts (§6); a stable 2.0 simulation API
+> candidate (§10); one additional bounded physical capability (§8: precipitation / redox / non-isothermal / multi-gas);
+> the 1.6 lactonization candidate review (§9).
+>
+> **LATER** — validated 2.0 release; general activity-based precipitation; non-isothermal energy accounting; redox /
+> electrochemistry; spatial reactive transport; the **3.0** interactive falling-sand laboratory via LibGibson downstream.
+
+> ## PRESENT STATE (2026-11-02) — OPERATION XIX consolidation (SUPERSEDED by the 2026-11-04 OPERATION XXI block above)
+> Kept intact for its reasoning. Where it calls 1.5 a "release candidate" or the 2.0 stack "nothing merged", read it
+> against the XXI block above (1.5.0 is RELEASED; the stack is consolidated on `integration/2.0-alpha`).
+>
+> **RELEASED**
+> - **1.1.0** — `main` `9e8fa5f`, tag `v1.1.0`, GitHub Release. 20-class production reaction-type oracle. No PyPI.
+>
+> **RELEASE CANDIDATE**
+> - **1.5** — `integration/v1.5-candidate` (**PR #149**, `61d91aa`), **24 recognized reaction classes**; 7/7 hosted CI
+>   green on the final SHA (run `41198440406`). Maintainer-ready verdict: **ship Option A (24 classes)** — full gate
+>   review in [`docs/research/OPERATION_XIX_CONSOLIDATION.md`](docs/research/OPERATION_XIX_CONSOLIDATION.md).
+>   ⛔ not merged to `main`, not tagged, not published (awaiting maintainer sign-off).
+>
+> **REVIEW-ONLY FEATURE**
+> - **The 25th-class lactonization / type-3 event-search branch** — `feat/lactonization-exhaustiveness`
+>   (**PR #151**, `38e9186`, DRAFT); CI green on the final SHA (run `41339208272`). Held for a NEXT minor (1.6), NOT
+>   folded into 1.5 scope. A prior adversarial audit found no false-VOUCH but a MEDIUM common-mode fragility in the
+>   "generator-independent" recognizer. ⛔ not merged.
+>
+> **RESEARCH IMPLEMENTED** — the 2.0 physicalization stack, all under `experiments/` (EXCLUDED from the package
+> build), consolidated on `integration/2.0-alpha` (draft integration PR). ⛔ nothing wired into `smartchem/`
+> (`git diff v1.1.0..<stack> -- smartchem/` is EMPTY), nothing merged/tagged/published:
+> - a general kinetic/equilibrium/transport **kernel** (typed species; exact `E·N=0` at construction; generic
+>   dn/dt = N·r + q; fail-closed RATE_UNKNOWN);
+> - a **unified solid–liquid–gas simulation** through ONE generic operator-split integrator, zero chemistry branches;
+> - a **signed external-flux ledger** (material balance checked vs an independently-integrated boundary flux);
+> - a **mixed PHREEQC benchmark** (executed; honest narrow domain of agreement);
+> - a **categorical→physical bridge** (OpenChemDiagram → kernel ChemicalSystem; kernel re-proves `E·N=0`, the diagram
+>   conservation only cross-checked);
+> - XIX **identity/immutability/temperature P0 hardening** (injective model/run/evidence digests, a world execution
+>   certificate, one threaded temperature with off-25 °C fail-closed, authoritative activity-pH reporting, a
+>   recorded/bounded phase-stitch);
+> - the **first MEASURED-validation rung** — the carbonate model reproduces the NIST SRM 191d certified pH
+>   (10.014 ± 0.010) to within its uncertainty as a blind, zero-parameter prediction (partial common-mode, bounded).
+>
+> **SCIENTIFICALLY PARTIAL** — implemented but NOT yet trustworthy as a predictor:
+> - ion-pair / aqueous-activity modeling (NaAc opt-in exists; Na-carbonate pairs not modeled; high-Na PHREEQC
+>   divergence remains);
+> - solid thermodynamics (NaHCO₃ saturation = empirical S² product, not an activity Ksp; dilute-regime only);
+> - calibration of dynamic parameters (k_diss, kLa, k_export are ASSUMED/synthetic — a numerical simulation, not a
+>   fizzing-rate predictor);
+> - charge / implicit-reservoir closure (the flagship world is charge-safe by construction; the charge claim stays
+>   DEMOTED pending an independent global-neutrality assertion or an explicit charge-carrying boundary);
+> - model-domain identification (the validated regime is sharper, still narrow).
+>
+> **FUTURE**
+> - a stable 2.0 simulation API; expanded chemically-supported mechanisms; non-isothermal energy accounting; general
+>   precipitation; charged transport / electrochemistry;
+> - the **3.0** interactive falling-sand chemistry laboratory using LibGibson as a downstream observer.
+
+> ## CURRENT STATUS (2026-10-23) — superseded by PRESENT STATE above
 > **1.1.0 — the chemical-graph / synthesis-coverage release.** The reaction-type oracle grows **17 → 20 classes**
 > (#110 activated acyl transfer, #111 sulfonate-ester transfer, #115 Claisen condensation) and gains the typed
 > chemical-graph / synthesis workbench and the `smartchem graph` verb, cut from the production prefix on

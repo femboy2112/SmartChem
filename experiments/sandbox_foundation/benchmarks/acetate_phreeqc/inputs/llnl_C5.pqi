@@ -1,0 +1,16 @@
+DATABASE llnl.dat
+# Wave D case C5: C_T=0.45 Na=0.45  (mol/kgw numerically identified with the code's mol/L; see PREREGISTRATION amendments)
+SOLUTION 1
+  units mol/kgw
+  temp 25
+  pH 7 charge
+  Na 0.45
+  Acetate 0.45
+SELECTED_OUTPUT
+  -file llnl_C5.sel
+  -reset false
+  -ph true
+  -ionic_strength true
+  -molalities H+ OH- Na+ Acetate-
+  -activities H+ OH- Na+ Acetate-
+END

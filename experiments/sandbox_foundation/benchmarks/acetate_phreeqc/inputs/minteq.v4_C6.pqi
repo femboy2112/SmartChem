@@ -1,0 +1,16 @@
+DATABASE minteq.v4.dat
+# Wave D case C6: C_T=0.6 Na=0.6  (mol/kgw numerically identified with the code's mol/L; see PREREGISTRATION amendments)
+SOLUTION 1
+  units mol/kgw
+  temp 25
+  pH 7 charge
+  Na 0.6
+  Acetate 0.6
+SELECTED_OUTPUT
+  -file minteq.v4_C6.sel
+  -reset false
+  -ph true
+  -ionic_strength true
+  -molalities H+ OH- Na+ Acetate-
+  -activities H+ OH- Na+ Acetate-
+END

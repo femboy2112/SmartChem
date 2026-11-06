@@ -1,0 +1,1303 @@
+"""OPERATION XV Wave C (P2) -- the general COUPLED reactive world.
+
+Wave A gave a single-compartment kinetic carrier (dn/dt = N r + q, conservation E N = 0 proven exactly).  Wave B
+gave the fast-equilibrium operator g(n) = 0 as a second operator KIND, with the verified aqueous solver composing in
+through an adapter.  Wave C couples MANY compartments -- a solid/liquid/gas/two-cell world -- by (a) transport across
+typed interfaces, (b) external boundaries (open feeds and fixed-activity reservoirs), and (c) per-compartment fast
+equilibrium -- and evolves the whole thing with a GENERIC operator-split integrator that holds NO specific chemistry.
+
+THE ARCHITECTURAL GATE (the only thing this module *claims* to establish): a coupled world is DECLARED (compartments,
+interfaces, boundaries) and advanced by one integrator whose code never mentions acetate, CO2, or diffusion of any
+particular species.  Two unrelated coupled systems -- a synthetic two-cell reaction-diffusion network and an acetate
+buffer under an acetic-acid feed with a fast-equilibrium projection -- run through the SAME ``CoupledWorld.integrate``
+with no edit to the integrator.  That, and exact conservation, and a MEASURED splitting error, are what is proven.
+
+OPERATOR SPLITTING, AND WHY ITS ERROR IS MEASURED NOT HIDDEN
+------------------------------------------------------------
+The world's generator is a sum of operators that do not commute: reaction R (within each compartment), transport T
+(across interfaces + feeds), and -- where declared -- a fast-equilibrium projection P (algebraic, per compartment).
+Advancing exp(dt (R + T)) is replaced by a SPLIT product, which is only approximate because [R, T] != 0:
+
+    Lie (first order) :  phi_dt  =  R(dt) . T(dt)                 . P      local error O(dt^2), global O(dt^1)
+    Strang (2nd order):  phi_dt  =  R(dt/2) . T(dt) . R(dt/2)     . P      local error O(dt^3), global O(dt^2)
+
+The equilibrium projection P is an instantaneous algebraic map (not a time-dt flow), applied once per macro-step after
+the continuous operators -- the sequential non-iterative approach (SNIA) standard in reactive-transport codes; its
+coupling to R, T is first-order regardless of the R/T scheme, and this is stated, never papered over.  For the pure-
+kinetic case (no P) the split is between the two FLOWS R and T, where Lie/Strang orders are classical and testable.
+
+``splitting_convergence`` MEASURES the global splitting error of each scheme against a MONOLITHIC reference (R and T
+integrated together, no split, tight tolerance) and fits the observed order from the error-vs-dt slope.  A claim that
+"Strang is second order here" is therefore a measured fact about this system, with the number attached -- and the
+experiment is only meaningful because R and T are chosen NOT to commute (verified: the Lie error is nonzero and larger
+than Strang at equal dt).  A commuting pair would make the split exact and prove nothing (a-control-must-discriminate).
+
+CONSERVATION IN THE COUPLED WORLD
+---------------------------------
+Each sub-operator conserves, so the composition conserves:
+  * R conserves every element and charge in each compartment (Wave A: E N = 0, proven exactly).
+  * T is conservative BY CONSTRUCTION: an interface may transfer only between two species of IDENTICAL elemental
+    composition and charge (differing at most in name/phase -- CO2(g) <-> CO2(aq), or A in cell 0 <-> A in cell 1);
+    what leaves compartment a (-J) enters compartment b (+J), so every global element/charge total is untouched.  A
+    transfer that would change chemical identity is a REACTION and belongs inside a compartment, not on an interface
+    -- an interface between mismatched species is REFUSED (fail-closed).
+  * A feed boundary adds q (mol/s) to one species; the global totals then change by EXACTLY integral(E q dt), and the
+    ledger is verified independently (the measured inventory change vs the integrated boundary flux, not a tautology).
+  * A fixed-activity boundary and a fast-equilibrium implicit-solvent reservoir EXCHANGE material with an external
+    reservoir; the elements they touch are declared ``reservoir_components`` and are NOT claimed conserved -- their net
+    exchange is ledgered and reported.  Every OTHER element/charge is globally invariant and asserted so.
+
+So the global conservation gate asserts exact invariance on every non-reservoir component, closes the feed ledger, and
+reports (never hides) the reservoir exchange.  The trajectory's evidential tier is DERIVED from these measured checks
+and capped at STRUCTURALLY_CONSERVING, weakest-premise'd with every compartment's declared kinetic tier (Wave A/1E
+discipline): a coupled prediction is never stronger than its least-verified piece.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+from dataclasses import dataclass, field
+
+import numpy as np
+from scipy.integrate import solve_ivp
+
+from experiments.sandbox_foundation.claim_tiers import (
+    REFUSED,
+    STRUCTURALLY_CONSERVING,
+    UNVERIFIED,
+    rank,
+    weakest,
+)
+from experiments.sandbox_foundation.general_equilibrium import EquilibriumOperator
+from experiments.sandbox_foundation.general_kernel import (
+    ChemicalSystem,
+    KernelError,
+    Phase,
+    Species,
+    StaleCertificateError,
+    is_certified_rate_law_type,
+)
+
+
+def _canon_num(x) -> str:
+    """Lossless canonical encoding of a finite float for a certificate/identity digest (XIX-1D): float.hex() round-
+    trips the exact IEEE-754 bits, so two coefficients that differ in the last ULP get distinct keys (unlike a rounded
+    repr).  Non-finite values are refused upstream; a bool is encoded distinctly from the int it would coerce to."""
+    if isinstance(x, bool):
+        return f"bool:{x}"
+    return float(x).hex()
+
+
+def _species_key(sp: Species) -> tuple:
+    """A collision-resistant identity key for a kernel Species: name + phase + charge + EXACT composition + substance.
+    This is the same full identity the kernel's model digest binds (XVIII-1A) -- composition/charge/phase alone are not
+    identity (ethanol vs dimethyl ether), so substance is carried too."""
+    phase = getattr(sp.phase, "name", str(sp.phase))
+    return (sp.name, phase, int(sp.charge), tuple((e, int(n)) for e, n in sp.composition), sp.substance)
+
+
+#: XXI-2: the sentinel head of a rate-law descriptor the certificate cannot bind.  A descriptor beginning with this
+#: token carries NO parameter identity -- only the class name -- so the certificate makes no validity claim about the
+#: law, a mutation of its hidden parameters is INVISIBLE to the certificate, and two distinct opaque instances share it.
+#: integrate() consumes this fact: a world holding such a law has NO certified execution identity (see
+#: ``_uncertified_rate_laws`` and the receipt's ``execution_identity_certified``).
+_UNVERIFIABLE_MARKER = "UNVERIFIABLE_RATE_LAW"
+
+
+def _rate_law_descriptor(rl):
+    """XX-2B / XXI-2 / XXII-2: a canonical descriptor of a reaction's rate law for the world certificate.
+    RATE_UNKNOWN has no kinetics (a system containing it refuses to integrate anyway).  A law earns a CERTIFIABLE
+    descriptor ONLY when its exact type is an AUDITED, registered implementation (general_kernel's rate-law registry)
+    whose ``descriptor()`` a maintainer has verified faithfully binds every operative parameter -- then a post-
+    construction mutation of a bound parameter moves the certificate and is caught at integrate().
+
+    XXII-2: the mere PRESENCE of a ``descriptor()`` method is NOT sufficient.  An UNREGISTERED law's descriptor is a
+    self-attested claim, not proof of code behaviour: a custom class can return a FROZEN descriptor while ``evaluate``
+    reads a MUTABLE hidden parameter (a LYING descriptor), so mutating that parameter runs different physics while the
+    descriptor -- and thus the certificate -- is unchanged.  Every unregistered law (descriptor() or not) is therefore
+    marked UNVERIFIABLE (fail-closed): the certificate makes NO validity claim about it, and integrate() runs it only
+    in the explicitly-flagged, tier-floored EXECUTABLE-UNVERIFIED mode (or refuses under require_certified_execution)."""
+    if rl is None:                                       # RATE_UNKNOWN
+        return "RATE_UNKNOWN"
+    if is_certified_rate_law_type(type(rl)):             # XXII-2: audited implementation -> its descriptor is trusted
+        desc = getattr(rl, "descriptor", None)
+        if callable(desc):
+            try:
+                return list(rl.descriptor())
+            except NotImplementedError:
+                pass
+    return [_UNVERIFIABLE_MARKER, type(rl).__qualname__]
+
+
+def _descriptor_is_uncertified(desc) -> bool:
+    """True iff ``desc`` is the UNVERIFIABLE sentinel -- the certificate binds the law's class but NONE of its
+    operative parameters, so it cannot witness that the same physical law is still executing (XXI-2)."""
+    return isinstance(desc, list) and len(desc) >= 1 and desc[0] == _UNVERIFIABLE_MARKER
+
+
+# XXII-3: the per-component conservation RESOLUTION verdict tokens (exact, stable, caller-branchable).  A conservation
+# certificate must state its REAL precision, never stamp an inaccurate answer "closed".  VERIFIED_WITHIN_RESOLUTION: the
+# residual is within the component's own tolerance AND the component is resolvable at its inventory scale.  VIOLATED:
+# the residual exceeds the tolerance (a proven breach, at any scale).  NUMERICALLY_UNRESOLVED_AT_REQUESTED_SCALE: the
+# residual is within tolerance, but the component's whole inventory scale is at/below the absolute numerical floor, so
+# the tolerance could not even detect a loss of a large FRACTION of that inventory -- "closed" would be vacuous, so the
+# balance fails CLOSED on it and says so DISTINCTLY from a violation (a fourth state, SOURCE_DOMAIN_UNSUPPORTED, is a
+# hard pre-integration refusal raised by the fast-equilibrium admission gate, never a completed-run per-component verdict).
+_CONS_VERIFIED = "VERIFIED_WITHIN_RESOLUTION"
+_CONS_VIOLATED = "VIOLATED"
+_CONS_UNRESOLVED = "NUMERICALLY_UNRESOLVED_AT_REQUESTED_SCALE"
+
+
+class CoupledError(KernelError):
+    """Fail-closed error for the general coupled world."""
+
+
+# ----------------------------------------------------------------------------- fast-equilibrium coupling
+@dataclass(frozen=True)
+class EquilibriumCoupling:
+    """Attach a Wave B EquilibriumOperator to a compartment as its fast-equilibrium projection P.
+
+    ``species_table`` maps each operator species NAME (its wire identity) to the kernel Species object the coupled
+    world tracks -- the explicit adapter bridge the Wave B docstring promised Wave C would build (no second identity
+    system is invented; the names are mapped once, here).  ``reservoir_components`` are the elements/charge the
+    operator exchanges with its implicit solvent reservoir (for the acetate-water operator: H, O and charge are set by
+    the water autodissociation + electroneutrality against an implicit water reservoir, so they are NOT conserved over
+    the explicit species); every other element the species carry (here C and Na) IS conserved by the projection and is
+    asserted invariant by the coupled world."""
+    operator: EquilibriumOperator
+    species_table: dict               # {operator_species_name: kernel Species}
+    reservoir_components: frozenset = frozenset()   # elements/"charge" exchanged with the implicit reservoir
+
+    def __post_init__(self):
+        if not isinstance(self.operator, EquilibriumOperator):
+            raise CoupledError("EquilibriumCoupling.operator must be an EquilibriumOperator")
+        if type(self.species_table) is not dict or not self.species_table:
+            raise CoupledError("species_table must be a non-empty {operator_species_name: Species} dict")
+        missing = [nm for nm in self.operator.species if nm not in self.species_table]
+        if missing:
+            raise CoupledError(f"species_table is missing operator species {missing}")
+        for nm, sp in self.species_table.items():
+            if nm not in self.operator.species:
+                raise CoupledError(f"species_table names {nm!r} which the operator does not produce")
+            if type(sp) is not Species:
+                raise CoupledError(f"species_table[{nm!r}] must be a Species")
+        # XVI-P0.2: the mapping must be INJECTIVE -- two operator species aliased onto one kernel Species would merge
+        # distinct chemical species (e.g. silently identify NH3 and NH4+), a laundering move a plain dict permits.
+        mapped = list(self.species_table.values())
+        if len(set(mapped)) != len(mapped):
+            dup = sorted({sp.name for sp in mapped if mapped.count(sp) > 1})
+            raise CoupledError(f"species_table is not injective: distinct operator species map to the same kernel "
+                               f"Species {dup} -- a name alias cannot merge two chemically distinct species")
+        # XVI-P0.2: the mapping must be chemically FAITHFUL -- a name may only map to a kernel Species whose
+        # composition+charge match the operator's declared signature, so "NH4+" cannot be aliased onto a Na+ Species.
+        # Fail-closed: an operator that declares no complete signature cannot be coupled (its faithfulness is unprovable).
+        sig = getattr(self.operator, "species_signature", {})
+        if not sig or any(nm not in sig for nm in self.operator.species):
+            raise CoupledError(f"operator {type(self.operator).__name__} does not declare a complete species_signature; "
+                               f"its species_table cannot be verified chemically faithful (fail-closed)")
+        for nm, sp in self.species_table.items():
+            sig_comp, sig_charge = sig[nm]
+            if sp.composition != tuple(sig_comp) or sp.charge != sig_charge:
+                raise CoupledError(
+                    f"species_table[{nm!r}] maps to {sp.name!r} {sp.composition} q={sp.charge}, which does NOT match "
+                    f"the operator's declared signature for {nm!r} ({tuple(sig_comp)} q={sig_charge}); a nominal "
+                    f"species cannot be aliased onto a chemically incompatible element/charge signature")
+        # XVII-A1: the operator must declare the typed whitelist of numerical solver verdicts it certifies as "closed".
+        # Fail-closed: without it the world cannot tell a genuinely-solved state from a solver-refused one, so the
+        # projection's numerical admissibility is unprovable and the coupling is refused.
+        if not getattr(self.operator, "accepted_solver_verdicts", frozenset()):
+            raise CoupledError(f"operator {type(self.operator).__name__} declares no accepted_solver_verdicts; its "
+                               f"projections' numerical solver verdict cannot be judged (fail-closed)")
+        if type(self.reservoir_components) is not frozenset:
+            object.__setattr__(self, "reservoir_components", frozenset(self.reservoir_components))
+
+
+@dataclass(frozen=True)
+class Compartment:
+    """A named control volume: its own kernel ChemicalSystem (species/reactions/volume) and an optional fast
+    equilibrium.  The compartment's reactions run as the R operator within this volume; transport and boundaries act
+    on its inventory from outside; the projection (if any) re-speciates it after the continuous step."""
+    name: str
+    system: ChemicalSystem
+    equilibrium: object = None        # EquilibriumCoupling or None
+
+    def __post_init__(self):
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise CoupledError("a Compartment needs a non-empty name")
+        if type(self.system) is not ChemicalSystem:
+            raise CoupledError("Compartment.system must be a ChemicalSystem")
+        if self.equilibrium is not None:
+            if type(self.equilibrium) is not EquilibriumCoupling:
+                raise CoupledError("Compartment.equilibrium must be an EquilibriumCoupling or None")
+            for nm, sp in self.equilibrium.species_table.items():
+                if sp not in self.system._index:
+                    raise CoupledError(f"equilibrium species {nm!r} ({sp.name!r}) is not in compartment {self.name!r}")
+            labels = set(self.system.component_labels)
+            bad = [c for c in self.equilibrium.reservoir_components if c not in labels]
+            if bad:
+                raise CoupledError(f"reservoir_components {bad} are not components of compartment {self.name!r} "
+                                   f"(have {sorted(labels)})")
+
+
+@dataclass(frozen=True)
+class InterfaceTransfer:
+    """A conservative transport flux between two compartments: J_{a->b} = k_transfer * (c_a - partition * c_b) (mol/s),
+    with c = n/V the concentration in each compartment.  At the flux zero, c_a = partition * c_b -- the declared
+    interface equilibrium (partition = 1 for simple diffusion toward equal concentration; partition encodes a Henry /
+    distribution ratio for a phase boundary).  ``species_a`` and ``species_b`` MUST (a) have identical elemental
+    composition and charge -- NECESSARY so the transfer conserves every element and charge globally -- AND (b) share
+    the same phase-independent ``substance`` identity (XVI-P0.1) -- the constitutional discriminator that composition
+    alone cannot supply.  (a) alone is insufficient: ethanol and dimethyl ether are both C2H6O/charge 0, so a transfer
+    passing only (a) would launder one constitutional isomer into another -- a REACTION smuggled in as transport, yet
+    stamped conserving because atoms balance.  With (b), only genuine same-substance phase/compartment transfers
+    (CO2(aq)<->CO2(g); A in cell 0 <-> A in cell 1) are admitted; an identity-changing transfer is a reaction, not an
+    interface, and is refused at construction.  CONSERVATION NEVER SUBSTITUTES FOR CHEMICAL IDENTITY."""
+    name: str
+    a: str                            # compartment name (source side for a positive flux)
+    b: str                            # compartment name (sink side for a positive flux)
+    species_a: Species
+    species_b: Species
+    k_transfer: float                 # L/s (volumetric mass-transfer coefficient); >= 0
+    partition: float = 1.0            # dimensionless c_a/c_b at interface equilibrium; > 0
+
+    def __post_init__(self):
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise CoupledError("an InterfaceTransfer needs a non-empty name")
+        if self.a == self.b:
+            raise CoupledError(f"interface {self.name!r} connects compartment {self.a!r} to itself")
+        if type(self.species_a) is not Species or type(self.species_b) is not Species:
+            raise CoupledError("species_a and species_b must be Species")
+        if self.species_a.composition != self.species_b.composition or self.species_a.charge != self.species_b.charge:
+            raise CoupledError(
+                f"interface {self.name!r} transfers between species of different composition/charge "
+                f"({self.species_a.name!r} {self.species_a.composition} q={self.species_a.charge} vs "
+                f"{self.species_b.name!r} {self.species_b.composition} q={self.species_b.charge}); a transfer that "
+                f"changes chemical identity is a reaction, not an interface")
+        # XVI-P0.1: composition+charge is NECESSARY BUT NOT SUFFICIENT.  A passive interface moves ONE substance; two
+        # species of equal formula but different substance (ethanol vs dimethyl ether -- both C2H6O) are constitutional
+        # isomers / distinct compounds, and transferring one into the other is a REACTION, not transport.  The shared-
+        # substance requirement is the constitutional discriminator; because it is only reached after the composition/
+        # charge gate above, a substance tag can never license a stoichiometry change (it cannot "launder" a formula).
+        if self.species_a.substance != self.species_b.substance:
+            raise CoupledError(
+                f"interface {self.name!r} transfers between species of the SAME formula but DIFFERENT substance "
+                f"({self.species_a.name!r} substance={self.species_a.substance!r} vs {self.species_b.name!r} "
+                f"substance={self.species_b.substance!r}); same elemental composition is not chemical identity -- "
+                f"these are constitutional isomers or distinct compounds. A transformation between them is a reaction "
+                f"(declare it inside a compartment); a genuine phase transfer must declare a shared substance identity")
+        if isinstance(self.k_transfer, bool) or not (isinstance(self.k_transfer, (int, float))
+                                                     and math.isfinite(self.k_transfer) and self.k_transfer >= 0):
+            raise CoupledError("k_transfer must be a finite L/s coefficient >= 0")
+        if isinstance(self.partition, bool) or not (isinstance(self.partition, (int, float))
+                                                    and math.isfinite(self.partition) and self.partition > 0):
+            raise CoupledError("partition must be a finite ratio > 0")
+
+
+@dataclass(frozen=True)
+class ExternalBoundary:
+    """An open-system exchange with the world's exterior, acting on one species of one compartment.
+
+    mode == "feed":            adds a constant q = ``rate`` (mol/s) to the species (q may be negative = removal).  The
+                               elements it carries change by exactly integral(E q dt); the feed ledger verifies that.
+    mode == "fixed_activity":  a Dirichlet reservoir holding the species at concentration ``target_conc`` (mol/L) via
+                               J = k_transfer * (target_conc - c) (mol/s into the compartment).  The elements it
+                               carries are reservoir-coupled (NOT claimed conserved); the net exchange is ledgered."""
+    name: str
+    compartment: str
+    species: Species
+    mode: str                         # "feed" | "fixed_activity"
+    rate: float = 0.0                 # feed: mol/s (signed)
+    k_transfer: float = 0.0           # fixed_activity: L/s
+    target_conc: float = 0.0          # fixed_activity: mol/L
+
+    def __post_init__(self):
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise CoupledError("an ExternalBoundary needs a non-empty name")
+        if type(self.species) is not Species:
+            raise CoupledError("ExternalBoundary.species must be a Species")
+        if self.mode == "feed":
+            if isinstance(self.rate, bool) or not (isinstance(self.rate, (int, float)) and math.isfinite(self.rate)):
+                raise CoupledError("feed rate must be a finite mol/s value")
+        elif self.mode == "fixed_activity":
+            if isinstance(self.k_transfer, bool) or not (isinstance(self.k_transfer, (int, float))
+                                                         and math.isfinite(self.k_transfer) and self.k_transfer >= 0):
+                raise CoupledError("fixed_activity k_transfer must be a finite L/s coefficient >= 0")
+            if isinstance(self.target_conc, bool) or not (isinstance(self.target_conc, (int, float))
+                                                          and math.isfinite(self.target_conc) and self.target_conc >= 0):
+                raise CoupledError("fixed_activity target_conc must be a finite mol/L value >= 0")
+        else:
+            raise CoupledError("ExternalBoundary.mode must be 'feed' or 'fixed_activity'")
+
+
+@dataclass(frozen=True)
+class ElectroneutralBulkExchange:
+    """A conservative BULK-LIQUID exchange between two constant-volume, well-mixed aqueous compartments (XXI-5).
+
+    Unlike InterfaceTransfer -- a SELECTIVE membrane that moves ONE species (e.g. neutral HAc or CO2(aq)) -- this
+    operator swaps equal LIQUID PARCELS: at volumetric rate ``Q`` (L/s) a parcel leaves A carrying EVERY co-declared
+    dissolved species at its A-concentration while an equal counter-parcel arrives from B at its B-concentration.  Each
+    advected species s moves at J_s = Q*(c_A,s - c_B,s) mol/s (A->b), ALL sharing the SAME Q.  Because the whole
+    solution moves together:
+      * every analytical component is conserved globally (each species leaves A and enters B -- an INTERNAL transfer);
+      * net CHARGE is conserved globally, and because each parcel is a locally electroneutral solution the exchange
+        does not leave either compartment artificially charged -- the charge flux is Q*(rho_q,A - rho_q,B), which is 0
+        for electroneutral bulk solutions -- in deliberate CONTRAST to an unconstrained single-ion flux that would;
+      * the compartments are fixed control volumes and the parcels are equal, so volume is unchanged.
+    The actual speciation is re-established by each compartment's fast-equilibrium projection after the continuous step.
+
+    ``species_pairs`` is ((species_in_A, species_in_B), ...): the co-advected dissolved species, each pair sharing
+    elemental composition, charge AND phase-independent substance identity (the XVI-P0.1 discriminator) -- a parcel
+    carries each substance as itself, it does not transmute one into another (that would be a reaction, not transport).
+
+    XXII-1: the electroneutral-bulk guarantee is only EARNED by carrying the WHOLE dissolved solution, so the pairs
+    MUST cover EXACTLY the complete aqueous roster of BOTH compartments (every dissolved species, nothing else), and
+    every paired species MUST be AQUEOUS (a solid/gas is not part of the liquid parcel).  CoupledWorld enforces both at
+    construction -- a partial or non-aqueous roster is REFUSED, never silently run as "electroneutral bulk."  The
+    reason is physical: a subset sweeps only the subset's charge density, so for an electroneutral solution the net
+    swept charge is nonzero and the exchange would leave each compartment LOCALLY charged while conserving charge
+    GLOBALLY.  A deliberately restricted (e.g. neutral-species-only, membrane) transport is a SELECTIVE transfer --
+    declare one InterfaceTransfer per permitted species for that regime; this operator is strictly whole-solution
+    mixing, the regime XXI-5 contrasts with the selective membrane."""
+    name: str
+    a: str                            # compartment name (source side for a positive flux)
+    b: str                            # compartment name (sink side for a positive flux)
+    species_pairs: tuple              # ((Species_a, Species_b), ...) co-advected, same substance per pair
+    Q_L_per_s: float                  # volumetric parcel-exchange rate, L/s; >= 0
+
+    def __post_init__(self):
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise CoupledError("an ElectroneutralBulkExchange needs a non-empty name")
+        if self.a == self.b:
+            raise CoupledError(f"bulk exchange {self.name!r} connects compartment {self.a!r} to itself")
+        if type(self.species_pairs) is not tuple or not self.species_pairs:
+            raise CoupledError(f"bulk exchange {self.name!r} needs a non-empty tuple of (species_a, species_b) pairs")
+        for pair in self.species_pairs:
+            if type(pair) is not tuple or len(pair) != 2:
+                raise CoupledError(f"bulk exchange {self.name!r}: each pair must be a (species_a, species_b) tuple")
+            sa, sb = pair
+            if type(sa) is not Species or type(sb) is not Species:
+                raise CoupledError(f"bulk exchange {self.name!r}: species pairs must contain Species")
+            # same discipline as InterfaceTransfer: composition+charge NECESSARY, shared substance the constitutional
+            # discriminator -- a bulk parcel moves a substance as itself; transmuting it is a reaction, not transport.
+            if sa.composition != sb.composition or sa.charge != sb.charge:
+                raise CoupledError(
+                    f"bulk exchange {self.name!r} pairs species of different composition/charge "
+                    f"({sa.name!r} {sa.composition} q={sa.charge} vs {sb.name!r} {sb.composition} q={sb.charge})")
+            if sa.substance != sb.substance:
+                raise CoupledError(
+                    f"bulk exchange {self.name!r} pairs species of the SAME formula but DIFFERENT substance "
+                    f"({sa.name!r} substance={sa.substance!r} vs {sb.name!r} substance={sb.substance!r}); a bulk "
+                    f"parcel transports a substance as itself, it does not transmute it (that is a reaction)")
+        if len({sa for sa, _ in self.species_pairs}) != len(self.species_pairs) or \
+                len({sb for _, sb in self.species_pairs}) != len(self.species_pairs):
+            raise CoupledError(f"bulk exchange {self.name!r} lists a species more than once (ambiguous flux)")
+        if isinstance(self.Q_L_per_s, bool) or not (isinstance(self.Q_L_per_s, (int, float))
+                                                    and math.isfinite(self.Q_L_per_s) and self.Q_L_per_s >= 0):
+            raise CoupledError("Q_L_per_s must be a finite volumetric rate (L/s) >= 0")
+
+
+@dataclass(frozen=True)
+class CoupledReceipt:
+    """DERIVED, non-self-certifying evidence for a coupled trajectory (Wave A/1E discipline, lifted to the world)."""
+    solver_completed: bool
+    positivity_held: bool
+    conserved_components_held: bool       # every NON-reservoir element/charge invariant within tolerance
+    feed_ledger_closed: bool              # measured inventory change == integrated feed flux
+    max_conserved_drift: float            # max |global E n(t) - E n0| over non-reservoir components
+    feed_ledger_residual: float           # max |measured change - integrated flux| over fed components
+    min_inventory: float
+    tolerance: float
+    scheme: str
+    structural_tier: str                  # STRUCTURALLY_CONSERVING if every check passed, else REFUSED
+    declared_kinetic_tier: str            # weakest declared tier over all compartments' rate laws
+    admitted_tier: str                    # DERIVED = weakest(structural_tier, declared_kinetic_tier)
+    reservoir_exchange: dict = field(default_factory=dict)   # {implicit-solvent component: endpoint net change (NOT independently verifiable)}
+    external_flux: dict = field(default_factory=dict)            # XVIII-3 {component: independently-integrated E * q_ext over the run}
+    raw_material_change: dict = field(default_factory=dict)      # XVIII-3 {component: measured E (n_final - n0)}
+    ledger_adjusted_residual: dict = field(default_factory=dict)  # XVIII-3 {component: |raw_material_change - external_flux|}
+    material_balance_closed: bool = True   # XVIII-3: every non-implicit-reservoir component's measured change == its integrated external flux
+    charge_balance_claim: str = ""         # XVIII-3: CONSERVED (independently checked) | DEMOTED (implicit-solvent electroneutrality) | N/A
+    notes: tuple = ()
+    max_step_material_residual: float = 0.0   # XX-3: max |E n(t) - E n0 - E integral(q_ext dt)| over EVERY accepted step (observer-invariant, not endpoint-only)
+    first_violation: tuple = ()               # XX-3: (time, kind, compartment, species/component, value) of the FIRST step to breach positivity or the ledger (() if none)
+    execution_identity_certified: bool = True  # XXI-2: False iff ANY reaction's rate law is UNVERIFIABLE (no bindable descriptor) -- then the world certificate cannot witness that the SAME physics executed, so no stable execution-identity claim is made (mutating such a law is invisible to the certificate BY CONSTRUCTION)
+    uncertified_rate_laws: tuple = ()          # XXI-2: ((compartment, reaction, rate_law_class), ...) the laws that voided the execution-identity claim -- surfaced so the limitation cannot be hidden behind an otherwise-clean receipt
+    component_tolerance: dict = field(default_factory=dict)       # XXI-3: {conserved component: atol + rtol*scale_component} -- each component judged against ITS OWN scale
+    component_max_residual: dict = field(default_factory=dict)    # XXI-3: {conserved component: max |E n(t) - E n0 - E integral(q_ext dt)| over every step}
+    component_resolution: dict = field(default_factory=dict)      # XXII-3: {conserved component: VERIFIED_WITHIN_RESOLUTION | VIOLATED | NUMERICALLY_UNRESOLVED_AT_REQUESTED_SCALE}
+    numerically_unresolved_components: tuple = ()                 # XXII-3: components whose inventory scale is at/below the absolute numerical floor -- conservation NOT certified (not stamped conserved, not proven violated)
+    positivity_resolution_limited: bool = False                  # XXII-3: a negative dip passed the ABSOLUTE positivity floor but exceeded the dipping species' own inventory scale -- nonnegativity at that scale is unresolved, not guaranteed
+
+
+@dataclass(frozen=True)
+class CoupledTrajectory:
+    """A coupled-world trajectory: the sampled times, per-compartment inventory series, and the receipt."""
+    times: tuple
+    compartments: tuple                   # compartment names, in slot order
+    amounts: dict                         # {compartment_name: (per-time {Species: mol}, ...)}
+    component_labels: tuple               # the UNION of element names + "charge" over all compartments
+    scheme: str
+    steps: int
+    max_conserved_drift: float
+    feed_ledger_residual: float
+    min_amount: float
+    solver_success: bool
+    receipt: CoupledReceipt
+    tier: str
+    caveats: tuple = ()
+    # XIX-1B: per-compartment, per-sample fast-equilibrium DERIVED scalars (pH_activity, pH_concentration, ionic
+    # strength, activity model, ...) captured FROM THE PROJECTION THAT PRODUCED THE SAMPLE -- the authoritative values
+    # the chemical solver computed, so an observer reads them instead of recomputing an approximate pH in the renderer.
+    # {compartment_name: (per-sample {scalar: value}, ...)}; a compartment with no fast equilibrium maps to ({}, ...).
+    equilibrium_derived: dict = field(default_factory=dict)
+
+
+class CoupledWorld:
+    """A declared coupled world + its generic operator-split integrator.
+
+    Build it from compartments, interfaces and boundaries; it validates every reference and the interface conservation
+    gate at construction.  ``integrate`` advances it by Lie or Strang splitting; ``monolithic`` (no split) is available
+    only when no compartment carries a fast-equilibrium projection (then the world is a pure ODE and can be integrated
+    without splitting -- the reference for the convergence study)."""
+
+    def __init__(self, compartments: list, interfaces: list = (), boundaries: list = (), *,
+                 bulk_exchanges: list = (), temperature_K: float = 298.15):
+        if not compartments or any(type(c) is not Compartment for c in compartments):
+            raise CoupledError("compartments must be a non-empty list of Compartment")
+        names = [c.name for c in compartments]
+        if len(set(names)) != len(names):
+            raise CoupledError("duplicate compartment name")
+        # XIX-1C: ONE world temperature, threaded into every fast-equilibrium projection (the integrator no longer
+        # hard-codes 298.15 K in _project).  An operator whose constants are sourced only at 25 C fail-closes off its
+        # domain through its own wrapped solver -- so an off-domain world temperature is REFUSED, never silently run
+        # with gas physics at T and acid/base equilibria pinned at 25 C (a mixed-temperature simulation).
+        if isinstance(temperature_K, bool) or not (isinstance(temperature_K, (int, float))
+                                                   and math.isfinite(temperature_K) and temperature_K > 0):
+            raise CoupledError("temperature_K must be a finite temperature > 0")
+        self.temperature_K = float(temperature_K)
+        self.compartments = list(compartments)
+        self._comp = {c.name: c for c in compartments}
+        self.interfaces = list(interfaces)
+        self.boundaries = list(boundaries)
+        self.bulk_exchanges = list(bulk_exchanges)
+
+        for iface in self.interfaces:
+            if type(iface) is not InterfaceTransfer:
+                raise CoupledError("interfaces must be InterfaceTransfer objects")
+            for side, sp in ((iface.a, iface.species_a), (iface.b, iface.species_b)):
+                if side not in self._comp:
+                    raise CoupledError(f"interface {iface.name!r} references unknown compartment {side!r}")
+                if sp not in self._comp[side].system._index:
+                    raise CoupledError(f"interface {iface.name!r} references species {sp.name!r} absent from "
+                                       f"compartment {side!r}")
+        for b in self.boundaries:
+            if type(b) is not ExternalBoundary:
+                raise CoupledError("boundaries must be ExternalBoundary objects")
+            if b.compartment not in self._comp:
+                raise CoupledError(f"boundary {b.name!r} references unknown compartment {b.compartment!r}")
+            if b.species not in self._comp[b.compartment].system._index:
+                raise CoupledError(f"boundary {b.name!r} references species {b.species.name!r} absent from "
+                                   f"compartment {b.compartment!r}")
+        for bx in self.bulk_exchanges:
+            if type(bx) is not ElectroneutralBulkExchange:
+                raise CoupledError("bulk_exchanges must be ElectroneutralBulkExchange objects")
+            for side in (bx.a, bx.b):
+                if side not in self._comp:
+                    raise CoupledError(f"bulk exchange {bx.name!r} references unknown compartment {side!r}")
+            pair_a, pair_b = [], []
+            for sa, sb in bx.species_pairs:
+                if sa not in self._comp[bx.a].system._index:
+                    raise CoupledError(f"bulk exchange {bx.name!r} references species {sa.name!r} absent from "
+                                       f"compartment {bx.a!r}")
+                if sb not in self._comp[bx.b].system._index:
+                    raise CoupledError(f"bulk exchange {bx.name!r} references species {sb.name!r} absent from "
+                                       f"compartment {bx.b!r}")
+                # XXII-1 PHASE GATE: a bulk-LIQUID parcel carries DISSOLVED (aqueous) species only.  A solid or gas
+                # species silently placed in the parcel would advect a non-liquid phase as if it were solution -- a
+                # category error that also breaks the volume/charge accounting.  Refuse it (fail-closed).
+                for sp, side in ((sa, bx.a), (sb, bx.b)):
+                    if sp.phase is not Phase.AQUEOUS:
+                        raise CoupledError(
+                            f"bulk exchange {bx.name!r} would advect {sp.name!r} (phase {sp.phase.name}) from "
+                            f"compartment {side!r} as dissolved liquid; a bulk-liquid parcel carries AQUEOUS solutes "
+                            f"only -- a solid or gas is not part of the dissolved solution (declare a phase-change "
+                            f"reaction or an InterfaceTransfer for it, not a bulk parcel)")
+                pair_a.append(sa)
+                pair_b.append(sb)
+            # XXII-1 COMPLETENESS GATE -- the fix for the false electroneutral-bulk guarantee.  A parcel that carries
+            # only a SUBSET of the dissolved species sweeps only that subset's charge density, so for an electroneutral
+            # solution the swept charge is NONZERO and the exchange leaves each compartment LOCALLY CHARGED while
+            # preserving GLOBAL charge -- exactly the Na+-only counterexample.  The electroneutral-bulk guarantee is
+            # earned ONLY by carrying the COMPLETE dissolved roster of BOTH compartments: then the swept charge density
+            # is the solution's TOTAL (0 for an electroneutral parcel), so local electroneutrality is preserved.  A
+            # genuinely restricted transport is a SELECTIVE membrane (declare InterfaceTransfer per species), not an
+            # electroneutral bulk exchange -- so an incomplete roster is REFUSED, never silently reclassified.
+            for side, carried, want_label in ((bx.a, pair_a, "A"), (bx.b, pair_b, "B")):
+                aqueous = [sp for sp in self._comp[side].system.species if sp.phase is Phase.AQUEOUS]
+                carried_set, aqueous_set = set(carried), set(aqueous)
+                if carried_set != aqueous_set:
+                    missing = sorted(sp.name for sp in aqueous_set - carried_set)
+                    extra = sorted(sp.name for sp in carried_set - aqueous_set)
+                    raise CoupledError(
+                        f"bulk exchange {bx.name!r} does NOT carry the complete dissolved roster of compartment "
+                        f"{side!r}: missing {missing}, extra {extra}.  An ElectroneutralBulkExchange swaps whole "
+                        f"liquid parcels, so it MUST advect EVERY aqueous species of each compartment -- carrying a "
+                        f"subset transports net charge and leaves a compartment locally charged (that is a selective "
+                        f"membrane, not electroneutral bulk transport; declare InterfaceTransfer per species instead)")
+
+        # global slot layout: (compartment_name, Species) in a fixed order
+        self._slots = [(c.name, sp) for c in self.compartments for sp in c.system.species]
+        self._slot = {key: i for i, key in enumerate(self._slots)}
+        self.n_slots = len(self._slots)
+
+        # the union of components (elements + charge), and which are reservoir-coupled by SOME compartment
+        comp_labels = set()
+        reservoir = set()
+        for c in self.compartments:
+            comp_labels.update(c.system.component_labels)
+            if c.equilibrium is not None:
+                reservoir.update(c.equilibrium.reservoir_components)
+        self.component_labels = tuple(sorted(lab for lab in comp_labels if lab != "charge")) + \
+            (("charge",) if "charge" in comp_labels else ())
+        self.reservoir_components = frozenset(reservoir)
+        self.conserved_components = tuple(c for c in self.component_labels if c not in self.reservoir_components)
+
+        # global component matrix E_glob (component x slot): element/charge content of each slot's species
+        self._Eg = np.zeros((len(self.component_labels), self.n_slots))
+        for j, (_cname, sp) in enumerate(self._slots):
+            for i, lab in enumerate(self.component_labels):
+                self._Eg[i, j] = float(sp.charge) if lab == "charge" else float(sp.count(lab))
+        self._has_equilibrium = any(c.equilibrium is not None for c in self.compartments)
+
+        # XIX-1D: snapshot a world-level execution certificate NOW -- every compartment's kernel certificate + species
+        # order + volume + equilibrium-operator identity, every interface and boundary descriptor, and the world
+        # temperature.  integrate() re-verifies it before advancing, so a post-construction mutation or rebind of ANY of
+        # these (the coupled execution path reads compartment matrices / rate laws / interfaces directly, bypassing the
+        # per-system integrate() guard) cannot silently execute a changed world under the stale certificate.
+        self._world_certificate = self._compute_world_certificate()
+
+        # XXI-2: enumerate the reactions whose rate law has NO bindable descriptor.  The world certificate marks each
+        # UNVERIFIABLE but cannot witness a mutation of its hidden parameters -- so a world holding one has NO certified
+        # execution identity.  integrate() consumes this: it REFUSES under require_certified_execution, floors the
+        # kinetic tier to UNVERIFIED regardless of the law's self-declared tier (a label is not a binding), and flags
+        # the receipt so the limitation cannot be hidden behind an otherwise-clean result.
+        self._uncertified_rate_laws = tuple(
+            (c.name, r.name, type(r.rate_law).__qualname__)
+            for c in self.compartments for r in c.system.reactions
+            if r.rate_law is not None and _descriptor_is_uncertified(_rate_law_descriptor(r.rate_law))
+        )
+
+    # ---------------------------------------------------------------- XIX-1D world execution certificate
+    def _equilibrium_descriptor(self, c: Compartment):
+        """A stable identity for a compartment's fast-equilibrium coupling: the operator TYPE, its activity model, the
+        exact name->Species table (full species keys), and the declared reservoir components.  A rebind that swaps the
+        operator, its activity model, or re-aliases a species moves this descriptor and is caught at integrate()."""
+        if c.equilibrium is None:
+            return None
+        ec = c.equilibrium
+        return {
+            "operator_type": type(ec.operator).__name__,
+            "activity_model": getattr(ec.operator, "activity_model", None),
+            "table": sorted((nm, _species_key(sp)) for nm, sp in ec.species_table.items()),
+            "reservoir_components": sorted(ec.reservoir_components),
+        }
+
+    def _compute_world_certificate(self) -> str:
+        """Hash the whole executable world: temperature, every compartment (name, volume, species order, the kernel
+        ChemicalSystem's own XVIII-2 certificate, equilibrium descriptor), and every interface/boundary descriptor.
+        The per-compartment kernel certificate binds that compartment's float E/N and species identity+order; this
+        world certificate binds everything ABOVE the single-compartment level that the coupled integrator executes."""
+        comp = []
+        for c in self.compartments:
+            comp.append({
+                "name": c.name,
+                "volume_L": _canon_num(c.system.volume_L),
+                "species": [_species_key(sp) for sp in c.system.species],
+                "system_certificate": c.system._model_certificate,       # XVIII-2 per-system float E/N + species cert
+                "equilibrium": self._equilibrium_descriptor(c),
+                "rate_laws": [_rate_law_descriptor(r.rate_law)           # XX-2B: bind each reaction's OPERATIVE kinetics
+                              for r in c.system.reactions],              # (the XVIII-2 cert binds stoichiometry, not rate params)
+            })
+        ifaces = [{
+            "name": i.name, "a": i.a, "b": i.b,
+            "species_a": _species_key(i.species_a), "species_b": _species_key(i.species_b),
+            "k_transfer": _canon_num(i.k_transfer), "partition": _canon_num(i.partition),
+        } for i in self.interfaces]
+        bounds = [{
+            "name": b.name, "compartment": b.compartment, "species": _species_key(b.species), "mode": b.mode,
+            "rate": _canon_num(b.rate), "k_transfer": _canon_num(b.k_transfer),
+            "target_conc": _canon_num(b.target_conc),
+        } for b in self.boundaries]
+        bulk = [{                                                 # XXI-5: bind each bulk exchange's Q + advected pairs
+            "name": x.name, "a": x.a, "b": x.b, "Q_L_per_s": _canon_num(x.Q_L_per_s),
+            "species_pairs": [[_species_key(sa), _species_key(sb)] for sa, sb in x.species_pairs],
+        } for x in self.bulk_exchanges]
+        payload = {"temperature_K": _canon_num(self.temperature_K),
+                   "slots": [(cn, _species_key(sp)) for cn, sp in self._slots],
+                   "compartments": comp, "interfaces": ifaces, "boundaries": bounds, "bulk_exchanges": bulk}
+        blob = json.dumps(payload, sort_keys=True, default=str)
+        return hashlib.sha256(blob.encode()).hexdigest()
+
+    def _verify_world_certificate(self) -> None:
+        """XIX-1D: refuse to integrate if the live world no longer matches the certificate proven at construction.
+        First re-verify EACH compartment's own kernel certificate (catches an in-place or rebound E/N on a compartment
+        system -- the per-system check the coupled path would otherwise skip), then re-verify the world-level structure
+        (operator / interface / boundary / temperature / species-order rebinds)."""
+        for c in self.compartments:
+            c.system._verify_certificate()                              # XVIII-2, now reached on the coupled path too
+        if self._compute_world_certificate() != self._world_certificate:
+            raise StaleCertificateError(
+                "the coupled world's execution basis (compartments / interfaces / boundaries / operators / "
+                "temperature) no longer matches the certificate proven at construction; it was mutated afterward and "
+                "must not integrate under the stale world certificate (XIX-1D).")
+
+    # ---------------------------------------------------------------- state <-> global vector
+    def _pack(self, initial: dict) -> np.ndarray:
+        for cname, inv in initial.items():
+            if cname not in self._comp:
+                raise CoupledError(f"initial inventory references unknown compartment {cname!r}")
+            for sp in inv:
+                if sp not in self._comp[cname].system._index:
+                    raise CoupledError(f"initial inventory for {cname!r} references unknown species "
+                                       f"{getattr(sp, 'name', sp)!r}")
+        y = np.zeros(self.n_slots)
+        for j, (cname, sp) in enumerate(self._slots):
+            y[j] = float(initial.get(cname, {}).get(sp, 0.0))
+        if not np.all(np.isfinite(y)):                                   # XVII-D3: a NaN/Inf inventory slips `< 0`
+            raise CoupledError("initial inventories must be finite (no NaN/Inf)")
+        if np.any(y < 0):
+            raise CoupledError("initial inventories must be >= 0")
+        return y
+
+    def _unpack(self, y: np.ndarray) -> dict:
+        out = {c.name: {} for c in self.compartments}
+        for j, (cname, sp) in enumerate(self._slots):
+            out[cname][sp] = float(y[j])
+        return out
+
+    def global_components(self, state) -> dict:
+        """E n over the WHOLE world (every compartment): the global element + charge totals."""
+        y = state if isinstance(state, np.ndarray) else self._pack(state)
+        totals = self._Eg @ y
+        return {self.component_labels[i]: float(totals[i]) for i in range(len(totals))}
+
+    # ---------------------------------------------------------------- the three operators
+    def _reaction_rhs(self, y: np.ndarray) -> np.ndarray:
+        """R: within-compartment reaction only (no transport, no feed).  Reuses each compartment's kernel rate laws."""
+        dy = np.zeros_like(y)
+        for c in self.compartments:
+            sys = c.system
+            if not sys.reactions:
+                continue
+            V = sys.volume_L
+            conc = {sp: y[self._slot[(c.name, sp)]] / V for sp in sys.species}
+            for k, r in enumerate(sys.reactions):
+                r_vol = r.rate_law.evaluate(r, conc)          # mol L^-1 s^-1
+                molar = V * r_vol                              # mol/s
+                for i, sp in enumerate(sys.species):
+                    coeff = sys.N[i, k]
+                    if coeff != 0.0:
+                        dy[self._slot[(c.name, sp)]] += molar * coeff
+        return dy
+
+    def _transport_rhs_and_flux(self, y: np.ndarray):
+        """T plus the per-boundary signed EXTERNAL flux (mol/s into the world).  Interface transfers are INTERNAL
+        (conservative, a->b) and contribute to dy but NOT to the external accumulators; only ExternalBoundary terms are
+        external flux.  Returns (dy, dflux) where dflux[k] is the signed mol/s boundary k injects into its species --
+        the quantity XVIII-3 integrates independently of the inventory to close the material balance."""
+        dy = np.zeros_like(y)
+        for iface in self.interfaces:
+            ia = self._slot[(iface.a, iface.species_a)]
+            ib = self._slot[(iface.b, iface.species_b)]
+            Va = self._comp[iface.a].system.volume_L
+            Vb = self._comp[iface.b].system.volume_L
+            J = iface.k_transfer * (y[ia] / Va - iface.partition * y[ib] / Vb)   # mol/s, a -> b
+            dy[ia] -= J
+            dy[ib] += J
+        for bx in self.bulk_exchanges:
+            # XXI-5 bulk-liquid parcel swap: EVERY co-advected species moves at the SAME Q (whole-solution transport),
+            # J_s = Q*(c_A,s - c_B,s) mol/s a->b.  INTERNAL (conservative): what leaves A enters B, for every species,
+            # so each component AND net charge is conserved and no cell is left artificially charged.
+            Va = self._comp[bx.a].system.volume_L
+            Vb = self._comp[bx.b].system.volume_L
+            for sa, sb in bx.species_pairs:
+                ia = self._slot[(bx.a, sa)]
+                ib = self._slot[(bx.b, sb)]
+                J = bx.Q_L_per_s * (y[ia] / Va - y[ib] / Vb)
+                dy[ia] -= J
+                dy[ib] += J
+        dflux = np.zeros(len(self.boundaries))
+        for k, b in enumerate(self.boundaries):
+            i = self._slot[(b.compartment, b.species)]
+            if b.mode == "feed":
+                fl = b.rate
+            else:   # fixed_activity
+                V = self._comp[b.compartment].system.volume_L
+                fl = b.k_transfer * (b.target_conc - y[i] / V)
+            dy[i] += fl
+            dflux[k] = fl
+        return dy, dflux
+
+    def _transport_rhs(self, y: np.ndarray) -> np.ndarray:
+        """T only (species RHS), for callers that do not track the external flux accumulators."""
+        return self._transport_rhs_and_flux(y)[0]
+
+    def _flow(self, y: np.ndarray, acc: np.ndarray, which: str, dt: float, rtol: float, atol: float):
+        """Integrate one continuous operator ('reaction' | 'transport' | 'both') over [0, dt], carrying the per-boundary
+        external-flux accumulators ``acc`` as AUGMENTED ODE state (XVIII-3) so each boundary's integral of q_ext is
+        measured by the SAME quadrature that moves the inventory -- independent of the resulting inventory change.
+        Returns (y_next, acc_next).  A reaction-only flow leaves the accumulators flat (boundaries are transport)."""
+        if which not in ("reaction", "transport", "both"):
+            raise CoupledError(f"unknown flow {which!r}")
+        if dt == 0.0:
+            return y.copy(), acc.copy()
+        ny = len(y)
+        want_reaction = which in ("reaction", "both")
+        want_transport = which in ("transport", "both")
+        nb = len(self.boundaries)
+
+        def f(_t, z):
+            yy = z[:ny]
+            dy = np.zeros(ny)
+            dflux = np.zeros(nb)
+            if want_reaction:
+                dy = dy + self._reaction_rhs(yy)
+            if want_transport:
+                t_dy, dflux = self._transport_rhs_and_flux(yy)
+                dy = dy + t_dy
+            return np.concatenate([dy, dflux])
+
+        z0 = np.concatenate([y, acc])
+        sol = solve_ivp(f, (0.0, dt), z0, method="BDF", rtol=rtol, atol=atol, t_eval=[dt])
+        if not sol.success:
+            raise CoupledError(f"{which} sub-integration failed: {sol.message}")
+        zf = sol.y[:, -1]
+        return zf[:ny], zf[ny:]
+
+    def _project(self, y: np.ndarray):
+        """P: re-speciate every fast-equilibrium compartment onto g(n) = 0 (instantaneous SNIA projection).  Returns
+        ``(out, derived_by_comp)`` (XIX-1B): the projected inventory, and a {compartment: derived-scalars} map carrying
+        the AUTHORITATIVE pH_activity / pH_concentration / ionic strength / activity model the chemical solver computed.
+
+        XVI-P0.2: the returned species vector is NOT trusted on the operator's word.  Every projection result passes a
+        fail-closed admission gate (``_admit_projection``) -- completeness, finiteness, nonnegativity, an accepted
+        structural verdict, and conserved-component closure RECOMPUTED by the world from the returned species -- before
+        a single amount is installed.  An inadmissible projection raises CoupledError and aborts the run rather than
+        laundering an unverified or non-conserving vector into the world and certifying the trajectory."""
+        if not self._has_equilibrium:
+            return y, {}
+        out = y.copy()
+        derived_by_comp = {}
+        for c in self.compartments:
+            if c.equilibrium is None:
+                continue
+            ec = c.equilibrium
+            V = c.system.volume_L
+            # re-key the current inventory onto the operator's conserved components via the operator's OWN
+            # conservation law (operator.component_totals) -- generic, so the coupled integrator carries no chemistry
+            amounts = {nm: out[self._slot[(c.name, sp)]] for nm, sp in ec.species_table.items()}
+            totals = ec.operator.component_totals(amounts)
+            T = self.temperature_K            # XIX-1C: the world temperature, NOT a hard-coded 298.15 (a 25 C-only
+            #                                   operator fail-closes off-domain through its own wrapped solver)
+            state = ec.operator.speciate(totals, volume_L=V, temperature_K=T)
+            # fail-closed: refuse a bad projection, never install it.  Pass the pre-projection species amounts and the
+            # posed (V, T) so the gate can check elemental closure and metadata consistency independently.
+            self._admit_projection(c, ec, state, totals, amounts, requested_volume_L=V, requested_temperature_K=T)
+            for nm, sp in ec.species_table.items():
+                out[self._slot[(c.name, sp)]] = state.species_amounts[nm]
+            # XIX-1B: capture the AUTHORITATIVE derived scalars THIS projection computed (pH_activity, pH_concentration,
+            # ionic strength, ...) so the observer reads the solver's result rather than recomputing an approximate pH;
+            # tag the activity model and the posed V/T the gate verified the state against.
+            d = dict(state.derived)
+            d["activity_model"] = getattr(ec.operator, "activity_model", None)
+            d["temperature_K"] = float(state.temperature_K)
+            d["volume_L"] = float(state.volume_L)
+            derived_by_comp[c.name] = d
+        return out, derived_by_comp
+
+    # XVII-A2: a scale-aware conservation tolerance.  The OLD 1e-6*max(1.0, |totals|) policy pinned a 1e-6 mol ABSOLUTE
+    # floor even for a ~1e-12 mol trace inventory, so fabricating 1e-7 mol passed as "balanced".  The honest policy is
+    # atol + rtol*scale, scaled to the ACTUAL conserved inventory (NO 1-mol floor): rtol = 1e-9 matches the wrapped
+    # solvers' mass-balance closure target, and atol = 1e-15 mol (sub-femtomole) is a pure float-roundoff floor for the
+    # scale -> 0 case.  For a 0.1 mol inventory tol ~ 1e-10; for a 1e-12 mol inventory tol ~ 1e-15 -- so a 1e-7 creation
+    # is caught at every scale, while an honest machine-zero residual is never refused.
+    _PROJECTION_RTOL = 1e-9
+    _PROJECTION_ATOL = 1e-15      # mol: float-dust floor for the conservation observable (scale -> 0)
+    _NONNEG_CONC_ATOL = 1e-12     # mol/L: the wrapped solvers' own nonnegativity floor; * volume -> a mol floor
+    # XVIII-4A: the OUTER material-balance / feed-ledger tolerance -- scale-aware, NO 1-mol floor (the pre-XVIII
+    # 1e-6*max(1.0, scale) pinned a 1e-6 mol ABSOLUTE floor that passed a trace-scale fabrication).  atol is a pure
+    # float-dust floor; rtol keeps the prior relative sensitivity, now applied to the ACTUAL conserved inventory.
+    _MATERIAL_RTOL = 1e-6
+    _MATERIAL_ATOL = 1e-12
+    # XXII-3: a component is NUMERICALLY RESOLVED at its scale only if its tolerance can detect a loss smaller than
+    # RESOLUTION_FRACTION of its whole inventory; otherwise "within tol" is vacuous and conservation is UNRESOLVED.
+    # 0.5 => we refuse to certify a component whose own tolerance would pass a >=50%-of-inventory error (scale <= ~2*atol).
+    _RESOLUTION_FRACTION = 0.5
+
+    @classmethod
+    def _projection_tol(cls, totals_in: dict) -> float:
+        scale = max([0.0] + [abs(float(v)) for v in totals_in.values()])
+        return cls._PROJECTION_ATOL + cls._PROJECTION_RTOL * scale
+
+    def _admit_projection(self, c, ec, state, totals_in, amounts_in, *,
+                          requested_volume_L, requested_temperature_K) -> None:
+        """XVI-P0.2 + XVII-A1/A2/A3 fail-closed admission of a fast-equilibrium projection.  The world verifies the
+        CODOMAIN itself; it never trusts the operator's self-reported residuals, tier, verdict or metadata.  In order:
+        state type/shape; completeness; per-species finiteness + nonnegativity; (A1) the NUMERICAL solver verdict is one
+        the operator certifies as a closed solve; (A1) the state's self-reported (volume, temperature, component inputs)
+        match the problem the world posed; the operator's structural (mass-balance) tier is accepted; and TWO
+        independent conservation checks -- the operator's own component law recomputed on the returned species, AND (A3)
+        the kernel's EXACT element/charge map recomputed on the returned species, which does not consult the operator's
+        component law at all (so a complicit/wrong law that makes input and output agree on a false invariant is still
+        caught).  Raises CoupledError on any violation (no partial install)."""
+        from experiments.sandbox_foundation.general_equilibrium import EquilibriumState
+        if type(state) is not EquilibriumState:
+            raise CoupledError(f"compartment {c.name!r} fast-equilibrium returned a {type(state).__name__}, "
+                               f"not an EquilibriumState")
+        sa = state.species_amounts
+        if type(sa) is not dict:
+            raise CoupledError(f"compartment {c.name!r} projection returned a non-dict species map")
+        # completeness: every kernel species the world must install has a value
+        missing = [nm for nm in ec.species_table if nm not in sa]
+        if missing:
+            raise CoupledError(f"compartment {c.name!r} projection is missing required species {sorted(missing)}")
+        tol = self._projection_tol(totals_in)
+        # finiteness + nonnegativity of every installed amount.  Nonnegativity gets its OWN floor (a solver may dip a
+        # concentration a roundoff below zero: _NONNEG_CONC_ATOL * volume), separate from the conservation tol -- the
+        # two numerical facets (physical nonnegativity vs component loss) are not the same observable (XVII-A2).
+        neg_tol = self._NONNEG_CONC_ATOL * float(c.system.volume_L) + self._PROJECTION_ATOL
+        for nm in ec.species_table:
+            v = sa[nm]
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+                raise CoupledError(f"compartment {c.name!r} projection returned a non-finite amount for {nm!r}: {v!r}")
+            if float(v) < -neg_tol:
+                raise CoupledError(f"compartment {c.name!r} projection returned a negative amount for {nm!r}: "
+                                   f"{float(v):.3e} (nonnegativity tol {neg_tol:.3e})")
+        # XVII-A1: the NUMERICAL solver verdict is an INDEPENDENT facet from the structural mass-balance tier.  A
+        # perfectly mass-balanced projection resting on a solve the solver itself REFUSED is not scientifically
+        # admissible.  The accepted set is the operator's typed whitelist (bound to its source/domain), not "nonempty".
+        accepted = getattr(ec.operator, "accepted_solver_verdicts", frozenset())
+        if not accepted:
+            raise CoupledError(f"compartment {c.name!r} operator {type(ec.operator).__name__} declares no "
+                               f"accepted_solver_verdicts; its numerical solve cannot be judged (fail-closed)")
+        if state.solver_verdict not in accepted:
+            raise CoupledError(f"compartment {c.name!r} projection carries solver_verdict {state.solver_verdict!r}, "
+                               f"not an accepted verdict for {type(ec.operator).__name__} ({sorted(accepted)}); a "
+                               f"numerically refused / out-of-domain solve is not admissible even if it is balanced")
+        # XVII-A1 metadata: the returned state must describe the problem the world POSED (no forged provenance)
+        if state.volume_L != requested_volume_L:
+            raise CoupledError(f"compartment {c.name!r} projection reports volume_L {state.volume_L!r} != the posed "
+                               f"{requested_volume_L!r}; it claims to have solved a different problem")
+        if state.temperature_K != requested_temperature_K:
+            raise CoupledError(f"compartment {c.name!r} projection reports temperature_K {state.temperature_K!r} != "
+                               f"the posed {requested_temperature_K!r}; it claims to have solved a different problem")
+        ci = state.component_inputs
+        if type(ci) is not dict or set(ci) != set(totals_in):
+            raise CoupledError(f"compartment {c.name!r} projection reports component_inputs over {sorted(ci) if isinstance(ci, dict) else ci!r}, "
+                               f"not the components the projection was keyed on {sorted(totals_in)}")
+        for k, tin in totals_in.items():
+            cv = ci[k]
+            if isinstance(cv, bool) or not isinstance(cv, (int, float)) or not math.isfinite(float(cv)) \
+                    or abs(float(cv) - float(tin)) > tol:
+                raise CoupledError(f"compartment {c.name!r} projection reports component_inputs[{k!r}]={cv!r}, which "
+                                   f"does not match the inventory it was keyed on ({float(tin):.6g})")
+        # the operator's own structural (mass-balance) verdict must be an ACCEPTED one (not REFUSED / unverified)
+        if state.structural_tier != STRUCTURALLY_CONSERVING:
+            raise CoupledError(f"compartment {c.name!r} projection returned structural_tier "
+                               f"{state.structural_tier!r}, not {STRUCTURALLY_CONSERVING!r}; the solve is refused or "
+                               f"unverified and its vector is not admitted")
+        # INDEPENDENT closure #1 -- the operator's OWN component law recomputed on the RETURNED species == keyed inputs
+        # (catches a wrong species map / operator self-inconsistency)
+        totals_out = ec.operator.component_totals(sa)
+        for comp, tin in totals_in.items():
+            tout = float(totals_out.get(comp, 0.0))
+            if not math.isfinite(tout) or abs(tout - float(tin)) > tol:
+                raise CoupledError(
+                    f"compartment {c.name!r} projection does NOT conserve component {comp!r}: keyed on {float(tin):.6g} "
+                    f"but the returned species recompute to {tout:.6g} (residual {abs(tout - float(tin)):.3e} > tol "
+                    f"{tol:.3e}); refusing to install a non-conserving speciation")
+        # INDEPENDENT closure #2 (XVII-A3) -- the kernel's EXACT element/charge map, computed straight from the mapped
+        # kernel Species' compositions.  This does NOT consult the operator's component_totals at all, so a complicit or
+        # simply wrong component law (one that makes input and output agree on a false invariant) cannot hide a
+        # fabricated/destroyed atom.  Every element/charge the table species carry EXCEPT the declared reservoir
+        # components (set by the implicit solvent + electroneutrality) must be conserved across the projection.
+        elements = {el for sp in ec.species_table.values() for el, _ in sp.composition}
+        elements.add("charge")
+        for el in sorted(elements):
+            if el in ec.reservoir_components:
+                continue
+            e_in = sum(float(amounts_in[nm]) * (float(sp.charge) if el == "charge" else float(sp.count(el)))
+                       for nm, sp in ec.species_table.items())
+            e_out = sum(float(sa[nm]) * (float(sp.charge) if el == "charge" else float(sp.count(el)))
+                        for nm, sp in ec.species_table.items())
+            if not math.isfinite(e_out) or abs(e_out - e_in) > tol:
+                raise CoupledError(
+                    f"compartment {c.name!r} projection does NOT conserve element/charge {el!r} (checked independently "
+                    f"of the operator's component law, via the kernel's exact composition map): {e_in:.6g} in -> "
+                    f"{e_out:.6g} out (residual {abs(e_out - e_in):.3e} > tol {tol:.3e}); refusing a speciation that "
+                    f"fabricates or destroys atoms")
+
+    # ---------------------------------------------------------------- the stepper
+    def _step(self, y: np.ndarray, acc: np.ndarray, dt: float, scheme: str, rtol: float, atol: float):
+        """Advance one macro-step of the chosen operator-split scheme, threading the external-flux accumulators ``acc``
+        through each continuous flow (XVIII-3).  The fast-equilibrium projection P re-speciates the inventory but does
+        NOT exchange with an external boundary, so it leaves the accumulators unchanged.  Returns (y_next, acc_next,
+        derived_by_comp) -- the last being the projection's authoritative derived scalars for this step (XIX-1B)."""
+        if scheme == "lie":
+            y, acc = self._flow(y, acc, "reaction", dt, rtol, atol)
+            y, acc = self._flow(y, acc, "transport", dt, rtol, atol)
+        elif scheme == "strang":
+            y, acc = self._flow(y, acc, "reaction", dt / 2.0, rtol, atol)
+            y, acc = self._flow(y, acc, "transport", dt, rtol, atol)
+            y, acc = self._flow(y, acc, "reaction", dt / 2.0, rtol, atol)
+        elif scheme == "monolithic":
+            if self._has_equilibrium:
+                raise CoupledError("monolithic integration is undefined when a compartment has a fast-equilibrium "
+                                   "projection (the world is a DAE, not an ODE); use lie or strang")
+            y, acc = self._flow(y, acc, "both", dt, rtol, atol)
+        else:
+            raise CoupledError("scheme must be 'lie', 'strang' or 'monolithic'")
+        y_proj, derived = self._project(y)
+        return y_proj, acc, derived
+
+    def integrate(self, initial: dict, *, duration: float, n_steps: int, scheme: str = "strang",
+                  n_samples: int | None = None, rtol: float = 1e-10, atol: float = 1e-14,
+                  declared_kinetic_tier: str | None = None, require_certified_execution: bool = False,
+                  _observer_perturb=None) -> CoupledTrajectory:
+        """Advance the coupled world over ``duration`` seconds in ``n_steps`` equal macro-steps of the chosen scheme.
+
+        Every macro-step records the state (or every (n_steps // n_samples)th, if n_samples is given).  Conservation,
+        the feed ledger and positivity are MEASURED and the tier DERIVED (capped at STRUCTURALLY_CONSERVING, weakest-
+        premise'd with the declared kinetic tier).  Missing kinetics anywhere fail closed (Wave A invariant).
+
+        XXI-2 EXECUTION-IDENTITY CONTRACT (three states for a rate law):
+          * CERTIFIABLE          -- the law exposes a bindable ``descriptor()``; its parameters are in the world
+                                    certificate, so a post-construction mutation is DETECTED at this call.
+          * EXECUTABLE-UNVERIFIED -- the law has no bindable descriptor.  The world runs (default), but the receipt's
+                                    ``execution_identity_certified`` is False, the offending laws are named, and the
+                                    kinetic tier is floored to UNVERIFIED irrespective of the law's self-declared tier
+                                    (a caller-supplied label must not forge an evidential claim) -- the certificate
+                                    cannot witness that the same physics executed, and that limitation is not hidden.
+          * REFUSED              -- with ``require_certified_execution=True`` a world holding any unverified law raises
+                                    rather than run; a caller that needs a stable execution identity gets a refusal,
+                                    never a falsely-certified trajectory."""
+        self._verify_world_certificate()          # XIX-1D: never integrate under a stale world/compartment certificate
+        for c in self.compartments:
+            miss = [r.name for r in c.system.reactions if r.rate_law is None]
+            if miss:
+                raise CoupledError(f"compartment {c.name!r} has RATE_UNKNOWN reaction(s) {miss}; refusing to integrate")
+        if require_certified_execution and self._uncertified_rate_laws:
+            raise CoupledError(
+                "require_certified_execution=True but this world has no certified execution identity: rate law(s) "
+                f"{list(self._uncertified_rate_laws)} expose no bindable descriptor, so the world certificate cannot "
+                "witness that the same physics executes (a mutation of their hidden parameters is invisible to it). "
+                "Give each such law a descriptor() binding its operative parameters, or run without "
+                "require_certified_execution to execute in the explicitly-flagged, tier-floored research mode.")
+        if not (isinstance(duration, (int, float)) and math.isfinite(duration) and duration > 0):
+            raise CoupledError("duration must be finite and > 0")
+        if not (isinstance(n_steps, int) and not isinstance(n_steps, bool) and n_steps >= 1):
+            raise CoupledError("n_steps must be an integer >= 1")
+        if declared_kinetic_tier is None:
+            tiers = [r.rate_law.tier for c in self.compartments for r in c.system.reactions if r.rate_law is not None]
+            declared_kinetic_tier = weakest(*tiers) if tiers else STRUCTURALLY_CONSERVING
+        if self._uncertified_rate_laws:
+            # XXI-2: an unbindable law cannot certify its own kinetics; floor the DERIVED claim to UNVERIFIED here,
+            # from the descriptor's unverifiability -- NOT from the law's self-declared tier (a label is not a binding).
+            declared_kinetic_tier = weakest(declared_kinetic_tier, UNVERIFIED)
+        rank(declared_kinetic_tier)
+
+        dt = float(duration) / n_steps
+        y = self._pack(initial)
+        y, derived0 = self._project(y)                    # project the initial state onto equilibrium if declared
+        comp0 = self._Eg @ y
+        acc = np.zeros(len(self.boundaries))              # XVIII-3: per-boundary integrated external flux (mol)
+
+        # XX-3 OBSERVER-INVARIANT VERIFICATION.  Sampling (``ys``/``times``, for rendering) and verification (every
+        # accepted macro-step, for certification) are SEPARATE cadences.  The numerical verdict is computed over the
+        # full per-step record below, never over the sampled subset, so two observers who request different snapshot
+        # densities of the SAME integration receive the SAME verdict.  ``comps``/``accs``/``step_min`` are the per-step
+        # certification record (cheap: component-space, O(n_steps x n_components)); ``_observer_perturb`` is a test-only
+        # hook (default unused) to inject a controlled excursion -- in production it is None.
+        labels = self.component_labels
+        implicit_reservoir = set(self.reservoir_components)     # fast-equilibrium solvent components (no boundary flux)
+        checked_idx = [i for i, lab in enumerate(labels) if lab not in implicit_reservoir]
+        pos_tol = max(atol * 100.0, 1e-10)
+        fed_components = set()
+        for b in self.boundaries:
+            if b.mode == "feed":
+                jb = self._slot[(b.compartment, b.species)]
+                for i, lab in enumerate(labels):
+                    if self._Eg[i, jb] != 0.0:
+                        fed_components.add(lab)
+
+        sample_every = 1 if not n_samples else max(1, n_steps // max(1, n_samples))
+        times = [0.0]
+        ys = [y.copy()]
+        derived_samples = [derived0]                       # XIX-1B: derived scalars aligned with each sampled state
+        comps = [self._Eg @ y]                             # XX-3: E n(t) at EVERY accepted step (verification cadence)
+        accs = [acc.copy()]                                # XX-3: integrated external flux at EVERY accepted step
+        step_min = [float(y.min())]                        # XX-3: min inventory at EVERY step (not just the sampled set)
+        step_argmin = [int(np.argmin(y))]
+        for step in range(1, n_steps + 1):
+            y, acc, derived = self._step(y, acc, dt, scheme, rtol, atol)
+            if _observer_perturb is not None:              # XX-3: test-only controlled perturbation (default: no-op)
+                y = _observer_perturb(step, y)
+            comps.append(self._Eg @ y)
+            accs.append(acc.copy())
+            step_min.append(float(y.min()))
+            step_argmin.append(int(np.argmin(y)))
+            if step % sample_every == 0 or step == n_steps:
+                times.append(step * dt)
+                ys.append(y.copy())
+                derived_samples.append(derived)
+
+        # XVIII-3 SIGNED EXTERNAL-FLUX LEDGER.  Each boundary's flux was accumulated INDEPENDENTLY as augmented ODE
+        # state (acc[k] = integral of q_ext,k dt), so the material balance d(E n)/dt = E q_ext is CHECKED, not inferred
+        # from the endpoint inventory diff.  The per-component ``ledger_residual`` dict is the ENDPOINT snapshot
+        # (retained for the receipt); the GATE is the per-step maximum computed in the XX-3 verdict pass below.  A
+        # component touched ONLY by an implicit-solvent reservoir (fast-equilibrium H/O/charge) has no boundary
+        # accumulator, so it is reported (endpoint) but excluded from the strict balance -- NARROW (implicit solvent).
+        comp_final = comps[-1]
+        raw_change_vec = comp_final - comp0
+        ext_comp = np.zeros(len(labels))
+        for k, b in enumerate(self.boundaries):
+            ext_comp += self._Eg[:, self._slot[(b.compartment, b.species)]] * acc[k]
+
+        # XXI-3 COMPONENT-WISE tolerance.  Each conserved component is judged against ITS OWN scale, so a physically
+        # significant defect in a TRACE component cannot disappear under an unrelated BULK component's inventory.  (The
+        # pre-XXI single global scale = max over ALL components let a 1e-8 mol fabrication of a 1e-12 mol component pass
+        # under a 1 mol component's ~1e-6 tol.)  scale_i = max(|C_i(0)|, |integrated external flux_i|);
+        # tol_i = atol + rtol*scale_i.  No numerical-adjustment term A_i: the coupled integrator applies no phase-stitch
+        # clamp, so A_i == 0 here; the unified world's whole-run balance carries A_i explicitly (XX-4).
+        comp_tol = {}
+        comp_scale = {}
+        for i in checked_idx:
+            scale_i = max(abs(float(comp0[i])), abs(float(ext_comp[i])))
+            comp_scale[labels[i]] = scale_i
+            comp_tol[labels[i]] = self._MATERIAL_ATOL + self._MATERIAL_RTOL * scale_i
+        tol = max(comp_tol.values()) if comp_tol else self._MATERIAL_ATOL   # representative scalar (loosest component tol)
+
+        external_flux = {labels[i]: float(ext_comp[i]) for i in range(len(labels))}
+        raw_material_change = {labels[i]: float(raw_change_vec[i]) for i in range(len(labels))}
+        ledger_residual = {labels[i]: abs(float(raw_change_vec[i] - ext_comp[i])) for i in range(len(labels))}
+
+        # XX-3 THE PER-STEP VERDICT PASS.  min inventory, the purely-internal conservation drift, the independent-ledger
+        # residual |E n(t) - E n(0) - E integral(q_ext dt)| and the feed-ledger residual are each taken over EVERY
+        # accepted step (index s over the full per-step record), NOT over the sampled subset; the FIRST step/species/
+        # component to breach positivity or the ledger is captured.  tol is the endpoint scale-aware tolerance (the
+        # largest accumulated-flux scale of the run), so the endpoint gate is unchanged while earlier steps are ALSO
+        # checked -- a mid-trajectory create-then-remove that closes at the endpoint (XX-3B) can no longer pass.
+        min_amount = float("inf")
+        max_conserved_drift = 0.0
+        max_step_material_residual = 0.0
+        max_step_feed_residual = 0.0
+        comp_max_resid = {labels[i]: 0.0 for i in checked_idx}    # XXI-3: per-component max |ledger residual| over steps
+        feed_max_resid = {lab: 0.0 for lab in fed_components if lab in comp_tol}   # XXI-3: per-component, over CHECKED fed components only (an implicit-reservoir component -- H/O/charge -- has no independent ledger, so it is reported, never gated)
+        first_violation = None
+        for s in range(len(comps)):
+            t_s = s * dt
+            m = step_min[s]
+            if m < min_amount:
+                min_amount = m
+            if first_violation is None and m < -pos_tol:
+                cn, spj = self._slots[step_argmin[s]]
+                first_violation = (t_s, "positivity", cn, str(spj), float(m))
+            ext_t = np.zeros(len(labels))
+            for k, b in enumerate(self.boundaries):
+                ext_t += self._Eg[:, self._slot[(b.compartment, b.species)]] * accs[s][k]
+            resid_vec = comps[s] - comp0 - ext_t
+            for i in checked_idx:
+                lab = labels[i]
+                r = abs(float(resid_vec[i]))
+                if r > comp_max_resid[lab]:
+                    comp_max_resid[lab] = r
+                if r > max_step_material_residual:
+                    max_step_material_residual = r
+                if lab in fed_components:
+                    if r > feed_max_resid[lab]:
+                        feed_max_resid[lab] = r
+                    if r > max_step_feed_residual:
+                        max_step_feed_residual = r
+                if first_violation is None and r > comp_tol[lab]:   # XXI-3: per-component gate, NOT the global tol
+                    first_violation = (t_s, "material_ledger", "-", lab, float(resid_vec[i]))
+                if abs(float(ext_comp[i])) == 0.0:          # a purely-internal (no external flux) component: drift only
+                    d = abs(float(comps[s][i] - comp0[i]))
+                    if d > max_conserved_drift:
+                        max_conserved_drift = d
+
+        # XXII-3 PER-COMPONENT RESOLUTION VERDICT.  comp_tol_i = atol + rtol*scale_i carries an ABSOLUTE floor (atol):
+        # for a component whose entire inventory scale is at/below that floor, "within tol" cannot distinguish exact
+        # conservation from a gross loss, so it must NOT be read as conservation.  Classify each conserved component:
+        #   VIOLATED                  -- residual exceeds its own tolerance (a proven breach, at any scale).
+        #   NUMERICALLY_UNRESOLVED... -- residual within tol, but tol >= RESOLUTION_FRACTION*scale (a >=50%-of-inventory
+        #                                error would still pass): the solver cannot resolve conservation at this scale.
+        #   VERIFIED_WITHIN_RESOLUTION-- residual within tol AND resolvable (scale==0 is resolvable trivially: tol then
+        #                                bounds absolute creation-from-nothing).
+        component_resolution = {}
+        for lab in comp_max_resid:
+            resid_lab, tol_lab, scale_lab = comp_max_resid[lab], comp_tol[lab], comp_scale[lab]
+            if resid_lab > tol_lab:
+                component_resolution[lab] = _CONS_VIOLATED
+            elif scale_lab > 0.0 and tol_lab >= self._RESOLUTION_FRACTION * scale_lab:
+                component_resolution[lab] = _CONS_UNRESOLVED
+            else:
+                component_resolution[lab] = _CONS_VERIFIED
+        numerically_unresolved_components = tuple(sorted(
+            lab for lab, v in component_resolution.items() if v == _CONS_UNRESOLVED))
+        # XXII-3: "closed" now means EVERY conserved component is VERIFIED_WITHIN_RESOLUTION -- fail-closed on BOTH a
+        # proven violation AND an unresolvable scale (the latter must never be read as conservation).
+        material_balance_closed = all(v == _CONS_VERIFIED for v in component_resolution.values())
+
+        feed_ledger_residual = max_step_feed_residual     # XX-3: per-step max over fed components (observer-invariant)
+
+        # implicit-solvent reservoir exchange: reported (endpoint), NOT independently verifiable (no boundary flux)
+        reservoir_exchange = {labels[i]: float(raw_change_vec[i])
+                              for i in range(len(labels)) if labels[i] in implicit_reservoir}
+
+        # XVIII-3 charge/water: neutral water supplies H/O but cannot source NET charge.  Where "charge" is implicit-
+        # reservoir-coupled, the charge-conservation claim is DEMOTED (a labeled electroneutrality approximation),
+        # never silently exempted; otherwise charge is in the checked set and conserved independently.
+        if "charge" not in labels:
+            charge_balance_claim = "N/A (no charged species declared)"
+        elif "charge" in implicit_reservoir:
+            charge_balance_claim = ("DEMOTED: net charge is balanced against an implicit NEUTRAL-water reservoir via "
+                                    "electroneutrality; neutral water sources H and O but cannot source net charge, so "
+                                    "this is a LABELED charge-balance approximation, not an independently conserved "
+                                    "quantity -- a conservation claim needs explicit counterions or a charge-carrying "
+                                    "boundary/electrode.")
+        else:
+            charge_balance_claim = "CONSERVED (independently checked in the material balance)"
+
+        positivity_held = min_amount >= -pos_tol
+        # XXII-3 positivity resolution audit: the negativity gate is an ABSOLUTE floor (pos_tol).  If the deepest dip is
+        # negative, passed that floor, yet the dipping species' own inventory scale is itself <= pos_tol, then the floor
+        # exceeds the species' whole inventory and nonnegativity at that scale is NOT resolvable -- surfaced, not read as
+        # a physical guarantee (the conservation-resolution gate above already fails such a trace component closed).
+        positivity_resolution_limited = False
+        if min_amount < 0.0 and positivity_held:
+            s_star = min(range(len(step_min)), key=lambda s: step_min[s])
+            slot_scale = abs(float(ys[0][step_argmin[s_star]]))
+            if slot_scale <= pos_tol:
+                positivity_resolution_limited = True
+        conserved_components_held = material_balance_closed
+        feed_ledger_closed = all(feed_max_resid[lab] <= comp_tol[lab] for lab in feed_max_resid)   # XXI-3: per-component
+        solver_completed = True
+        structural_ok = solver_completed and positivity_held and material_balance_closed
+        structural_tier = STRUCTURALLY_CONSERVING if structural_ok else REFUSED
+        admitted_tier = weakest(structural_tier, declared_kinetic_tier)
+
+        notes = ()
+        caveats = ()
+        violated_components = [lab for lab, v in component_resolution.items() if v == _CONS_VIOLATED]
+        if violated_components:
+            if first_violation is not None and first_violation[1] == "material_ledger":
+                lab_v = first_violation[3]
+                caveats += (f"the material balance did NOT close: component {lab_v!r}'s independent PER-STEP ledger "
+                            f"residual reached {comp_max_resid.get(lab_v, max_step_material_residual):.3e} "
+                            f"(> ITS OWN component tol {comp_tol.get(lab_v, tol):.3e}); first breach at "
+                            f"t={first_violation[0]:.3e}s (residual {first_violation[4]:.3e}) -- a mid-trajectory "
+                            f"violation the endpoint snapshot can hide",)
+            else:
+                worst = max(violated_components, key=lambda lab: comp_max_resid[lab] - comp_tol[lab])
+                caveats += (f"the material balance did NOT close for component {worst!r}: per-step ledger residual "
+                            f"{comp_max_resid[worst]:.3e} > its OWN component tol {comp_tol[worst]:.3e} (measured change "
+                            f"{raw_material_change[worst]:.3e} vs integrated external flux {external_flux[worst]:.3e}) "
+                            f"-- not hidden under an unrelated bulk component's scale",)
+        if numerically_unresolved_components:
+            caveats += (f"NUMERICALLY_UNRESOLVED_AT_REQUESTED_SCALE: conserved component(s) "
+                        f"{list(numerically_unresolved_components)} have an inventory scale at/below the absolute "
+                        f"numerical floor (material atol {self._MATERIAL_ATOL:.1e} mol), so the conservation tolerance "
+                        f"cannot resolve a loss of a significant fraction of their inventory -- their conservation is "
+                        f"NOT certified: neither verified within resolution nor proven violated.  Refusing to stamp an "
+                        f"unresolved component 'conserved' (XXII-3); raise the modeled inventory scale or widen atol "
+                        f"deliberately if that resolution is genuinely acceptable",)
+        if not positivity_held:
+            where = (f" (first at t={first_violation[0]:.3e}s, {first_violation[2]}/{first_violation[3]})"
+                     if first_violation is not None and first_violation[1] == "positivity" else "")
+            caveats += (f"an inventory went negative (min {min_amount:.3e}){where}",)
+        if positivity_resolution_limited:
+            caveats += (f"positivity is resolution-limited: the deepest inventory dip ({min_amount:.3e}) is within the "
+                        f"absolute nonnegativity floor (pos_tol {pos_tol:.1e} mol) but exceeds the dipping species' own "
+                        f"inventory scale, so nonnegativity at this scale is NUMERICALLY_UNRESOLVED, not a physical "
+                        f"guarantee (XXII-3)",)
+        if self._uncertified_rate_laws:
+            caveats += (f"NO certified execution identity: rate law(s) {list(self._uncertified_rate_laws)} expose no "
+                        f"bindable descriptor(), so the world certificate cannot witness that the same physics "
+                        f"executed (a mutation of their hidden parameters is invisible to it); the kinetic tier is "
+                        f"floored to UNVERIFIED and this trajectory must NOT be read as a certified-identity result "
+                        f"(XXI-2)",)
+        if implicit_reservoir:
+            note = (f"implicit-solvent reservoir components {sorted(implicit_reservoir)} exchange H/O/charge with a "
+                    f"fast-equilibrium solvent and are reported (endpoint), not independently ledgered")
+            if "charge" in implicit_reservoir:
+                note += "; " + charge_balance_claim
+            notes += (note,)
+
+        receipt = CoupledReceipt(
+            solver_completed=solver_completed, positivity_held=positivity_held,
+            conserved_components_held=conserved_components_held, feed_ledger_closed=feed_ledger_closed,
+            max_conserved_drift=max_conserved_drift, feed_ledger_residual=feed_ledger_residual,
+            min_inventory=min_amount, tolerance=tol, scheme=scheme, structural_tier=structural_tier,
+            declared_kinetic_tier=declared_kinetic_tier, admitted_tier=admitted_tier,
+            reservoir_exchange=reservoir_exchange, external_flux=external_flux,
+            raw_material_change=raw_material_change, ledger_adjusted_residual=ledger_residual,
+            material_balance_closed=material_balance_closed, charge_balance_claim=charge_balance_claim, notes=notes,
+            max_step_material_residual=max_step_material_residual, first_violation=(first_violation or ()),
+            execution_identity_certified=not self._uncertified_rate_laws,
+            uncertified_rate_laws=self._uncertified_rate_laws,
+            component_tolerance=dict(comp_tol), component_max_residual=dict(comp_max_resid),
+            component_resolution=dict(component_resolution),
+            numerically_unresolved_components=numerically_unresolved_components,
+            positivity_resolution_limited=positivity_resolution_limited)
+
+        amounts = {c.name: tuple({sp: float(yj[self._slot[(c.name, sp)]]) for sp in c.system.species} for yj in ys)
+                   for c in self.compartments}
+        # XIX-1B: per-compartment derived scalars, one entry per SAMPLED state (a compartment without fast equilibrium
+        # maps to an empty dict each sample).
+        equilibrium_derived = {c.name: tuple(ds.get(c.name, {}) for ds in derived_samples)
+                               for c in self.compartments}
+        return CoupledTrajectory(
+            times=tuple(times), compartments=tuple(c.name for c in self.compartments), amounts=amounts,
+            component_labels=self.component_labels, scheme=scheme, steps=n_steps,
+            max_conserved_drift=max_conserved_drift, feed_ledger_residual=feed_ledger_residual, min_amount=min_amount,
+            solver_success=solver_completed, receipt=receipt, tier=admitted_tier, caveats=caveats,
+            equilibrium_derived=equilibrium_derived)
+
+
+def splitting_convergence(world: CoupledWorld, initial: dict, *, duration: float, steps_list: list,
+                          schemes: tuple = ("lie", "strang"), rtol: float = 1e-11,
+                          atol: float = 1e-14) -> dict:
+    """MEASURE the operator-splitting error of each scheme against a MONOLITHIC reference (R and T integrated together,
+    no split, tight tolerance), and fit the observed global order from the log-log slope of error vs dt.
+
+    Returns, per scheme: the dt grid, the final-state L-infinity error vs the monolithic reference at each dt, and the
+    least-squares fitted order (slope of log(error) vs log(dt)).  This is an HONEST measurement -- the fitted order is
+    whatever the numbers say; a scheme whose operators happen to commute would show ~0 error and the experiment would
+    be vacuous, so the caller should confirm the Lie error is both nonzero and larger than Strang at equal dt."""
+    if world._has_equilibrium:
+        raise CoupledError("splitting_convergence needs a monolithic reference, which is undefined with a fast-"
+                           "equilibrium projection; run it on the pure-kinetic (reaction+transport) world")
+    y0 = world._pack(initial)
+    acc0 = np.zeros(len(world.boundaries))
+    reference, _ = world._flow(y0, acc0, "both", float(duration), rtol, atol)   # the un-split truth (tight tolerance)
+    out = {"reference_linf": float(np.max(np.abs(reference)))}
+    for scheme in schemes:
+        dts, errs = [], []
+        for n in steps_list:
+            traj = world.integrate(initial, duration=duration, n_steps=n, scheme=scheme, n_samples=1,
+                                   rtol=rtol, atol=atol)
+            # reconstruct the final global vector from the trajectory's last sample
+            yf = np.zeros(world.n_slots)
+            for j, (cname, sp) in enumerate(world._slots):
+                yf[j] = traj.amounts[cname][-1][sp]
+            dts.append(float(duration) / n)
+            errs.append(float(np.max(np.abs(yf - reference))))
+        order = None
+        pos = [(d, e) for d, e in zip(dts, errs) if e > 0]
+        if len(pos) >= 2:
+            ld = np.log(np.array([d for d, _ in pos]))
+            le = np.log(np.array([e for _, e in pos]))
+            order = float(np.polyfit(ld, le, 1)[0])
+        out[scheme] = {"dts": dts, "errors": errs, "fitted_order": order}
+    return out

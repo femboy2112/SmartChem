@@ -1,0 +1,18 @@
+DATABASE minteq.v4.dat
+# mixed case M5 acid in excess -> BICARBONATE-LIMITED: C_Ac=0.2 C_C=0.05 Na=0.05 mol/L (mol/kgw here; molar-match per PREREGISTRATION A1/A2 when run)
+SOLUTION 1
+  units mol/kgw
+  temp 25
+  pH 7 charge
+  Na 0.05
+  Acetate 0.2
+  C(4) 0.05
+SELECTED_OUTPUT
+  -file minteq.v4_M5.sel
+  -reset false
+  -ph true
+  -ionic_strength true
+  -totals C(4)
+  -molalities H+ OH- Na+ Acetate- CO2 HCO3- CO3-2
+  -activities H+ OH- Na+ Acetate-
+END

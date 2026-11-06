@@ -1,0 +1,3228 @@
+{
+  "section": "OPERATION XXII section 6C/6D -- 2^3 factorial over three Na ion-pairing reactions (raw numbers; NO verdict here)",
+  "temperature_K": 298.15,
+  "pressure_atm": 1.0,
+  "instrument": "PHREEQC via phreeqpython; same program/input; database differs by whole-block deletion only",
+  "no_tuning": true,
+  "factors": {
+    "A": {
+      "name": "Na-acetate",
+      "reaction": "Na+ + Acetate- = Na(Acetate)",
+      "constants": {
+        "log_k": -0.18,
+        "delta_h_kJ": 12.0,
+        "gamma": "0 0"
+      },
+      "original_lines_1based": [
+        9024,
+        9031
+      ],
+      "removed_text": "Na+ + Acetate- = Na(Acetate)\n          log_k -0.18\n          delta_h 12 kJ\n          -gamma 0 0\n                    #                  Id:        5009920\n                    #        log K source:        NIST46.4\n                    #      Delta H source:        NIST46.4\n                    #T and ionic strength:         0.00 25.0\n"
+    },
+    "B": {
+      "name": "Na-bicarbonate",
+      "reaction": "Na+ + H+ + CO3-2 = NaHCO3",
+      "constants": {
+        "log_k": 10.079,
+        "delta_h_kJ": -28.3301,
+        "gamma": "0 0"
+      },
+      "original_lines_1based": [
+        4880,
+        4887
+      ],
+      "removed_text": "Na+ + H+ + CO3-2 = NaHCO3\n          log_k 10.079\n          delta_h -28.3301 kJ\n          -gamma 0 0\n                    #                  Id:        5001401\n                    #        log K source:        NIST46.3\n                    #      Delta H source:        NIST2.1.1\n                    #T and ionic strength:         0.00 25.0\n"
+    },
+    "C": {
+      "name": "Na-carbonate",
+      "reaction": "Na+ + CO3-2 = NaCO3-",
+      "constants": {
+        "log_k": 1.27,
+        "delta_h_kJ": -20.35,
+        "gamma": "5.4 0"
+      },
+      "original_lines_1based": [
+        4872,
+        4879
+      ],
+      "removed_text": "Na+ + CO3-2 = NaCO3-\n          log_k 1.27\n          delta_h -20.35 kJ\n          -gamma 5.4 0\n                    #                  Id:        5001400\n                    #        log K source:        NIST46.3\n                    #      Delta H source:        NIST2.1.1\n                    #T and ionic strength:         0.00 25.0\n"
+    }
+  },
+  "cell_order_yates": [
+    "---",
+    "A--",
+    "-B-",
+    "AB-",
+    "--C",
+    "A-C",
+    "-BC",
+    "ABC"
+  ],
+  "coding": "x_i=+1 factor PRESENT, -1 REMOVED; E_S=(1/4)*sum_cells prod_{i in S}x_i*y (Yates); main effect = mean(present)-mean(removed)",
+  "databases": {
+    "original": {
+      "file": "db/minteq.v4.dat",
+      "sha256": "4a48bf5c357b3da3084606a5e322426c3ab1e969dd1c86f9c62a3a7995836ca3"
+    },
+    "variants": {
+      "---": {
+        "file": "db/minteq.v4.fac_---.dat",
+        "sha256": "37030159157d390b2a26b7d1bb71f8ac8a6b73c9f3a80a96d1d642978a59b54a",
+        "removed_factors": [
+          "A",
+          "B",
+          "C"
+        ],
+        "n_lines": 13188,
+        "n_removed_lines": 24
+      },
+      "A--": {
+        "file": "db/minteq.v4.fac_A--.dat",
+        "sha256": "6ada9d3f17bd1a101b446ed5eb67cb520bd923e842f3b0547a5261f3493a3082",
+        "removed_factors": [
+          "B",
+          "C"
+        ],
+        "n_lines": 13196,
+        "n_removed_lines": 16
+      },
+      "-B-": {
+        "file": "db/minteq.v4.fac_-B-.dat",
+        "sha256": "385cd5ffa799553431f05d95b0272de083a3ac6157bfeb1b13a7950065db441c",
+        "removed_factors": [
+          "A",
+          "C"
+        ],
+        "n_lines": 13196,
+        "n_removed_lines": 16
+      },
+      "AB-": {
+        "file": "db/minteq.v4.fac_AB-.dat",
+        "sha256": "073f52da2ac44aac1d7d42456c6af2777d7cdf51456e43c000a67abc5a087bc6",
+        "removed_factors": [
+          "C"
+        ],
+        "n_lines": 13204,
+        "n_removed_lines": 8
+      },
+      "--C": {
+        "file": "db/minteq.v4.fac_--C.dat",
+        "sha256": "b4586e90971c03ec34282a84091c3d1f4bd0659ffcd1796c10341d12624767c8",
+        "removed_factors": [
+          "A",
+          "B"
+        ],
+        "n_lines": 13196,
+        "n_removed_lines": 16
+      },
+      "A-C": {
+        "file": "db/minteq.v4.fac_A-C.dat",
+        "sha256": "4cde6150809cd33770c3ec9e93ca322ba843551e2d8ade4b1e25cd0a92f6d26f",
+        "removed_factors": [
+          "B"
+        ],
+        "n_lines": 13204,
+        "n_removed_lines": 8
+      },
+      "-BC": {
+        "file": "db/minteq.v4.fac_-BC.dat",
+        "sha256": "b8f536cfe59a4c644c63e327d5eab96e7f74de2e477cf027d39db0d39d157fbd",
+        "removed_factors": [
+          "A"
+        ],
+        "n_lines": 13204,
+        "n_removed_lines": 8
+      },
+      "ABC": {
+        "file": "db/minteq.v4.fac_ABC.dat",
+        "sha256": "4a48bf5c357b3da3084606a5e322426c3ab1e969dd1c86f9c62a3a7995836ca3",
+        "removed_factors": [],
+        "n_lines": 13212,
+        "n_removed_lines": 0
+      }
+    },
+    "ABC_equals_original": true
+  },
+  "carbonate_grid": {
+    "O1": {
+      "cells": {
+        "---": {
+          "pH": 5.907672072946901,
+          "I": 1.2388901296582617e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 4.650785772970558e-06,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 1.2309448512640285e-06,
+            "m_CO3": 4.683942562543048e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "A--": {
+          "pH": 5.907672072946901,
+          "I": 1.2388901296582617e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 4.650785772970558e-06,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 1.2309448512640285e-06,
+            "m_CO3": 4.683942562543048e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "-B-": {
+          "pH": 5.907672072946901,
+          "I": 1.2388901296582617e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 4.650785772970558e-06,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 1.2309448512640285e-06,
+            "m_CO3": 4.683942562543048e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "AB-": {
+          "pH": 5.907672072946901,
+          "I": 1.2388901296582617e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 4.650785772970558e-06,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 1.2309448512640285e-06,
+            "m_CO3": 4.683942562543048e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "--C": {
+          "pH": 5.907672072946901,
+          "I": 1.2388901296582617e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 4.650785772970558e-06,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 1.2309448512640285e-06,
+            "m_CO3": 4.683942562543048e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "A-C": {
+          "pH": 5.907672072946901,
+          "I": 1.2388901296582617e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 4.650785772970558e-06,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 1.2309448512640285e-06,
+            "m_CO3": 4.683942562543048e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "-BC": {
+          "pH": 5.907672072946901,
+          "I": 1.2388901296582617e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 4.650785772970558e-06,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 1.2309448512640285e-06,
+            "m_CO3": 4.683942562543048e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "ABC": {
+          "pH": 5.907672072946901,
+          "I": 1.2388901296582617e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 4.650785772970558e-06,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 1.2309448512640285e-06,
+            "m_CO3": 4.683942562543048e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        }
+      },
+      "pH_by_cell": {
+        "---": 5.907672072946901,
+        "A--": 5.907672072946901,
+        "-B-": 5.907672072946901,
+        "AB-": 5.907672072946901,
+        "--C": 5.907672072946901,
+        "A-C": 5.907672072946901,
+        "-BC": 5.907672072946901,
+        "ABC": 5.907672072946901
+      },
+      "pH_factorial": {
+        "mean": 5.907672072946901,
+        "effects": {
+          "A": 0.0,
+          "B": 0.0,
+          "C": 0.0,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": 0.0,
+          "ABC": 0.0
+        },
+        "contrasts": {
+          "A": 0.0,
+          "B": 0.0,
+          "C": 0.0,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": 0.0,
+          "ABC": 0.0
+        },
+        "reconstruction_max_abs_err": 0.0,
+        "effect_classes": {
+          "A": "NULL",
+          "B": "NULL",
+          "C": "NULL",
+          "AB": "NULL",
+          "AC": "NULL",
+          "BC": "NULL",
+          "ABC": "NULL"
+        }
+      },
+      "finite": true,
+      "A_toggle_max_abs_pH_diff": 0.0,
+      "mode": "open",
+      "desc": "pure water, P_CO2 = 1e-4 atm",
+      "sodium": 0.0,
+      "continuity_vs_XXI": {
+        "ABC_minus_XXI_pH_with": 0.0,
+        "A--_minus_XXI_pH_no": 0.0
+      }
+    },
+    "O2": {
+      "cells": {
+        "---": {
+          "pH": 5.658605245050097,
+          "I": 2.199011071652539e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 1.3009004520024492e-05,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 2.1946206810531412e-06,
+            "m_CO3": 4.712266331337501e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "A--": {
+          "pH": 5.658605245050097,
+          "I": 2.199011071652539e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 1.3009004520024492e-05,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 2.1946206810531412e-06,
+            "m_CO3": 4.712266331337501e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "-B-": {
+          "pH": 5.658605245050097,
+          "I": 2.199011071652539e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 1.3009004520024492e-05,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 2.1946206810531412e-06,
+            "m_CO3": 4.712266331337501e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "AB-": {
+          "pH": 5.658605245050097,
+          "I": 2.199011071652539e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 1.3009004520024492e-05,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 2.1946206810531412e-06,
+            "m_CO3": 4.712266331337501e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "--C": {
+          "pH": 5.658605245050097,
+          "I": 2.199011071652539e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 1.3009004520024492e-05,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 2.1946206810531412e-06,
+            "m_CO3": 4.712266331337501e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "A-C": {
+          "pH": 5.658605245050097,
+          "I": 2.199011071652539e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 1.3009004520024492e-05,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 2.1946206810531412e-06,
+            "m_CO3": 4.712266331337501e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "-BC": {
+          "pH": 5.658605245050097,
+          "I": 2.199011071652539e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 1.3009004520024492e-05,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 2.1946206810531412e-06,
+            "m_CO3": 4.712266331337501e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "ABC": {
+          "pH": 5.658605245050097,
+          "I": 2.199011071652539e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 1.3009004520024492e-05,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 2.1946206810531412e-06,
+            "m_CO3": 4.712266331337501e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        }
+      },
+      "pH_by_cell": {
+        "---": 5.658605245050097,
+        "A--": 5.658605245050097,
+        "-B-": 5.658605245050097,
+        "AB-": 5.658605245050097,
+        "--C": 5.658605245050097,
+        "A-C": 5.658605245050097,
+        "-BC": 5.658605245050097,
+        "ABC": 5.658605245050097
+      },
+      "pH_factorial": {
+        "mean": 5.658605245050097,
+        "effects": {
+          "A": 0.0,
+          "B": 0.0,
+          "C": 0.0,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": 0.0,
+          "ABC": 0.0
+        },
+        "contrasts": {
+          "A": 0.0,
+          "B": 0.0,
+          "C": 0.0,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": 0.0,
+          "ABC": 0.0
+        },
+        "reconstruction_max_abs_err": 0.0,
+        "effect_classes": {
+          "A": "NULL",
+          "B": "NULL",
+          "C": "NULL",
+          "AB": "NULL",
+          "AC": "NULL",
+          "BC": "NULL",
+          "ABC": "NULL"
+        }
+      },
+      "finite": true,
+      "A_toggle_max_abs_pH_diff": 0.0,
+      "mode": "open",
+      "desc": "pure water, atmospheric CO2 (log P = -3.5)",
+      "sodium": 0.0,
+      "continuity_vs_XXI": {
+        "ABC_minus_XXI_pH_with": 0.0,
+        "A--_minus_XXI_pH_no": 0.0
+      }
+    },
+    "O3": {
+      "cells": {
+        "---": {
+          "pH": 5.408890137252106,
+          "I": 3.909844957960967e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 3.810542936656143e-05,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 3.907462248947968e-06,
+            "m_CO3": 4.7293729773572866e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "A--": {
+          "pH": 5.408890137252106,
+          "I": 3.909844957960967e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 3.810542936656143e-05,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 3.907462248947968e-06,
+            "m_CO3": 4.7293729773572866e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "-B-": {
+          "pH": 5.408890137252106,
+          "I": 3.909844957960967e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 3.810542936656143e-05,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 3.907462248947968e-06,
+            "m_CO3": 4.7293729773572866e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "AB-": {
+          "pH": 5.408890137252106,
+          "I": 3.909844957960967e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 3.810542936656143e-05,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 3.907462248947968e-06,
+            "m_CO3": 4.7293729773572866e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "--C": {
+          "pH": 5.408890137252106,
+          "I": 3.909844957960967e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 3.810542936656143e-05,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 3.907462248947968e-06,
+            "m_CO3": 4.7293729773572866e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "A-C": {
+          "pH": 5.408890137252106,
+          "I": 3.909844957960967e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 3.810542936656143e-05,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 3.907462248947968e-06,
+            "m_CO3": 4.7293729773572866e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "-BC": {
+          "pH": 5.408890137252106,
+          "I": 3.909844957960967e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 3.810542936656143e-05,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 3.907462248947968e-06,
+            "m_CO3": 4.7293729773572866e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "ABC": {
+          "pH": 5.408890137252106,
+          "I": 3.909844957960967e-06,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 3.810542936656143e-05,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 3.907462248947968e-06,
+            "m_CO3": 4.7293729773572866e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        }
+      },
+      "pH_by_cell": {
+        "---": 5.408890137252106,
+        "A--": 5.408890137252106,
+        "-B-": 5.408890137252106,
+        "AB-": 5.408890137252106,
+        "--C": 5.408890137252106,
+        "A-C": 5.408890137252106,
+        "-BC": 5.408890137252106,
+        "ABC": 5.408890137252106
+      },
+      "pH_factorial": {
+        "mean": 5.408890137252106,
+        "effects": {
+          "A": 0.0,
+          "B": 0.0,
+          "C": 0.0,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": 0.0,
+          "ABC": 0.0
+        },
+        "contrasts": {
+          "A": 0.0,
+          "B": 0.0,
+          "C": 0.0,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": 0.0,
+          "ABC": 0.0
+        },
+        "reconstruction_max_abs_err": 0.0,
+        "effect_classes": {
+          "A": "NULL",
+          "B": "NULL",
+          "C": "NULL",
+          "AB": "NULL",
+          "AC": "NULL",
+          "BC": "NULL",
+          "ABC": "NULL"
+        }
+      },
+      "finite": true,
+      "A_toggle_max_abs_pH_diff": 0.0,
+      "mode": "open",
+      "desc": "pure water, P_CO2 = 1e-3 atm",
+      "sodium": 0.0,
+      "continuity_vs_XXI": {
+        "ABC_minus_XXI_pH_with": 0.0,
+        "A--_minus_XXI_pH_no": 0.0
+      }
+    },
+    "O4": {
+      "cells": {
+        "---": {
+          "pH": 4.90899893793958,
+          "I": 1.238230248696258e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.0003543590444013249,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 1.2381686337516275e-05,
+            "m_CO3": 4.765859329417687e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "A--": {
+          "pH": 4.90899893793958,
+          "I": 1.238230248696258e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.0003543590444013249,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 1.2381686337516275e-05,
+            "m_CO3": 4.765859329417687e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "-B-": {
+          "pH": 4.90899893793958,
+          "I": 1.238230248696258e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.0003543590444013249,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 1.2381686337516275e-05,
+            "m_CO3": 4.765859329417687e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "AB-": {
+          "pH": 4.90899893793958,
+          "I": 1.238230248696258e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.0003543590444013249,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 1.2381686337516275e-05,
+            "m_CO3": 4.765859329417687e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "--C": {
+          "pH": 4.90899893793958,
+          "I": 1.238230248696258e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.0003543590444013249,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 1.2381686337516275e-05,
+            "m_CO3": 4.765859329417687e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "A-C": {
+          "pH": 4.90899893793958,
+          "I": 1.238230248696258e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.0003543590444013249,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 1.2381686337516275e-05,
+            "m_CO3": 4.765859329417687e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "-BC": {
+          "pH": 4.90899893793958,
+          "I": 1.238230248696258e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.0003543590444013249,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 1.2381686337516275e-05,
+            "m_CO3": 4.765859329417687e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "ABC": {
+          "pH": 4.90899893793958,
+          "I": 1.238230248696258e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.0003543590444013249,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 1.2381686337516275e-05,
+            "m_CO3": 4.765859329417687e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        }
+      },
+      "pH_by_cell": {
+        "---": 4.90899893793958,
+        "A--": 4.90899893793958,
+        "-B-": 4.90899893793958,
+        "AB-": 4.90899893793958,
+        "--C": 4.90899893793958,
+        "A-C": 4.90899893793958,
+        "-BC": 4.90899893793958,
+        "ABC": 4.90899893793958
+      },
+      "pH_factorial": {
+        "mean": 4.90899893793958,
+        "effects": {
+          "A": 0.0,
+          "B": 0.0,
+          "C": 0.0,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": 0.0,
+          "ABC": 0.0
+        },
+        "contrasts": {
+          "A": 0.0,
+          "B": 0.0,
+          "C": 0.0,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": 0.0,
+          "ABC": 0.0
+        },
+        "reconstruction_max_abs_err": 0.0,
+        "effect_classes": {
+          "A": "NULL",
+          "B": "NULL",
+          "C": "NULL",
+          "AB": "NULL",
+          "AC": "NULL",
+          "BC": "NULL",
+          "ABC": "NULL"
+        }
+      },
+      "finite": true,
+      "A_toggle_max_abs_pH_diff": 0.0,
+      "mode": "open",
+      "desc": "pure water, P_CO2 = 1e-2 atm",
+      "sodium": 0.0,
+      "continuity_vs_XXI": {
+        "ABC_minus_XXI_pH_with": 0.0,
+        "A--_minus_XXI_pH_no": 0.0
+      }
+    },
+    "O5": {
+      "cells": {
+        "---": {
+          "pH": 4.409019389782997,
+          "I": 3.927855645558417e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.0034588696016226803,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 3.92784983144307e-05,
+            "m_CO3": 4.8271979953301264e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "A--": {
+          "pH": 4.409019389782997,
+          "I": 3.927855645558417e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.0034588696016226803,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 3.92784983144307e-05,
+            "m_CO3": 4.8271979953301264e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "-B-": {
+          "pH": 4.409019389782997,
+          "I": 3.927855645558417e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.0034588696016226803,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 3.92784983144307e-05,
+            "m_CO3": 4.8271979953301264e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "AB-": {
+          "pH": 4.409019389782997,
+          "I": 3.927855645558417e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.0034588696016226803,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 3.92784983144307e-05,
+            "m_CO3": 4.8271979953301264e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "--C": {
+          "pH": 4.409019389782997,
+          "I": 3.927855645558417e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.0034588696016226803,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 3.92784983144307e-05,
+            "m_CO3": 4.8271979953301264e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "A-C": {
+          "pH": 4.409019389782997,
+          "I": 3.927855645558417e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.0034588696016226803,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 3.92784983144307e-05,
+            "m_CO3": 4.8271979953301264e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "-BC": {
+          "pH": 4.409019389782997,
+          "I": 3.927855645558417e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.0034588696016226803,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 3.92784983144307e-05,
+            "m_CO3": 4.8271979953301264e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "ABC": {
+          "pH": 4.409019389782997,
+          "I": 3.927855645558417e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.0034588696016226803,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 3.92784983144307e-05,
+            "m_CO3": 4.8271979953301264e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        }
+      },
+      "pH_by_cell": {
+        "---": 4.409019389782997,
+        "A--": 4.409019389782997,
+        "-B-": 4.409019389782997,
+        "AB-": 4.409019389782997,
+        "--C": 4.409019389782997,
+        "A-C": 4.409019389782997,
+        "-BC": 4.409019389782997,
+        "ABC": 4.409019389782997
+      },
+      "pH_factorial": {
+        "mean": 4.409019389782997,
+        "effects": {
+          "A": 0.0,
+          "B": 0.0,
+          "C": 0.0,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": 0.0,
+          "ABC": 0.0
+        },
+        "contrasts": {
+          "A": 0.0,
+          "B": 0.0,
+          "C": 0.0,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": 0.0,
+          "ABC": 0.0
+        },
+        "reconstruction_max_abs_err": 0.0,
+        "effect_classes": {
+          "A": "NULL",
+          "B": "NULL",
+          "C": "NULL",
+          "AB": "NULL",
+          "AC": "NULL",
+          "BC": "NULL",
+          "ABC": "NULL"
+        }
+      },
+      "finite": true,
+      "A_toggle_max_abs_pH_diff": 0.0,
+      "mode": "open",
+      "desc": "pure water, P_CO2 = 1e-1 atm",
+      "sodium": 0.0,
+      "continuity_vs_XXI": {
+        "ABC_minus_XXI_pH_with": 0.0,
+        "A--_minus_XXI_pH_no": 0.0
+      }
+    },
+    "O6": {
+      "cells": {
+        "---": {
+          "pH": 3.9091423618942702,
+          "I": 0.00012487523727225782,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.034302804604976166,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.0001248753539394469,
+            "m_CO3": 4.937415954631459e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "A--": {
+          "pH": 3.9091423618942702,
+          "I": 0.00012487523727225782,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.034302804604976166,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.0001248753539394469,
+            "m_CO3": 4.937415954631459e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "-B-": {
+          "pH": 3.9091423618942702,
+          "I": 0.00012487523727225782,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.034302804604976166,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.0001248753539394469,
+            "m_CO3": 4.937415954631459e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "AB-": {
+          "pH": 3.9091423618942702,
+          "I": 0.00012487523727225782,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.034302804604976166,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.0001248753539394469,
+            "m_CO3": 4.937415954631459e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "--C": {
+          "pH": 3.9091423618942702,
+          "I": 0.00012487523727225782,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.034302804604976166,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.0001248753539394469,
+            "m_CO3": 4.937415954631459e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "A-C": {
+          "pH": 3.9091423618942702,
+          "I": 0.00012487523727225782,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.034302804604976166,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.0001248753539394469,
+            "m_CO3": 4.937415954631459e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "-BC": {
+          "pH": 3.9091423618942702,
+          "I": 0.00012487523727225782,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.034302804604976166,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.0001248753539394469,
+            "m_CO3": 4.937415954631459e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "ABC": {
+          "pH": 3.9091423618942702,
+          "I": 0.00012487523727225782,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.034302804604976166,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.0001248753539394469,
+            "m_CO3": 4.937415954631459e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        }
+      },
+      "pH_by_cell": {
+        "---": 3.9091423618942702,
+        "A--": 3.9091423618942702,
+        "-B-": 3.9091423618942702,
+        "AB-": 3.9091423618942702,
+        "--C": 3.9091423618942702,
+        "A-C": 3.9091423618942702,
+        "-BC": 3.9091423618942702,
+        "ABC": 3.9091423618942702
+      },
+      "pH_factorial": {
+        "mean": 3.9091423618942702,
+        "effects": {
+          "A": 0.0,
+          "B": 0.0,
+          "C": 0.0,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": 0.0,
+          "ABC": 0.0
+        },
+        "contrasts": {
+          "A": 0.0,
+          "B": 0.0,
+          "C": 0.0,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": 0.0,
+          "ABC": 0.0
+        },
+        "reconstruction_max_abs_err": 0.0,
+        "effect_classes": {
+          "A": "NULL",
+          "B": "NULL",
+          "C": "NULL",
+          "AB": "NULL",
+          "AC": "NULL",
+          "BC": "NULL",
+          "ABC": "NULL"
+        }
+      },
+      "finite": true,
+      "A_toggle_max_abs_pH_diff": 0.0,
+      "mode": "open",
+      "desc": "pure water, P_CO2 = 1 atm (soda)",
+      "sodium": 0.0,
+      "continuity_vs_XXI": {
+        "ABC_minus_XXI_pH_with": 0.0,
+        "A--_minus_XXI_pH_no": 0.0
+      }
+    },
+    "C1": {
+      "cells": {
+        "---": {
+          "pH": 8.24657304715943,
+          "I": 0.010110780967424944,
+          "speciation": {
+            "Na_total_molal": 0.01,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.009999999999999426,
+            "m_Na_free": 0.01,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.009776482709553875,
+            "m_CO3": 0.00011077467991738885,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "A--": {
+          "pH": 8.24657304715943,
+          "I": 0.010110780967424944,
+          "speciation": {
+            "Na_total_molal": 0.01,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.009999999999999426,
+            "m_Na_free": 0.01,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.009776482709553875,
+            "m_CO3": 0.00011077467991738885,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "-B-": {
+          "pH": 8.246729414574864,
+          "I": 0.010065806799350641,
+          "speciation": {
+            "Na_total_molal": 0.01000000000327627,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.010000000000014577,
+            "m_Na_free": 0.009955545940902342,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.009733068552871675,
+            "m_CO3": 0.00011025457773059227,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 4.445406237392837e-05,
+            "Na_bound_in_pairs_fraction": 0.004445406235936401
+          }
+        },
+        "AB-": {
+          "pH": 8.246729414574864,
+          "I": 0.010065806799350641,
+          "speciation": {
+            "Na_total_molal": 0.01000000000327627,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.010000000000014577,
+            "m_Na_free": 0.009955545940902342,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.009733068552871675,
+            "m_CO3": 0.00011025457773059227,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 4.445406237392837e-05,
+            "Na_bound_in_pairs_fraction": 0.004445406235936401
+          }
+        },
+        "--C": {
+          "pH": 8.221979107094322,
+          "I": 0.010091722347347494,
+          "speciation": {
+            "Na_total_molal": 0.009999999999999986,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.009999999999999783,
+            "m_Na_free": 0.009987205729589888,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.009763532824474508,
+            "m_CO3": 0.00010450996448285317,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaCO3-": 1.2794270410098274e-05,
+            "Na_bound_in_pairs_fraction": 0.001279427041009829
+          }
+        },
+        "A-C": {
+          "pH": 8.221979107094322,
+          "I": 0.010091722347347494,
+          "speciation": {
+            "Na_total_molal": 0.009999999999999986,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.009999999999999783,
+            "m_Na_free": 0.009987205729589888,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.009763532824474508,
+            "m_CO3": 0.00010450996448285317,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaCO3-": 1.2794270410098274e-05,
+            "Na_bound_in_pairs_fraction": 0.001279427041009829
+          }
+        },
+        "-BC": {
+          "pH": 8.222221092912726,
+          "I": 0.010047010511081892,
+          "speciation": {
+            "Na_total_molal": 0.0100000000025059,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.010000000000014343,
+            "m_Na_free": 0.009942962152064999,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.009720328526836535,
+            "m_CO3": 0.00010404171327185882,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 4.4347013598594155e-05,
+            "m_NaCO3-": 1.2690836842306855e-05,
+            "Na_bound_in_pairs_fraction": 0.00570378504266079
+          }
+        },
+        "ABC": {
+          "pH": 8.222221092912726,
+          "I": 0.010047010511081892,
+          "speciation": {
+            "Na_total_molal": 0.0100000000025059,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.010000000000014343,
+            "m_Na_free": 0.009942962152064999,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.009720328526836535,
+            "m_CO3": 0.00010404171327185882,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 4.4347013598594155e-05,
+            "m_NaCO3-": 1.2690836842306855e-05,
+            "Na_bound_in_pairs_fraction": 0.00570378504266079
+          }
+        }
+      },
+      "pH_by_cell": {
+        "---": 8.24657304715943,
+        "A--": 8.24657304715943,
+        "-B-": 8.246729414574864,
+        "AB-": 8.246729414574864,
+        "--C": 8.221979107094322,
+        "A-C": 8.221979107094322,
+        "-BC": 8.222221092912726,
+        "ABC": 8.222221092912726
+      },
+      "pH_factorial": {
+        "mean": 8.234375665435335,
+        "effects": {
+          "A": 0.0,
+          "B": 0.00019917661691870592,
+          "C": -0.024551130863622816,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": 4.280920148502787e-05,
+          "ABC": 0.0
+        },
+        "contrasts": {
+          "A": 0.0,
+          "B": 0.0007967064676748237,
+          "C": -0.09820452345449127,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": 0.00017123680594011148,
+          "ABC": 0.0
+        },
+        "reconstruction_max_abs_err": 0.0,
+        "effect_classes": {
+          "A": "NULL",
+          "B": "AMBIGUOUS",
+          "C": "MATERIAL",
+          "AB": "NULL",
+          "AC": "NULL",
+          "BC": "NULL",
+          "ABC": "NULL"
+        }
+      },
+      "finite": true,
+      "A_toggle_max_abs_pH_diff": 0.0,
+      "mode": "closed",
+      "desc": "0.01 M NaHCO3",
+      "sodium": 0.01,
+      "continuity_vs_XXI": {
+        "ABC_minus_XXI_pH_with": 0.0,
+        "A--_minus_XXI_pH_no": 0.0
+      }
+    },
+    "C2": {
+      "cells": {
+        "---": {
+          "pH": 8.124935814479809,
+          "I": 0.10129225990598827,
+          "speciation": {
+            "Na_total_molal": 0.09999999999915701,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.09999999995357649,
+            "m_Na_free": 0.09999999999915701,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.09741374964984258,
+            "m_CO3": 0.0012922504904233287,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "A--": {
+          "pH": 8.124935814479809,
+          "I": 0.10129225990598827,
+          "speciation": {
+            "Na_total_molal": 0.09999999999915701,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.09999999995357649,
+            "m_Na_free": 0.09999999999915701,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.09741374964984258,
+            "m_CO3": 0.0012922504904233287,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "-B-": {
+          "pH": 8.126941871572214,
+          "I": 0.09807655059750449,
+          "speciation": {
+            "Na_total_molal": 0.1000000000073203,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.09999999995976239,
+            "m_Na_free": 0.0968279742861999,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.09432908844098915,
+            "m_CO3": 0.0012485668866280234,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 0.003172025721120411,
+            "Na_bound_in_pairs_fraction": 0.031720257208882094
+          }
+        },
+        "AB-": {
+          "pH": 8.126941871572214,
+          "I": 0.09807655059750449,
+          "speciation": {
+            "Na_total_molal": 0.1000000000073203,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.09999999995976239,
+            "m_Na_free": 0.0968279742861999,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.09432908844098915,
+            "m_CO3": 0.0012485668866280234,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 0.003172025721120411,
+            "Na_bound_in_pairs_fraction": 0.031720257208882094
+          }
+        },
+        "--C": {
+          "pH": 8.012737683267154,
+          "I": 0.10031426287265162,
+          "speciation": {
+            "Na_total_molal": 0.09999999999999935,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.09999999999999977,
+            "m_Na_free": 0.09932582177531654,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.09667344134309991,
+            "m_CO3": 0.0009884286637993425,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaCO3-": 0.0006741782246828061,
+            "Na_bound_in_pairs_fraction": 0.006741782246828105
+          }
+        },
+        "A-C": {
+          "pH": 8.012737683267154,
+          "I": 0.10031426287265162,
+          "speciation": {
+            "Na_total_molal": 0.09999999999999935,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.09999999999999977,
+            "m_Na_free": 0.09932582177531654,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.09667344134309991,
+            "m_CO3": 0.0009884286637993425,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaCO3-": 0.0006741782246828061,
+            "Na_bound_in_pairs_fraction": 0.006741782246828105
+          }
+        },
+        "-BC": {
+          "pH": 8.016698249582745,
+          "I": 0.09718560384459435,
+          "speciation": {
+            "Na_total_molal": 0.09999999999956803,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.09999999999775168,
+            "m_Na_free": 0.09622562886535957,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.09366428828517474,
+            "m_CO3": 0.000959962687430192,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 0.003134309142360678,
+            "m_NaCO3-": 0.000640061991847779,
+            "Na_bound_in_pairs_fraction": 0.03774371134224761
+          }
+        },
+        "ABC": {
+          "pH": 8.016698249582745,
+          "I": 0.09718560384459435,
+          "speciation": {
+            "Na_total_molal": 0.09999999999956803,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.09999999999775168,
+            "m_Na_free": 0.09622562886535957,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.09366428828517474,
+            "m_CO3": 0.000959962687430192,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 0.003134309142360678,
+            "m_NaCO3-": 0.000640061991847779,
+            "Na_bound_in_pairs_fraction": 0.03774371134224761
+          }
+        }
+      },
+      "pH_by_cell": {
+        "---": 8.124935814479809,
+        "A--": 8.124935814479809,
+        "-B-": 8.126941871572214,
+        "AB-": 8.126941871572214,
+        "--C": 8.012737683267154,
+        "A-C": 8.012737683267154,
+        "-BC": 8.016698249582745,
+        "ABC": 8.016698249582745
+      },
+      "pH_factorial": {
+        "mean": 8.07032840472548,
+        "effects": {
+          "A": 0.0,
+          "B": 0.002983311703998126,
+          "C": -0.11122087660106139,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": 0.000977254611592926,
+          "ABC": 0.0
+        },
+        "contrasts": {
+          "A": 0.0,
+          "B": 0.011933246815992504,
+          "C": -0.44488350640424557,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": 0.003909018446371704,
+          "ABC": 0.0
+        },
+        "reconstruction_max_abs_err": 0.0,
+        "effect_classes": {
+          "A": "NULL",
+          "B": "MATERIAL",
+          "C": "MATERIAL",
+          "AB": "NULL",
+          "AC": "NULL",
+          "BC": "AMBIGUOUS",
+          "ABC": "NULL"
+        }
+      },
+      "finite": true,
+      "A_toggle_max_abs_pH_diff": 0.0,
+      "mode": "closed",
+      "desc": "0.1 M NaHCO3",
+      "sodium": 0.1,
+      "continuity_vs_XXI": {
+        "ABC_minus_XXI_pH_with": 0.0,
+        "A--_minus_XXI_pH_no": 0.0
+      }
+    },
+    "C3": {
+      "cells": {
+        "---": {
+          "pH": 6.27014224385769,
+          "I": 0.05000860716855101,
+          "speciation": {
+            "Na_total_molal": 0.049999999999999996,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.10000000001258787,
+            "m_Na_free": 0.049999999999999996,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.0499847238801791,
+            "m_CO3": 7.953411191715124e-06,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "A--": {
+          "pH": 6.27014224385769,
+          "I": 0.05000860716855101,
+          "speciation": {
+            "Na_total_molal": 0.049999999999999996,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.10000000001258787,
+            "m_Na_free": 0.049999999999999996,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.0499847238801791,
+            "m_CO3": 7.953411191715124e-06,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "-B-": {
+          "pH": 6.262594526875513,
+          "I": 0.04908465992910266,
+          "speciation": {
+            "Na_total_molal": 0.05,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.10000000000003353,
+            "m_Na_free": 0.049076353914091,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.049061712313663575,
+            "m_CO3": 7.64166415969049e-06,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 0.0009236460859090009,
+            "Na_bound_in_pairs_fraction": 0.01847292171818002
+          }
+        },
+        "AB-": {
+          "pH": 6.262594526875513,
+          "I": 0.04908465992910266,
+          "speciation": {
+            "Na_total_molal": 0.05,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.10000000000003353,
+            "m_Na_free": 0.049076353914091,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.049061712313663575,
+            "m_CO3": 7.64166415969049e-06,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 0.0009236460859090009,
+            "Na_bound_in_pairs_fraction": 0.01847292171818002
+          }
+        },
+        "--C": {
+          "pH": 6.270057325208539,
+          "I": 0.05000526860408357,
+          "speciation": {
+            "Na_total_molal": 0.049999999999997984,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.10000000001279141,
+            "m_Na_free": 0.04999666403933067,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.04997805754543395,
+            "m_CO3": 7.950682606846429e-06,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaCO3-": 3.335960667315965e-06,
+            "Na_bound_in_pairs_fraction": 6.6719213346322e-05
+          }
+        },
+        "A-C": {
+          "pH": 6.270057325208539,
+          "I": 0.05000526860408357,
+          "speciation": {
+            "Na_total_molal": 0.049999999999997984,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.10000000001279141,
+            "m_Na_free": 0.04999666403933067,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.04997805754543395,
+            "m_CO3": 7.950682606846429e-06,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaCO3-": 3.335960667315965e-06,
+            "Na_bound_in_pairs_fraction": 6.6719213346322e-05
+          }
+        },
+        "-BC": {
+          "pH": 6.262514368834988,
+          "I": 0.04908165945849404,
+          "speciation": {
+            "Na_total_molal": 0.05,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.10000000000003667,
+            "m_Na_free": 0.04907335579184958,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.04905555655060323,
+            "m_CO3": 7.639196000295625e-06,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 0.0009234815069324269,
+            "m_NaCO3-": 3.1627012179998816e-06,
+            "Na_bound_in_pairs_fraction": 0.018532884163008537
+          }
+        },
+        "ABC": {
+          "pH": 6.262514368834988,
+          "I": 0.04908165945849404,
+          "speciation": {
+            "Na_total_molal": 0.05,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.10000000000003667,
+            "m_Na_free": 0.04907335579184958,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.04905555655060323,
+            "m_CO3": 7.639196000295625e-06,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 0.0009234815069324269,
+            "m_NaCO3-": 3.1627012179998816e-06,
+            "Na_bound_in_pairs_fraction": 0.018532884163008537
+          }
+        }
+      },
+      "pH_by_cell": {
+        "---": 6.27014224385769,
+        "A--": 6.27014224385769,
+        "-B-": 6.262594526875513,
+        "AB-": 6.262594526875513,
+        "--C": 6.270057325208539,
+        "A-C": 6.270057325208539,
+        "-BC": 6.262514368834988,
+        "ABC": 6.262514368834988
+      },
+      "pH_factorial": {
+        "mean": 6.266327116194183,
+        "effects": {
+          "A": 0.0,
+          "B": -0.007545336677864167,
+          "C": -8.253834483840095e-05,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": 2.380304313209791e-06,
+          "ABC": 0.0
+        },
+        "contrasts": {
+          "A": 0.0,
+          "B": -0.03018134671145667,
+          "C": -0.0003301533793536038,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": 9.521217252839165e-06,
+          "ABC": 0.0
+        },
+        "reconstruction_max_abs_err": 0.0,
+        "effect_classes": {
+          "A": "NULL",
+          "B": "MATERIAL",
+          "C": "NULL",
+          "AB": "NULL",
+          "AC": "NULL",
+          "BC": "NULL",
+          "ABC": "NULL"
+        }
+      },
+      "finite": true,
+      "A_toggle_max_abs_pH_diff": 0.0,
+      "mode": "closed",
+      "desc": "half-neutralized (0.1 C, 0.05 Na) CO2/HCO3 buffer",
+      "sodium": 0.05,
+      "continuity_vs_XXI": {
+        "ABC_minus_XXI_pH_with": 0.0,
+        "A--_minus_XXI_pH_no": 0.0
+      }
+    },
+    "C4": {
+      "cells": {
+        "---": {
+          "pH": 11.372739419907585,
+          "I": 0.2964982649042961,
+          "speciation": {
+            "Na_total_molal": 0.20000000000000004,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.10000000000000568,
+            "m_Na_free": 0.20000000000000004,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.0035017109872672075,
+            "m_CO3": 0.09649826489852426,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "A--": {
+          "pH": 11.372739419907585,
+          "I": 0.2964982649042961,
+          "speciation": {
+            "Na_total_molal": 0.20000000000000004,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.10000000000000568,
+            "m_Na_free": 0.20000000000000004,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.0035017109872672075,
+            "m_CO3": 0.09649826489852426,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "-B-": {
+          "pH": 11.38510889918006,
+          "I": 0.29619504284653564,
+          "speciation": {
+            "Na_total_molal": 0.20000000000000112,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.10000000000056097,
+            "m_Na_free": 0.19979751006067656,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.00339995452249674,
+            "m_CO3": 0.09639753278078605,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 0.00020248993932457651,
+            "Na_bound_in_pairs_fraction": 0.001012449696622877
+          }
+        },
+        "AB-": {
+          "pH": 11.38510889918006,
+          "I": 0.29619504284653564,
+          "speciation": {
+            "Na_total_molal": 0.20000000000000112,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.10000000000056097,
+            "m_Na_free": 0.19979751006067656,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.00339995452249674,
+            "m_CO3": 0.09639753278078605,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 0.00020248993932457651,
+            "Na_bound_in_pairs_fraction": 0.001012449696622877
+          }
+        },
+        "--C": {
+          "pH": 11.253178360707716,
+          "I": 0.20584181513598726,
+          "speciation": {
+            "Na_total_molal": 0.200000000000679,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.10000000000149564,
+            "m_Na_free": 0.1541953408261249,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.0025488427032450693,
+            "m_CO3": 0.051646474303134945,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaCO3-": 0.045804659174554084,
+            "Na_bound_in_pairs_fraction": 0.22902329587199288
+          }
+        },
+        "A-C": {
+          "pH": 11.253178360707716,
+          "I": 0.20584181513598726,
+          "speciation": {
+            "Na_total_molal": 0.200000000000679,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.10000000000149564,
+            "m_Na_free": 0.1541953408261249,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.0025488427032450693,
+            "m_CO3": 0.051646474303134945,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaCO3-": 0.045804659174554084,
+            "Na_bound_in_pairs_fraction": 0.22902329587199288
+          }
+        },
+        "-BC": {
+          "pH": 11.263312579871952,
+          "I": 0.20573953205955298,
+          "speciation": {
+            "Na_total_molal": 0.19999999999998658,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.09999999999982996,
+            "m_Na_free": 0.1541143726256391,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.0024891904715605255,
+            "m_CO3": 0.05162515942648167,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 0.00011968364789634967,
+            "m_NaCO3-": 0.04576594372645113,
+            "Na_bound_in_pairs_fraction": 0.2294281368717528
+          }
+        },
+        "ABC": {
+          "pH": 11.263312579871952,
+          "I": 0.20573953205955298,
+          "speciation": {
+            "Na_total_molal": 0.19999999999998658,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.09999999999982996,
+            "m_Na_free": 0.1541143726256391,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.0024891904715605255,
+            "m_CO3": 0.05162515942648167,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 0.00011968364789634967,
+            "m_NaCO3-": 0.04576594372645113,
+            "Na_bound_in_pairs_fraction": 0.2294281368717528
+          }
+        }
+      },
+      "pH_by_cell": {
+        "---": 11.372739419907585,
+        "A--": 11.372739419907585,
+        "-B-": 11.38510889918006,
+        "AB-": 11.38510889918006,
+        "--C": 11.253178360707716,
+        "A-C": 11.253178360707716,
+        "-BC": 11.263312579871952,
+        "ABC": 11.263312579871952
+      },
+      "pH_factorial": {
+        "mean": 11.318584814916829,
+        "effects": {
+          "A": 0.0,
+          "B": 0.011251849218355758,
+          "C": -0.12067868925398884,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": -0.0011176300541198003,
+          "ABC": 0.0
+        },
+        "contrasts": {
+          "A": 0.0,
+          "B": 0.04500739687342303,
+          "C": -0.48271475701595534,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": -0.004470520216479201,
+          "ABC": 0.0
+        },
+        "reconstruction_max_abs_err": 0.0,
+        "effect_classes": {
+          "A": "NULL",
+          "B": "MATERIAL",
+          "C": "MATERIAL",
+          "AB": "NULL",
+          "AC": "NULL",
+          "BC": "MATERIAL",
+          "ABC": "NULL"
+        }
+      },
+      "finite": true,
+      "A_toggle_max_abs_pH_diff": 0.0,
+      "mode": "closed",
+      "desc": "0.1 M Na2CO3",
+      "sodium": 0.2,
+      "continuity_vs_XXI": {
+        "ABC_minus_XXI_pH_with": 0.0,
+        "A--_minus_XXI_pH_no": 0.0
+      }
+    },
+    "C5": {
+      "cells": {
+        "---": {
+          "pH": 4.177468769470893,
+          "I": 6.709109957814396e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.01000000000005984,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 6.709080058752842e-05,
+            "m_CO3": 4.870207444188525e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "A--": {
+          "pH": 4.177468769470893,
+          "I": 6.709109957814396e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.01000000000005984,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 6.709080058752842e-05,
+            "m_CO3": 4.870207444188525e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "-B-": {
+          "pH": 4.177468769470893,
+          "I": 6.709109957814396e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.01000000000005984,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 6.709080058752842e-05,
+            "m_CO3": 4.870207444188525e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "AB-": {
+          "pH": 4.177468769470893,
+          "I": 6.709109957814396e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.01000000000005984,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 6.709080058752842e-05,
+            "m_CO3": 4.870207444188525e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "--C": {
+          "pH": 4.177468769470893,
+          "I": 6.709109957814395e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.01000000000005984,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 6.709080058752842e-05,
+            "m_CO3": 4.870207444188525e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "A-C": {
+          "pH": 4.177468769470893,
+          "I": 6.709109957814395e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.01000000000005984,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 6.709080058752842e-05,
+            "m_CO3": 4.870207444188525e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "-BC": {
+          "pH": 4.177468769470893,
+          "I": 6.709109957814395e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.01000000000005984,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 6.709080058752842e-05,
+            "m_CO3": 4.870207444188525e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_NaHCO3": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "ABC": {
+          "pH": 4.177468769470893,
+          "I": 6.709109957814395e-05,
+          "speciation": {
+            "Na_total_molal": 0.0,
+            "Acetate_total_molal": 0.0,
+            "C4_total_molal": 0.01000000000005984,
+            "m_Na_free": 0.0,
+            "m_CO2": 0.0,
+            "m_HCO3": 6.709080058752842e-05,
+            "m_CO3": 4.870207444188525e-11,
+            "m_Acetate": 0.0,
+            "m_HAcetate": 0.0,
+            "m_Na(Acetate)": 0.0,
+            "m_NaHCO3": 0.0,
+            "m_NaCO3-": 0.0,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        }
+      },
+      "pH_by_cell": {
+        "---": 4.177468769470893,
+        "A--": 4.177468769470893,
+        "-B-": 4.177468769470893,
+        "AB-": 4.177468769470893,
+        "--C": 4.177468769470893,
+        "A-C": 4.177468769470893,
+        "-BC": 4.177468769470893,
+        "ABC": 4.177468769470893
+      },
+      "pH_factorial": {
+        "mean": 4.177468769470893,
+        "effects": {
+          "A": 0.0,
+          "B": 0.0,
+          "C": 0.0,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": 0.0,
+          "ABC": 0.0
+        },
+        "contrasts": {
+          "A": 0.0,
+          "B": 0.0,
+          "C": 0.0,
+          "AB": 0.0,
+          "AC": 0.0,
+          "BC": 0.0,
+          "ABC": 0.0
+        },
+        "reconstruction_max_abs_err": 0.0,
+        "effect_classes": {
+          "A": "NULL",
+          "B": "NULL",
+          "C": "NULL",
+          "AB": "NULL",
+          "AC": "NULL",
+          "BC": "NULL",
+          "ABC": "NULL"
+        }
+      },
+      "finite": true,
+      "A_toggle_max_abs_pH_diff": 0.0,
+      "mode": "closed",
+      "desc": "0.01 M dissolved CO2, no base",
+      "sodium": 0.0,
+      "continuity_vs_XXI": {
+        "ABC_minus_XXI_pH_with": 0.0,
+        "A--_minus_XXI_pH_no": 0.0
+      }
+    }
+  },
+  "nist_srm191d": {
+    "cells": {
+      "---": {
+        "pH": 9.999162481869059,
+        "I": 0.09987280045165182,
+        "speciation": {
+          "Na_total_molal": 0.07500000000000001,
+          "Acetate_total_molal": 0.0,
+          "C4_total_molal": 0.050000000000045175,
+          "m_Na_free": 0.07500000000000001,
+          "m_CO2": 0.0,
+          "m_HCO3": 0.025122736729920984,
+          "m_CO3": 0.024872800323454472,
+          "m_Acetate": 0.0,
+          "m_HAcetate": 0.0,
+          "Na_bound_in_pairs_fraction": 0.0
+        }
+      },
+      "A--": {
+        "pH": 9.999162481869059,
+        "I": 0.09987280045165182,
+        "speciation": {
+          "Na_total_molal": 0.07500000000000001,
+          "Acetate_total_molal": 0.0,
+          "C4_total_molal": 0.050000000000045175,
+          "m_Na_free": 0.07500000000000001,
+          "m_CO2": 0.0,
+          "m_HCO3": 0.025122736729920984,
+          "m_CO3": 0.024872800323454472,
+          "m_Acetate": 0.0,
+          "m_HAcetate": 0.0,
+          "m_Na(Acetate)": 0.0,
+          "Na_bound_in_pairs_fraction": 0.0
+        }
+      },
+      "-B-": {
+        "pH": 10.010672950427502,
+        "I": 0.09923758515354368,
+        "speciation": {
+          "Na_total_molal": 0.07500000000000002,
+          "Acetate_total_molal": 0.0,
+          "C4_total_molal": 0.05000000000002486,
+          "m_Na_free": 0.0743684595978616,
+          "m_CO2": 0.0,
+          "m_HCO3": 0.0244950944736724,
+          "m_CO3": 0.02486912543087603,
+          "m_Acetate": 0.0,
+          "m_HAcetate": 0.0,
+          "m_NaHCO3": 0.0006315404021384144,
+          "Na_bound_in_pairs_fraction": 0.008420538695178855
+        }
+      },
+      "AB-": {
+        "pH": 10.010672950427502,
+        "I": 0.09923758515354368,
+        "speciation": {
+          "Na_total_molal": 0.07500000000000002,
+          "Acetate_total_molal": 0.0,
+          "C4_total_molal": 0.05000000000002486,
+          "m_Na_free": 0.0743684595978616,
+          "m_CO2": 0.0,
+          "m_HCO3": 0.0244950944736724,
+          "m_CO3": 0.02486912543087603,
+          "m_Acetate": 0.0,
+          "m_HAcetate": 0.0,
+          "m_Na(Acetate)": 0.0,
+          "m_NaHCO3": 0.0006315404021384144,
+          "Na_bound_in_pairs_fraction": 0.008420538695178855
+        }
+      },
+      "--C": {
+        "pH": 9.845803020675051,
+        "I": 0.08366847629150696,
+        "speciation": {
+          "Na_total_molal": 0.07500000000000161,
+          "Acetate_total_molal": 0.0,
+          "C4_total_molal": 0.050000000000004985,
+          "m_Na_free": 0.0668764834110803,
+          "m_CO2": 0.0,
+          "m_HCO3": 0.025078063971889924,
+          "m_CO3": 0.016791992700201656,
+          "m_Acetate": 0.0,
+          "m_HAcetate": 0.0,
+          "m_NaCO3-": 0.008123516588921314,
+          "Na_bound_in_pairs_fraction": 0.10831355451894853
+        }
+      },
+      "A-C": {
+        "pH": 9.845803020675051,
+        "I": 0.08366847629150696,
+        "speciation": {
+          "Na_total_molal": 0.07500000000000161,
+          "Acetate_total_molal": 0.0,
+          "C4_total_molal": 0.050000000000004985,
+          "m_Na_free": 0.0668764834110803,
+          "m_CO2": 0.0,
+          "m_HCO3": 0.025078063971889924,
+          "m_CO3": 0.016791992700201656,
+          "m_Acetate": 0.0,
+          "m_HAcetate": 0.0,
+          "m_Na(Acetate)": 0.0,
+          "m_NaCO3-": 0.008123516588921314,
+          "Na_bound_in_pairs_fraction": 0.10831355451894853
+        }
+      },
+      "-BC": {
+        "pH": 9.857312409795306,
+        "I": 0.08315892275184958,
+        "speciation": {
+          "Na_total_molal": 0.075000000003377,
+          "Acetate_total_molal": 0.0,
+          "C4_total_molal": 0.05000000001451443,
+          "m_Na_free": 0.06633386594043568,
+          "m_CO2": 0.0,
+          "m_HCO3": 0.024502691469550347,
+          "m_CO3": 0.016825056646743674,
+          "m_Acetate": 0.0,
+          "m_HAcetate": 0.0,
+          "m_NaHCO3": 0.0005783783315244852,
+          "m_NaCO3-": 0.008087755731416842,
+          "Na_bound_in_pairs_fraction": 0.11554845416734827
+        }
+      },
+      "ABC": {
+        "pH": 9.857312409795306,
+        "I": 0.08315892275184958,
+        "speciation": {
+          "Na_total_molal": 0.075000000003377,
+          "Acetate_total_molal": 0.0,
+          "C4_total_molal": 0.05000000001451443,
+          "m_Na_free": 0.06633386594043568,
+          "m_CO2": 0.0,
+          "m_HCO3": 0.024502691469550347,
+          "m_CO3": 0.016825056646743674,
+          "m_Acetate": 0.0,
+          "m_HAcetate": 0.0,
+          "m_Na(Acetate)": 0.0,
+          "m_NaHCO3": 0.0005783783315244852,
+          "m_NaCO3-": 0.008087755731416842,
+          "Na_bound_in_pairs_fraction": 0.11554845416734827
+        }
+      }
+    },
+    "pH_by_cell": {
+      "---": 9.999162481869059,
+      "A--": 9.999162481869059,
+      "-B-": 10.010672950427502,
+      "AB-": 10.010672950427502,
+      "--C": 9.845803020675051,
+      "A-C": 9.845803020675051,
+      "-BC": 9.857312409795306,
+      "ABC": 9.857312409795306
+    },
+    "pH_factorial": {
+      "mean": 9.92823771569173,
+      "effects": {
+        "A": 0.0,
+        "B": 0.01150992883934876,
+        "C": -0.15336000091310176,
+        "AB": 0.0,
+        "AC": 0.0,
+        "BC": -5.39719094305724e-07,
+        "ABC": 0.0
+      },
+      "contrasts": {
+        "A": 0.0,
+        "B": 0.04603971535739504,
+        "C": -0.613440003652407,
+        "AB": 0.0,
+        "AC": 0.0,
+        "BC": -2.158876377222896e-06,
+        "ABC": 0.0
+      },
+      "reconstruction_max_abs_err": 0.0,
+      "effect_classes": {
+        "A": "NULL",
+        "B": "MATERIAL",
+        "C": "MATERIAL",
+        "AB": "NULL",
+        "AC": "NULL",
+        "BC": "NULL",
+        "ABC": "NULL"
+      }
+    },
+    "finite": true,
+    "I_factorial": {
+      "mean": 0.09148444616213801,
+      "effects": {
+        "A": 0.0,
+        "B": -0.000572384418882764,
+        "C": -0.016141493280919482,
+        "AB": 0.0,
+        "AC": 0.0,
+        "BC": 6.283087922537983e-05,
+        "ABC": 0.0
+      },
+      "contrasts": {
+        "A": 0.0,
+        "B": -0.002289537675531056,
+        "C": -0.06456597312367793,
+        "AB": 0.0,
+        "AC": 0.0,
+        "BC": 0.00025132351690151933,
+        "ABC": 0.0
+      },
+      "reconstruction_max_abs_err": 0.0,
+      "effect_classes": {
+        "A": "NULL",
+        "B": "AMBIGUOUS",
+        "C": "MATERIAL",
+        "AB": "NULL",
+        "AC": "NULL",
+        "BC": "NULL",
+        "ABC": "NULL"
+      }
+    },
+    "A_toggle_max_abs_pH_diff": 0.0,
+    "continuity_vs_XXI": {
+      "ABC_minus_XXI_pH_with": 0.0,
+      "A--_minus_XXI_pH_no": 0.0
+    },
+    "composition": {
+      "Na_molal": 0.07500000000000001,
+      "C4_molal": 0.05,
+      "each_salt_molality": 0.025
+    },
+    "certified": {
+      "table1_pH_S": 10.014,
+      "table1_U": 0.01,
+      "tableA1_pH_S": 10.0137,
+      "tableA1_U_R": 0.0029
+    },
+    "per_variant": {
+      "---": {
+        "pH": 9.999162481869059,
+        "residual_vs_table1": -0.014837518130940808,
+        "abs_residual_vs_table1": 0.014837518130940808,
+        "residual_vs_tableA1": -0.014537518130941507,
+        "abs_residual_vs_tableA1": 0.014537518130941507,
+        "within_table1_U": false,
+        "within_tableA1_U_R": false
+      },
+      "A--": {
+        "pH": 9.999162481869059,
+        "residual_vs_table1": -0.014837518130940808,
+        "abs_residual_vs_table1": 0.014837518130940808,
+        "residual_vs_tableA1": -0.014537518130941507,
+        "abs_residual_vs_tableA1": 0.014537518130941507,
+        "within_table1_U": false,
+        "within_tableA1_U_R": false
+      },
+      "-B-": {
+        "pH": 10.010672950427502,
+        "residual_vs_table1": -0.0033270495724977422,
+        "abs_residual_vs_table1": 0.0033270495724977422,
+        "residual_vs_tableA1": -0.0030270495724984414,
+        "abs_residual_vs_tableA1": 0.0030270495724984414,
+        "within_table1_U": true,
+        "within_tableA1_U_R": false
+      },
+      "AB-": {
+        "pH": 10.010672950427502,
+        "residual_vs_table1": -0.0033270495724977422,
+        "abs_residual_vs_table1": 0.0033270495724977422,
+        "residual_vs_tableA1": -0.0030270495724984414,
+        "abs_residual_vs_tableA1": 0.0030270495724984414,
+        "within_table1_U": true,
+        "within_tableA1_U_R": false
+      },
+      "--C": {
+        "pH": 9.845803020675051,
+        "residual_vs_table1": -0.16819697932494826,
+        "abs_residual_vs_table1": 0.16819697932494826,
+        "residual_vs_tableA1": -0.16789697932494896,
+        "abs_residual_vs_tableA1": 0.16789697932494896,
+        "within_table1_U": false,
+        "within_tableA1_U_R": false
+      },
+      "A-C": {
+        "pH": 9.845803020675051,
+        "residual_vs_table1": -0.16819697932494826,
+        "abs_residual_vs_table1": 0.16819697932494826,
+        "residual_vs_tableA1": -0.16789697932494896,
+        "abs_residual_vs_tableA1": 0.16789697932494896,
+        "within_table1_U": false,
+        "within_tableA1_U_R": false
+      },
+      "-BC": {
+        "pH": 9.857312409795306,
+        "residual_vs_table1": -0.1566875902046938,
+        "abs_residual_vs_table1": 0.1566875902046938,
+        "residual_vs_tableA1": -0.1563875902046945,
+        "abs_residual_vs_tableA1": 0.1563875902046945,
+        "within_table1_U": false,
+        "within_tableA1_U_R": false
+      },
+      "ABC": {
+        "pH": 9.857312409795306,
+        "residual_vs_table1": -0.1566875902046938,
+        "abs_residual_vs_table1": 0.1566875902046938,
+        "residual_vs_tableA1": -0.1563875902046945,
+        "abs_residual_vs_tableA1": 0.1563875902046945,
+        "within_table1_U": false,
+        "within_tableA1_U_R": false
+      }
+    },
+    "adding_factor_effect_on_abs_residual_table1": {
+      "A": {
+        "---->A--": {
+          "delta_pH": 0.0,
+          "delta_abs_residual": 0.0,
+          "moves_nothing": true,
+          "toward_table1": false,
+          "away_from_table1": false
+        },
+        "-B-->AB-": {
+          "delta_pH": 0.0,
+          "delta_abs_residual": 0.0,
+          "moves_nothing": true,
+          "toward_table1": false,
+          "away_from_table1": false
+        },
+        "--C->A-C": {
+          "delta_pH": 0.0,
+          "delta_abs_residual": 0.0,
+          "moves_nothing": true,
+          "toward_table1": false,
+          "away_from_table1": false
+        },
+        "-BC->ABC": {
+          "delta_pH": 0.0,
+          "delta_abs_residual": 0.0,
+          "moves_nothing": true,
+          "toward_table1": false,
+          "away_from_table1": false
+        }
+      },
+      "B": {
+        "---->-B-": {
+          "delta_pH": 0.011510468558443065,
+          "delta_abs_residual": -0.011510468558443065,
+          "moves_nothing": false,
+          "toward_table1": true,
+          "away_from_table1": false
+        },
+        "A--->AB-": {
+          "delta_pH": 0.011510468558443065,
+          "delta_abs_residual": -0.011510468558443065,
+          "moves_nothing": false,
+          "toward_table1": true,
+          "away_from_table1": false
+        },
+        "--C->-BC": {
+          "delta_pH": 0.011509389120254454,
+          "delta_abs_residual": -0.011509389120254454,
+          "moves_nothing": false,
+          "toward_table1": true,
+          "away_from_table1": false
+        },
+        "A-C->ABC": {
+          "delta_pH": 0.011509389120254454,
+          "delta_abs_residual": -0.011509389120254454,
+          "moves_nothing": false,
+          "toward_table1": true,
+          "away_from_table1": false
+        }
+      },
+      "C": {
+        "---->--C": {
+          "delta_pH": -0.15335946119400745,
+          "delta_abs_residual": 0.15335946119400745,
+          "moves_nothing": false,
+          "toward_table1": false,
+          "away_from_table1": true
+        },
+        "A--->A-C": {
+          "delta_pH": -0.15335946119400745,
+          "delta_abs_residual": 0.15335946119400745,
+          "moves_nothing": false,
+          "toward_table1": false,
+          "away_from_table1": true
+        },
+        "-B-->-BC": {
+          "delta_pH": -0.15336054063219606,
+          "delta_abs_residual": 0.15336054063219606,
+          "moves_nothing": false,
+          "toward_table1": false,
+          "away_from_table1": true
+        },
+        "AB-->ABC": {
+          "delta_pH": -0.15336054063219606,
+          "delta_abs_residual": 0.15336054063219606,
+          "moves_nothing": false,
+          "toward_table1": false,
+          "away_from_table1": true
+        }
+      }
+    }
+  },
+  "mixed_holdout": {
+    "dilute": {
+      "cells": {
+        "---": {
+          "pH": 10.08895711558704,
+          "I": 0.029854580944350867,
+          "speciation": {
+            "Na_total_molal": 0.025000000000000005,
+            "Acetate_total_molal": 0.009999999999999995,
+            "C4_total_molal": 0.010000000000000023,
+            "m_Na_free": 0.025000000000000005,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.0051446120198637875,
+            "m_CO3": 0.004854580848495597,
+            "m_Acetate": 0.009999960420720693,
+            "m_HAcetate": 3.957927930103478e-08,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "A--": {
+          "pH": 10.089276599928512,
+          "I": 0.029737068413453343,
+          "speciation": {
+            "Na_total_molal": 0.025000000000000012,
+            "Acetate_total_molal": 0.009999999999999993,
+            "C4_total_molal": 0.010000000000000005,
+            "m_Na_free": 0.024882555545398356,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.005144680489875587,
+            "m_CO3": 0.004854512772294088,
+            "m_Acetate": 0.009882516449973247,
+            "m_HAcetate": 3.9095425090081656e-08,
+            "m_Na(Acetate)": 0.00011744445460165565,
+            "Na_bound_in_pairs_fraction": 0.004697778184066224
+          }
+        },
+        "-B-": {
+          "pH": 10.093265781712581,
+          "I": 0.029801104993799225,
+          "speciation": {
+            "Na_total_molal": 0.02500000000011972,
+            "Acetate_total_molal": 0.009999999999999997,
+            "C4_total_molal": 0.010000000000000257,
+            "m_Na_free": 0.024947979942778448,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.005094063590675631,
+            "m_CO3": 0.004853124956241981,
+            "m_Acetate": 0.009999960807003754,
+            "m_HAcetate": 3.919299624217378e-08,
+            "m_NaHCO3": 5.202005734127297e-05,
+            "Na_bound_in_pairs_fraction": 0.002080802293640954
+          }
+        },
+        "AB-": {
+          "pH": 10.0935669722337,
+          "I": 0.029684028683396365,
+          "speciation": {
+            "Na_total_molal": 0.02500000000013469,
+            "Acetate_total_molal": 0.01000000000000063,
+            "C4_total_molal": 0.010000000000000269,
+            "m_Na_free": 0.02483096616785416,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.005094342613302596,
+            "m_CO3": 0.004853062420867089,
+            "m_Acetate": 0.009882731341953905,
+            "m_HAcetate": 3.871631261729586e-08,
+            "m_Na(Acetate)": 0.00011722994173410796,
+            "m_NaHCO3": 5.1803890546419585e-05,
+            "Na_bound_in_pairs_fraction": 0.006761353291184675
+          }
+        },
+        "--C": {
+          "pH": 10.006735831643201,
+          "I": 0.028016262614669087,
+          "speciation": {
+            "Na_total_molal": 0.025000000000000664,
+            "Acetate_total_molal": 0.009999999999999995,
+            "C4_total_molal": 0.010000000000003407,
+            "m_Na_free": 0.0240678720462523,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.005118507539134106,
+            "m_CO3": 0.003948390453046197,
+            "m_Acetate": 0.009999951980156279,
+            "m_HAcetate": 4.80198437157462e-08,
+            "m_NaCO3-": 0.0009321279537483631,
+            "Na_bound_in_pairs_fraction": 0.03728511814993354
+          }
+        },
+        "A-C": {
+          "pH": 10.007335763042736,
+          "I": 0.027907661662579106,
+          "speciation": {
+            "Na_total_molal": 0.025000000000000633,
+            "Acetate_total_molal": 0.009999999999999997,
+            "C4_total_molal": 0.010000000000003308,
+            "m_Na_free": 0.02395663099267838,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.005118644773600623,
+            "m_CO3": 0.003951030554717154,
+            "m_Acetate": 0.009885935289900904,
+            "m_HAcetate": 4.7418259343925454e-08,
+            "m_Na(Acetate)": 0.00011401729183974932,
+            "m_NaCO3-": 0.0009293517154825053,
+            "Na_bound_in_pairs_fraction": 0.04173476029288913
+          }
+        },
+        "-BC": {
+          "pH": 10.011080054671016,
+          "I": 0.027967680279776877,
+          "speciation": {
+            "Na_total_molal": 0.02500000000018074,
+            "Acetate_total_molal": 0.00999999999999999,
+            "C4_total_molal": 0.01000000000003724,
+            "m_Na_free": 0.024019074892334395,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.005069514393296988,
+            "m_CO3": 0.003948605273428437,
+            "m_Acetate": 0.009999952452963833,
+            "m_HAcetate": 4.754703615679813e-08,
+            "m_NaHCO3": 5.0228220581119845e-05,
+            "m_NaCO3-": 0.0009306968872652236,
+            "Na_bound_in_pairs_fraction": 0.03923700431357007
+          }
+        },
+        "ABC": {
+          "pH": 10.011661431750126,
+          "I": 0.027859475973172516,
+          "speciation": {
+            "Na_total_molal": 0.02500000000019973,
+            "Acetate_total_molal": 0.01000000000000021,
+            "C4_total_molal": 0.010000000000042749,
+            "m_Na_free": 0.023908234517439363,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.0050698527082415745,
+            "m_CO3": 0.003951241341921219,
+            "m_Acetate": 0.009886139285642751,
+            "m_HAcetate": 4.695432079325052e-08,
+            "m_Na(Acetate)": 0.00011381376003666615,
+            "m_NaHCO3": 5.002314358548172e-05,
+            "m_NaCO3-": 0.0009279285791382203,
+            "Na_bound_in_pairs_fraction": 0.04367061931006583
+          }
+        }
+      },
+      "pH_by_cell": {
+        "---": 10.08895711558704,
+        "A--": 10.089276599928512,
+        "-B-": 10.093265781712581,
+        "AB-": 10.0935669722337,
+        "--C": 10.006735831643201,
+        "A-C": 10.007335763042736,
+        "-BC": 10.011080054671016,
+        "ABC": 10.011661431750126
+      },
+      "pH_factorial": {
+        "mean": 10.050234943821113,
+        "effects": {
+          "A": 0.00045049583530909487,
+          "B": 0.004317232541483751,
+          "C": -0.08206334708868868,
+          "AB": -9.212035194661183e-06,
+          "AC": 0.00014015840401304658,
+          "BC": 1.771332611832932e-05,
+          "ABC": -6.512501782296454e-08
+        },
+        "contrasts": {
+          "A": 0.0018019833412363795,
+          "B": 0.017268930165935004,
+          "C": -0.3282533883547547,
+          "AB": -3.6848140778644733e-05,
+          "AC": 0.0005606336160521863,
+          "BC": 7.085330447331728e-05,
+          "ABC": -2.6050007129185815e-07
+        },
+        "reconstruction_max_abs_err": 0.0,
+        "effect_classes": {
+          "A": "AMBIGUOUS",
+          "B": "MATERIAL",
+          "C": "MATERIAL",
+          "AB": "NULL",
+          "AC": "AMBIGUOUS",
+          "BC": "NULL",
+          "ABC": "NULL"
+        }
+      },
+      "finite": true,
+      "I_factorial": {
+        "mean": 0.028853482945649673,
+        "effects": {
+          "A": -0.00011284852499868128,
+          "B": -5.0820926226854794e-05,
+          "C": -0.0018314256262005535,
+          "AB": 2.0821649507080792e-07,
+          "AC": 4.445895651510913e-06,
+          "BC": 2.4369140774549783e-06,
+          "ABC": -9.893752261035116e-09
+        },
+        "contrasts": {
+          "A": -0.0004513940999947251,
+          "B": -0.00020328370490741918,
+          "C": -0.007325702504802214,
+          "AB": 8.328659802832317e-07,
+          "AC": 1.7783582606043652e-05,
+          "BC": 9.747656309819913e-06,
+          "ABC": -3.9575009044140463e-08
+        },
+        "reconstruction_max_abs_err": 0.0,
+        "effect_classes": {
+          "A": "AMBIGUOUS",
+          "B": "NULL",
+          "C": "MATERIAL",
+          "AB": "NULL",
+          "AC": "NULL",
+          "BC": "NULL",
+          "ABC": "NULL"
+        }
+      },
+      "A_toggle_max_abs_pH_diff": 0.0005999313995346256,
+      "regime": "dilute",
+      "scale_x_molal": 0.01,
+      "composition": {
+        "Na_molal": 0.025,
+        "Acetate_molal": 0.01,
+        "C4_molal": 0.01
+      },
+      "phreeqc_input": "SOLUTION 1\n    temp 25\n    units mol/kgw\n    Na 0.025\n    Acetate 0.01\n    C(4) 0.01\n    pH 7 charge\nEND",
+      "out_of_domain_by_cell": {
+        "---": [],
+        "A--": [],
+        "-B-": [],
+        "AB-": [],
+        "--C": [],
+        "A-C": [],
+        "-BC": [],
+        "ABC": []
+      },
+      "in_domain": true
+    },
+    "concentrated": {
+      "cells": {
+        "---": {
+          "pH": 9.93039729554491,
+          "I": 0.2998837244690972,
+          "speciation": {
+            "Na_total_molal": 0.25000000000000006,
+            "Acetate_total_molal": 0.10000000000000474,
+            "C4_total_molal": 0.10000000047878126,
+            "m_Na_free": 0.25000000000000006,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.050106729655342186,
+            "m_CO3": 0.04988372478776199,
+            "m_Acetate": 0.09999950794317984,
+            "m_HAcetate": 4.920568248898106e-07,
+            "Na_bound_in_pairs_fraction": 0.0
+          }
+        },
+        "A--": {
+          "pH": 9.930823542995379,
+          "I": 0.29194897195080083,
+          "speciation": {
+            "Na_total_molal": 0.25,
+            "Acetate_total_molal": 0.10000000000000697,
+            "C4_total_molal": 0.10000000077102617,
+            "m_Na_free": 0.24206500676161763,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.050106477167598674,
+            "m_CO3": 0.04988396580032158,
+            "m_Acetate": 0.09206455383280236,
+            "m_HAcetate": 4.529288222579522e-07,
+            "m_Na(Acetate)": 0.007934993238382364,
+            "Na_bound_in_pairs_fraction": 0.031739972953529455
+          }
+        },
+        "-B-": {
+          "pH": 9.961173414804684,
+          "I": 0.29644222319952007,
+          "speciation": {
+            "Na_total_molal": 0.24999999999999997,
+            "Acetate_total_molal": 0.09999999999999999,
+            "C4_total_molal": 0.10000000000003552,
+            "m_Na_free": 0.2465688789726715,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.046687240898852546,
+            "m_CO3": 0.04987334407785667,
+            "m_Acetate": 0.0999995414516509,
+            "m_HAcetate": 4.585483490905555e-07,
+            "m_NaHCO3": 0.0034311210273284876,
+            "Na_bound_in_pairs_fraction": 0.013724484109313952
+          }
+        },
+        "AB-": {
+          "pH": 9.96079521516008,
+          "I": 0.2886921478798207,
+          "speciation": {
+            "Na_total_molal": 0.25,
+            "Acetate_total_molal": 0.1,
+            "C4_total_molal": 0.10000000000008202,
+            "m_Na_free": 0.23881826527909367,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.046778032371602114,
+            "m_CO3": 0.04987388245177307,
+            "m_Acetate": 0.09215759154297899,
+            "m_HAcetate": 4.233012795356408e-07,
+            "m_Na(Acetate)": 0.007841985155741476,
+            "m_NaHCO3": 0.0033397495651648567,
+            "Na_bound_in_pairs_fraction": 0.04472693888362533
+          }
+        },
+        "--C": {
+          "pH": 9.58669113828483,
+          "I": 0.2445802490132555,
+          "speciation": {
+            "Na_total_molal": 0.24999999999999978,
+            "Acetate_total_molal": 0.1,
+            "C4_total_molal": 0.10000000000011793,
+            "m_Na_free": 0.22230683380526994,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.05001203829556566,
+            "m_CO3": 0.02227341485751215,
+            "m_Acetate": 0.0999989061488782,
+            "m_HAcetate": 1.0938511218118938e-06,
+            "m_NaCO3-": 0.027693166194729845,
+            "Na_bound_in_pairs_fraction": 0.11077266477891948
+          }
+        },
+        "A-C": {
+          "pH": 9.59441399800077,
+          "I": 0.23803506848586703,
+          "speciation": {
+            "Na_total_molal": 0.24999999999999925,
+            "Acetate_total_molal": 0.10000000000000005,
+            "C4_total_molal": 0.10000000000007926,
+            "m_Na_free": 0.2154205416980857,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.050013620435418064,
+            "m_CO3": 0.022614526443901356,
+            "m_Acetate": 0.0927703452596254,
+            "m_HAcetate": 9.981040772403146e-07,
+            "m_Na(Acetate)": 0.007228656636297411,
+            "m_NaCO3-": 0.027350801665616153,
+            "Na_bound_in_pairs_fraction": 0.13831783320765467
+          }
+        },
+        "-BC": {
+          "pH": 9.618048635627254,
+          "I": 0.2417347999973054,
+          "speciation": {
+            "Na_total_molal": 0.2500000000000029,
+            "Acetate_total_molal": 0.09999999999999999,
+            "C4_total_molal": 0.1000000000000452,
+            "m_Na_free": 0.2193172830753796,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.0468811024495857,
+            "m_CO3": 0.02241751659603469,
+            "m_Acetate": 0.09999898181723801,
+            "m_HAcetate": 1.0181827619734281e-06,
+            "m_NaHCO3": 0.003140549982388581,
+            "m_NaCO3-": 0.02754216694223469,
+            "Na_bound_in_pairs_fraction": 0.12273086769849166
+          }
+        },
+        "ABC": {
+          "pH": 9.624929107108693,
+          "I": 0.23534334576957278,
+          "speciation": {
+            "Na_total_molal": 0.2500000000000022,
+            "Acetate_total_molal": 0.09999999999999999,
+            "C4_total_molal": 0.10000000000003588,
+            "m_Na_free": 0.21258871200013546,
+            "m_CO2": 0.0,
+            "m_HCO3": 0.04696298103294718,
+            "m_CO3": 0.02275463344905876,
+            "m_Acetate": 0.09285172243887635,
+            "m_HAcetate": 9.316830068884686e-07,
+            "m_Na(Acetate)": 0.0071473458781167645,
+            "m_NaHCO3": 0.0030599724933551924,
+            "m_NaCO3-": 0.02720396962839481,
+            "Na_bound_in_pairs_fraction": 0.14964515199946574
+          }
+        }
+      },
+      "pH_by_cell": {
+        "---": 9.93039729554491,
+        "A--": 9.930823542995379,
+        "-B-": 9.961173414804684,
+        "AB-": 9.96079521516008,
+        "--C": 9.58669113828483,
+        "A-C": 9.59441399800077,
+        "-BC": 9.618048635627254,
+        "ABC": 9.624929107108693
+      },
+      "pH_factorial": {
+        "mean": 9.775909043440825,
+        "effects": {
+          "A": 0.003662844750810468,
+          "B": 0.03065509946870515,
+          "C": -0.3397766473708761,
+          "AB": -0.000411708832392943,
+          "AC": 0.0036388208478785877,
+          "BC": 0.00028120375646834006,
+          "ABC": -9.485284856669551e-06
+        },
+        "contrasts": {
+          "A": 0.014651379003241871,
+          "B": 0.1226203978748206,
+          "C": -1.3591065894835044,
+          "AB": -0.001646835329571772,
+          "AC": 0.014555283391514351,
+          "BC": 0.0011248150258733602,
+          "ABC": -3.7941139426678205e-05
+        },
+        "reconstruction_max_abs_err": 0.0,
+        "effect_classes": {
+          "A": "MATERIAL",
+          "B": "MATERIAL",
+          "C": "MATERIAL",
+          "AB": "AMBIGUOUS",
+          "AC": "MATERIAL",
+          "BC": "AMBIGUOUS",
+          "ABC": "NULL"
+        }
+      },
+      "finite": true,
+      "I_factorial": {
+        "mean": 0.26708256634565497,
+        "effects": {
+          "A": -0.007155365648279212,
+          "B": -0.0030588742682004025,
+          "C": -0.05431840105830953,
+          "AB": 8.460087456322457e-05,
+          "AC": 0.0006870482707186584,
+          "BC": 0.00029028840207822454,
+          "ABC": -7.737724735300266e-06
+        },
+        "contrasts": {
+          "A": -0.028621462593116848,
+          "B": -0.01223549707280161,
+          "C": -0.21727360423323813,
+          "AB": 0.0003384034982528983,
+          "AC": 0.0027481930828746337,
+          "BC": 0.0011611536083128982,
+          "ABC": -3.0950898941201066e-05
+        },
+        "reconstruction_max_abs_err": 5.551115123125783e-17,
+        "effect_classes": {
+          "A": "MATERIAL",
+          "B": "MATERIAL",
+          "C": "MATERIAL",
+          "AB": "NULL",
+          "AC": "AMBIGUOUS",
+          "BC": "AMBIGUOUS",
+          "ABC": "NULL"
+        }
+      },
+      "A_toggle_max_abs_pH_diff": 0.007722859715938668,
+      "regime": "concentrated",
+      "scale_x_molal": 0.1,
+      "composition": {
+        "Na_molal": 0.25,
+        "Acetate_molal": 0.1,
+        "C4_molal": 0.1
+      },
+      "phreeqc_input": "SOLUTION 1\n    temp 25\n    units mol/kgw\n    Na 0.25\n    Acetate 0.1\n    C(4) 0.1\n    pH 7 charge\nEND",
+      "out_of_domain_by_cell": {
+        "---": [],
+        "A--": [],
+        "-B-": [],
+        "AB-": [],
+        "--C": [],
+        "A-C": [],
+        "-BC": [],
+        "ABC": []
+      },
+      "in_domain": true
+    }
+  },
+  "derived": {
+    "note": "mechanical rule application only; VERDICT: (left to orchestrator)",
+    "O2_continuity_max_abs_diff_vs_XXI": 0.0,
+    "O2": "PASS",
+    "A_main_effect_pH_acetate_free": {
+      "O1": 0.0,
+      "O2": 0.0,
+      "O3": 0.0,
+      "O4": 0.0,
+      "O5": 0.0,
+      "O6": 0.0,
+      "C1": 0.0,
+      "C2": 0.0,
+      "C3": 0.0,
+      "C4": 0.0,
+      "C5": 0.0,
+      "NIST": 0.0
+    },
+    "A_null_max_abs_cell_diff": 0.0,
+    "O3_strict_cell_identity": true,
+    "O3": "PASS",
+    "holdout_pH_effects": {
+      "dilute": {
+        "A": 0.00045049583530909487,
+        "B": 0.004317232541483751,
+        "C": -0.08206334708868868,
+        "AB": -9.212035194661183e-06,
+        "AC": 0.00014015840401304658,
+        "BC": 1.771332611832932e-05,
+        "ABC": -6.512501782296454e-08
+      },
+      "concentrated": {
+        "A": 0.003662844750810468,
+        "B": 0.03065509946870515,
+        "C": -0.3397766473708761,
+        "AB": -0.000411708832392943,
+        "AC": 0.0036388208478785877,
+        "BC": 0.00028120375646834006,
+        "ABC": -9.485284856669551e-06
+      }
+    },
+    "holdout_effect_classes": {
+      "dilute": {
+        "A": "AMBIGUOUS",
+        "B": "MATERIAL",
+        "C": "MATERIAL",
+        "AB": "NULL",
+        "AC": "AMBIGUOUS",
+        "BC": "NULL",
+        "ABC": "NULL"
+      },
+      "concentrated": {
+        "A": "MATERIAL",
+        "B": "MATERIAL",
+        "C": "MATERIAL",
+        "AB": "AMBIGUOUS",
+        "AC": "MATERIAL",
+        "BC": "AMBIGUOUS",
+        "ABC": "NULL"
+      }
+    },
+    "O4": "FAIL",
+    "O5": "PASS",
+    "O6": "PASS",
+    "O7_max_abs_interaction_concentrated": 0.0036388208478785877,
+    "O7": "PASS",
+    "O8": "FAIL",
+    "O9_reconstruction_max_abs_err": 0.0,
+    "O9_closure": "PASS"
+  },
+  "verdict": "(left to orchestrator)"
+}

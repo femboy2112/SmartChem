@@ -1,0 +1,33 @@
+{
+ "P0_reproduces_xxiii_exactly": true,
+ "P1_attribution": 0.07921071901142973,
+ "P2_shift": 6.261657858885883e-12,
+ "cells": {
+  "P0_pinned": {
+   "C2_residual": -0.07406745913108281,
+   "U_R": 0.003015,
+   "ionic_strength": 0.09989287601615314,
+   "log_gamma_Cl": -0.11466166900373942,
+   "pH_phreeqc": 9.934319708521627,
+   "p_aH_gCl": 10.048981377525367
+  },
+  "P1_beta2_NaHCO3_zeroed": {
+   "C2_residual": 0.005143259880346918,
+   "U_R": 0.003015,
+   "ionic_strength": 0.09986879355584193,
+   "log_gamma_Cl": -0.11465190403378678,
+   "pH_phreeqc": 10.013531249770194,
+   "p_aH_gCl": 10.128183153803981
+  },
+  "P2_MacInnes_false": {
+   "C2_residual": -0.07406745912482116,
+   "U_R": 0.003015,
+   "ionic_strength": 0.09989287601615146,
+   "log_gamma_Cl": -0.1297496603925543,
+   "pH_phreeqc": 9.919231717139075,
+   "p_aH_gCl": 10.048981377531629
+  }
+ },
+ "database_sha256": "eb5051704fad461c4e5325721afc7b9025fad7c2906f72ed48ae182aa2c1a5c9",
+ "recorded_xxiii_C2": -0.07406745913108281
+}

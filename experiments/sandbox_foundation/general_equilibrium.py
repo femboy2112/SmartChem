@@ -400,3 +400,104 @@ class MixedAcetateCarbonateEquilibriumOperator(EquilibriumOperator):
         return {"acetate": g("HAc", 0.0) + g("Ac-", 0.0),
                 "carbon": g("CO2(aq)", 0.0) + g("HCO3-", 0.0) + g("CO3-2", 0.0),
                 "sodium": g("Na+", 0.0)}
+
+
+# ============================================================================== XXIV-1A operator authority (F2-gap)
+# RED (probe P1, receipt RED_receipt_7314e2a.json): XXIII-2b bound an operator's OWN descriptor() whenever it was defined
+# on the operator's exact type -- so a caller-defined operator whose descriptor omitted an operative parameter (the
+# X1:X2 partition fraction) was certified: two worlds with different physics shared ONE certificate, both ran under
+# ``require_certified_execution`` with ``execution_identity_basis='AUDITED_BUILTIN'``, and a post-construction mutation of
+# the omitted parameter ran certified.  The descriptor was a self-attested claim -- the same defect XXIII-2 closed for
+# rate laws.  GREEN: the rate-law authority architecture, applied to operators:
+#   AUDITED_BUILTIN            the CLOSED table below: (module, qualname) -> audit-closure digest of the reviewed source
+#                              (class + in-tree bases + every helper / wrapped-solver function it references).  No public
+#                              call adds to it; editing an audited operator or its solver without re-pinning DEMOTES it.
+#   CALLER_ATTESTED_EXTENSION  ``register_attested_equilibrium_operator(cls, attested_by=...)``: the descriptor is bound
+#                              (mutations of bound parameters are caught), but it is a CLAIM: never certified, refused
+#                              under strict mode unless ``accept_attested_extensions=True``, tier floored.
+#   UNVERIFIABLE               everything else -- INCLUDING an unaudited operator that defines its own descriptor().
+# Exact type only (a subclass inherits nothing), a post-seal method swap or an instance-level override of speciate /
+# descriptor / component_totals demotes.  HONEST BOUNDARY: an in-process trusted-code authority, NOT cryptographic and
+# NOT independent validation of the operator's chemistry.
+from experiments.sandbox_foundation.general_kernel import (  # noqa: E402  (placed with the authority it implements)
+    AUDITED_BUILTIN, CALLER_ATTESTED_EXTENSION, UNVERIFIABLE_AUTHORITY, _audit_closure, _method_snapshot, _SealRecord,
+    _seal_class)
+
+_OPERATOR_METHODS = ("speciate", "descriptor", "component_totals")
+
+#: The CLOSED operator audit table (XXIV-1A audit event, 2026-11-07).  Re-pin on any edit to the operator OR to a hashed
+#: dependency (``audit_closure_inventory`` lists them; the wrapped solve() and its helpers are inside the closure).
+_AUDITED_OPERATOR_PINS: dict = {
+    ("experiments.sandbox_foundation.general_equilibrium", "AcetateWaterEquilibriumOperator"):
+        "8fafc13be0224835e34f65f1d97179c814b4e98e27340f70110e223bbe39d8de",
+    ("experiments.sandbox_foundation.general_equilibrium", "AmmoniaWaterEquilibriumOperator"):
+        "538ef74ae69a5c2e4325e7c93f1f0c5fc444ce42bb516f273cbb500fcfa16440",
+    ("experiments.sandbox_foundation.general_equilibrium", "MixedAcetateCarbonateEquilibriumOperator"):
+        "604e23537ff0a34fcb18af090f8daad6c0f72166e98615daee8b9be8851a5e52",
+}
+_AUDITED_OPERATORS: dict = {}           # type -> _SealRecord (only _seal_audited_operator writes here)
+_ATTESTED_OPERATORS: dict = {}          # type -> _SealRecord (register_attested_equilibrium_operator writes here)
+_OPERATOR_AUDIT_FAILURES: dict = {}
+
+
+def _check_operator_class(cls) -> None:
+    if not (isinstance(cls, type) and issubclass(cls, EquilibriumOperator)):
+        raise KernelError("expected an EquilibriumOperator subclass")
+    for name in ("speciate", "descriptor"):
+        if name not in cls.__dict__:
+            raise KernelError(f"{cls.__qualname__} does not define its own {name}(); an inherited {name} does not "
+                              f"describe this class's physics, so it cannot be audited or attested")
+
+
+def _seal_audited_operator(cls):
+    return _seal_class(cls, pins=_AUDITED_OPERATOR_PINS, sealed=_AUDITED_OPERATORS, failures=_OPERATOR_AUDIT_FAILURES,
+                       methods=_OPERATOR_METHODS, check=_check_operator_class)
+
+
+def register_attested_equilibrium_operator(cls, *, attested_by: str):
+    """Register a plugin EquilibriumOperator as a CALLER-ATTESTED extension (a labeled claim, never an audit).  Its
+    descriptor is bound into the world certificate, but ``execution_identity_certified`` stays False, strict mode
+    refuses it unless ``accept_attested_extensions=True``, and the tier is floored.  Returns the class unchanged."""
+    _check_operator_class(cls)
+    if not (isinstance(attested_by, str) and attested_by.strip()):
+        raise KernelError("register_attested_equilibrium_operator requires a non-empty attested_by")
+    if (cls.__module__, cls.__qualname__) in _AUDITED_OPERATOR_PINS or cls in _AUDITED_OPERATORS:
+        raise KernelError(f"{cls.__qualname__} is governed by the closed operator audit table; it cannot be attested")
+    try:
+        digest = _audit_closure(cls)[0]
+    except (KernelError, OSError, SyntaxError):
+        digest = "UNAVAILABLE"
+    _ATTESTED_OPERATORS[cls] = _SealRecord(CALLER_ATTESTED_EXTENSION, _method_snapshot(cls, _OPERATOR_METHODS), digest,
+                                           attested_by.strip())
+    return cls
+
+
+def equilibrium_operator_authority(op) -> str:
+    """AUDITED_BUILTIN, CALLER_ATTESTED_EXTENSION or UNVERIFIABLE for an operator INSTANCE (exact type, intact methods,
+    no instance-level override of an operative method)."""
+    t = type(op)
+    inst = getattr(op, "__dict__", {})
+    if any(name in inst for name in _OPERATOR_METHODS):
+        return UNVERIFIABLE_AUTHORITY
+    for table in (_AUDITED_OPERATORS, _ATTESTED_OPERATORS):
+        rec = table.get(t)
+        if rec is not None:
+            return rec.authority if _method_snapshot(t, _OPERATOR_METHODS) == rec.methods else UNVERIFIABLE_AUTHORITY
+    return UNVERIFIABLE_AUTHORITY
+
+
+def equilibrium_operator_attestation(cls) -> str:
+    rec = _ATTESTED_OPERATORS.get(cls)
+    return rec.attested_by if rec is not None else ""
+
+
+def operator_audit_status() -> dict:
+    sealed = {(t.__module__, t.__qualname__) for t in _AUDITED_OPERATORS}
+    return {key: ("SEALED" if key in sealed else _OPERATOR_AUDIT_FAILURES.get(key, "NOT_LOADED"))
+            for key in _AUDITED_OPERATOR_PINS}
+
+
+assert AUDITED_BUILTIN  # re-exported authority token (the tier names are shared with the rate-law registry)
+for _cls in (AcetateWaterEquilibriumOperator, AmmoniaWaterEquilibriumOperator, MixedAcetateCarbonateEquilibriumOperator):
+    _seal_audited_operator(_cls)
+del _cls

@@ -1,0 +1,305 @@
+{
+ "P1_f2_operator_authority": {
+  "one_compartment": {
+   "basis": "UNVERIFIED",
+   "certificates_equal": true,
+   "certified": false,
+   "final_X1": [
+    0.2,
+    0.8
+   ],
+   "mutation": "RAN",
+   "mutation_certified": false,
+   "named_in_receipt": true,
+   "physics_differs": true,
+   "strict": "REFUSED",
+   "strict_reason": "require_certified_execution=True but this world has no certified execution identity: equilibrium operator(s) [('c', 'TwoIsomerOperator')] are neither audited bu"
+  },
+  "two_compartment_transport": {
+   "basis": "UNVERIFIED",
+   "certificates_equal": true,
+   "certified": false,
+   "final_X1": [
+    0.19625915038439368,
+    0.7415374897302803
+   ],
+   "mutation": "RAN",
+   "mutation_certified": false,
+   "named_in_receipt": true,
+   "physics_differs": true,
+   "strict": "REFUSED",
+   "strict_reason": "require_certified_execution=True but this world has no certified execution identity: equilibrium operator(s) [('c', 'TwoIsomerOperator')] are neither audited bu"
+  },
+  "verdict": "PASS"
+ },
+ "P2_p6b_positivity": {
+  "controls_conserving": true,
+  "coupled_control": [
+   {
+    "admitted_tier": "STRUCTURALLY_CONSERVING",
+    "atol": 1e-14,
+    "material_balance_closed": true,
+    "min_inventory": 0.0,
+    "positivity_held": true,
+    "positivity_resolution_limited": false,
+    "positivity_verdict": "HELD",
+    "structural_tier": "STRUCTURALLY_CONSERVING"
+   },
+   {
+    "admitted_tier": "STRUCTURALLY_CONSERVING",
+    "atol": 0.01,
+    "material_balance_closed": true,
+    "min_inventory": 0.0,
+    "positivity_held": true,
+    "positivity_resolution_limited": false,
+    "positivity_verdict": "HELD",
+    "structural_tier": "STRUCTURALLY_CONSERVING"
+   }
+  ],
+  "coupled_negative": [
+   {
+    "admitted_tier": "OUT_OF_DOMAIN",
+    "atol": 1e-14,
+    "material_balance_closed": true,
+    "min_inventory": -0.49999999999999983,
+    "positivity_held": false,
+    "positivity_resolution_limited": false,
+    "positivity_verdict": "VIOLATED",
+    "structural_tier": "REFUSED"
+   },
+   {
+    "admitted_tier": "OUT_OF_DOMAIN",
+    "atol": 1e-08,
+    "material_balance_closed": true,
+    "min_inventory": -0.5000000000000001,
+    "positivity_held": false,
+    "positivity_resolution_limited": false,
+    "positivity_verdict": "VIOLATED",
+    "structural_tier": "REFUSED"
+   },
+   {
+    "admitted_tier": "OUT_OF_DOMAIN",
+    "atol": 0.0001,
+    "material_balance_closed": true,
+    "min_inventory": -0.5000000000000006,
+    "positivity_held": false,
+    "positivity_resolution_limited": false,
+    "positivity_verdict": "VIOLATED",
+    "structural_tier": "REFUSED"
+   },
+   {
+    "admitted_tier": "OUT_OF_DOMAIN",
+    "atol": 0.01,
+    "material_balance_closed": true,
+    "min_inventory": -0.5000000000000014,
+    "positivity_held": false,
+    "positivity_resolution_limited": false,
+    "positivity_verdict": "UNRESOLVED_AT_REQUESTED_TOLERANCE",
+    "structural_tier": "REFUSED"
+   }
+  ],
+  "kernel_control": [
+   {
+    "admitted_tier": "ASSUMED_PARAMETER",
+    "atol": 1e-15,
+    "external_ledger_closed": true,
+    "min_inventory": 0.0,
+    "positivity_held": true,
+    "positivity_resolution_limited": "<no field>",
+    "positivity_verdict": "HELD",
+    "structural_tier": "STRUCTURALLY_CONSERVING"
+   },
+   {
+    "admitted_tier": "ASSUMED_PARAMETER",
+    "atol": 0.1,
+    "external_ledger_closed": true,
+    "min_inventory": 0.0,
+    "positivity_held": true,
+    "positivity_resolution_limited": "<no field>",
+    "positivity_verdict": "HELD",
+    "structural_tier": "STRUCTURALLY_CONSERVING"
+   }
+  ],
+  "kernel_negative": [
+   {
+    "admitted_tier": "OUT_OF_DOMAIN",
+    "atol": 1e-15,
+    "external_ledger_closed": true,
+    "min_inventory": -0.5000000000000007,
+    "positivity_held": false,
+    "positivity_resolution_limited": "<no field>",
+    "positivity_verdict": "VIOLATED",
+    "structural_tier": "REFUSED"
+   },
+   {
+    "admitted_tier": "OUT_OF_DOMAIN",
+    "atol": 1e-08,
+    "external_ledger_closed": true,
+    "min_inventory": -0.5,
+    "positivity_held": false,
+    "positivity_resolution_limited": "<no field>",
+    "positivity_verdict": "VIOLATED",
+    "structural_tier": "REFUSED"
+   },
+   {
+    "admitted_tier": "OUT_OF_DOMAIN",
+    "atol": 0.01,
+    "external_ledger_closed": true,
+    "min_inventory": -0.49999999999999956,
+    "positivity_held": false,
+    "positivity_resolution_limited": "<no field>",
+    "positivity_verdict": "VIOLATED",
+    "structural_tier": "REFUSED"
+   },
+   {
+    "admitted_tier": "OUT_OF_DOMAIN",
+    "atol": 0.1,
+    "external_ledger_closed": true,
+    "min_inventory": -0.49999999999999956,
+    "positivity_held": false,
+    "positivity_resolution_limited": "<no field>",
+    "positivity_verdict": "UNRESOLVED_AT_REQUESTED_TOLERANCE",
+    "structural_tier": "REFUSED"
+   }
+  ],
+  "verdict": "PASS"
+ },
+ "P3_charge_contract": {
+  "coupled1_neutral_feed": {
+   "admitted_tier": "STRUCTURALLY_CONSERVING",
+   "charge_balance_claim": "CONSERVED (independently checked in the material balance)",
+   "charge_validity": {
+    "bulk_electroneutrality": "NEUTRAL_MAINTAINED",
+    "external_charge_accounted": true,
+    "external_charge_supplied_mol": 0.0,
+    "physically_supported": true,
+    "reaction_charge_conservation": "EXACT_EqN_ZERO"
+   },
+   "structural_tier": "STRUCTURALLY_CONSERVING"
+  },
+  "coupled1_unbalanced_feed": {
+   "admitted_tier": "REFUSED",
+   "charge_balance_claim": "CONSERVED (independently checked in the material balance)",
+   "charge_validity": {
+    "bulk_electroneutrality": "UNSUPPORTED_EXTERNAL_NET_CHARGE",
+    "external_charge_accounted": true,
+    "external_charge_supplied_mol": 0.010000000000000004,
+    "physically_supported": false,
+    "reaction_charge_conservation": "EXACT_EqN_ZERO"
+   },
+   "structural_tier": "STRUCTURALLY_CONSERVING"
+  },
+  "coupled2_neutral_salt_transport": {
+   "admitted_tier": "STRUCTURALLY_CONSERVING",
+   "charge_balance_claim": "CONSERVED (independently checked in the material balance)",
+   "charge_validity": {
+    "bulk_electroneutrality": "NEUTRAL_MAINTAINED",
+    "external_charge_accounted": true,
+    "external_charge_supplied_mol": 0.0,
+    "physically_supported": true,
+    "reaction_charge_conservation": "EXACT_EqN_ZERO"
+   },
+   "structural_tier": "STRUCTURALLY_CONSERVING"
+  },
+  "coupled2_single_ion_transport": {
+   "admitted_tier": "REFUSED",
+   "charge_balance_claim": "GLOBAL_ONLY_LOCAL_VIOLATED: compartment(s) ['a', 'b'] gained or lost a macroscopic net charge beyond their electroneutrality tolerance (max |q(t) - q(0)| = 9.516e-03 mol); whatever the global charge row says, charge was SEPARATED between compartments, so no local charge-conservation claim is made.",
+   "charge_validity": {
+    "bulk_electroneutrality": "SEPARATED_BY_TRANSPORT",
+    "external_charge_accounted": true,
+    "external_charge_supplied_mol": 0.0,
+    "physically_supported": false,
+    "reaction_charge_conservation": "EXACT_EqN_ZERO"
+   },
+   "structural_tier": "REFUSED"
+  },
+  "kernel_neutral_feed": {
+   "admitted_tier": "ASSUMED_PARAMETER",
+   "charge_balance_claim": "<no field>",
+   "charge_validity": {
+    "bulk_electroneutrality": "NEUTRAL_MAINTAINED",
+    "external_charge_accounted": true,
+    "external_charge_supplied_mol": 0.0,
+    "physically_supported": true,
+    "reaction_charge_conservation": "EXACT_EqN_ZERO"
+   },
+   "structural_tier": "STRUCTURALLY_CONSERVING"
+  },
+  "kernel_unbalanced_feed": {
+   "admitted_tier": "REFUSED",
+   "charge_balance_claim": "<no field>",
+   "charge_validity": {
+    "bulk_electroneutrality": "UNSUPPORTED_EXTERNAL_NET_CHARGE",
+    "external_charge_accounted": true,
+    "external_charge_supplied_mol": 0.01,
+    "physically_supported": false,
+    "reaction_charge_conservation": "EXACT_EqN_ZERO"
+   },
+   "structural_tier": "STRUCTURALLY_CONSERVING"
+  },
+  "verdict": "PASS"
+ },
+ "P4_dependency_closure": {
+  "baseline": {
+   "audit_status": "SEALED",
+   "certificates_equal": false,
+   "certified": [
+    true,
+    true
+   ],
+   "final_M": [
+    0.0010368605130778466,
+    0.002103933132730632
+   ],
+   "mutation_applied": false
+  },
+  "class_body_edit_control": {
+   "audit_status": "('experiments.sandbox_foundation.solid_equilibrium', 'ActivitySolubilityRate'): audit-closure sha256 95cb22e4e24ac4c045d21ce3f468b8272e7682144b2f2dcb6fb9abc9c71afa8b != audited pin abcd7eea12495725d1bcbbdb197b730111c3e61bb1df869006ecc5a61ed6d0ab (the class OR an in-tree helper/constant it references changed: re-audit and update the pin)",
+   "certificates_equal": true,
+   "certified": [
+    false,
+    false
+   ],
+   "final_M": [
+    0.0010368605130778466,
+    0.002103933132730632
+   ],
+   "mutation_applied": true
+  },
+  "control_demoted": true,
+  "helper_edit": {
+   "audit_status": "('experiments.sandbox_foundation.solid_equilibrium', 'ActivitySolubilityRate'): audit-closure sha256 2f4e581f450bf606c8bb9f3bad96bad6c69e6e654e391b674d21505c68654066 != audited pin abcd7eea12495725d1bcbbdb197b730111c3e61bb1df869006ecc5a61ed6d0ab (the class OR an in-tree helper/constant it references changed: re-audit and update the pin)",
+   "certificates_equal": true,
+   "certified": [
+    false,
+    false
+   ],
+   "final_M": [
+    0.0010368605130778466,
+    0.002103933132730632
+   ],
+   "mutation_applied": true
+  },
+  "verdict": "PASS"
+ },
+ "P5_temperature_transport": {
+  "298.15": {
+   "admitted_tier": "ASSUMED_PARAMETER",
+   "certified": true,
+   "coupled": "RAN",
+   "final_M": 0.0010368605130778466,
+   "kernel": "RAN",
+   "kernel_admitted": "ASSUMED_PARAMETER",
+   "kernel_final_M": 0.0010368605130780103,
+   "kernel_source_domain": "SUPPORTED: every sourced constant executes at its sourced temperature (298.15 K vs world 298.15 K, tol 0.01 K); within-formula-domain only -- NOT an empirical-validation claim",
+   "source_domain": "SUPPORTED: every sourced constant executes at its sourced temperature (298.15 K vs world 298.15 K, tol 0.01 K); within-formula-domain only -- NOT an empirical-validation claim"
+  },
+  "350.0": {
+   "coupled": "REFUSED",
+   "coupled_reason": "CoupledSourceDomainError: world temperature 350.00 K is outside the sourced domain of [('c', 'diss', 'ksp', 298.15)] (compartment, reaction, field, sourced T_K): no v",
+   "kernel": "REFUSED",
+   "kernel_reason": "SourceDomainError: temperature_K=350.00 is outside the sourced domain of [('system', 'diss', 'ksp', 298.15)] (reaction, field, sourced T_K): no validated tempe"
+  },
+  "verdict": "PASS"
+ }
+}

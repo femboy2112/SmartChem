@@ -45,3 +45,25 @@ itself once the molar-K scale is made self-consistent (C). The single unresolved
 verdict is the **standard-state scale of K1/K2**. **PARTIAL common-mode preserved**: K1/K2 are Harned-lineage and Davies
 shares the Debye–Hückel family with the BG convention; single-ion a_H⁺ is not independently derived, so agreement is not
 an independent derivation of K2. **No constant tuned.**
+
+---
+
+## XXIV provenance correction (2026-11-07; appended, historical text above unchanged)
+
+The certificates were re-read against their pinned SHA-256 bytes (full record:
+`docs/research/OPERATION_XXIV_SOURCE_GROUNDING.md` §III-A). No raw benchmark result changes. Four corrections follow;
+correct each of these wherever the text above states it:
+
+1. **SRM 191d Table A1 is not a separate measurement.** It is the same pH(S) as Table 1, given to more decimals
+   (certificate: "identical to those in Table 1"), with an uncertainty that leaves out the Bates–Guggenheim term.
+   Wherever it is called "measurement-only", read "the same measurement, convention treated as exact".
+   - The certificate PRINTS U_R = 0.0029 at 25 °C. The value 0.0030 used above is 2.01 × 0.0015; the printed figure
+     comes from the unrounded u_c. So the XXIII carbonate C2 refutation is −3.9×U_R, not −3.7×, and stronger.
+2. **The 191d "2025" date is an editorial reissue.** The original certificate is dated 1 December 2009.
+3. **SRM 186g certification EXPIRED on 30 April 2023** (certificate, verbatim). Its values are used here as a
+   historical measurement record. The NIST catalog (checked 2026-11-07) lists no successor.
+   - 186g's U_R-type values are non-certified "Reference Values" (kR = 2.0), not a separate table.
+   - 186g names no Harned cell. It cites "cells without liquid junction by the primary measurement method" and the
+     Bates–Guggenheim convention. The Harned lineage for 186g is inferred, not quoted.
+4. **Both certificates warn of lot-to-lot pH(S) variation "on the order of a few thousandths".** That is the same size
+   as the U_R bands (0.0016–0.003), and none of the U_R verdicts includes it.

@@ -201,13 +201,211 @@ def derive_provenance(params: UnifiedParams) -> Provenance:
     return Provenance(entries)
 
 
-def _species_catalog() -> dict:
-    """{name: kernel Species} for the unified world's shared species objects."""
-    sp = _build_species()
-    return {s.name: s for s in sp.__dict__.values()}
+def _species_catalog(world: str = "unified_vinegar_bicarbonate") -> dict:
+    """{name: kernel Species} for a registered world's shared species objects."""
+    return _builder(world).species_catalog()
 
 
-_WORLD_BUILDERS = {"unified_vinegar_bicarbonate"}
+# ============================================================ XXIV-4 the world-builder registry
+# Through XXIII one builder was registered and the run path called the vinegar world's functions directly, so the
+# "registry" was a name check in front of hard-wired chemistry.  The run path is now written against a WorldBuilder
+# protocol (species catalog, compartment roster + volumes, per-phase CoupledWorld, provenance, model/evidence identity,
+# phase-topology admission) and NEVER names a chemical species.  Two genuinely distinct systems are registered:
+#   unified_vinegar_bicarbonate   three compartments, fast-equilibrium projections, gas export, valves (XXIII)
+#   calcite_closed_dissolution    one closed aqueous cell, calcite dissolution + 6 fast speciation reactions in Davies
+#                                 activities, PHREEQC-database constants (XXIII-S4), NO equilibrium projection
+# Adding a builder adds a class here; the integrator and run() stay untouched (the architectural gate).
+class _UnifiedBuilder:
+    name = "unified_vinegar_bicarbonate"
+    params_type = UnifiedParams
+
+    def require_params(self, params) -> None:
+        _require_params(params)
+
+    def provenance(self, params) -> Provenance:
+        return derive_provenance(params)
+
+    def species_catalog(self) -> dict:
+        sp = _build_species()
+        return {x.name: x for x in sp.__dict__.values()}
+
+    def compartment_species(self) -> dict:
+        return _compartment_species()
+
+    def volumes(self, params) -> dict:
+        return {"A": params.V_A_L, "B": params.V_B_L, "gas": params.V_gas_L}
+
+    def validate_phase(self, phase) -> None:
+        return None                                           # every (transport_mode, vented) pair is modelled
+
+    def phase_world(self, params, species_ns, phase):
+        return build_unified_world(params, species_ns, sealed=phase.sealed, transport_mode=phase.transport_mode).world
+
+    def species_namespace(self):
+        return _build_species()
+
+    def model_identity(self, spec) -> dict:
+        return {"unified_model_identity": model_identity(spec.model.params, _legacy_phases(spec.schedule))}
+
+    def evidence_identity(self, params) -> dict:
+        return {"unified_evidence_identity": evidence_identity(params)}
+
+    def component_totals(self, state) -> dict:
+        return _component_totals(state)
+
+    def validation_ladder(self, params) -> dict:
+        return {"NUMERICALLY_EXECUTABLE": "per-phase receipts (layer 2)",
+                "WITHIN_DECLARED_FORMULA_DOMAIN": "25 C K-set + Davies I-domain, refused outside (XIX-1C / XXIV-2A)",
+                "COMPARED_TO_REFERENCE_IMPLEMENTATION": "PHREEQC acetate/carbonate benchmarks (model-vs-model)",
+                "EMPIRICALLY_VALIDATED_WITHIN_MEASURED_BAND": False}
+
+
+@dataclass(frozen=True)
+class CalciteParams:
+    """XXIV-4: parameters of the closed calcite-dissolution world (benchmarks/solid_equilibrium_xxiii).  Constants come
+    from the SHA-pinned PHREEQC databases; the two rate scales are ASSUMED (the equilibrium state is independent of
+    them, the transient is not)."""
+    k_diss_molpLps: float = 1.0e-6
+    kf_fast: float = 1.0e8
+    constants_mode: str = "nominal"            # nominal (tabulated log_k) | phreeqc_effective (-analytic at 25 C)
+    ionic_strength_max: float = 0.1
+    allow_precipitation: bool = False
+    temperature_K: float = 298.15
+    standard_state_basis: str = "as_tabulated_molal"   # XXIV-2B: | converted_to_molar (see standard_state.py)
+
+
+def _calcite_harness():
+    from experiments.sandbox_foundation.benchmarks.solid_equilibrium_xxiii import run_solid_equilibrium_xxiii as h
+    return h
+
+
+class _CalciteBuilder:
+    name = "calcite_closed_dissolution"
+    params_type = CalciteParams
+
+    def require_params(self, params) -> None:
+        from experiments.sandbox_foundation import admissibility as adm
+        if type(params) is not CalciteParams:
+            raise SimulationSpecError("calcite_closed_dissolution takes CalciteParams")
+        for nm in ("k_diss_molpLps", "kf_fast", "ionic_strength_max", "temperature_K"):
+            v = getattr(params, nm)
+            if isinstance(v, bool) or not (isinstance(v, (int, float)) and math.isfinite(v) and v > 0):
+                raise SimulationSpecError(f"{nm} must be finite and > 0")
+        if params.constants_mode not in ("nominal", "phreeqc_effective"):
+            raise SimulationSpecError("constants_mode must be 'nominal' or 'phreeqc_effective'")
+        if params.standard_state_basis not in ("as_tabulated_molal", "converted_to_molar"):
+            raise SimulationSpecError("standard_state_basis must be 'as_tabulated_molal' or 'converted_to_molar'")
+        if type(params.allow_precipitation) is not bool:
+            raise SimulationSpecError("allow_precipitation must be a bool")
+        world = self._world(params)
+        bad = adm.temperature_domain_violations([(c.name, r) for c in world.compartments for r in c.system.reactions],
+                                                params.temperature_K)
+        if bad:                                          # XXIV-2A: refused at the spec, before anything integrates
+            raise SimulationSpecError(f"SOURCE_DOMAIN_UNSUPPORTED: temperature {params.temperature_K} K is outside the "
+                                      f"sourced domain of {bad[:3]}...; no validated temperature law (XXIV-2A)")
+
+    def _world(self, params):
+        from experiments.sandbox_foundation.general_coupled import CoupledWorld
+        h = _calcite_harness()
+        w = h.build_calcite_world(params.constants_mode, k_diss=params.k_diss_molpLps, kf=params.kf_fast,
+                                  ionic_strength_max=params.ionic_strength_max,
+                                  allow_precipitation=params.allow_precipitation,
+                                  standard_state_basis=params.standard_state_basis)[0]
+        return CoupledWorld(list(w.compartments), temperature_K=params.temperature_K)
+
+    def provenance(self, params) -> Provenance:
+        h = _calcite_harness()
+        w = self._world(params)
+        out = []
+        for c in w.compartments:
+            for r in c.system.reactions:
+                law = r.rate_law
+                const = getattr(law, "ksp", None) or getattr(law, "K", None)
+                out.append(_sc_entry(const, name=const.name))
+        assumed = "ASSUMED rate scale (equilibrium state independent of it; transient is not)"
+        out += [ProvenanceEntry("k_diss", float(params.k_diss_molpLps), "mol/L/s", assumed, "ASSUMED"),
+                ProvenanceEntry("kf_fast", float(params.kf_fast), "mol/L/s", assumed, "ASSUMED"),
+                ProvenanceEntry("V_cell", 1.0, "L", "declared scenario geometry (harness fixes 1 L)", "ASSUMED"),
+                ProvenanceEntry("ionic_strength_max", float(params.ionic_strength_max), "mol/L",
+                                "declared Davies applicability limit -- an executability bound, NOT an accuracy claim",
+                                "ASSUMED"),
+                ProvenanceEntry("temperature", float(params.temperature_K), "K",
+                                f"declared scenario condition; must equal the constants' sourced T ({h.T_K} K)",
+                                "ASSUMED"),
+                ProvenanceEntry("standard_state_basis", 1.0 if params.standard_state_basis == "converted_to_molar"
+                                else 0.0, "flag",
+                                "converted_to_molar: every log K transported molal->molar (XXIV-2B)"
+                                if params.standard_state_basis == "converted_to_molar" else
+                                "as_tabulated_molal: MOLAL-basis log K applied to MOLAR activities -- a DISCLOSED "
+                                "standard-state mismatch (dlog K = sum(nu_aq) * log10(0.997047)), not corrected",
+                                "DERIVED" if params.standard_state_basis == "converted_to_molar" else "ASSUMED")]
+        return Provenance(tuple(out))
+
+    def species_catalog(self) -> dict:
+        return {x.name: x for x in _calcite_harness().calcite_species().values()}
+
+    def compartment_species(self) -> dict:
+        return {"cell": set(self.species_catalog())}
+
+    def volumes(self, params) -> dict:
+        return {"cell": 1.0}
+
+    def validate_phase(self, phase) -> None:
+        if phase.transport_mode != "closed" or phase.vented:
+            raise SimulationSpecError(
+                f"phase {phase.name!r}: calcite_closed_dissolution models ONE closed, CO2-free cell -- transport_mode "
+                f"must be 'closed' and vented=False (an open/vented calcite system needs a sourced CO2(g) boundary "
+                f"and Henry constant this builder does not declare; refused, not ignored)")
+
+    def phase_world(self, params, species_ns, phase):
+        return self._world(params)
+
+    def species_namespace(self):
+        return None
+
+    def model_identity(self, spec) -> dict:
+        p = spec.model.params
+        w = self._world(p)
+        from experiments.sandbox_foundation.general_coupled import _rate_law_descriptor
+        return {"calcite_model_identity": {
+            "params": {k: (_canon_num(v) if isinstance(v, float) else v) for k, v in p.__dict__.items()},
+            "species": sorted(list(_species_key(x)) for x in self.species_catalog().values()),
+            "rate_laws": [[r.name, json.loads(json.dumps(_rate_law_descriptor(r.rate_law), default=str))]
+                          for c in w.compartments for r in c.system.reactions]}}
+
+    def evidence_identity(self, params) -> dict:
+        h = _calcite_harness()
+        return {"calcite_evidence_identity": {
+            "databases": sorted([pth.name, sha] for pth, sha in h.DB_SHA256.items()),
+            "claim": "model-vs-model verification against PHREEQC on the SAME constants; NOT empirical validation"}}
+
+    def validation_ladder(self, params) -> dict:
+        ref = ("PHREEQC on the SAME constants (model-vs-model): Ca within 0.007% once log K is transported molal->molar "
+               "(XXIV-2B); 0.30% with the as-tabulated molal basis") if params.standard_state_basis == \
+            "converted_to_molar" else "PHREEQC on the SAME constants (model-vs-model): Ca +0.30% (molal-basis mismatch)"
+        return {"NUMERICALLY_EXECUTABLE": "per-phase receipts (layer 2)",
+                "WITHIN_DECLARED_FORMULA_DOMAIN": "I <= ionic_strength_max (OutOfDomainError above) and T = 298.15 K",
+                "COMPARED_TO_REFERENCE_IMPLEMENTATION": ref,
+                "EMPIRICALLY_VALIDATED_WITHIN_MEASURED_BAND": False}
+
+    def component_totals(self, state) -> dict:
+        tot = {}
+        for _c, inv in state.items():
+            for sp, n in inv.items():
+                for el, cnt in sp.composition:
+                    tot[el] = tot.get(el, 0.0) + cnt * float(n)
+                tot["charge"] = tot.get("charge", 0.0) + sp.charge * float(n)
+        return tot
+
+
+_BUILDERS = {b.name: b for b in (_UnifiedBuilder(), _CalciteBuilder())}
+_WORLD_BUILDERS = frozenset(_BUILDERS)
+
+
+def _builder(world: str):
+    if world not in _BUILDERS:
+        raise SimulationSpecError(f"unknown world builder {world!r}; registered: {sorted(_BUILDERS)}")
+    return _BUILDERS[world]
 
 
 @dataclass(frozen=True)
@@ -220,16 +418,19 @@ class SimulationSpec:
 
     def __post_init__(self):
         # fail closed on everything we can check before integrating -- a spec either runs as declared or is refused
-        if self.model.world not in _WORLD_BUILDERS:
-            raise SimulationSpecError(f"unknown world builder {self.model.world!r}; registered: {sorted(_WORLD_BUILDERS)}")
+        b = _builder(self.model.world)
         try:
-            _require_params(self.model.params)
+            b.require_params(self.model.params)
+        except SimulationSpecError:
+            raise
         except ValueError as exc:          # OutOfSourceDomainError is a ValueError too; re-typed, message kept
             raise SimulationSpecError(str(exc)) from exc
         _validate_schedule(self.schedule)
+        for ph in self.schedule.phases:
+            b.validate_phase(ph)
         _validate_solver(self.solver)
-        _validate_initial(self.initial)
-        object.__setattr__(self, "provenance", derive_provenance(self.model.params))
+        _validate_initial(self.initial, self.model.world)
+        object.__setattr__(self, "provenance", b.provenance(self.model.params))
 
 
 def _validate_schedule(schedule) -> None:
@@ -267,11 +468,11 @@ def _validate_solver(s) -> None:
         raise SimulationSpecError("n_samples must be None or an int >= 1")
 
 
-def _validate_initial(initial) -> None:
+def _validate_initial(initial, world: str = "unified_vinegar_bicarbonate") -> None:
     if not isinstance(initial, tuple):
         raise SimulationSpecError("initial must be a tuple of SpeciesInventory")
-    cat = _species_catalog()
-    allowed = _compartment_species()
+    cat = _species_catalog(world)
+    allowed = _builder(world).compartment_species()
     seen = set()
     for inv in initial:
         if type(inv) is not SpeciesInventory:
@@ -373,6 +574,7 @@ class SimulationResult:
     admitted_tier: str                       # weakest over the phase receipts
     identities: MappingProxyType             # model / run / evidence / observation (dicts + digests)
     layers: MappingProxyType = LAYERS
+    validation_ladder: MappingProxyType = MappingProxyType({})   # XXIV-2C: the four claim rungs, kept separate
 
     @property
     def final_frame(self) -> Frame:
@@ -395,14 +597,14 @@ def spec_identities(spec: SimulationSpec) -> dict:
     """MODEL (physics + boundary topology), RUN (model + initial value problem + solver, NOT the frame cadence),
     EVIDENCE (provenance/scope), OBSERVATION (frame cadence only).  All lossless (float.hex) and JSON-canonical."""
     params = spec.model.params
-    legacy = _legacy_phases(spec.schedule)
+    b = _builder(spec.model.world)
     model = {
         "api_version": API_VERSION,
         "world": spec.model.world,
-        "unified_model_identity": model_identity(params, legacy),        # reused verbatim
+        **b.model_identity(spec),                                         # unified: reused verbatim (XXIII digests)
         "phase_topology_v2": [[p.name, p.transport_mode, bool(p.vented)] for p in spec.schedule.phases],
     }
-    cat = _species_catalog()
+    cat = _species_catalog(spec.model.world)
     run_ = {
         "model": model,
         "initial_inventories": sorted([inv.compartment, list(_species_key(cat[inv.species])), _canon_num(inv.amount_mol)]
@@ -412,7 +614,7 @@ def spec_identities(spec: SimulationSpec) -> dict:
                    "atol": _canon_num(spec.solver.atol)},
     }
     evidence = {
-        "unified_evidence_identity": evidence_identity(params),            # reused verbatim
+        **b.evidence_identity(params),                                     # unified: reused verbatim
         "provenance": [[e.name, _canon_num(e.value), e.unit, e.tier, e.source] for e in spec.provenance.entries],
     }
     observation = {"run_digest": _digest(run_), "n_samples": spec.solver.n_samples}
@@ -442,7 +644,7 @@ def structural_conservation_check(world) -> dict:
 
 # ============================================================ run
 def _initial_state_dict(spec: SimulationSpec, cat: dict) -> dict:
-    state = {"A": {}, "B": {}, "gas": {}}
+    state = {c: {} for c in _builder(spec.model.world).compartment_species()}
     for inv in spec.initial:
         state.setdefault(inv.compartment, {})[cat[inv.species]] = float(inv.amount_mol)
     return state
@@ -469,8 +671,8 @@ def _phase_receipt(name: str, traj) -> PhaseReceipt:
 
 def build_phase_world(spec: SimulationSpec, phase: BoundaryPhase):
     """The CoupledWorld for one phase (exposed so a consumer can inspect the declared topology)."""
-    return build_unified_world(spec.model.params, _build_species(), sealed=phase.sealed,
-                               transport_mode=phase.transport_mode).world
+    b = _builder(spec.model.world)
+    return b.phase_world(spec.model.params, b.species_namespace(), phase)
 
 
 def run(spec: SimulationSpec) -> SimulationResult:
@@ -478,19 +680,20 @@ def run(spec: SimulationSpec) -> SimulationResult:
     (bounded roundoff clamps recorded as StitchEvents; a real positivity excursion is refused)."""
     if type(spec) is not SimulationSpec:
         raise SimulationSpecError("run() takes a SimulationSpec")
-    cat = _species_catalog()
-    sp = _build_species()
-    # the build path: _build_species() mints equal-valued Species each call; key on the canonical objects of `sp`
-    by_name = {s.name: s for s in sp.__dict__.values()}
+    b = _builder(spec.model.world)
+    cat = _species_catalog(spec.model.world)
+    sp = b.species_namespace()
+    # the build path mints equal-valued Species each call; key on ONE canonical catalog (frozen, value-equal objects)
+    by_name = b.species_catalog() if sp is None else {s.name: s for s in sp.__dict__.values()}
     state = {c: {by_name[s.name]: v for s, v in inv.items()} for c, inv in _initial_state_dict(spec, cat).items()}
     params = spec.model.params
-    vols = {"A": params.V_A_L, "B": params.V_B_L, "gas": params.V_gas_L}
+    vols = b.volumes(params)
 
     frames, receipts, events = [], [], []
     structural = None
     t0 = 0.0
     for k, ph in enumerate(spec.schedule.phases):
-        world = build_unified_world(params, sp, sealed=ph.sealed, transport_mode=ph.transport_mode).world
+        world = b.phase_world(params, sp, ph)
         if structural is None:
             structural = structural_conservation_check(world)
         traj = world.integrate(state, duration=float(ph.duration_s), n_steps=int(ph.n_steps),
@@ -523,26 +726,26 @@ def run(spec: SimulationSpec) -> SimulationResult:
         stitch_events=tuple(events), stitched_final=stitched,
         structural_conservation=_freeze_map(structural),
         admitted_tier=weakest(*[r.admitted_tier for r in receipts]) if receipts else ASSUMED_PARAMETER,
-        identities=_freeze_map(ids))
+        identities=_freeze_map(ids), validation_ladder=_freeze_map(b.validation_ladder(params)))
 
 
 # ============================================================ composition helpers
 def continue_from(spec: SimulationSpec, result: SimulationResult, schedule: BoundarySchedule) -> SimulationSpec:
     """A new spec whose initial inventories are ``result``'s STITCHED final state (law a's right-hand side).  Phases
     come from the catalog, so the explicit per-species phase is re-derived, not guessed."""
-    cat = _species_catalog()
+    cat = _species_catalog(spec.model.world)
     initial = tuple(SpeciesInventory(c, s, cat[s].phase.value, float(v))
                     for (c, s), v in sorted(result.stitched_final.items()))
     return SimulationSpec(model=spec.model, initial=initial, schedule=schedule, solver=spec.solver)
 
 
-def global_totals(frame: Frame) -> dict:
+def global_totals(frame: Frame, world: str = "unified_vinegar_bicarbonate") -> dict:
     """E.n over every compartment for one frame (element + charge totals) -- the same map the ledger uses."""
-    cat = _species_catalog()
+    cat = _species_catalog(world)
     state = {}
     for (c, s), v in frame.amounts.items():
         state.setdefault(c, {})[cat[s]] = v
-    return _component_totals(state)
+    return _builder(world).component_totals(state)
 
 
 # ============================================================ wire
@@ -580,4 +783,5 @@ def result_to_dict(res: SimulationResult) -> dict:
         "structural_conservation": _plain(res.structural_conservation),
         "admitted_tier": res.admitted_tier,
         "identities": _plain(res.identities),
+        "validation_ladder": _plain(res.validation_ladder),
     }

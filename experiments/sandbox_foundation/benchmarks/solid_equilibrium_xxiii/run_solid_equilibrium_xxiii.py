@@ -152,10 +152,16 @@ def calcite_species() -> dict:
 
 
 def build_calcite_world(mode: str = "nominal", *, k_diss: float = K_DISS, kf: float = KF_FAST,
-                        ionic_strength_max: float = 0.1, allow_precipitation: bool = False):
+                        ionic_strength_max: float = 0.1, allow_precipitation: bool = False,
+                        standard_state_basis: str = "as_tabulated_molal"):
+    """``standard_state_basis`` (XXIV-2B): 'as_tabulated_molal' (default, the XXIII-S4 behaviour: molal-basis log K fed
+    to MOLAR activities, a disclosed basis mismatch) or 'converted_to_molar' (every constant transported to the molar
+    basis by standard_state.molal_to_molar_logK, sum over aqueous solutes of nu, rho_w* = 0.997047 kg/L)."""
+    if standard_state_basis not in ("as_tabulated_molal", "converted_to_molar"):
+        raise ValueError("standard_state_basis must be 'as_tabulated_molal' or 'converted_to_molar'")
     sp = calcite_species()
     consts = load_constants(mode)
-    lk = consts["logk"]
+    lk = dict(consts["logk"])
     src = f"{MINTEQ.name} / {PHREEQC_DAT.name} ({mode})"
     # reactions AS WRITTEN (all with K >= 1 so the reverse coefficients stay finite); K = products/reactants.
     k2 = lk["carbonate_2h"] - lk["carbonate_h"]                        # HCO3- + H+ = CO2 + H2O
@@ -168,6 +174,11 @@ def build_calcite_world(mode: str = "nominal", *, k_diss: float = K_DISS, kf: fl
         ("CaOH+ formation (reverse)", ((sp["CaOH"], -1), (sp["H"], -1), (sp["Ca"], 1), (sp["H2O"], 1)), (sp["H2O"],),
          -lk["caoh"]),
     ]
+    if standard_state_basis == "converted_to_molar":
+        from experiments.sandbox_foundation.standard_state import aqueous_nu, molal_to_molar_logK
+        spec = [(nm, st, unit, molal_to_molar_logK(logk, aqueous_nu(st, unit))) for nm, st, unit, logk in spec]
+        lk["calcite_ksp"] = molal_to_molar_logK(lk["calcite_ksp"], 2)          # CaCO3(s) = Ca+2 + CO3-2: nu_aq = 2
+        src += " [log K transported molal->molar, XXIV-2B]"
     rxns = [Reaction(
         "calcite dissolution",
         ((sp["calcite"], -1), (sp["Ca"], 1), (sp["CO3"], 1)),

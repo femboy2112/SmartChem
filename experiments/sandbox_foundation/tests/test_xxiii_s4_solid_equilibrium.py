@@ -126,8 +126,8 @@ def test_ksp_provenance_is_inside_the_descriptor():
 def test_audited_builtin_authority_and_pin_regression(cls):
     key = (MOD, cls.__qualname__)
     assert key in gk._AUDITED_BUILTIN_PINS
-    live = hashlib.sha256(gk._class_source(cls)[0].encode("utf-8")).hexdigest()
-    assert live == gk._AUDITED_BUILTIN_PINS[key], "class edited without re-auditing: update the pin"
+    live = gk._audit_closure(cls)[0]                     # XXIV-1D: pins cover the in-tree dependency closure
+    assert live == gk._AUDITED_BUILTIN_PINS[key], "class or a hashed dependency edited without re-auditing: re-pin"
     assert audit_status()[key] == "SEALED"
     assert is_certified_rate_law_type(cls)
 
@@ -342,8 +342,11 @@ def test_steady_state_is_independent_of_the_assumed_kinetic_scales():
 # --------------------------------------------------------------- (6) the existing proxy law is untouched + contrast
 def test_existing_bicarbonate_dissolution_rate_is_untouched():
     key = ("experiments.sandbox_foundation.unified_chemical_world", "BicarbonateDissolutionRate")
-    assert gk._AUDITED_BUILTIN_PINS[key] == "69826a64cab8de88b974e6a9e7895932721a74b24290c0a86f502b17e8ec854c"
-    assert hashlib.sha256(gk._class_source(BicarbonateDissolutionRate)[0].encode()).hexdigest() == gk._AUDITED_BUILTIN_PINS[key]
+    # the CLASS BODY is byte-identical to its XXIII audit (class-source digest unchanged) ...
+    assert hashlib.sha256(gk._class_source(BicarbonateDissolutionRate)[0].encode()).hexdigest() == \
+        "69826a64cab8de88b974e6a9e7895932721a74b24290c0a86f502b17e8ec854c"
+    # ... and XXIV-1D re-pinned it on its dependency closure (the audit event that moved every pin)
+    assert gk._audit_closure(BicarbonateDissolutionRate)[0] == gk._AUDITED_BUILTIN_PINS[key]
     assert audit_status()[key] == "SEALED"
 
 

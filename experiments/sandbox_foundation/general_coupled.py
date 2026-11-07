@@ -69,14 +69,17 @@ from experiments.sandbox_foundation.claim_tiers import (
     rank,
     weakest,
 )
-from experiments.sandbox_foundation.general_equilibrium import EquilibriumOperator
+from experiments.sandbox_foundation.general_equilibrium import EquilibriumError, EquilibriumOperator
 from experiments.sandbox_foundation.general_kernel import (
     ChemicalSystem,
     KernelError,
     Phase,
     Species,
     StaleCertificateError,
-    is_certified_rate_law_type,
+    AUDITED_BUILTIN,
+    CALLER_ATTESTED_EXTENSION,
+    rate_law_attestation,
+    rate_law_authority,
 )
 
 
@@ -103,6 +106,9 @@ def _species_key(sp: Species) -> tuple:
 #: integrate() consumes this fact: a world holding such a law has NO certified execution identity (see
 #: ``_uncertified_rate_laws`` and the receipt's ``execution_identity_certified``).
 _UNVERIFIABLE_MARKER = "UNVERIFIABLE_RATE_LAW"
+#: XXIII-2: the head of a CALLER-ATTESTED extension's descriptor -- its parameters ARE bound (mutation detected), but the
+#: binding rests on the plugin author's attestation, not an audit, so it never yields a certified execution identity.
+_ATTESTED_MARKER = "CALLER_ATTESTED_RATE_LAW"
 
 
 def _rate_law_descriptor(rl):
@@ -120,14 +126,40 @@ def _rate_law_descriptor(rl):
     in the explicitly-flagged, tier-floored EXECUTABLE-UNVERIFIED mode (or refuses under require_certified_execution)."""
     if rl is None:                                       # RATE_UNKNOWN
         return "RATE_UNKNOWN"
-    if is_certified_rate_law_type(type(rl)):             # XXII-2: audited implementation -> its descriptor is trusted
-        desc = getattr(rl, "descriptor", None)
-        if callable(desc):
-            try:
-                return list(rl.descriptor())
-            except NotImplementedError:
-                pass
+    authority = rate_law_authority(rl)                   # XXIII-2: closed audited table vs labeled caller attestation
+    if authority in (AUDITED_BUILTIN, CALLER_ATTESTED_EXTENSION):
+        try:
+            desc = list(rl.descriptor())
+        except NotImplementedError:
+            return [_UNVERIFIABLE_MARKER, type(rl).__qualname__]
+        if authority == CALLER_ATTESTED_EXTENSION:        # bound, but the certificate records that it is a CLAIM
+            return [_ATTESTED_MARKER, type(rl).__qualname__, rate_law_attestation(type(rl))] + desc
+        return desc
     return [_UNVERIFIABLE_MARKER, type(rl).__qualname__]
+
+
+#: XXIII-2b (F2): the head of an equilibrium operator's descriptor when it binds NONE of its solve parameters.
+_UNVERIFIABLE_EQ_MARKER = "UNVERIFIABLE_EQUILIBRIUM_OPERATOR"
+
+
+def _equilibrium_operator_descriptor(op):
+    """XXIII-2b (F2): the operator's OWN solve-parameter descriptor, or the UNVERIFIABLE sentinel.  Fail-closed: the
+    descriptor must be defined on the operator's EXACT type (a subclass that inherits its parent's descriptor while
+    replacing ``speciate`` would otherwise borrow a signature for physics it does not perform), must not be shadowed on
+    the instance, and must not be the refusing base."""
+    t = type(op)
+    own = t.__dict__.get("descriptor")
+    if own is None or own is EquilibriumOperator.__dict__["descriptor"] or "descriptor" in getattr(op, "__dict__", {}):
+        return [_UNVERIFIABLE_EQ_MARKER, t.__qualname__]
+    try:
+        return list(op.descriptor())
+    except (NotImplementedError, EquilibriumError):      # unbindable (or mutated into something un-encodable)
+        return [_UNVERIFIABLE_EQ_MARKER, t.__qualname__]
+
+
+def _descriptor_is_attested(desc) -> bool:
+    """True iff ``desc`` is a CALLER-ATTESTED extension's descriptor (XXIII-2)."""
+    return isinstance(desc, list) and len(desc) >= 1 and desc[0] == _ATTESTED_MARKER
 
 
 def _descriptor_is_uncertified(desc) -> bool:
@@ -422,12 +454,18 @@ class CoupledReceipt:
     max_step_material_residual: float = 0.0   # XX-3: max |E n(t) - E n0 - E integral(q_ext dt)| over EVERY accepted step (observer-invariant, not endpoint-only)
     first_violation: tuple = ()               # XX-3: (time, kind, compartment, species/component, value) of the FIRST step to breach positivity or the ledger (() if none)
     execution_identity_certified: bool = True  # XXI-2: False iff ANY reaction's rate law is UNVERIFIABLE (no bindable descriptor) -- then the world certificate cannot witness that the SAME physics executed, so no stable execution-identity claim is made (mutating such a law is invisible to the certificate BY CONSTRUCTION)
+    execution_identity_basis: str = "AUDITED_BUILTIN"  # XXIII-2: AUDITED_BUILTIN (every law sealed against the closed audit table) | CALLER_ATTESTED (>=1 plugin law bound only by its author's attestation; NOT certified) | UNVERIFIED (>=1 law with no trusted descriptor)
+    attested_extension_laws: tuple = ()       # XXIII-2: ((compartment, reaction, rate_law_class, attested_by), ...) laws whose identity rests on a caller attestation
     uncertified_rate_laws: tuple = ()          # XXI-2: ((compartment, reaction, rate_law_class), ...) the laws that voided the execution-identity claim -- surfaced so the limitation cannot be hidden behind an otherwise-clean receipt
     component_tolerance: dict = field(default_factory=dict)       # XXI-3: {conserved component: atol + rtol*scale_component} -- each component judged against ITS OWN scale
     component_max_residual: dict = field(default_factory=dict)    # XXI-3: {conserved component: max |E n(t) - E n0 - E integral(q_ext dt)| over every step}
     component_resolution: dict = field(default_factory=dict)      # XXII-3: {conserved component: VERIFIED_WITHIN_RESOLUTION | VIOLATED | NUMERICALLY_UNRESOLVED_AT_REQUESTED_SCALE}
     numerically_unresolved_components: tuple = ()                 # XXII-3: components whose inventory scale is at/below the absolute numerical floor -- conservation NOT certified (not stamped conserved, not proven violated)
     positivity_resolution_limited: bool = False                  # XXII-3: a negative dip passed the ABSOLUTE positivity floor but exceeded the dipping species' own inventory scale -- nonnegativity at that scale is unresolved, not guaranteed
+    uncertified_equilibrium_operators: tuple = ()                # XXIII-2b (F2): ((compartment, operator_class), ...) operators binding none of their solve parameters -- they void the execution-identity claim exactly like an UNVERIFIABLE rate law
+    compartment_max_net_charge: dict = field(default_factory=dict)  # XXIII-2b (F3): {compartment: max |sum z_i n_i| (mol) over EVERY accepted step}
+    local_electroneutrality_held: bool = True                    # XXIII-2b (F3): no compartment's net charge moved by more than atol + rtol * sum|z_i n_i| from its first accepted state, at any accepted step (no charge SEPARATION)
+    compartment_max_charge_separation: dict = field(default_factory=dict)  # XXIII-2b (F3): {compartment: max |q(t) - q(0)| (mol)} -- the quantity local_electroneutrality_held judges
 
 
 @dataclass(frozen=True)
@@ -587,6 +625,20 @@ class CoupledWorld:
             for c in self.compartments for r in c.system.reactions
             if r.rate_law is not None and _descriptor_is_uncertified(_rate_law_descriptor(r.rate_law))
         )
+        # XXIII-2: laws whose descriptor is bound only by a CALLER attestation (a plugin claim, not an audit).
+        self._attested_extension_laws = tuple(
+            (c.name, r.name, type(r.rate_law).__qualname__, rate_law_attestation(type(r.rate_law)))
+            for c in self.compartments for r in c.system.reactions
+            if r.rate_law is not None and _descriptor_is_attested(_rate_law_descriptor(r.rate_law))
+        )
+        # XXIII-2b (F2): equilibrium operators that bind none of their solve parameters -- the certificate cannot see
+        # them change, so the world gets the same treatment as for an UNVERIFIABLE rate law.
+        self._uncertified_equilibrium_operators = tuple(
+            (c.name, type(c.equilibrium.operator).__qualname__)
+            for c in self.compartments
+            if c.equilibrium is not None
+            and _equilibrium_operator_descriptor(c.equilibrium.operator)[:1] == [_UNVERIFIABLE_EQ_MARKER]
+        )
 
     # ---------------------------------------------------------------- XIX-1D world execution certificate
     def _equilibrium_descriptor(self, c: Compartment):
@@ -601,6 +653,9 @@ class CoupledWorld:
             "activity_model": getattr(ec.operator, "activity_model", None),
             "table": sorted((nm, _species_key(sp)) for nm, sp in ec.species_table.items()),
             "reservoir_components": sorted(ec.reservoir_components),
+            # XXIII-2b (F2): every parameter the solve reads (include_ion_pair was invisible here before), or the
+            # UNVERIFIABLE sentinel -- in which case the world has no certified execution identity (see __init__).
+            "operator_descriptor": _equilibrium_operator_descriptor(ec.operator),
         }
 
     def _compute_world_certificate(self) -> str:
@@ -964,6 +1019,7 @@ class CoupledWorld:
     def integrate(self, initial: dict, *, duration: float, n_steps: int, scheme: str = "strang",
                   n_samples: int | None = None, rtol: float = 1e-10, atol: float = 1e-14,
                   declared_kinetic_tier: str | None = None, require_certified_execution: bool = False,
+                  accept_attested_extensions: bool = False,
                   _observer_perturb=None) -> CoupledTrajectory:
         """Advance the coupled world over ``duration`` seconds in ``n_steps`` equal macro-steps of the chosen scheme.
 
@@ -981,12 +1037,24 @@ class CoupledWorld:
                                     cannot witness that the same physics executed, and that limitation is not hidden.
           * REFUSED              -- with ``require_certified_execution=True`` a world holding any unverified law raises
                                     rather than run; a caller that needs a stable execution identity gets a refusal,
-                                    never a falsely-certified trajectory."""
+                                    never a falsely-certified trajectory.
+
+        XXIII-2 AUTHORITY: CERTIFIABLE now means SEALED against general_kernel's CLOSED audit table (AUDITED_BUILTIN).
+        A plugin registered with ``register_attested_rate_law`` is CALLER_ATTESTED: its descriptor is bound (mutation
+        detected), but ``execution_identity_certified`` stays False, ``execution_identity_basis`` is 'CALLER_ATTESTED',
+        its kinetic tier is floored to UNVERIFIED, and ``require_certified_execution`` REFUSES it unless the caller also
+        passes ``accept_attested_extensions=True`` -- an explicit, receipted decision to trust the plugin's author."""
         self._verify_world_certificate()          # XIX-1D: never integrate under a stale world/compartment certificate
         for c in self.compartments:
             miss = [r.name for r in c.system.reactions if r.rate_law is None]
             if miss:
                 raise CoupledError(f"compartment {c.name!r} has RATE_UNKNOWN reaction(s) {miss}; refusing to integrate")
+        if require_certified_execution and self._attested_extension_laws and not accept_attested_extensions:
+            raise CoupledError(
+                "require_certified_execution=True but rate law(s) "
+                f"{list(self._attested_extension_laws)} are CALLER-ATTESTED extensions, not audited built-ins: their "
+                "descriptor faithfulness rests on the plugin author's claim. Pass accept_attested_extensions=True to "
+                "run them under that explicitly-receipted trust, or seal the class through the closed audit table.")
         if require_certified_execution and self._uncertified_rate_laws:
             raise CoupledError(
                 "require_certified_execution=True but this world has no certified execution identity: rate law(s) "
@@ -994,6 +1062,13 @@ class CoupledWorld:
                 "witness that the same physics executes (a mutation of their hidden parameters is invisible to it). "
                 "Give each such law a descriptor() binding its operative parameters, or run without "
                 "require_certified_execution to execute in the explicitly-flagged, tier-floored research mode.")
+        if require_certified_execution and self._uncertified_equilibrium_operators:
+            raise CoupledError(                                       # XXIII-2b (F2)
+                "require_certified_execution=True but this world has no certified execution identity: equilibrium "
+                f"operator(s) {list(self._uncertified_equilibrium_operators)} bind none of their solve parameters "
+                "(no descriptor() of their own), so the world certificate cannot witness that the same equilibrium "
+                "physics executes. Give the operator a descriptor() binding every parameter speciate reads, or run "
+                "without require_certified_execution in the explicitly-flagged, tier-floored research mode.")
         if not (isinstance(duration, (int, float)) and math.isfinite(duration) and duration > 0):
             raise CoupledError("duration must be finite and > 0")
         if not (isinstance(n_steps, int) and not isinstance(n_steps, bool) and n_steps >= 1):
@@ -1001,16 +1076,22 @@ class CoupledWorld:
         if declared_kinetic_tier is None:
             tiers = [r.rate_law.tier for c in self.compartments for r in c.system.reactions if r.rate_law is not None]
             declared_kinetic_tier = weakest(*tiers) if tiers else STRUCTURALLY_CONSERVING
-        if self._uncertified_rate_laws:
+        if self._uncertified_rate_laws or self._attested_extension_laws or self._uncertified_equilibrium_operators:
+            # XXIII-2b (F2): an unbound equilibrium operator floors exactly like an unverifiable law.
+            # XXIII-2: a caller attestation is a claim, not evidence -- it floors exactly like an unverifiable law.
             # XXI-2: an unbindable law cannot certify its own kinetics; floor the DERIVED claim to UNVERIFIED here,
             # from the descriptor's unverifiability -- NOT from the law's self-declared tier (a label is not a binding).
             declared_kinetic_tier = weakest(declared_kinetic_tier, UNVERIFIED)
         rank(declared_kinetic_tier)
 
         dt = float(duration) / n_steps
-        y = self._pack(initial)
-        y, derived0 = self._project(y)                    # project the initial state onto equilibrium if declared
-        comp0 = self._Eg @ y
+        y_declared = self._pack(initial)
+        # XXIII-2b (F4): the conservation BASELINE is the DECLARED initial state, taken BEFORE the t=0 projection.  The
+        # old baseline was taken after it, so whatever the first projection destroyed became the new "truth" and the
+        # ledger then verified the loss against itself -- a post-op weigh-in after the organ was already gone.  Now the
+        # t=0 projection's change enters the per-step ledger at s = 0 and is judged against each component's OWN scale.
+        comp0 = self._Eg @ y_declared
+        y, derived0 = self._project(y_declared)           # project the initial state onto equilibrium if declared
         acc = np.zeros(len(self.boundaries))              # XVIII-3: per-boundary integrated external flux (mol)
 
         # XX-3 OBSERVER-INVARIANT VERIFICATION.  Sampling (``ys``/``times``, for rendering) and verification (every
@@ -1039,6 +1120,17 @@ class CoupledWorld:
         accs = [acc.copy()]                                # XX-3: integrated external flux at EVERY accepted step
         step_min = [float(y.min())]                        # XX-3: min inventory at EVERY step (not just the sampled set)
         step_argmin = [int(np.argmin(y))]
+        # XXIII-2b (F3) LOCAL ELECTRONEUTRALITY record.  The global charge row cannot see a charge SEPARATION: a single-ion
+        # interface leaves A at -0.49 mol and B at +0.49 mol, and the sum is a perfect zero.  So each compartment's net
+        # charge sum z_i n_i and its ionic inventory sum |z_i n_i| are recorded at every accepted step (same cadence as
+        # the ledger, so the verdict is observer-invariant too).  A cheap pair of mat-vecs; a costly omission otherwise.
+        cnames = [c.name for c in self.compartments]
+        z_by_comp = np.zeros((len(cnames), self.n_slots))
+        for j, (cn, sp) in enumerate(self._slots):
+            z_by_comp[cnames.index(cn), j] = float(sp.charge)
+        abs_z_by_comp = np.abs(z_by_comp)
+        local_q = [z_by_comp @ y]
+        local_ionic = [abs_z_by_comp @ np.abs(y)]
         for step in range(1, n_steps + 1):
             y, acc, derived = self._step(y, acc, dt, scheme, rtol, atol)
             if _observer_perturb is not None:              # XX-3: test-only controlled perturbation (default: no-op)
@@ -1047,6 +1139,8 @@ class CoupledWorld:
             accs.append(acc.copy())
             step_min.append(float(y.min()))
             step_argmin.append(int(np.argmin(y)))
+            local_q.append(z_by_comp @ y)
+            local_ionic.append(abs_z_by_comp @ np.abs(y))
             if step % sample_every == 0 or step == n_steps:
                 times.append(step * dt)
                 ys.append(y.copy())
@@ -1059,7 +1153,14 @@ class CoupledWorld:
         # component touched ONLY by an implicit-solvent reservoir (fast-equilibrium H/O/charge) has no boundary
         # accumulator, so it is reported (endpoint) but excluded from the strict balance -- NARROW (implicit solvent).
         comp_final = comps[-1]
-        raw_change_vec = comp_final - comp0
+        # XXIII-2b (F4): every LEDGERED component is measured from the declared state.  An implicit-solvent reservoir
+        # component (H/O/charge under a fast equilibrium) was never ledgered -- the projection exchanges it with the
+        # solvent BY DECLARATION, t=0 included -- so its reported exchange stays measured from the equilibrated start.
+        base_vec = comp0.copy()
+        for i, lab in enumerate(labels):
+            if lab in implicit_reservoir:
+                base_vec[i] = comps[0][i]
+        raw_change_vec = comp_final - base_vec
         ext_comp = np.zeros(len(labels))
         for k, b in enumerate(self.boundaries):
             ext_comp += self._Eg[:, self._slot[(b.compartment, b.species)]] * acc[k]
@@ -1074,6 +1175,16 @@ class CoupledWorld:
         comp_scale = {}
         for i in checked_idx:
             scale_i = max(abs(float(comp0[i])), abs(float(ext_comp[i])))
+            if labels[i] == "charge":
+                # XXIII-2b (F5): the charge row is a SIGNED sum, so its net is ~0 for every honest neutral inventory and
+                # |net| measures float roundoff (0.3 vs 0.1 + 0.2 -> 2.8e-17), not an inventory -- the verdict flipped
+                # to UNRESOLVED on the luck of the last ULP.  The scale charge is resolved against is the IONIC
+                # inventory sum |z_i n_i| (declared, and as fed through every boundary), exactly as every element row is
+                # resolved against the material it actually carries.
+                ionic0 = float(np.abs(self._Eg[i]) @ np.abs(y_declared))
+                z_bound = np.array([abs(self._Eg[i, self._slot[(b.compartment, b.species)]]) for b in self.boundaries])
+                ionic_fed = max(float(z_bound @ np.abs(a)) for a in accs) if self.boundaries else 0.0
+                scale_i = max(scale_i, ionic0, ionic_fed)
             comp_scale[labels[i]] = scale_i
             comp_tol[labels[i]] = self._MATERIAL_ATOL + self._MATERIAL_RTOL * scale_i
         tol = max(comp_tol.values()) if comp_tol else self._MATERIAL_ATOL   # representative scalar (loosest component tol)
@@ -1169,6 +1280,42 @@ class CoupledWorld:
         else:
             charge_balance_claim = "CONSERVED (independently checked in the material balance)"
 
+        # XXIII-2b (F3) LOCAL CHARGE-SEPARATION VERDICT.  Each compartment is judged against ITS OWN ionic inventory:
+        # |q_c(t) - q_c(0)| <= atol + rtol * sum |z_i n_i| at every accepted step, where q_c = sum z_i n_i and q_c(0) is
+        # the compartment's first ACCEPTED state (post t=0 projection -- a fast-equilibrium cell's declared inventory is
+        # neutralised there by design).  What is judged is SEPARATION: net charge the dynamics moved into or out of the
+        # compartment.  Within-compartment kinetics conserve charge exactly (E N = 0), so only transport can do that --
+        # and a macroscopic charge separation between two beakers is not a subtle numerical artefact, it is a capacitor
+        # nobody declared, so the trajectory is not a result.  A compartment DECLARED non-neutral (a bare-ion seed with
+        # no counter-ion) is a property of the input, not of the dynamics: it is reported (absolute max + a caveat),
+        # never silently passed as neutral, but it is not a separation the run produced.
+        compartment_max_net_charge = {}                      # absolute max |q_c| (reported)
+        compartment_max_charge_separation = {}               # max |q_c(t) - q_c(0)| (judged)
+        local_violations = {}                                # {compartment: (t, separated charge, tol) at first breach}
+        declared_net_charge = {}                             # {compartment: q_c(0)} where the input itself is charged
+        for ci, cn in enumerate(cnames):
+            q0 = float(local_q[0][ci])
+            worst = sep_worst = 0.0
+            for s in range(len(local_q)):
+                qs = float(local_q[s][ci])
+                worst = max(worst, abs(qs))
+                sep_worst = max(sep_worst, abs(qs - q0))
+                tol_q = self._MATERIAL_ATOL + self._MATERIAL_RTOL * float(local_ionic[s][ci])
+                if cn not in local_violations and abs(qs - q0) > tol_q:
+                    local_violations[cn] = (s * dt, qs - q0, tol_q)
+            if abs(q0) > self._MATERIAL_ATOL + self._MATERIAL_RTOL * float(local_ionic[0][ci]):
+                declared_net_charge[cn] = q0
+            compartment_max_net_charge[cn] = worst
+            compartment_max_charge_separation[cn] = sep_worst
+        local_electroneutrality_held = not local_violations
+        if not local_electroneutrality_held:
+            charge_balance_claim = (
+                f"GLOBAL_ONLY_LOCAL_VIOLATED: compartment(s) {sorted(local_violations)} gained or lost a macroscopic net "
+                f"charge beyond their electroneutrality tolerance (max |q(t) - q(0)| = "
+                f"{max(compartment_max_charge_separation[cn] for cn in local_violations):.3e} mol); whatever the global "
+                f"charge row says, charge was SEPARATED between compartments, so no local charge-conservation claim is "
+                f"made.")
+
         positivity_held = min_amount >= -pos_tol
         # XXII-3 positivity resolution audit: the negativity gate is an ABSOLUTE floor (pos_tol).  If the deepest dip is
         # negative, passed that floor, yet the dipping species' own inventory scale is itself <= pos_tol, then the floor
@@ -1183,7 +1330,8 @@ class CoupledWorld:
         conserved_components_held = material_balance_closed
         feed_ledger_closed = all(feed_max_resid[lab] <= comp_tol[lab] for lab in feed_max_resid)   # XXI-3: per-component
         solver_completed = True
-        structural_ok = solver_completed and positivity_held and material_balance_closed
+        structural_ok = (solver_completed and positivity_held and material_balance_closed
+                         and local_electroneutrality_held)        # XXIII-2b (F3): a charged beaker floors to REFUSED
         structural_tier = STRUCTURALLY_CONSERVING if structural_ok else REFUSED
         admitted_tier = weakest(structural_tier, declared_kinetic_tier)
 
@@ -1198,6 +1346,11 @@ class CoupledWorld:
                             f"(> ITS OWN component tol {comp_tol.get(lab_v, tol):.3e}); first breach at "
                             f"t={first_violation[0]:.3e}s (residual {first_violation[4]:.3e}) -- a mid-trajectory "
                             f"violation the endpoint snapshot can hide",)
+                if first_violation[0] == 0.0 and self._has_equilibrium:     # XXIII-2b (F4): name the culprit
+                    caveats += (f"the breach is at t=0: the INITIAL fast-equilibrium projection changed component "
+                                f"{lab_v!r} relative to the DECLARED initial state (residual {first_violation[4]:.3e}); "
+                                f"the ledger baseline is the declared state, so a lossy projection is reported, never "
+                                f"absorbed into the baseline",)
             else:
                 worst = max(violated_components, key=lambda lab: comp_max_resid[lab] - comp_tol[lab])
                 caveats += (f"the material balance did NOT close for component {worst!r}: per-step ledger residual "
@@ -1227,6 +1380,35 @@ class CoupledWorld:
                         f"executed (a mutation of their hidden parameters is invisible to it); the kinetic tier is "
                         f"floored to UNVERIFIED and this trajectory must NOT be read as a certified-identity result "
                         f"(XXI-2)",)
+        if self._uncertified_equilibrium_operators:
+            caveats += (f"NO certified execution identity: equilibrium operator(s) "
+                        f"{list(self._uncertified_equilibrium_operators)} bind none of their solve parameters, so the "
+                        f"world certificate cannot witness that the same equilibrium physics executed; the tier is "
+                        f"floored to UNVERIFIED (XXIII-2b)",)
+        if self._attested_extension_laws:
+            caveats += (f"execution identity rests on CALLER ATTESTATION, not audit: rate law(s) "
+                        f"{list(self._attested_extension_laws)} are plugin extensions whose descriptor faithfulness is "
+                        f"claimed by their author; bound parameters are mutation-checked, but this is NOT a certified "
+                        f"execution identity and the kinetic tier is floored to UNVERIFIED (XXIII-2)",)
+        if local_violations:                                  # XXIII-2b (F3)
+            first_cn = min(local_violations, key=lambda cn: local_violations[cn][0])
+            t_v, q_v, tol_v = local_violations[first_cn]
+            caveats += (f"local electroneutrality VIOLATED in compartment(s) {sorted(local_violations)}: compartment "
+                        f"{first_cn!r} first had {q_v:+.3e} mol of net charge moved into it at t={t_v:.3e}s (> its tol "
+                        f"{tol_v:.3e} mol); global charge closing does not make a charge separation physical -- tier "
+                        f"REFUSED",)
+        if declared_net_charge:                               # XXIII-2b (F3): a charged INPUT is reported, not hidden
+            q_txt = ", ".join(f"{cn!r}: {q:+.3e}" for cn, q in sorted(declared_net_charge.items()))
+            caveats += (f"compartment(s) {sorted(declared_net_charge)} START non-electroneutral (net charge {q_txt} mol "
+                        f"after the t=0 projection): the declared inventory lacks counter-ions. That input imbalance is "
+                        f"REPORTED here, not gated (only charge the run itself moves -- separation -- is gated), but the "
+                        f"input is not a physical bulk solution",)
+        for iface in self.interfaces:                         # XXIII-2b (F3): name every selective charged flux
+            if iface.species_a.charge != 0:
+                caveats += (f"interface {iface.name!r} selectively moves the charged species {iface.species_a.name!r} "
+                            f"(z={iface.species_a.charge:+d}) from {iface.a!r} to {iface.b!r} with no counter-ion; a "
+                            f"single-ion flux transports net charge, so local electroneutrality is VERIFIED per "
+                            f"compartment, not assumed",)
         if implicit_reservoir:
             note = (f"implicit-solvent reservoir components {sorted(implicit_reservoir)} exchange H/O/charge with a "
                     f"fast-equilibrium solvent and are reported (endpoint), not independently ledgered")
@@ -1244,12 +1426,21 @@ class CoupledWorld:
             raw_material_change=raw_material_change, ledger_adjusted_residual=ledger_residual,
             material_balance_closed=material_balance_closed, charge_balance_claim=charge_balance_claim, notes=notes,
             max_step_material_residual=max_step_material_residual, first_violation=(first_violation or ()),
-            execution_identity_certified=not self._uncertified_rate_laws,
+            execution_identity_certified=not (self._uncertified_rate_laws or self._attested_extension_laws
+                                              or self._uncertified_equilibrium_operators),
+            execution_identity_basis=("UNVERIFIED" if (self._uncertified_rate_laws
+                                                       or self._uncertified_equilibrium_operators)
+                                      else "CALLER_ATTESTED" if self._attested_extension_laws else "AUDITED_BUILTIN"),
+            attested_extension_laws=self._attested_extension_laws,
             uncertified_rate_laws=self._uncertified_rate_laws,
+            uncertified_equilibrium_operators=self._uncertified_equilibrium_operators,
             component_tolerance=dict(comp_tol), component_max_residual=dict(comp_max_resid),
             component_resolution=dict(component_resolution),
             numerically_unresolved_components=numerically_unresolved_components,
-            positivity_resolution_limited=positivity_resolution_limited)
+            positivity_resolution_limited=positivity_resolution_limited,
+            compartment_max_net_charge=compartment_max_net_charge,
+            compartment_max_charge_separation=compartment_max_charge_separation,
+            local_electroneutrality_held=local_electroneutrality_held)
 
         amounts = {c.name: tuple({sp: float(yj[self._slot[(c.name, sp)]]) for sp in c.system.species} for yj in ys)
                    for c in self.compartments}

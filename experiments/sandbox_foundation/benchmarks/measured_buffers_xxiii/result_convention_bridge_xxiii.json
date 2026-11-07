@@ -1,0 +1,290 @@
+{
+  "comparisons": {
+    "carbonate_191d": {
+      "M0": {
+        "C1_U": 0.01,
+        "C1_residual": -0.009207378791026954,
+        "C1_within": true,
+        "C2_U_R": 0.003015,
+        "C2_equals_C3": true,
+        "C2_measured_acidity_function": 10.123042197354797,
+        "C2_over_U_R": -3.7379005762761004,
+        "C2_residual": -0.011269770237472443,
+        "C2_within": false,
+        "C3_model_pH_S_BG": 10.002430229762528,
+        "C3_residual": -0.011269770237472443,
+        "C3_within": false,
+        "bg_A": 0.51,
+        "bg_ionic_strength": 0.09987499615761254
+      },
+      "M0_minteq_constants": {
+        "C1_U": 0.01,
+        "C1_residual": -0.010225823136067902,
+        "C1_within": false,
+        "C2_U_R": 0.003015,
+        "C2_equals_C3": true,
+        "C2_measured_acidity_function": 10.12304198899695,
+        "C2_over_U_R": -4.075682067288197,
+        "C2_residual": -0.012288181432873913,
+        "C2_within": false,
+        "C3_model_pH_S_BG": 10.001411818567126,
+        "C3_residual": -0.012288181432873913,
+        "C3_within": false,
+        "bg_A": 0.51,
+        "bg_ionic_strength": 0.09987443508560828
+      },
+      "M1": {
+        "C1_U": 0.01,
+        "C1_residual": -0.1534251646452347,
+        "C1_within": false,
+        "C2_U_R": 0.003015,
+        "C2_equals_C3": true,
+        "C2_measured_acidity_function": 10.116313230414825,
+        "C2_over_U_R": -51.26105898555581,
+        "C2_residual": -0.15455209284145077,
+        "C2_within": false,
+        "C3_model_pH_S_BG": 9.85914790715855,
+        "C3_residual": -0.15455209284145077,
+        "C3_within": false,
+        "bg_A": 0.51,
+        "bg_ionic_strength": 0.0830445585829186
+      }
+    },
+    "phosphate_186g_equimolal": {
+      "M0": {
+        "C1_U": 0.01,
+        "C1_residual": 0.01295008242277973,
+        "C1_within": false,
+        "C2_U_R": 0.0016,
+        "C2_equals_C3": true,
+        "C2_measured_acidity_function": 6.97338892073388,
+        "C2_over_U_R": 6.612656458241384,
+        "C2_residual": 0.010580250333186214,
+        "C2_within": false,
+        "C3_model_pH_S_BG": 6.874580250333186,
+        "C3_residual": 0.010580250333186214,
+        "C3_within": false,
+        "bg_A": 0.51,
+        "bg_ionic_strength": 0.10000087964021447
+      },
+      "M1": {
+        "C1_U": 0.01,
+        "C1_residual": -0.08254466386491366,
+        "C1_within": false,
+        "C2_U_R": 0.0016,
+        "C2_equals_C3": true,
+        "C2_measured_acidity_function": 6.969169991679571,
+        "C2_over_U_R": -52.68528795806304,
+        "C2_residual": -0.08429646073290087,
+        "C2_within": false,
+        "C3_model_pH_S_BG": 6.779703539267099,
+        "C3_residual": -0.08429646073290087,
+        "C3_within": false,
+        "bg_A": 0.51,
+        "bg_ionic_strength": 0.08914438107197052
+      }
+    },
+    "phosphate_186g_physiological": {
+      "M0": {
+        "C1_U": 0.01,
+        "C1_residual": 0.005183520553798893,
+        "C1_within": true,
+        "C2_U_R": 0.0022,
+        "C2_equals_C3": true,
+        "C2_measured_acidity_function": 7.525083383096133,
+        "C2_over_U_R": 1.279350478295365,
+        "C2_residual": 0.0028145710522498035,
+        "C2_within": false,
+        "C3_model_pH_S_BG": 7.41851457105225,
+        "C3_residual": 0.0028145710522498035,
+        "C3_within": false,
+        "bg_A": 0.51,
+        "bg_ionic_strength": 0.09998595316947376
+      },
+      "M1": {
+        "C1_U": 0.01,
+        "C1_residual": -0.08690669695917563,
+        "C1_within": false,
+        "C2_U_R": 0.0022,
+        "C2_equals_C3": true,
+        "C2_measured_acidity_function": 7.519936503422055,
+        "C2_over_U_R": -40.24352342698015,
+        "C2_residual": -0.08853575153935633,
+        "C2_within": false,
+        "C3_model_pH_S_BG": 7.327164248460644,
+        "C3_residual": -0.08853575153935633,
+        "C3_within": false,
+        "bg_A": 0.51,
+        "bg_ionic_strength": 0.08687684155243879
+      }
+    }
+  },
+  "decision_rule": {
+    "I+0.000": "MIXED/UNRESOLVED",
+    "I+0.003": "MIXED/UNRESOLVED",
+    "I-0.003": "MIXED/UNRESOLVED"
+  },
+  "instrument_calibration": {
+    "delta": 3.552713678800501e-15,
+    "gate_abs_delta_lt_1e-9": true,
+    "generic_solver_pH_davies": 10.004792621208972,
+    "repo_carbonate_pH_activity": 10.004792621208969
+  },
+  "measured": {
+    "carbonate_191d": {
+      "U": 0.01,
+      "certificate_sha256": "ea316fb1368d0563882a2b6926fe8a6bb07736e9d5fc1b24bb70c2317cc02d38",
+      "composition_mol_per_kg": {
+        "Na2CO3": 0.025,
+        "NaHCO3": 0.025
+      },
+      "k_R": 2.01,
+      "pH_S_A1": 10.0137,
+      "pH_S_table1": 10.014,
+      "u_meas": 0.0015
+    },
+    "phosphate_186g_equimolal": {
+      "U": 0.01,
+      "certificate_sha256": "4a228c1b30ccf2a2d2eaca589d06d77b2fb7c2f7ba3b35f6d144c01eb6743116",
+      "composition_mol_per_kg": {
+        "KH2PO4": 0.025,
+        "Na2HPO4": 0.025
+      },
+      "k_R": 2.0,
+      "pH_S_A1": 6.864,
+      "pH_S_table1": 6.864,
+      "u_meas": 0.0008
+    },
+    "phosphate_186g_physiological": {
+      "U": 0.01,
+      "certificate_sha256": "4a228c1b30ccf2a2d2eaca589d06d77b2fb7c2f7ba3b35f6d144c01eb6743116",
+      "composition_mol_per_kg": {
+        "KH2PO4": 0.008695,
+        "Na2HPO4": 0.03043
+      },
+      "k_R": 2.0,
+      "pH_S_A1": 7.4157,
+      "pH_S_table1": 7.4157,
+      "u_meas": 0.0011
+    }
+  },
+  "models": {
+    "carbonate_191d": {
+      "M0": {
+        "ionic_strength": 0.09987499615761254,
+        "pH_davies": 10.004792621208972,
+        "p_aH_gCl": 10.111772427117325,
+        "pmH": 9.897812815300618
+      },
+      "M0_minteq_constants": {
+        "ionic_strength": 0.09987443508560828,
+        "pH_davies": 10.003774176863931,
+        "p_aH_gCl": 10.110753807564077,
+        "pmH": 9.896794546163788
+      },
+      "M1": {
+        "ionic_strength": 0.0830445585829186,
+        "pH_davies": 9.860574835354765,
+        "p_aH_gCl": 9.961761137573374,
+        "pmH": 9.759388533136155
+      }
+    },
+    "phosphate_186g_equimolal": {
+      "M0": {
+        "ionic_strength": 0.10000087964021447,
+        "pH_davies": 6.87695008242278,
+        "p_aH_gCl": 6.983969171067066,
+        "pmH": 6.769930993778494
+      },
+      "M1": {
+        "ionic_strength": 0.08914438107197052,
+        "pH_davies": 6.781455336135086,
+        "p_aH_gCl": 6.88487353094667,
+        "pmH": 6.678037141323502
+      }
+    },
+    "phosphate_186g_physiological": {
+      "M0": {
+        "ionic_strength": 0.09998595316947376,
+        "pH_davies": 7.420883520553799,
+        "p_aH_gCl": 7.527897954148383,
+        "pmH": 7.313869086959215
+      },
+      "M1": {
+        "ionic_strength": 0.08687684155243879,
+        "pH_davies": 7.3287933030408245,
+        "p_aH_gCl": 7.431400751882698,
+        "pmH": 7.22618585419895
+      }
+    }
+  },
+  "no_constant_fitted": true,
+  "preregistration": "PREREGISTRATION.md",
+  "references": {
+    "carbonate_191d": {
+      "phreeqc.dat": {
+        "C2_U_R": 0.003015,
+        "C2_residual_vs_measured": -0.14153733025017878,
+        "database": "phreeqc.dat",
+        "ionic_strength": 0.08261153971560714,
+        "log_gamma_Cl": -0.10777067897188886,
+        "pH_phreeqc": 9.866818042613588,
+        "p_aH_gCl": 9.974588721585476
+      },
+      "pitzer.dat": {
+        "C2_U_R": 0.003015,
+        "C2_residual_vs_measured": -0.07406745913108281,
+        "database": "pitzer.dat",
+        "ionic_strength": 0.09989287601615314,
+        "log_gamma_Cl": -0.11466166900373942,
+        "pH_phreeqc": 9.934319708521627,
+        "p_aH_gCl": 10.048981377525367
+      }
+    },
+    "phosphate_186g_equimolal": {
+      "phreeqc.dat": {
+        "C2_U_R": 0.0016,
+        "C2_residual_vs_measured": 0.007645756568781081,
+        "database": "phreeqc.dat",
+        "ionic_strength": 0.09744695481838173,
+        "log_gamma_Cl": -0.11436741042255161,
+        "pH_phreeqc": 6.865709746145356,
+        "p_aH_gCl": 6.980077156567908
+      }
+    },
+    "phosphate_186g_physiological": {
+      "phreeqc.dat": {
+        "C2_U_R": 0.0022,
+        "C2_residual_vs_measured": 0.0017913896582699707,
+        "database": "phreeqc.dat",
+        "ionic_strength": 0.09708506364121662,
+        "log_gamma_Cl": -0.11421633711445,
+        "pH_phreeqc": 7.411569112614074,
+        "p_aH_gCl": 7.525785449728524
+      }
+    }
+  },
+  "sensitivity": {
+    "carbonate_191d": {
+      "A=0.5091": -0.011076813418609888,
+      "A=0.5115": -0.011591364935574333,
+      "I+0.000": -0.011269770237472443,
+      "I+0.003": -0.012370318857509943,
+      "I-0.003": -0.010141718711535574
+    },
+    "phosphate_186g_equimolal": {
+      "A=0.5091": 0.010773289605070069,
+      "A=0.5115": 0.010258518213380974,
+      "I+0.000": 0.010580250333186214,
+      "I+0.003": 0.009480825690057593,
+      "I-0.003": 0.01170711941413316
+    },
+    "phosphate_186g_physiological": {
+      "A=0.5091": 0.0030076005518315796,
+      "A=0.5115": 0.0024928552196143983,
+      "I+0.000": 0.0028145710522498035,
+      "I+0.003": 0.001715013258203335,
+      "I-0.003": 0.003941580206778816
+    }
+  }
+}

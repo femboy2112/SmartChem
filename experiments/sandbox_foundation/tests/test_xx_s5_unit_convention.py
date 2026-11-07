@@ -96,11 +96,27 @@ def test_common_mode_honesty_and_strict_json(res):
     assert any("common-mode" in c for c in res["caveats"])
 
 
+_XX5_MODEL_PATHS = ["experiments/sandbox_foundation/carbonate_equilibrium.py",
+                    "experiments/sandbox_foundation/benchmarks/measured_carbonate_srm191d/run_measured.py",
+                    "experiments/sandbox_foundation/benchmarks/measured_carbonate_srm191d/result.json"]
+
+
 def test_no_model_constant_was_touched():
-    out = subprocess.run(["git", "diff", "0d2ab65", "--", "experiments/sandbox_foundation/carbonate_equilibrium.py",
-                          "experiments/sandbox_foundation/benchmarks/measured_carbonate_srm191d/run_measured.py",
-                          "experiments/sandbox_foundation/benchmarks/measured_carbonate_srm191d/result.json",
-                          "smartchem"], cwd=REPO, capture_output=True, text=True)
+    # XXIII: BOUNDED to XX-5's own range.  The original open-ended `git diff 0d2ab65 -- ... smartchem` compared a
+    # historical base to the WORKING TREE, so the legitimate 1.6.0 smartchem/ release change tripped it (it only ever
+    # passed in CI because the shallow checkout lacks 0d2ab65 and the test skipped).  The claim is historical: XX-5
+    # (676bcfc) tuned nothing relative to its base 0d2ab65 -- a permanent fact once both commits exist.
+    out = subprocess.run(["git", "diff", "0d2ab65", "676bcfc", "--", *_XX5_MODEL_PATHS, "smartchem"],
+                         cwd=REPO, capture_output=True, text=True)
     if out.returncode != 0:
-        pytest.skip("git unavailable")
+        pytest.skip("git unavailable or XX-5 commits absent (shallow clone)")
+    assert out.stdout == ""
+
+
+def test_carbonate_model_unchanged_since_xx5():
+    """Forward guard (model files only; the production package is NOT in scope): any later edit of the carbonate model
+    or its frozen comparison must be a conscious, reviewed change that updates this guard."""
+    out = subprocess.run(["git", "diff", "676bcfc", "--", *_XX5_MODEL_PATHS], cwd=REPO, capture_output=True, text=True)
+    if out.returncode != 0:
+        pytest.skip("git unavailable or 676bcfc absent (shallow clone)")
     assert out.stdout == ""

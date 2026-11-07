@@ -21,6 +21,40 @@
 > No `smartchem.*` import path exposes it, and nothing in it is covered by `COMPATIBILITY.md`. Its claims carry their
 > own tiers (ASSUMED / SOURCED / MEASURED / REFUTED) in the research dossiers.
 >
+> **OPERATION XXIII research — merged as EXCLUDED experimental source** (`research/operation-xxiii` → `main`; nothing
+> under `smartchem/` or `tests/` moves; every claim below carries its own tier, and none of it is a supported API):
+> - **Trust boundary (Phase II).** The predeclared registry-authority probe
+>   (`experiments/sandbox_foundation/xxiii_registry_authority_probe.py`) read **FAIL** on the unfixed kernel
+>   (`6a2686e`): self-registering a class whose `descriptor()` lies certified its trajectory, and the tier ROSE from
+>   ASSUMED_PARAMETER to STRUCTURALLY_CONSERVING. The same harness reads **PASS** after `3ead466`: a closed, in-tree,
+>   source-pinned `_AUDITED_BUILTIN_PINS` table is the only route to `AUDITED_BUILTIN`; caller-attested extensions
+>   are bound but never certified, and strict mode refuses them. An in-process trusted-code authority — **not**
+>   cryptographic, **not** independent validation. Five red-team findings (F1 reaction rebind, F2 unbound operator
+>   parameters, F3 local charge separation, F4 post-projection baseline, F5 roundoff refusal) each have RED→GREEN
+>   receipts (`4f2ec70`). **Open:** F2-gap (a user equilibrium operator's self-defined `descriptor()` is trusted), p6b
+>   (positivity floor scales with the caller's atol), and no local-charge check on the single-system kernel path.
+>   Dossier: `docs/research/OPERATION_XXIII_TRUST_BOUNDARY.md`.
+> - **Carbonate convention barrier (Phase III).** K1/K2 are molal, I = 0 constants. Molar vs molal (|Δ| ≤ 0.0018 pH)
+>   is **REFUTED** as the cause of the 191d miss; XXI-4's reading of Table A1 as a measurement-only comparator is
+>   **REFUTED** (category error — A1 values are identical to Table 1). On the convention-free comparator
+>   p(a_Hγ_Cl)°, Davies + repo constants are still **REFUTED** (carbonate −0.0113 vs U_R 0.0030). The chemically
+>   distinct holdout (NIST 186g phosphate) misses with the opposite sign (+0.0106 / +0.0028); the two phosphate
+>   formulations differ by 0.0078 (~2.9× U_R), which no single pK shift can fix — the preregistered rule reads
+>   **MIXED/UNRESOLVED**. Specific-ion interactions are CONJECTURED; the pitzer.dat −0.074 carbonate anomaly is DARK.
+>   Both holdouts share the Harned + Bates–Guggenheim metrology lineage: distinct chemistry, not independent
+>   metrology. Ledger: `experiments/sandbox_foundation/benchmarks/measured_buffers_xxiii/CONVENTION_BRIDGE_VERDICT.md`.
+> - **One bounded physical capability (Phase IV).** Activity-based solid dissolution (`solid_equilibrium.py`,
+>   audited builtins, Davies, fail-closed at I > 0.1). Calcite in a closed system matches PHREEQC's dissolved Ca
+>   within 0.30% — **model-vs-model only** (shared constants, I ≈ 4e-4). The hostile holdout nahcolite NaHCO3(s)
+>   **fails closed** (`OutOfDomainError` at I = 0.1026); forcing the domain open would land 1.69× off the sourced
+>   solubility. Research API candidate `smartchem-sim-2.0a0-research` (`sim_api_v2alpha.py`).
+> - **Vinegar world (Phase V).** Vented vs sealed headspace differ by the boundary alone (sealed p_CO2 ≈ 2.7 atm at
+>   300 s, computed under ASSUMED kinetics). Computational only — **not a laboratory safety certification**.
+>   `experiments/sandbox_foundation/benchmarks/vinegar_world_xxiii/`.
+> - **2.0-alpha gate status: NOT MET.** Met: a versioned research API object, a closed audited authority, typed
+>   per-component conservation verdicts, fail-closed domains. Unmet: a bounded physical domain validated against an
+>   **independent measured** holdout (calcite is model-vs-model; NaHCO3 fails closed; the buffer holdouts refute).
+>
 > **3.0 — interactive physical laboratory: a FUTURE milestone.** Nothing ships yet.
 >
 > ### Milestone board — each gate is an executable check, not a vibe

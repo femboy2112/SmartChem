@@ -73,19 +73,33 @@ def test_overall_headline_is_not_a_robust_prediction(res):
     assert "not" in o["headline"].lower() and "robust" in o["headline"].lower()
 
 
+XXI_TIP = "07afeff"     # the Operation XXI consolidation merge into integration/2.0-alpha
+_XXI4_MODEL_PATHS = [
+    "experiments/sandbox_foundation/carbonate_equilibrium.py",
+    "experiments/sandbox_foundation/benchmarks/measured_carbonate_srm191d/run_measured.py",
+    "experiments/sandbox_foundation/benchmarks/measured_carbonate_srm191d/result.json",
+    "experiments/sandbox_foundation/benchmarks/measured_carbonate_srm191d/run_unit_convention_s5.py",
+    "experiments/sandbox_foundation/benchmarks/measured_carbonate_srm191d/result_s5_unit_convention.json",
+]
+
+
 def test_no_model_constant_was_touched():
-    out = subprocess.run(
-        ["git", "diff", XXI_BASE, "--",
-         "experiments/sandbox_foundation/carbonate_equilibrium.py",
-         "experiments/sandbox_foundation/benchmarks/measured_carbonate_srm191d/run_measured.py",
-         "experiments/sandbox_foundation/benchmarks/measured_carbonate_srm191d/result.json",
-         "experiments/sandbox_foundation/benchmarks/measured_carbonate_srm191d/run_unit_convention_s5.py",
-         "experiments/sandbox_foundation/benchmarks/measured_carbonate_srm191d/result_s5_unit_convention.json",
-         "smartchem"],
-        cwd=REPO, capture_output=True, text=True)
+    # XXIII: BOUNDED to XXI's own range (same defect XXII fixed for the section-6 guard).  The open-ended
+    # `git diff XXI_BASE -- ... smartchem` compared against the WORKING TREE, so the legitimate 1.6.0 smartchem/ change
+    # tripped it (CI only skipped it: shallow checkout).  The claim is historical: XXI-4 re-framed, it tuned nothing.
+    out = subprocess.run(["git", "diff", XXI_BASE, XXI_TIP, "--", *_XXI4_MODEL_PATHS, "smartchem"],
+                         cwd=REPO, capture_output=True, text=True)
     if out.returncode != 0:
-        pytest.skip("git unavailable or base SHA absent")
+        pytest.skip("git unavailable or XXI commits absent (shallow clone)")
     assert out.stdout == ""                                       # XXI-4 only RE-FRAMES; it tunes/alters nothing
+
+
+def test_carbonate_model_unchanged_since_xxi():
+    """Forward guard (model files only, production package out of scope)."""
+    out = subprocess.run(["git", "diff", XXI_TIP, "--", *_XXI4_MODEL_PATHS], cwd=REPO, capture_output=True, text=True)
+    if out.returncode != 0:
+        pytest.skip("git unavailable or XXI tip absent (shallow clone)")
+    assert out.stdout == ""
 
 
 def test_result_is_strict_json(res):

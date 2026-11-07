@@ -1085,9 +1085,13 @@ class CoupledWorld:
         rank(declared_kinetic_tier)
 
         dt = float(duration) / n_steps
-        y = self._pack(initial)
-        y, derived0 = self._project(y)                    # project the initial state onto equilibrium if declared
-        comp0 = self._Eg @ y
+        y_declared = self._pack(initial)
+        # XXIII-2b (F4): the conservation BASELINE is the DECLARED initial state, taken BEFORE the t=0 projection.  The
+        # old baseline was taken after it, so whatever the first projection destroyed became the new "truth" and the
+        # ledger then verified the loss against itself -- a post-op weigh-in after the organ was already gone.  Now the
+        # t=0 projection's change enters the per-step ledger at s = 0 and is judged against each component's OWN scale.
+        comp0 = self._Eg @ y_declared
+        y, derived0 = self._project(y_declared)           # project the initial state onto equilibrium if declared
         acc = np.zeros(len(self.boundaries))              # XVIII-3: per-boundary integrated external flux (mol)
 
         # XX-3 OBSERVER-INVARIANT VERIFICATION.  Sampling (``ys``/``times``, for rendering) and verification (every
@@ -1149,7 +1153,14 @@ class CoupledWorld:
         # component touched ONLY by an implicit-solvent reservoir (fast-equilibrium H/O/charge) has no boundary
         # accumulator, so it is reported (endpoint) but excluded from the strict balance -- NARROW (implicit solvent).
         comp_final = comps[-1]
-        raw_change_vec = comp_final - comp0
+        # XXIII-2b (F4): every LEDGERED component is measured from the declared state.  An implicit-solvent reservoir
+        # component (H/O/charge under a fast equilibrium) was never ledgered -- the projection exchanges it with the
+        # solvent BY DECLARATION, t=0 included -- so its reported exchange stays measured from the equilibrated start.
+        base_vec = comp0.copy()
+        for i, lab in enumerate(labels):
+            if lab in implicit_reservoir:
+                base_vec[i] = comps[0][i]
+        raw_change_vec = comp_final - base_vec
         ext_comp = np.zeros(len(labels))
         for k, b in enumerate(self.boundaries):
             ext_comp += self._Eg[:, self._slot[(b.compartment, b.species)]] * acc[k]
@@ -1325,6 +1336,11 @@ class CoupledWorld:
                             f"(> ITS OWN component tol {comp_tol.get(lab_v, tol):.3e}); first breach at "
                             f"t={first_violation[0]:.3e}s (residual {first_violation[4]:.3e}) -- a mid-trajectory "
                             f"violation the endpoint snapshot can hide",)
+                if first_violation[0] == 0.0 and self._has_equilibrium:     # XXIII-2b (F4): name the culprit
+                    caveats += (f"the breach is at t=0: the INITIAL fast-equilibrium projection changed component "
+                                f"{lab_v!r} relative to the DECLARED initial state (residual {first_violation[4]:.3e}); "
+                                f"the ledger baseline is the declared state, so a lossy projection is reported, never "
+                                f"absorbed into the baseline",)
             else:
                 worst = max(violated_components, key=lambda lab: comp_max_resid[lab] - comp_tol[lab])
                 caveats += (f"the material balance did NOT close for component {worst!r}: per-step ledger residual "

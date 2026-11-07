@@ -258,3 +258,51 @@ class TestF3LocalElectroneutrality:
         assert not r.charge_balance_claim.startswith("GLOBAL_ONLY_LOCAL_VIOLATED")
 
 
+# ===================================================================================================== F4 t=0 baseline
+_BULK = Species.of("BULK", {"Q": 1}, 0, Phase.AQUEOUS)
+_TRACE = Species.of("TRACE", {"Z": 1}, 0, Phase.AQUEOUS)
+
+
+class _LossyOp(EquilibriumOperator):
+    """Deletes the trace component -- within the compartment-max admission tol, so the projection is admitted."""
+    components = frozenset({"bulk", "trace"})
+    species = ("BULK", "TRACE")
+    species_signature = {"BULK": ((("Q", 1),), 0), "TRACE": ((("Z", 1),), 0)}
+    accepted_solver_verdicts = frozenset({"SOLVED"})
+    activity_model = "ideal"
+
+    def speciate(self, ca, *, volume_L, temperature_K=298.15):
+        return EquilibriumState(species_amounts={"BULK": ca["bulk"], "TRACE": 0.0}, volume_L=volume_L,
+                                temperature_K=temperature_K, component_inputs=dict(ca), component_residuals={},
+                                derived={}, structural_tier=STRUCTURALLY_CONSERVING, solver_verdict="SOLVED")
+
+    def component_totals(self, sa):
+        return {"bulk": sa.get("BULK", 0.0), "trace": sa.get("TRACE", 0.0)}
+
+
+class TestF4DeclaredBaseline:
+    def test_a_t0_projection_that_deletes_a_trace_component_is_violated_not_absorbed(self):
+        w = CoupledWorld([Compartment("c", ChemicalSystem([_BULK, _TRACE], [], volume_L=1.0),
+                                      equilibrium=EquilibriumCoupling(_LossyOp(), {"BULK": _BULK, "TRACE": _TRACE}))])
+        tr = w.integrate({"c": {_BULK: 1.0, _TRACE: 5e-10}}, duration=1.0, n_steps=5)
+        r = tr.receipt
+        assert r.component_resolution["Z"] == "VIOLATED"
+        assert r.material_balance_closed is False
+        assert r.structural_tier == REFUSED
+        assert r.component_max_residual["Z"] == pytest.approx(5e-10, rel=1e-9)
+        assert r.first_violation[:2] == (0.0, "material_ledger") and r.first_violation[3] == "Z"
+        assert r.raw_material_change["Z"] == pytest.approx(-5e-10, rel=1e-9)   # measured vs the DECLARED state
+
+    @pytest.mark.parametrize("trace", (1e-9, 1e-11, 1e-13))
+    def test_control_the_real_mixed_operator_keeps_a_trace_carbon_certified(self, trace):
+        from experiments.sandbox_foundation.unified_chemical_world import _build_species, _liquid_species_table
+        sp = _build_species()
+        tab = _liquid_species_table(sp)
+        w = CoupledWorld([Compartment("c", ChemicalSystem(list(tab.values()), [], 1.0), EquilibriumCoupling(
+            MixedAcetateCarbonateEquilibriumOperator(), tab, frozenset({"H", "O", "charge"})))])
+        tr = w.integrate({"c": {sp.HAc: 0.2, sp.Nap: 0.1, sp.HCO3: trace}}, duration=1.0, n_steps=2)
+        assert tr.receipt.component_resolution["C"] == "VERIFIED_WITHIN_RESOLUTION"
+        assert tr.receipt.material_balance_closed is True
+        assert tr.receipt.structural_tier == STRUCTURALLY_CONSERVING
+
+

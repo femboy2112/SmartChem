@@ -276,6 +276,10 @@ _AUDITED_BUILTIN_PINS: dict = {
     ("experiments.sandbox_foundation.general_kernel", "MassActionIrreversible"): "7d70dd7a28625ba4e6817731b7cf1dd016d99429d8fb0153e8c53b198856f902",
     ("experiments.sandbox_foundation.general_kernel", "MassActionReversible"): "52cb60c28f948057365223bec8ef34154735fd75cda1b97cd9e65da3fdc628f5",
     ("experiments.sandbox_foundation.unified_chemical_world", "BicarbonateDissolutionRate"): "69826a64cab8de88b974e6a9e7895932721a74b24290c0a86f502b17e8ec854c",
+    # XXIII-S4 audit event: the two activity-based solid/speciation laws (Davies activities, I-domain guard, descriptor
+    # binds k/K/stoich/species/A/I_max/precipitation switch).  Audited 2026-11 in solid_equilibrium.py; re-pin on edit.
+    ("experiments.sandbox_foundation.solid_equilibrium", "ActivitySolubilityRate"): "5d4e1059ea6ec9623a3211596babf6859158c51bf67519bf684a2b74bd77202e",
+    ("experiments.sandbox_foundation.solid_equilibrium", "ActivityReversibleRate"): "ae936797c17e901eb6aa5c9609b70596a37b3655e8685fbcc0ce58e741bae5c6",
 }
 
 

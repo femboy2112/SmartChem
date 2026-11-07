@@ -1,0 +1,299 @@
+{
+  "label": "MODEL-vs-MODEL (kernel vs PHREEQC phreeqc.dat); shared constants; not a measurement",
+  "T_K": 298.15,
+  "phreeqc": {
+    "Ca_total_molal": 0.00012300690436987488,
+    "density_kg_per_L": 0.9970574594094036,
+    "pH": 9.906810965465372,
+    "I_molal": 0.00038559536058028516,
+    "SI_calcite": 0.0,
+    "species_molal": {
+      "Ca+2": 0.00011718174899712539,
+      "CO3-2": 3.378839555734399e-05,
+      "HCO3-": 8.351738303842794e-05,
+      "CO2": 2.2757044499266045e-08,
+      "CaCO3": 5.5643574282089814e-06,
+      "CaHCO3+": 1.1419646568355611e-07,
+      "CaOH+": 1.4678664315032776e-07,
+      "H+": 1.2666442666423856e-10,
+      "OH-": 8.353165013098161e-05
+    },
+    "database": "phreeqc.dat (phreeqpython)",
+    "Ca_total_molar_via_density": 0.0001226449515608429
+  },
+  "kernel_nominal": {
+    "Ca_total_M": 0.00012300896033886228,
+    "Ca2+": 0.00011721527147113342,
+    "CO3": 3.380442947965635e-05,
+    "HCO3": 8.35348427799315e-05,
+    "CaCO3aq": 5.546238003794618e-06,
+    "CaHCO3+": 1.0068603302857485e-07,
+    "CaOH+": 1.467648309056622e-07,
+    "CO2aq": 2.2764042451649175e-08,
+    "pH_activity": 9.906873360033243,
+    "I_M": 0.00038569782148469147,
+    "calcite_left_mol": 0.00987699103966109,
+    "Ca_total_molal_equiv": 0.00012337198741958695
+  },
+  "constants_nominal": {
+    "calcite_ksp": {
+      "log_k": -8.48,
+      "analytic": null,
+      "src": "minteq.v4.dat:11693"
+    },
+    "carbonate_h": {
+      "log_k": 10.329,
+      "analytic": [
+        107.8871,
+        0.03252849,
+        -5151.79,
+        -38.92561,
+        563713.9
+      ],
+      "src": "phreeqc.dat:202"
+    },
+    "carbonate_2h": {
+      "log_k": 16.681,
+      "analytic": [
+        464.1965,
+        0.09344813,
+        -26986.16,
+        -165.75951,
+        2248628.9
+      ],
+      "src": "phreeqc.dat:209"
+    },
+    "water": {
+      "log_k": null,
+      "analytic": [
+        293.29227,
+        0.1360833,
+        -10576.913,
+        -123.73158,
+        0.0,
+        -6.996455e-05
+      ],
+      "src": "phreeqc.dat:187"
+    },
+    "caco3_aq": {
+      "log_k": 3.224,
+      "analytic": [
+        -1228.732,
+        -0.29944,
+        35512.75,
+        485.818
+      ],
+      "src": "phreeqc.dat:330"
+    },
+    "cahco3": {
+      "log_k": 11.435,
+      "analytic": [
+        1317.0071,
+        0.34546894,
+        -39916.84,
+        -517.70761,
+        563713.9
+      ],
+      "src": "phreeqc.dat:336"
+    },
+    "caoh": {
+      "log_k": -12.78,
+      "analytic": null,
+      "src": "phreeqc.dat:328"
+    },
+    "calcite_phreeqc": {
+      "log_k": -8.48,
+      "analytic": [
+        -171.9065,
+        -0.077993,
+        2839.319,
+        71.595
+      ],
+      "src": "phreeqc.dat:906"
+    }
+  },
+  "agreement_nominal": {
+    "Ca_total_rel_diff": 0.0029679882733597562,
+    "Ca_total_rel_diff_numbers_unconverted": 1.671425679661276e-05,
+    "pH_diff": 6.239456787149322e-05,
+    "I_rel_diff": 0.000265721310163336
+  },
+  "kernel_phreeqc_effective_constants": {
+    "Ca_total_M": 0.00012301659482738842,
+    "Ca2+": 0.00011720656555261716,
+    "CO3": 3.380675762958066e-05,
+    "HCO3": 8.352378584400348e-05,
+    "CaCO3aq": 5.562652862513412e-06,
+    "CaHCO3+": 1.0064156051034222e-07,
+    "CaOH+": 1.4673485174751665e-07,
+    "CO2aq": 2.275693078082257e-08,
+    "pH_activity": 9.906816013915202,
+    "I_M": 0.0003856739574440395,
+    "calcite_left_mol": 0.00987698340517262,
+    "Ca_total_molal_equiv": 0.00012337964443920413
+  },
+  "agreement_phreeqc_effective": {
+    "Ca_total_rel_diff": 0.0030302369711576738,
+    "Ca_total_rel_diff_numbers_unconverted": 7.877978527459639e-05,
+    "pH_diff": 5.0484498306246905e-06,
+    "I_rel_diff": 0.00020383249330602204
+  },
+  "kinetic_scale_invariance": [
+    {
+      "k_diss": 1e-06,
+      "kf": 100000000.0,
+      "Ca_total_M": 0.00012300896033886228
+    },
+    {
+      "k_diss": 1e-05,
+      "kf": 100000000.0,
+      "Ca_total_M": 0.00012300944977579662
+    },
+    {
+      "k_diss": 1e-06,
+      "kf": 1000000000.0,
+      "Ca_total_M": 0.0001230185551560768
+    }
+  ],
+  "scale_note": "Ca_total_rel_diff converts the kernel's mol/L to mol/kgw with PHREEQC's solution density; the *_numbers_unconverted value compares the raw numbers.  The activity quotient uses the SAME dimensionless K on either scale, so the ~0.3% spread between the two IS the molar-vs-molal convention slack (rho), not a model discrepancy.",
+  "steady_state": {
+    "Ca_last_step": 0.00012300896033886228,
+    "rel_change_last_step": 2.854370413539692e-06,
+    "duration_s": 6000.0
+  },
+  "refinement": {
+    "tight(rtol1e-10,atol1e-18)": [
+      {
+        "n_steps": 60,
+        "dt_s": 100.0,
+        "Ca_total_steady_M": 0.00012300896033886228,
+        "Ca_total_t100s_M": 7.447245767834812e-05,
+        "t_sample_s": 100.0
+      },
+      {
+        "n_steps": 120,
+        "dt_s": 50.0,
+        "Ca_total_steady_M": 0.000123008960341129,
+        "Ca_total_t100s_M": 7.447245767106378e-05,
+        "t_sample_s": 100.0
+      },
+      {
+        "n_steps": 240,
+        "dt_s": 25.0,
+        "Ca_total_steady_M": 0.0001230089603411746,
+        "Ca_total_t100s_M": 7.447245766450925e-05,
+        "t_sample_s": 100.0,
+        "Ca_total_steady_M_diff_N_to_2N": 2.266714376961132e-15,
+        "Ca_total_steady_M_diff_2N_to_4N": 4.56178064073276e-17,
+        "Ca_total_steady_M_observed_order": 5.634861727478274,
+        "Ca_total_t100s_M_diff_N_to_2N": -7.284334268588266e-15,
+        "Ca_total_t100s_M_diff_2N_to_4N": -6.554530681233961e-15,
+        "Ca_total_t100s_M_observed_order": 0.15230464320804327
+      }
+    ],
+    "loose(rtol1e-5,atol1e-12)": [
+      {
+        "n_steps": 60,
+        "dt_s": 100.0,
+        "Ca_total_steady_M": 0.00012300895174705573,
+        "Ca_total_t100s_M": 7.447208717764974e-05,
+        "t_sample_s": 100.0
+      },
+      {
+        "n_steps": 120,
+        "dt_s": 50.0,
+        "Ca_total_steady_M": 0.00012300894875365634,
+        "Ca_total_t100s_M": 7.447294471396964e-05,
+        "t_sample_s": 100.0
+      },
+      {
+        "n_steps": 240,
+        "dt_s": 25.0,
+        "Ca_total_steady_M": 0.00012300894802282916,
+        "Ca_total_t100s_M": 7.447140027225196e-05,
+        "t_sample_s": 100.0,
+        "Ca_total_steady_M_diff_N_to_2N": -2.993399392291554e-12,
+        "Ca_total_steady_M_diff_2N_to_4N": -7.308271826253487e-13,
+        "Ca_total_steady_M_observed_order": 2.0341825821423836,
+        "Ca_total_t100s_M_diff_N_to_2N": 8.575363198942525e-10,
+        "Ca_total_t100s_M_diff_2N_to_4N": -1.5444417176771084e-09,
+        "Ca_total_t100s_M_observed_order": -0.8488157480031489
+      }
+    ]
+  },
+  "conservation_independent": {
+    "C": {
+      "n0": 0.01,
+      "max_abs_drift": 7.112366251504909e-17,
+      "max_abs_charge_or_total": 0.01
+    },
+    "Ca": {
+      "n0": 0.01,
+      "max_abs_drift": 7.112366251504909e-17,
+      "max_abs_charge_or_total": 0.01
+    },
+    "H": {
+      "n0": 110.68000020000001,
+      "max_abs_drift": 2.8421709430404007e-13,
+      "max_abs_charge_or_total": 110.6800002000003
+    },
+    "O": {
+      "n0": 55.370000100000006,
+      "max_abs_drift": 1.4210854715202004e-13,
+      "max_abs_charge_or_total": 55.37000010000015
+    },
+    "charge": {
+      "n0": 0.0,
+      "max_abs_drift": 1.0888154621592892e-18,
+      "max_abs_charge_or_total": 1.0888154621592892e-18
+    }
+  },
+  "receipt": {
+    "admitted_tier": "ASSUMED_PARAMETER",
+    "execution_identity_basis": "AUDITED_BUILTIN",
+    "execution_identity_certified": true,
+    "max_conserved_drift": 2.8421709430404007e-13,
+    "positivity_held": true,
+    "min_inventory": 0.0,
+    "structural_tier": "STRUCTURALLY_CONSERVING"
+  },
+  "phase_charge": {
+    "solid_species": [
+      "CaCO3(s)"
+    ],
+    "solid_charge": [
+      0
+    ],
+    "max_abs_net_charge_mol": 1.0888154621592892e-18,
+    "ionic_strength_in_domain": true
+  },
+  "nahcolite_holdout": {
+    "wateq4f_log_k": -0.548,
+    "target_m_gamma": 0.5321082592667942,
+    "davies_saturation_molality_pure_water": 0.7086489643216545,
+    "davies_I_at_saturation": 0.7086489643216545,
+    "measured_bulk_solubility_M": 1.2,
+    "measured_uncertainty_M": 0.15,
+    "measured_source": "Aqueous solubility of NaHCO3 at ~25 C: ~9.6 g/100 mL (20 C)-10.3 g/100 mL (25 C) (CRC Handbook / PubChem CID 516892) with MW 84.007 g/mol -> ~1.14-1.23 mol/L.",
+    "disagreement_factor_measured_over_davies": 1.6933630900719445,
+    "disagreement_factor_range_over_measured_unc": [
+      1.4816927038129515,
+      1.9050334763309373
+    ],
+    "note": "molality (Davies solve) vs molarity (repo solubility) differ by a few % at ~1 M; far smaller than the factor",
+    "guarded_run": {
+      "refused": true,
+      "error": "OutOfDomainError",
+      "verdict": "OUT_OF_DOMAIN",
+      "ionic_strength": 0.10259546313239122,
+      "ionic_strength_max": 0.1,
+      "message": "ionic strength 0.102595 mol/L exceeds the declared Davies-activity domain 0.1 mol/L: refusing to evaluate the solid-equilibrium law out of domain"
+    },
+    "unguarded_counterfactual_I_max_5": {
+      "steady_Na_M": 0.7086489643216561,
+      "vs_measured_S": 1.2,
+      "factor_vs_measured": 1.6933630900719405,
+      "label": "COUNTERFACTUAL ONLY -- shows what a hand-raised domain would silently predict; not a result"
+    }
+  }
+}

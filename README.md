@@ -15,10 +15,16 @@ unearned answer.
 
 </div>
 
-> **Current release: [v1.1.0 — Chemical-Graph & Synthesis Coverage](https://github.com/femboy2112/SmartChem/releases/tag/v1.1.0)**
-> (2026-10-23). Python 3.10–3.13, MIT. Distributed as **GitHub source + a release
-> wheel/sdist** (with `SHA256SUMS` and a reproducibility manifest) — it is **not**
-> published to PyPI. See the [changelog](CHANGELOG.md) and [install](#install) below.
+> **Current release: [v1.6.0 — 25-Class Reaction Coverage](https://github.com/femboy2112/SmartChem/releases/tag/v1.6.0)**
+> (2026-11-06): the 25th reaction class (intramolecular lactonization) plus an independent
+> structural witness, under the unchanged 1.x machine contract. Python 3.10–3.13, MIT.
+> Distributed as **GitHub source + a release wheel/sdist** (with `SHA256SUMS` and a
+> reproducibility manifest) — it is **not** published to PyPI. See the
+> [changelog](CHANGELOG.md) and [install](#install) below.
+>
+> The 2.0 physical-simulation research under [`experiments/sandbox_foundation/`](experiments/sandbox_foundation)
+> is on `main` as **experimental source only**: it is excluded from the wheel and sdist, has no
+> `smartchem.*` import path, and is **not** a supported API.
 
 > **Research software, not a laboratory authority.** A formally admitted route is a
 > *compiler candidate, not a bench procedure*; `CAPABILITY_FIT` is a model-relative fit
@@ -89,8 +95,13 @@ positive-frequency passive-RLC interpretations.
 SmartChem is not on PyPI. Install the released wheel directly from GitHub:
 
 ```bash
-pip install https://github.com/femboy2112/SmartChem/releases/download/v1.1.0/smartchem-1.1.0-py3-none-any.whl
+pip install https://github.com/femboy2112/SmartChem/releases/download/v1.6.0/smartchem-1.6.0-py3-none-any.whl
 ```
+
+To check the artifact first, download it next to the release's `SHA256SUMS` and verify
+(`sha256sum --check --ignore-missing SHA256SUMS`); `release_manifest.json` lists the source
+commit and the per-file hashes of both artifacts, and `scripts/build_release.py --ref v1.6.0`
+rebuilds them from that commit.
 
 Or from a clone (editable, with the dev extras):
 
@@ -107,7 +118,7 @@ The core needs only `numpy` and `scipy`. The PySCF quantum-chemistry backend is 
 ## Quickstart
 
 ```bash
-smartchem --version                       # smartchem 1.1.0
+smartchem --version                       # smartchem 1.6.0
 
 # Resolve an identity and plan from a name / formula / SMILES:
 python -m smartchem plan 'smiles:CO'
@@ -222,6 +233,8 @@ treating each newly discovered frontier as the next release boundary:
 0.9.5 coverage/adversarial RC    merged
 1.0.0 stable semantics           stable release
 1.1.0 chemical-graph + 20 classes stable release
+1.5.0 24 reaction classes         stable release
+1.6.0 25 reaction classes         stable release
 ```
 
 The **stopping rule is explicit**: the 1.0 line freezes the public machine semantics —
@@ -238,15 +251,17 @@ the ranked next-steps, deliberate non-goals, and tracked debt live in
 
 ## Status & verification
 
-SmartChem 1.1.0 widens the reaction-type oracle to **20 recognized classes** (17 at 1.0.0:
-#110 activated acyl transfer, #111 sulfonate-ester transfer, #115 Claisen condensation) and
-adds the chemical-graph / synthesis workbench and the `smartchem graph` verb, with **no change
-to the stable 1.x machine semantics** — the wire schema ids, `semantic_digest`, verdict
+SmartChem 1.6.0 recognizes **25 reaction classes** (17 at 1.0.0, 20 at 1.1.0, 24 at 1.5.0; the
+25th is intramolecular lactonization, with a carbinol guard that refuses masked-carbonyl
+"alcohols" and an independent structural witness that cross-checks it). Every coverage step since
+1.0 kept the **stable 1.x machine semantics** — wire schema ids, `semantic_digest`, verdict
 vocabulary and route digests are byte-invariant; only the version-bound `result_digest` /
-`tool_version` / implementation digest move (proved field-by-field in the two
-`V1_1_COVERAGE_EXPANSION_*` records under `docs/research/`). The exact release gate —
-merged-`main` SHA, hosted CI run, full-suite counts and artifact SHA-256 — is recorded in
-[`V1_1_RELEASE_GATE.md`](docs/research/V1_1_RELEASE_GATE.md); the hosted CI runs seven jobs:
+`tool_version` / implementation digest move. The exact release gate — merged-`main` SHA, hosted CI
+run, full-suite counts and artifact SHA-256 — is recorded in
+[`V1_6_RELEASE_GATE.md`](docs/research/V1_6_RELEASE_GATE.md) (earlier releases:
+[`V1_1_RELEASE_GATE.md`](docs/research/V1_1_RELEASE_GATE.md),
+[`V1_5_RELEASE_PROGRAM.md`](docs/research/V1_5_RELEASE_PROGRAM.md)); the hosted CI runs seven
+required jobs:
 
 - `test (3.10)` and `test (3.12)` run the OOM-safe suite via `scripts/run_suite.sh` with the
   optional RDKit and PySCF backends **absent**;
@@ -255,7 +270,7 @@ merged-`main` SHA, hosted CI run, full-suite counts and artifact SHA-256 — is 
 - a PySCF smoke job runs with PySCF 2.14.0 **present**.
 
 The full-suite and PySCF-smoke counts for this release are recorded in
-[`V1_1_RELEASE_GATE.md`](docs/research/V1_1_RELEASE_GATE.md).
+[`V1_6_RELEASE_GATE.md`](docs/research/V1_6_RELEASE_GATE.md).
 
 There are **no xfails** — the last strict xfail (parallel interchange) was discharged by
 PR #79. Skips are environment-honest and never reported as passed: RDKit-gated CIP checks
@@ -263,7 +278,7 @@ run only when the RDKit identity oracle is present, and the PySCF integration te
 when that stack is present. On a memory-constrained box the monolithic `pytest` run is
 OOM-killed, so `scripts/run_suite.sh` (short-lived batched processes) is the maintained
 full-suite runner. The official artifacts rebuild exactly via
-`scripts/build_release.py --ref v1.1.0`.
+`scripts/build_release.py --ref v1.6.0`.
 
 Reproduce locally:
 

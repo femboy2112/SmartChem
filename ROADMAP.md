@@ -1,8 +1,115 @@
 # SmartChem roadmap
 
-> ## ▶ PRESENT STATE (2026-11-04) — OPERATION XXI
-> The authoritative current picture (supersedes the 2026-11-02 OPERATION XIX block below, which is kept intact for its
-> reasoning). Reflects MERGED code and current scientific evidence, not PR descriptions.
+> ## ▶ PRESENT STATE (2026-11-06, later) — OPERATION XXIII: release the compiler
+> The authoritative current picture. It supersedes the OPERATION XXII block below, which is kept intact for its
+> reasoning (its "1.6.0 NOT tagged" line was true when written and is now overtaken by this block). Reflects MERGED
+> code and current evidence, not PR descriptions.
+>
+> **Production releases** (GitHub Releases with wheel + sdist + `SHA256SUMS` + `release_manifest.json`; **never PyPI**)
+>
+> | version | status | tag → commit | oracle classes |
+> |---|---|---|---|
+> | 1.0.0 | RELEASED 2026-10-03 | `v1.0.0` → `8345bbb` | 17 |
+> | 1.1.0 | RELEASED 2026-10-24 | `v1.1.0` → `9e8fa5f` | 20 |
+> | 1.5.0 | RELEASED 2026-11-02 (the GitHub Release shipped **without** binary assets — see the 1.6 release-gate record) | `v1.5.0` → `c3d0d01` | 24 |
+> | **1.6.0** | **PRODUCTION MERGED, PENDING RELEASE** until the tag + GitHub Release exist; production source merged to `main` by PR #157 (`6a2686e`); this release-hygiene change is the last pre-tag commit | `v1.6.0` → *the verified merged-`main` SHA, set at tag time* | **25** |
+>
+> **2.0 research — integrated into `main` as EXCLUDED experimental source, NOT a stable supported API.** The physical
+> simulator (general kinetic/equilibrium/transport kernel, unified solid–liquid–gas world, conservation and execution
+> certificates, PHREEQC/NIST comparisons) lives under `experiments/sandbox_foundation/`, which `pyproject.toml`
+> (`packages.find include = ["smartchem*"]`) and `MANIFEST.in` (`prune experiments`) keep out of the wheel and sdist.
+> No `smartchem.*` import path exposes it, and nothing in it is covered by `COMPATIBILITY.md`. Its claims carry their
+> own tiers (ASSUMED / SOURCED / MEASURED / REFUTED) in the research dossiers.
+>
+> **3.0 — interactive physical laboratory: a FUTURE milestone.** Nothing ships yet.
+>
+> ### Milestone board — each gate is an executable check, not a vibe
+>
+> - **1.6.0 — production release.** Gate: (a) `scripts/run_suite.sh` green on the release commit; (b) the 7 required
+>   hosted CI contexts (`test (3.10)`, `test (3.12)`, `Wheel install matrix (3.10…3.13)`, `Optional PySCF backend
+>   (smoke)`) job-level `success` on the exact tagged SHA; (c) exactly 25 recognizers
+>   (`len(reaction_type_oracle._RECOGNIZERS) == 25`); (d) the version-independent payload golden and
+>   `semantic_digest` unmoved from 1.5.0, and the legacy v0.8 read-only leg still loading; (e) `scripts/build_release.py`
+>   artifacts rebuilt twice byte-identically from `git archive` of the tag, installed fresh on Python 3.10–3.13,
+>   `smartchem --version` = `smartchem 1.6.0`, and no `experiments/` path in either artifact; (f) annotated tag
+>   `v1.6.0` + GitHub Release carrying the four files. *Status: in progress (this change).*
+> - **2.0-alpha — research-only versioned physical API.** Gate: a versioned API object (inputs, inventories, phase
+>   state, boundary schedules, solver options, provenance, receipts, sampled frames) whose every claim carries a tier;
+>   exact structural conservation at construction; error-bounded numerical conservation with a typed per-component
+>   verdict; rate-law execution identity certified only relative to a closed audited authority (an extension can be
+>   attested, never silently promoted); at least one bounded physical domain validated against an independent
+>   measured holdout; fail-closed outside the declared domain. Ships as experimental source only — never `smartchem/`.
+> - **2.0 stable.** Gate: independent measurement validation (not model-vs-model), a written compatibility contract for
+>   the simulation API, a full acceptance matrix, and a hostile review that finds no false certification. Not before.
+> - **3.0 — interactive spatial chemistry world.** Gate: cells, walls, valves, thermal boundaries, species transport and
+>   reactions composed from the 2.0 kernel, with visual output that is a *projection of a verified computation* —
+>   no animated phenomenon certifies itself; anything without a calibrated mechanism is labeled MODELED, ILLUSTRATIVE
+>   or UNKNOWN.
+>
+> ---
+>
+> ## ▶ SUPERSEDED (2026-11-06) — OPERATION XXII
+> Kept intact for its reasoning; the authoritative picture is the OPERATION XXIII block above.
+> The authoritative current picture (supersedes the 2026-11-04 OPERATION XXI block below, kept for its reasoning).
+> Reflects MERGED code and current scientific evidence, not PR descriptions. Live `main` = `6a2686e` (`__version__` **1.6.0**).
+>
+> **RELEASED** (production compiler; tags are GitHub Releases, no PyPI)
+> - **1.0.0** `v1.0.0`; **1.1.0** `v1.1.0` (20-class oracle); **1.5.0** `v1.5.0` = `c3d0d01` (24-class oracle).
+> - **1.6.0** — MERGED to `main` (`6a2686e`, PR #157, 2026-11-06) with the production version bump 1.5.0 → 1.6.0 (25-class
+>   oracle). **NOT tagged / NO GitHub Release / NO PyPI** — the version bump is on `main`, but publishing a 1.6.0 release
+>   requires separate authorization and was NOT taken. This is the production package version that `main` now installs.
+>
+> **MERGED RESEARCH** (on `main`, research-only, `smartchem/` byte-identical to v1.5.0 — the installable package is
+> unchanged; the simulator lives under `experiments/`, outside the build)
+> - The **2.0 physicalization foundation + unified solid–liquid–gas simulator** was MERGED into protected `main` on
+>   2026-11-06 under OPERATION XXII's conditional authority: PR #156 → `main` merge `9d04894` (parents v1.5.0 `c3d0d01`
+>   + alpha `d63d94c`), post-merge hosted CI **9/9 job-level green**, `__version__` held at **1.5.0**, NO tag. This is
+>   the first time the 2.0 stack is on `main` (previously only on `integration/2.0-alpha`).
+> - Includes the XXII-A **P0 soundness gates** now proven in-tree: (§1) `ElectroneutralBulkExchange` completeness —
+>   a bulk parcel must carry the COMPLETE aqueous roster of both cells (a partial/charged subset is refused, so it
+>   can no longer forge local electroneutrality); (§2) an **audited rate-law registry** — only registered, audited
+>   implementations earn a CERTIFIABLE execution identity, so a lying `descriptor()` cannot forge certification; (§3)
+>   a typed **`NUMERICALLY_UNRESOLVED_AT_REQUESTED_SCALE`** verdict — conservation fails closed below the atol floor
+>   instead of stamping an unresolvable trace "conserved".
+>
+> **MERGED PRODUCTION** (on `main`, the installable package moved)
+> - **1.6.0 (25th class)** — `feat/1.6-candidate-xxii` → **PR #157 MERGED** to `main` (`6a2686e`, provenance-preserving
+>   merge; parents v1.5.0+research `9d04894` + candidate `13c8bab`) on 2026-11-06. The 25th class (lactonization) +
+>   carbinol guard + the independent witness; `__version__` 1.5.0 → 1.6.0 (MINOR; registry 24→25; `semantic_digest`
+>   UNMOVED — the 5 CLI golden updates were purely version-bound, integrity-guarded). The witness/recognizer dispute is
+>   RESOLVED in favour of the guard (hemiacetal target IS a lactone, but the transformation is a lactol formation the
+>   fail-closed oracle rightly refuses — NOT resolved by forcing agreement). All §8 gates satisfied before the merge:
+>   dispute dossier, version-transition correctness, full local suite 8250 pass/50 skip, and hosted CI 7/7 required
+>   contexts job-level green on the exact head `13c8bab` (verified two ways). NO tag / NO release / NO PyPI.
+>
+> **BRANCH-COMPLETE** (finished + independently tested, awaiting integration/merge)
+> - **Configurable reactor (§5)** — `research/operation-xxii-reactor`: one vinegar/bicarbonate flagship, three
+>   interchangeable transport laws (closed / selective membrane / electroneutral bulk), physically distinct by
+>   mechanism, all charge-neutral + conserving.
+> - **Na-pairing 2³ factorial (§6)** — `research/operation-xxii-s6`: the two Na-carbonate pairs act in OPPOSITE
+>   directions on the NIST pH (XXI's single "pairs" factor masked a cancellation); the pairings superpose (no
+>   material interaction).
+> - **Categorical layer separation (§7)** — the bridge is a faithful STRUCTURAL functor within its tested domain, NOT
+>   a universal dynamics functor; structural/physical/numerical layers tested separately.
+>
+> **PARTIAL** (implemented, not yet trustworthy as a predictor; limitations preserved)
+> - Source-backed high-ionic-strength chemistry: the molar-vs-molal K-scale (XXI-4) is unresolved; the NIST
+>   corroboration is NOT robust (Table-1-thin, refuted at Table A1 and under scale transport). The §6 factorial
+>   re-attributes the model gap (to the NaCO₃⁻ term) but cannot fix the measurement-level basis.
+> - Calibrated gas/solid kinetics (k_diss, kLa, k_export are ASSUMED/synthetic — a simulation, not a fizzing-rate
+>   predictor); thermodynamic standard-state reconciliation; a public 2.0 API (gate documented, §9).
+>
+> **BLOCKED** — none hard-blocked; the molar/molal standard-state law is the gating scientific unknown for any
+> measurement-level NIST/PHREEQC claim, and a second independently-sourced measured dataset is the needed probe.
+>
+> **FUTURE** — general precipitation; non-isothermal energy balance; redox / electrochemistry; spatial reactive
+> transport; 3.0 falling-sand chemistry + LibGibson visualization.
+>
+> ---
+>
+> ## ▶ SUPERSEDED (2026-11-04) — OPERATION XXI
+> Kept intact for its reasoning; the authoritative picture is the OPERATION XXII block above.
+> Reflects MERGED code and current scientific evidence, not PR descriptions.
 >
 > **RELEASED** (production compiler; `smartchem/` byte-identical across the 2.0 research stack — `git diff v1.5.0 -- smartchem/` is EMPTY)
 > - **1.0.0** — tag `v1.0.0` = `8345bbb`. Stable chemical compiler.

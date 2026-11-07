@@ -42,3 +42,8 @@ flux (B→gas) until it reaches equilibrium (about 2e-10 mol/s at the end). More
 pH ends about 0.022 lower; the acetate buffer near its pKa keeps the pH shift small. The sealed headspace reaching
 about 2.7 atm of CO2 is a computed number from ASSUMED kinetics. It is **computational only — not a laboratory safety
 certification**.
+
+> **Physical warning (not a model output).** Do not reproduce the sealed scenario with real materials. Vinegar and
+> baking soda in a sealed container generate CO2 pressure that can burst bottles, jars and lids and throw fragments.
+> The model's ~2.7 atm is a computed projection under assumed kinetics. It is neither an upper bound nor a safe
+> design value, and nothing in this repository certifies any vessel, quantity or procedure as safe.

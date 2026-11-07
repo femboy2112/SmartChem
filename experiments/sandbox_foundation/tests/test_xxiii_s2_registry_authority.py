@@ -182,6 +182,7 @@ def test_an_audited_name_cannot_be_downgraded_or_spoofed_by_attestation():
 # ======================================================================= the closed audited table
 def test_every_pinned_builtin_is_sealed_and_strict_certifies():
     from experiments.sandbox_foundation import unified_chemical_world  # noqa: F401  (seals BicarbonateDissolutionRate)
+    from experiments.sandbox_foundation import solid_equilibrium  # noqa: F401  (XXIII-S4: seals the two activity laws)
     assert set(audit_status().values()) == {"SEALED"}, audit_status()
     world, init = build_reaction_diffusion_world()
     tr = world.integrate(init, duration=1.0, n_steps=50, require_certified_execution=True)
@@ -197,6 +198,10 @@ def test_audit_pins_are_a_regression_anchor():
                ("experiments.sandbox_foundation.general_kernel", "MassActionReversible"): gk.MassActionReversible,
                ("experiments.sandbox_foundation.unified_chemical_world", "BicarbonateDissolutionRate"):
                    ucw.BicarbonateDissolutionRate}
+    # XXIII-S4 audit event: the two activity-based solid/speciation laws joined the closed table.
+    from experiments.sandbox_foundation import solid_equilibrium as se
+    classes[("experiments.sandbox_foundation.solid_equilibrium", "ActivitySolubilityRate")] = se.ActivitySolubilityRate
+    classes[("experiments.sandbox_foundation.solid_equilibrium", "ActivityReversibleRate")] = se.ActivityReversibleRate
     assert set(classes) == set(gk._AUDITED_BUILTIN_PINS)
     for key, cls in classes.items():
         digest = hashlib.sha256(gk._class_source(cls)[0].encode("utf-8")).hexdigest()

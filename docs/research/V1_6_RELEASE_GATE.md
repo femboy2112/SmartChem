@@ -2,7 +2,8 @@
 
 *The exact-SHA gate for the 1.6.0 production release (OPERATION XXIII Phase I). Every claim is verified on the
 filesystem or through `gh`. Fields that only exist after a later step are marked `⟨PENDING …⟩`; the post-release
-record fills them. This document authorises nothing by itself. The maintainer's conditional authorisation
+record fills them. **This revision is that post-release record (filled 2026-11-06 after publication). The copy frozen
+in the `v1.6.0` tag still shows the PENDING markers.** This document authorises nothing by itself. The maintainer's conditional authorisation
 (OPERATION XXIII) is to merge, tag and publish 1.6.0 only when every gate below passes. No PyPI publication.*
 
 ## 0. Coordinates
@@ -13,8 +14,10 @@ record fills them. This document authorises nothing by itself. The maintainer's 
 | previous release | `v1.5.0` → `c3d0d01920175ba9024a594e248ce6dd3412c3df` (annotated tag, unchanged) | `git tag` |
 | version this release | `1.6.0` (`smartchem/__init__.py`) | `smartchem.__version__` |
 | release-hygiene branch | `release/1.6.0-hygiene` (docs only: README, ROADMAP, CITATION, this file, two cherry-picked XXII roadmap/docs commits) | `git diff --stat main` |
-| merged-`main` SHA (the tag target) | `⟨PENDING — set at merge⟩` | — |
-| merged-`main` CI run | `⟨PENDING — set after the push:main event⟩` | — |
+| merged-`main` SHA (the tag target) | PR #158 → `main` `ac8bdde03893da8522efba04929da3fe29aa62a1` | `git ls-remote origin refs/heads/main` |
+| merged-`main` CI run | [`42327003031`](https://github.com/femboy2112/SmartChem/actions/runs/42327003031) (push to `main`), completed/success, 9/9 jobs | `gh run view` + check-runs API (section 2) |
+| release tag | `v1.6.0`, annotated tag object `92c1d220f1534d3ff6d601c31bd489e21af27db1` → commit `ac8bdde…`, tagger `femboy2112` (noreply) | `git ls-remote --tags origin`, `gh api …/git/tags/92c1d22…` |
+| GitHub Release | [SmartChem 1.6.0 — 25-Class Reaction Coverage](https://github.com/femboy2112/SmartChem/releases/tag/v1.6.0), published 2026-11-07T03:06:27Z (UTC; 2026-11-06 local), `Latest`, not draft, not prerelease, 4 assets | `gh release view v1.6.0`, `…/releases/latest` |
 
 ## 1. Scope — what ships in the wheel and sdist
 
@@ -38,7 +41,7 @@ record fills them. This document authorises nothing by itself. The maintainer's 
 
 | gate | evidence | result |
 |---|---|---|
-| complete OOM-safe production suite | `scripts/run_suite.sh` (fresh process per batch, junit tally) on a detached worktree of `6a2686e`; Python 3.12.3, numpy 2.5.1, scipy 1.18.0, PySCF 2.14.0 present, RDKit absent | `⟨PENDING — tally⟩` |
+| complete OOM-safe production suite | `scripts/run_suite.sh` (fresh process per batch, junit tally) on a detached worktree of `6a2686e`; Python 3.12.3, numpy 2.5.1, scipy 1.18.0, PySCF 2.14.0 present, RDKit absent. Also hosted: the `test (3.10)` and `test (3.12)` jobs of run `42327003031` run the same batched suite on `ac8bdde` | local (`6a2686e`, code- and test-tree-identical to `ac8bdde`): **8250 collected / 8200 passed / 0 failed / 50 skipped**. Hosted (`ac8bdde`, each of 3.10 and 3.12): **8246 collected / 8158 passed / 0 failed / 0 errors / 88 skipped**, `SUITE GREEN`, 40/40 batches `ok`. The skip counts differ because the environments have different optional backends. |
 | compatibility / version-transition | `tests/test_v1_0_compatibility.py`, `test_v1_0_version_transition.py`, `test_v0_9_5_release_invariants.py`, `test_v1_0_public_contract.py` | in the suite tally |
 | frozen version-independent JSON / `semantic_digest` | the version-independent payload golden in `test_v1_0_version_transition.py` + `test_v1_0_public_contract.py`; the PR #157 golden regeneration moved only `tool_version` + `result_digest` (integrity-guarded) | in the suite tally |
 | lactonization positive + adversarial corpora | `test_lactonization_recognizer_xiv.py`, `test_lactonization_masked_carbonyl_xv.py` | in the suite tally |
@@ -46,8 +49,9 @@ record fills them. This document authorises nothing by itself. The maintainer's 
 | typed-event search termination + completeness | `test_event_search_123.py`, `test_event_search_probe.py` | in the suite tally |
 | truncation / exhaustion receipt mutation | `test_v0_9_5_loader_hardening.py`, `test_event_search_123.py`, `test_intramolecular_condensation_p2.py` | in the suite tally |
 | legacy v0.8 read-only transport | `test_v0_9_round_v_schema_migration.py`, `test_v0_8_readiness_transport.py`, `test_v0_8_procedure_migration.py` | in the suite tally |
-| installed wheel / console entry points | the CI wheel-install matrix (3.10–3.13) runs `experiments/v0_9_5_install_matrix.py` against the built artifacts. A local fresh-venv matrix on 3.10/3.11/3.12/3.13 runs `smartchem --version` and `smartchem-verify-probes --help` | `⟨PENDING — final artifacts⟩` |
-| hosted CI on the final candidate | 7 required contexts, job-level, on the exact merged SHA | `⟨PENDING⟩` |
+| installed wheel / console entry points | the CI wheel-install matrix (3.10–3.13) runs `experiments/v0_9_5_install_matrix.py` against the built artifacts. A local fresh-venv matrix on 3.10/3.11/3.12/3.13 runs `smartchem --version` and `smartchem-verify-probes --help` | local matrix on the final artifacts against the `ac8bdde` source tree: **ALL ENVIRONMENTS AGREE** (wheel + sdist × 3.10/3.11/3.12/3.13), `smartchem 1.6.0` everywhere, implementation digest `08fd2d5f79000bc8107f6f88d97e79965bcf86bc7b71b70068199511bb47dbee`. The 4 hosted wheel-matrix jobs report the same verdict and digest. A post-publication install from the README URL into a fresh 3.12 venv gives `smartchem 1.6.0` and 25 recognizers, and `experiments` is not importable. |
+| hosted CI on the final candidate | 7 required contexts, job-level, on the exact merged SHA | run `42327003031` on `ac8bdde`: `test (3.10)`, `test (3.12)`, `Wheel install matrix (3.10/3.11/3.12/3.13)`, `Optional PySCF backend (smoke)` all completed/success, plus both sandbox jobs. Verified two ways (`gh run view` and `commits/ac8bdde…/check-runs`, `head_sha` = `ac8bdde` on all 9). Branch protection: strict, the same 7 contexts. |
+| no unresolved production P0 / demonstrated false-VOUCH | open-issue sweep at release time. The one P0-labelled hit was **#125** `[architecture/P0]` (the CappedScission arity wall), filed 2026-10-13 and open through 1.1.0 and 1.5.0 | #125 is a **completeness/representability** record, not a soundness defect: the gap is coverage loss, the fail-closed direction. Its acceptance clauses are addressed in-tree by the opt-in typed-event search (`smartchem/experiment/event_search.py`; clauses 1/3/4 pinned in `tests/test_event_search_123.py`), and 1.6.0's `INTRAMOLECULAR_COPRODUCT` producer narrows it further. It does not block. No false-VOUCH is open. |
 
 **Independent-witness boundary (honest).** The witness `smartchem/lactonization_witness.py` imports only `Molecule`.
 An AST audit shows it references no production recognizer symbol. It decides through Tarjan bridges, its own
@@ -83,8 +87,10 @@ resolved `setuptools (84.2.1)` under `uv 0.11.8`.
 
 | artifact | sha256 | size |
 |---|---|---|
-| `smartchem-1.6.0-py3-none-any.whl` | `⟨PENDING⟩` | — |
-| `smartchem-1.6.0.tar.gz` | `⟨PENDING⟩` | — |
+| `smartchem-1.6.0-py3-none-any.whl` | `273623a9ae92c033781715002921672d4aa50741a56473d4c5983f9958d2e62c` | 1666485 B, 203 files |
+| `smartchem-1.6.0.tar.gz` | `e90603ccceebd6f46f15cd8e2b76dd22d6e6c2fef285c80aef7ed9cb6d2537e4` | 1533805 B, 210 files |
+
+Builder: `setuptools (84.2.1)`, `SOURCE_DATE_EPOCH=1794016825`, manifest `commit` = `ac8bdde03893da8522efba04929da3fe29aa62a1`.
 
 Acceptance:
 * two independent rebuilds are byte-identical;
@@ -94,13 +100,23 @@ Acceptance:
 * `smartchem/evidence/manifest.schema.json` and `smartchem/evidence/README.md` (package data) are present;
 * no `experiments/` path appears in either artifact.
 
+**Results (all PASS).**
+* Seven builds give one hash pair: two local rebuilds from `ac8bdde`, one local rebuild from `--ref v1.6.0` (manifest byte-identical too), and one in each of the four hosted `Wheel install matrix` jobs (3.10–3.13) of run `42327003031`.
+* The manifest `commit` equals the tag target.
+* Package data `smartchem/evidence/manifest.schema.json` and `smartchem/evidence/README.md` are present in both artifacts.
+* Zero paths match `experiments|sandbox|tests/|general_kernel|unified_chemical|libgibson`.
+* The sdist top level is `COMPATIBILITY.md LICENSE MANIFEST.in PKG-INFO README.md pyproject.toml setup.cfg smartchem/ smartchem.egg-info/`.
+* After publication, all four assets were downloaded back through the public `releases/download/v1.6.0/` URLs, `sha256sum --check SHA256SUMS` passes, and the downloaded manifest is byte-identical to the local build's.
+
 ## 5. v1.5.0 — why the GitHub Release has no assets, and the backfill decision
 
 **Cause (OBSERVED).** The 1.5.0 GitHub Release (published 2026-11-02) carries no assets. Its body has no install/hash
 section, unlike 1.1.0's (which lists the wheel URL and both SHA-256s), and no `V1_5_RELEASE_GATE.md` exists. The 1.5
 release procedure omitted the build-and-upload step. No failed upload is recorded anywhere.
 
-**Binding evidence (VERIFIED, three independent routes).**
+**Binding evidence (VERIFIED, three routes, one of them independent).** Routes 1 and 2 share one local toolchain and
+are common-mode with each other. Route 3 used a different machine at a different time, with the same in-tree build
+script, and it is the independent bearing.
 1. `scripts/build_release.py --ref v1.5.0` exports the immutable annotated tag's commit `c3d0d01` (manifest
    `commit` = `c3d0d01920175ba9024a594e248ce6dd3412c3df`).
 2. Two local rebuilds are byte-identical: wheel `8fd1e138c944d5eaf0384700b932488972c555e736de9a880af80b784e0a432a`,
@@ -109,6 +125,9 @@ release procedure omitted the build-and-upload step. No failed upload is recorde
    jobs `125131028211`, `125131028422`, `125131028326`, `125131028241`) printed **the same two hashes** in their
    build step.
 
-**Decision.** The backfill is bound rigorously enough. The four files are uploaded to the existing v1.5.0 release, and
-its notes gain a dated disclosure that they were attached after the initial publication, together with the three
-binding routes above. The tag is not touched.
+**Decision (EXECUTED 2026-11-06 local / 2026-11-07 UTC).** The backfill is bound rigorously enough. The four files from
+the local rebuild were uploaded to the existing v1.5.0 release. Its notes kept the original text byte-for-byte as a
+prefix and gained a dated disclosure ("uploaded on 2026-11-07, after the initial publication") with the three routes
+above. The edit pinned `make_latest=false`, so `releases/latest` still resolves to `v1.6.0`. The published date (2026-11-02)
+is unchanged. The tag is untouched: annotated object `68f9a1984e41ae03e2dbfb5f5e572e441bfcf68a` → `c3d0d01…`. A
+public re-download passes `sha256sum --check SHA256SUMS`, and its manifest is byte-identical to the rebuild.

@@ -11,8 +11,8 @@
 > |---|---|---|---|
 > | 1.0.0 | RELEASED 2026-10-03 | `v1.0.0` → `8345bbb` | 17 |
 > | 1.1.0 | RELEASED 2026-10-24 | `v1.1.0` → `9e8fa5f` | 20 |
-> | 1.5.0 | RELEASED 2026-11-02 (the GitHub Release shipped **without** binary assets — see the 1.6 release-gate record) | `v1.5.0` → `c3d0d01` | 24 |
-> | **1.6.0** | **PRODUCTION MERGED, PENDING RELEASE** until the tag + GitHub Release exist; production source merged to `main` by PR #157 (`6a2686e`); this release-hygiene change is the last pre-tag commit | `v1.6.0` → *the verified merged-`main` SHA, set at tag time* | **25** |
+> | 1.5.0 | RELEASED 2026-11-02. The GitHub Release shipped **without** binary assets. They were **backfilled 2026-11-07** with a dated disclosure and three binding routes (one of them independent: the hosted CI hashes from release day); see §5 of the 1.6 release-gate record. The tag is untouched | `v1.5.0` → `c3d0d01` | 24 |
+> | **1.6.0** | **RELEASED 2026-11-06** ([GitHub Release](https://github.com/femboy2112/SmartChem/releases/tag/v1.6.0), `Latest`). Production source came in with PR #157 (`6a2686e`), and the release-hygiene PR #158 merged as the tag target. Main CI run `42327003031` passed 9/9. The four assets are wheel `273623a9…`, sdist `e90603cc…`, `SHA256SUMS` and `release_manifest.json` | `v1.6.0` → `ac8bdde` | **25** |
 >
 > **2.0 research — integrated into `main` as EXCLUDED experimental source, NOT a stable supported API.** The physical
 > simulator (general kinetic/equilibrium/transport kernel, unified solid–liquid–gas world, conservation and execution
@@ -32,7 +32,9 @@
 >   `semantic_digest` unmoved from 1.5.0, and the legacy v0.8 read-only leg still loading; (e) `scripts/build_release.py`
 >   artifacts rebuilt twice byte-identically from `git archive` of the tag, installed fresh on Python 3.10–3.13,
 >   `smartchem --version` = `smartchem 1.6.0`, and no `experiments/` path in either artifact; (f) annotated tag
->   `v1.6.0` + GitHub Release carrying the four files. *Status: in progress (this change).*
+>   `v1.6.0` + GitHub Release carrying the four files. *Status: **DONE 2026-11-06**, (a)–(f) each measured. Note on (a): the
+>   batched suite is green hosted on the exact tagged SHA, and green locally on `6a2686e`, whose code and test trees are
+>   identical to it. The per-gate evidence is in `docs/research/V1_6_RELEASE_GATE.md`.*
 > - **2.0-alpha — research-only versioned physical API.** Gate: a versioned API object (inputs, inventories, phase
 >   state, boundary schedules, solver options, provenance, receipts, sampled frames) whose every claim carries a tier;
 >   exact structural conservation at construction; error-bounded numerical conservation with a typed per-component

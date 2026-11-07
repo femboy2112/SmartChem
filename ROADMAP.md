@@ -1,6 +1,91 @@
 # SmartChem roadmap
 
-> ## ▶ PRESENT STATE (2026-11-06) — OPERATION XXII
+> ## ▶ PRESENT STATE (2026-11-06, later) — OPERATION XXIII: release the compiler
+> The authoritative current picture. It supersedes the OPERATION XXII block below, which is kept intact for its
+> reasoning (its "1.6.0 NOT tagged" line was true when written and is now overtaken by this block). Reflects MERGED
+> code and current evidence, not PR descriptions.
+>
+> **Production releases** (GitHub Releases with wheel + sdist + `SHA256SUMS` + `release_manifest.json`; **never PyPI**)
+>
+> | version | status | tag → commit | oracle classes |
+> |---|---|---|---|
+> | 1.0.0 | RELEASED 2026-10-03 | `v1.0.0` → `8345bbb` | 17 |
+> | 1.1.0 | RELEASED 2026-10-24 | `v1.1.0` → `9e8fa5f` | 20 |
+> | 1.5.0 | RELEASED 2026-11-02. The GitHub Release shipped **without** binary assets. They were **backfilled 2026-11-07** with a dated disclosure and three binding routes (one of them independent: the hosted CI hashes from release day); see §5 of the 1.6 release-gate record. The tag is untouched | `v1.5.0` → `c3d0d01` | 24 |
+> | **1.6.0** | **RELEASED 2026-11-06** ([GitHub Release](https://github.com/femboy2112/SmartChem/releases/tag/v1.6.0), `Latest`). Production source came in with PR #157 (`6a2686e`), and the release-hygiene PR #158 merged as the tag target. Main CI run `42327003031` passed 9/9. The four assets are wheel `273623a9…`, sdist `e90603cc…`, `SHA256SUMS` and `release_manifest.json` | `v1.6.0` → `ac8bdde` | **25** |
+>
+> **2.0 research — integrated into `main` as EXCLUDED experimental source, NOT a stable supported API.** The physical
+> simulator (general kinetic/equilibrium/transport kernel, unified solid–liquid–gas world, conservation and execution
+> certificates, PHREEQC/NIST comparisons) lives under `experiments/sandbox_foundation/`, which `pyproject.toml`
+> (`packages.find include = ["smartchem*"]`) and `MANIFEST.in` (`prune experiments`) keep out of the wheel and sdist.
+> No `smartchem.*` import path exposes it, and nothing in it is covered by `COMPATIBILITY.md`. Its claims carry their
+> own tiers (ASSUMED / SOURCED / MEASURED / REFUTED) in the research dossiers.
+>
+> **OPERATION XXIII research — merged as EXCLUDED experimental source** (`research/operation-xxiii` → `main`; nothing
+> under `smartchem/` or `tests/` moves; every claim below carries its own tier, and none of it is a supported API):
+> - **Trust boundary (Phase II).** The predeclared registry-authority probe
+>   (`experiments/sandbox_foundation/xxiii_registry_authority_probe.py`) read **FAIL** on the unfixed kernel
+>   (`6a2686e`): self-registering a class whose `descriptor()` lies certified its trajectory, and the tier ROSE from
+>   ASSUMED_PARAMETER to STRUCTURALLY_CONSERVING. The same harness reads **PASS** after `3ead466`: a closed, in-tree,
+>   source-pinned `_AUDITED_BUILTIN_PINS` table is the only route to `AUDITED_BUILTIN`; caller-attested extensions
+>   are bound but never certified, and strict mode refuses them. An in-process trusted-code authority — **not**
+>   cryptographic, **not** independent validation. Five red-team findings (F1 reaction rebind, F2 unbound operator
+>   parameters, F3 local charge separation, F4 post-projection baseline, F5 roundoff refusal) each have RED→GREEN
+>   receipts (`4f2ec70`). **Open:** F2-gap (a user equilibrium operator's self-defined `descriptor()` is trusted), p6b
+>   (positivity floor scales with the caller's atol), and no local-charge check on the single-system kernel path.
+>   Dossier: `docs/research/OPERATION_XXIII_TRUST_BOUNDARY.md`.
+> - **Carbonate convention barrier (Phase III).** K1/K2 are molal, I = 0 constants. Molar vs molal (|Δ| ≤ 0.0018 pH)
+>   is **REFUTED** as the cause of the 191d miss; XXI-4's reading of Table A1 as a measurement-only comparator is
+>   **REFUTED** (category error — A1 values are identical to Table 1). On the convention-free comparator
+>   p(a_Hγ_Cl)°, Davies + repo constants are still **REFUTED** (carbonate −0.0113 vs U_R 0.0030). The chemically
+>   distinct holdout (NIST 186g phosphate) misses with the opposite sign (+0.0106 / +0.0028); the two phosphate
+>   formulations differ by 0.0078 (~2.9× U_R), which no single pK shift can fix — the preregistered rule reads
+>   **MIXED/UNRESOLVED**. Specific-ion interactions are CONJECTURED; the pitzer.dat −0.074 carbonate anomaly is DARK.
+>   Both holdouts share the Harned + Bates–Guggenheim metrology lineage: distinct chemistry, not independent
+>   metrology. Ledger: `experiments/sandbox_foundation/benchmarks/measured_buffers_xxiii/CONVENTION_BRIDGE_VERDICT.md`.
+> - **One bounded physical capability (Phase IV).** Activity-based solid dissolution (`solid_equilibrium.py`,
+>   audited builtins, Davies, fail-closed at I > 0.1). Calcite in a closed system matches PHREEQC's dissolved Ca
+>   within 0.30% — **model-vs-model only** (shared constants, I ≈ 4e-4). The hostile holdout nahcolite NaHCO3(s)
+>   **fails closed** (`OutOfDomainError` at I = 0.1026); forcing the domain open would land 1.69× off the sourced
+>   solubility. Research API candidate `smartchem-sim-2.0a0-research` (`sim_api_v2alpha.py`).
+> - **Vinegar world (Phase V).** Vented vs sealed headspace differ by the boundary alone (sealed p_CO2 ≈ 2.7 atm at
+>   300 s, computed under ASSUMED kinetics). Computational only — **not a laboratory safety certification**.
+>   `experiments/sandbox_foundation/benchmarks/vinegar_world_xxiii/`.
+> - **2.0-alpha gate status: NOT MET.** Met: a versioned research API object, a closed audited authority, typed
+>   per-component conservation verdicts, fail-closed domains. Unmet: a bounded physical domain validated against an
+>   **independent measured** holdout (calcite is model-vs-model; NaHCO3 fails closed; the buffer holdouts refute).
+>
+> **3.0 — interactive physical laboratory: a FUTURE milestone.** Nothing ships yet.
+>
+> ### Milestone board — each gate is an executable check, not a vibe
+>
+> - **1.6.0 — production release.** Gate: (a) `scripts/run_suite.sh` green on the release commit; (b) the 7 required
+>   hosted CI contexts (`test (3.10)`, `test (3.12)`, `Wheel install matrix (3.10…3.13)`, `Optional PySCF backend
+>   (smoke)`) job-level `success` on the exact tagged SHA; (c) exactly 25 recognizers
+>   (`len(reaction_type_oracle._RECOGNIZERS) == 25`); (d) the version-independent payload golden and
+>   `semantic_digest` unmoved from 1.5.0, and the legacy v0.8 read-only leg still loading; (e) `scripts/build_release.py`
+>   artifacts rebuilt twice byte-identically from `git archive` of the tag, installed fresh on Python 3.10–3.13,
+>   `smartchem --version` = `smartchem 1.6.0`, and no `experiments/` path in either artifact; (f) annotated tag
+>   `v1.6.0` + GitHub Release carrying the four files. *Status: **DONE 2026-11-06**, (a)–(f) each measured. Note on (a): the
+>   batched suite is green hosted on the exact tagged SHA, and green locally on `6a2686e`, whose code and test trees are
+>   identical to it. The per-gate evidence is in `docs/research/V1_6_RELEASE_GATE.md`.*
+> - **2.0-alpha — research-only versioned physical API.** Gate: a versioned API object (inputs, inventories, phase
+>   state, boundary schedules, solver options, provenance, receipts, sampled frames) whose every claim carries a tier;
+>   exact structural conservation at construction; error-bounded numerical conservation with a typed per-component
+>   verdict; rate-law execution identity certified only relative to a closed audited authority (an extension can be
+>   attested, never silently promoted); at least one bounded physical domain validated against an independent
+>   measured holdout; fail-closed outside the declared domain. Ships as experimental source only — never `smartchem/`.
+> - **2.0 stable.** Gate: independent measurement validation (not model-vs-model), a written compatibility contract for
+>   the simulation API, a full acceptance matrix, and a hostile review that finds no false certification. Not before.
+> - **3.0 — interactive spatial chemistry world.** Gate: cells, walls, valves, thermal boundaries, species transport and
+>   reactions composed from the 2.0 kernel, with visual output that is a *projection of a verified computation* —
+>   no animated phenomenon certifies itself; anything without a calibrated mechanism is labeled MODELED, ILLUSTRATIVE
+>   or UNKNOWN.
+>
+> ---
+>
+> ## ▶ SUPERSEDED (2026-11-06) — OPERATION XXII
+> Kept intact for its reasoning; the authoritative picture is the OPERATION XXIII block above.
 > The authoritative current picture (supersedes the 2026-11-04 OPERATION XXI block below, kept for its reasoning).
 > Reflects MERGED code and current scientific evidence, not PR descriptions. Live `main` = `6a2686e` (`__version__` **1.6.0**).
 >

@@ -59,6 +59,7 @@ and a weak-acid dissociation run through this SAME kernel with no solver edit.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 from dataclasses import dataclass, field
 from enum import Enum
@@ -66,6 +67,7 @@ from enum import Enum
 import numpy as np
 from scipy.integrate import solve_ivp
 
+from experiments.sandbox_foundation import admissibility as _adm
 from experiments.sandbox_foundation.claim_tiers import (
     ASSUMED_PARAMETER,
     REFUSED,
@@ -91,6 +93,11 @@ class ExecutionBasisError(KernelError):
     """A declared coefficient cannot be represented EXACTLY in the float64 execution basis (|coeff| > 2**53).  The
     conservation law was proven in unbounded integers, but the solver runs the float cast -- an inexact coefficient
     would silently execute a stoichiometry the integer certificate never proved, so such a model is refused (XVIII-2)."""
+
+
+class SourceDomainError(KernelError):
+    """XXIV-2A: a sourced constant was asked to execute outside its sourced domain (e.g. a 25 C Ksp at 350 K).  Raised
+    on BOTH execution paths; no unvalidated extrapolation is performed."""
 
 
 class StaleCertificateError(KernelError):
@@ -268,18 +275,21 @@ CALLER_ATTESTED_EXTENSION = "CALLER_ATTESTED_EXTENSION"
 UNVERIFIABLE_AUTHORITY = "UNVERIFIABLE"
 _RATE_LAW_METHODS = ("evaluate", "descriptor")
 
-#: The CLOSED audit table.  Each pin is the sha256 of the class's source text (decorators through the last line,
-#: ``\r\n`` normalised) as returned by ``_class_source``.  Changing an audited class REQUIRES re-auditing it and
-#: updating its pin here -- that edit is the audit event, visible in review.  ``test_xxiii_s2_registry_authority``
-#: fails loudly if a pin goes stale.
+#: The CLOSED audit table.  XXIV-1D: each pin is the sha256 of the class's in-tree DEPENDENCY CLOSURE
+#: (``_audit_closure``: the class source, its in-tree bases, and every module-level helper function / constant it
+#: references, transitively) -- not the class text alone, so an edit to a helper an audited law executes demotes it.
+#: Changing an audited class OR any hashed dependency REQUIRES re-auditing and updating its pin here -- that edit is
+#: the audit event, visible in review.  ``test_xxiii_s2_registry_authority`` fails loudly if a pin goes stale.
+#: XXIV-1D re-audit event (2026-11-07): all five pins moved from class-source digests to closure digests; no class
+#: body changed.
 _AUDITED_BUILTIN_PINS: dict = {
-    ("experiments.sandbox_foundation.general_kernel", "MassActionIrreversible"): "7d70dd7a28625ba4e6817731b7cf1dd016d99429d8fb0153e8c53b198856f902",
-    ("experiments.sandbox_foundation.general_kernel", "MassActionReversible"): "52cb60c28f948057365223bec8ef34154735fd75cda1b97cd9e65da3fdc628f5",
-    ("experiments.sandbox_foundation.unified_chemical_world", "BicarbonateDissolutionRate"): "69826a64cab8de88b974e6a9e7895932721a74b24290c0a86f502b17e8ec854c",
+    ("experiments.sandbox_foundation.general_kernel", "MassActionIrreversible"): "8599738277140ffe1bfa5e5125a4bae60892141fb6ae7db27f1cd94022cee547",
+    ("experiments.sandbox_foundation.general_kernel", "MassActionReversible"): "190bac98c64fada169b38ae6acba5adf6ef7846f2529caf28c8ad8009d95aca7",
+    ("experiments.sandbox_foundation.unified_chemical_world", "BicarbonateDissolutionRate"): "c3e6f662027fce6fd6555523920431e966397b0ffd6c071c2a8ab607e1cf02d5",
     # XXIII-S4 audit event: the two activity-based solid/speciation laws (Davies activities, I-domain guard, descriptor
     # binds k/K/stoich/species/A/I_max/precipitation switch).  Audited 2026-11 in solid_equilibrium.py; re-pin on edit.
-    ("experiments.sandbox_foundation.solid_equilibrium", "ActivitySolubilityRate"): "5d4e1059ea6ec9623a3211596babf6859158c51bf67519bf684a2b74bd77202e",
-    ("experiments.sandbox_foundation.solid_equilibrium", "ActivityReversibleRate"): "ae936797c17e901eb6aa5c9609b70596a37b3655e8685fbcc0ce58e741bae5c6",
+    ("experiments.sandbox_foundation.solid_equilibrium", "ActivitySolubilityRate"): "abcd7eea12495725d1bcbbdb197b730111c3e61bb1df869006ecc5a61ed6d0ab",
+    ("experiments.sandbox_foundation.solid_equilibrium", "ActivityReversibleRate"): "c0524db28918b99d58bedff1dfec6fc19d0589b63bcedfc5cf5fd41efaaeb737",
 }
 
 
@@ -318,6 +328,158 @@ def _class_source(cls) -> tuple:
     raise KernelError(f"no top-level class {cls.__qualname__!r} in {path}")
 
 
+# XXIV-1D AUDIT DEPENDENCY CLOSURE (RED -> GREEN, probe P4).  A pin over the class source alone left every module-level
+# helper the class executes OUTSIDE the audit: editing ``solid_equilibrium._constant_key`` so it stopped binding a Ksp
+# VALUE left ActivitySolubilityRate SEALED, and two worlds with Ksp 1e-6 / 4e-6 then shared ONE certificate while their
+# trajectories differed by 2x (a false execution-identity claim produced by an unaudited maintenance edit).  The pin is
+# now the sha256 of the class's IN-TREE DEPENDENCY CLOSURE: the class source, the source of every in-tree base class,
+# and -- transitively -- the source of every module-level FUNCTION and CONSTANT assignment the class body references,
+# followed through ``from experiments.sandbox_foundation.X import name`` and ``X.name`` module-alias attribute access.
+# Excluded, and declared rather than hidden (see ``audit_closure_inventory``):
+#   * type dependencies (in-tree CLASSES the body names, e.g. Species, SourcedConstant): a trusted-code maintenance
+#     assumption; species identity itself is bound per system by the XVIII-2 model certificate;
+#   * external dependencies (stdlib / numpy / scipy): the trusted environment;
+#   * runtime rebinding (monkeypatching a module global in-process): inside the trust boundary, as before.
+_IN_TREE_PREFIX = "experiments.sandbox_foundation"
+_MODULE_INDEX_CACHE: dict = {}
+
+
+def _module_index(modname: str):
+    """(text, path, defs, imports) of an in-tree module, parsed from its SOURCE FILE without executing it (so a closure
+    can be computed at import time without import cycles).  defs: top-level name -> (kind, node); imports: local name
+    -> (module, attr-or-None)."""
+    import ast
+    import importlib.util
+    if modname in _MODULE_INDEX_CACHE:
+        return _MODULE_INDEX_CACHE[modname]
+    spec = importlib.util.find_spec(modname)
+    if spec is None or not spec.origin or not spec.origin.endswith(".py"):
+        raise KernelError(f"cannot locate the source of in-tree module {modname!r}")
+    with open(spec.origin, encoding="utf-8") as fh:
+        text = fh.read().replace("\r\n", "\n")
+    defs, imports = {}, {}
+    for node in ast.parse(text).body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            defs[node.name] = ("function", node)
+        elif isinstance(node, ast.ClassDef):
+            defs[node.name] = ("class", node)
+        elif isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name):
+                    defs[t.id] = ("constant", node)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            defs[node.target.id] = ("constant", node)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            for a in node.names:
+                imports[a.asname or a.name] = (node.module, a.name)
+        elif isinstance(node, ast.Import):
+            for a in node.names:
+                imports[a.asname or a.name.split(".")[0]] = (a.name if a.asname else a.name.split(".")[0], None)
+    out = (text, spec.origin, defs, imports)
+    _MODULE_INDEX_CACHE[modname] = out
+    return out
+
+
+def _is_in_tree_module(name: str) -> bool:
+    import importlib.util
+    if not (name == _IN_TREE_PREFIX or name.startswith(_IN_TREE_PREFIX + ".")):
+        return False
+    try:
+        spec = importlib.util.find_spec(name)
+    except (ImportError, ValueError):
+        return False
+    return spec is not None and bool(spec.origin) and spec.origin.endswith(".py") and not spec.origin.endswith("__init__.py")
+
+
+def _node_refs(node):
+    """Names and (alias, attr) pairs a node's body references (over-inclusive by design: a local that shadows a module
+    name only ADDS to the hashed closure, it can never remove a dependency)."""
+    import ast
+    names, attrs = set(), set()
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Name):
+            names.add(sub.id)
+        elif isinstance(sub, ast.Attribute) and isinstance(sub.value, ast.Name):
+            attrs.add((sub.value.id, sub.attr))
+    return names, attrs
+
+
+def _segment(text: str, node) -> str:
+    lines = text.split("\n")
+    first = min([node.lineno] + [d.lineno for d in getattr(node, "decorator_list", [])])
+    return "\n".join(lines[first - 1:node.end_lineno])
+
+
+def _audit_closure(cls) -> tuple:
+    """(digest, inventory) of ``cls``'s in-tree dependency closure (XXIV-1D).  inventory = {"hashed": [(module, name,
+    kind)], "type_dependencies": [...], "external": [...]}.  Raises KernelError if any in-tree source cannot be read."""
+    hashed, types, external = {}, set(), set()
+
+    def resolve_module_attr(modname, attr):
+        if _is_in_tree_module(modname):
+            resolve(modname, attr)
+        else:
+            external.add(f"{modname}.{attr}")
+
+    def walk(modname, node):
+        _, _, defs, imports = _module_index(modname)
+        names, attrs = _node_refs(node)
+        for nm in sorted(names):
+            resolve(modname, nm)
+        for alias, attr in sorted(attrs):
+            if alias in defs or alias not in imports:
+                continue
+            m, a = imports[alias]
+            target = m if a is None else f"{m}.{a}"
+            if a is None or _is_in_tree_module(target):
+                resolve_module_attr(target, attr)
+
+    def resolve(modname, name):
+        text, _, defs, imports = _module_index(modname)
+        if name in defs:
+            kind, node = defs[name]
+            key = (modname, name)
+            if kind == "class":
+                types.add(key)
+                return
+            if key in hashed:
+                return
+            hashed[key] = (kind, _segment(text, node))
+            walk(modname, node)
+        elif name in imports:
+            m, a = imports[name]
+            if a is None:
+                return                                      # a bare module alias; its attributes resolve in walk()
+            if _is_in_tree_module(f"{m}.{a}"):
+                return                                      # ``from pkg import module`` -- a module alias
+            if m == _IN_TREE_PREFIX or m.startswith(_IN_TREE_PREFIX + "."):
+                resolve(m, a)
+            else:
+                external.add(f"{m}.{a}")
+
+    roots = [cls] + [b for b in cls.__mro__[1:] if isinstance(b.__module__, str)
+                     and b.__module__.startswith(_IN_TREE_PREFIX) and "." not in b.__qualname__]
+    for k in roots:
+        text, _, defs, _ = _module_index(k.__module__)
+        if k.__qualname__ not in defs or defs[k.__qualname__][0] != "class":
+            raise KernelError(f"no top-level class {k.__qualname__!r} in {k.__module__}")
+        node = defs[k.__qualname__][1]
+        hashed[(k.__module__, k.__qualname__)] = ("class" if k is cls else "base_class", _segment(text, node))
+        walk(k.__module__, node)
+    for k in roots:
+        types.discard((k.__module__, k.__qualname__))
+    blob = json.dumps(sorted([m, n, kind, src] for (m, n), (kind, src) in hashed.items()))
+    inventory = {"hashed": sorted((m, n, kind) for (m, n), (kind, _) in hashed.items()),
+                 "type_dependencies": sorted(types), "external": sorted(external)}
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest(), inventory
+
+
+def audit_closure_inventory(cls) -> dict:
+    """XXIV-1D: what an audit pin over ``cls`` covers (hashed), and what it DECLARES as a trusted assumption (type
+    dependencies, external packages).  Reported, never hidden."""
+    return _audit_closure(cls)[1]
+
+
 def _check_rate_law_class(cls) -> None:
     if not (isinstance(cls, type) and issubclass(cls, RateLaw)):
         raise KernelError("expected a RateLaw subclass")
@@ -328,39 +490,49 @@ def _check_rate_law_class(cls) -> None:
                           f"certified (its operative parameters are unbindable -- it runs EXPLICITLY UNVERIFIED)")
 
 
-def _method_snapshot(cls) -> tuple:
-    return tuple((name, cls.__dict__.get(name)) for name in _RATE_LAW_METHODS)
+def _method_snapshot(cls, methods: tuple = _RATE_LAW_METHODS) -> tuple:
+    return tuple((name, cls.__dict__.get(name)) for name in methods)
 
 
-def _seal_audited_builtin(cls):
-    """Seal an in-tree class against its CLOSED audit pin.  Fail-closed: any mismatch records the reason in
-    ``_AUDIT_FAILURES`` and leaves the class UNVERIFIABLE (it still runs, explicitly unverified) -- it never raises at
-    import and never certifies a class the table does not pin.  Returns ``cls`` unchanged (decorator-safe)."""
+def _seal_class(cls, *, pins: dict, sealed: dict, failures: dict, methods: tuple, check) -> object:
+    """Seal an in-tree class against a CLOSED pin table (shared by rate laws and, XXIV-1A, equilibrium operators).
+    The pin is the class's audit DEPENDENCY CLOSURE digest (XXIV-1D).  Fail-closed: any mismatch records the reason in
+    ``failures`` and leaves the class UNVERIFIABLE (it still runs, explicitly unverified) -- it never raises at import
+    and never certifies a class the table does not pin.  Returns ``cls`` unchanged (decorator-safe)."""
     import sys
     key = (cls.__module__, cls.__qualname__)
     try:
-        _check_rate_law_class(cls)
-        pin = _AUDITED_BUILTIN_PINS.get(key)
+        check(cls)
+        pin = pins.get(key)
         if pin is None:
             raise KernelError(f"{key} is not in the closed audit table")
         mod = sys.modules.get(cls.__module__)
         if mod is None or getattr(mod, cls.__qualname__, None) is not cls:
             raise KernelError(f"{key}: the canonical module attribute is a different object")
-        src, path, first, last = _class_source(cls)
-        digest = hashlib.sha256(src.encode("utf-8")).hexdigest()
+        _src, path, first, last = _class_source(cls)
+        digest = _audit_closure(cls)[0]
         if digest != pin:
-            raise KernelError(f"{key}: source sha256 {digest} != audited pin {pin} (re-audit and update the pin)")
-        for name, fn in _method_snapshot(cls):
+            raise KernelError(f"{key}: audit-closure sha256 {digest} != audited pin {pin} (the class OR an in-tree "
+                              f"helper/constant it references changed: re-audit and update the pin)")
+        for name, fn in _method_snapshot(cls, methods):
+            if fn is None:
+                continue                                    # not defined on the class itself (an inherited base method)
             code = getattr(fn, "__code__", None)
             if code is None or code.co_filename != path or not (first <= code.co_firstlineno <= last):
                 raise KernelError(f"{key}: {name} was not compiled from the audited source")
-    except KernelError as exc:
-        _AUDIT_FAILURES[key] = str(exc)
-        _AUDITED_BUILTINS.pop(cls, None)
+    except (KernelError, OSError, SyntaxError) as exc:
+        failures[key] = str(exc)
+        sealed.pop(cls, None)
         return cls
-    _AUDIT_FAILURES.pop(key, None)
-    _AUDITED_BUILTINS[cls] = _SealRecord(AUDITED_BUILTIN, _method_snapshot(cls), digest)
+    failures.pop(key, None)
+    sealed[cls] = _SealRecord(AUDITED_BUILTIN, _method_snapshot(cls, methods), digest)
     return cls
+
+
+def _seal_audited_builtin(cls):
+    """Seal an in-tree RateLaw against the closed rate-law audit table (see ``_seal_class``)."""
+    return _seal_class(cls, pins=_AUDITED_BUILTIN_PINS, sealed=_AUDITED_BUILTINS, failures=_AUDIT_FAILURES,
+                       methods=_RATE_LAW_METHODS, check=_check_rate_law_class)
 
 
 def register_attested_rate_law(cls, *, attested_by: str):
@@ -377,7 +549,7 @@ def register_attested_rate_law(cls, *, attested_by: str):
     if (cls.__module__, cls.__qualname__) in _AUDITED_BUILTIN_PINS or cls in _AUDITED_BUILTINS:
         raise KernelError(f"{cls.__qualname__} is governed by the closed audit table; it cannot be caller-attested")
     try:
-        digest = hashlib.sha256(_class_source(cls)[0].encode("utf-8")).hexdigest()
+        digest = _audit_closure(cls)[0]
     except (KernelError, OSError, SyntaxError):
         digest = "UNAVAILABLE"
     _ATTESTED_EXTENSIONS[cls] = _SealRecord(CALLER_ATTESTED_EXTENSION, _method_snapshot(cls), digest,
@@ -558,6 +730,10 @@ class VerificationReceipt:
     declared_kinetic_tier: str            # caller INPUT: provenance of the rate laws (default ASSUMED_PARAMETER)
     admitted_tier: str                    # DERIVED AUTHORITY = weakest(structural_tier, declared_kinetic_tier)
     notes: tuple = ()
+    positivity_verdict: str = "HELD"      # XXIV-1B: HELD | HELD_WITHIN_PHYSICAL_FLOOR | UNRESOLVED_AT_REQUESTED_TOLERANCE | VIOLATED (caller-independent floor)
+    negative_minima: dict = field(default_factory=dict)   # XXIV-1B: {species name: raw most-negative amount (mol)} -- preserved, never clipped
+    charge_validity: object = None        # XXIV-1C: admissibility.ChargeValidity (three separate charge claims)
+    source_domain: str = "NO_SOURCED_CONSTANTS"   # XXIV-2A: SUPPORTED... | NO_SOURCED_CONSTANTS (an off-domain run is REFUSED)
 
 
 @dataclass(frozen=True)
@@ -794,6 +970,13 @@ class ChemicalSystem:
         if not (isinstance(duration, (int, float)) and math.isfinite(duration) and duration > 0):
             raise KernelError("duration must be finite and > 0")
         rank(declared_kinetic_tier)                                     # a typo in the declared tier fails loudly
+        owned = [("system", r) for r in self.reactions]                 # XXIV-2A: no sourced constant off its domain
+        off_domain = _adm.temperature_domain_violations(owned, temperature_K)
+        if off_domain:
+            raise SourceDomainError(
+                f"temperature_K={float(temperature_K):.2f} is outside the sourced domain of {off_domain} "
+                f"(reaction, field, sourced T_K): no validated temperature law is declared, so the constant would "
+                f"execute unchanged at the wrong temperature. Refusing (XXIV-2A); no extrapolation is performed.")
         for sp in n0:                                                   # XV-1D: no unknown initial species silently ignored
             if sp not in self._index:
                 raise KernelError(f"initial inventory references unknown species {getattr(sp, 'name', sp)!r}")
@@ -847,9 +1030,25 @@ class ChemicalSystem:
         scale = max(1.0, float(np.max(np.abs(comp0))) if comp0.size else 1.0,
                     float(np.max(np.abs(comp_rate))) * float(duration) if comp_rate.size else 0.0)
         ledger_tol = 1e-6 * scale
-        pos_tol = max(atol * 10.0, 1e-12)
-        positivity_held = min_amount >= -pos_tol
+        # XXIV-1B: the PHYSICAL positivity floor is caller-independent (1e-12 mol + 1e-9 x the species' own peak); the
+        # caller's atol only defines the band within which the sign is numerically UNRESOLVED -- never a pass.
+        slot_min = sol.y.min(axis=1)
+        slot_scale = np.maximum(np.abs(y0), np.abs(sol.y).max(axis=1))
+        pos = _adm.positivity_audit(slot_min, slot_scale, abs_floor=1e-12, solver_atol=atol, solver_rtol=rtol,
+                                    atol_factor=10.0)
+        positivity_held = pos.held
+        negative_minima = {order[j].name: v for j, v in pos.negative_minima.items()}
         external_ledger_closed = max_ledger_residual <= ledger_tol
+        # XXIV-1C: three separate charge claims (the charge row is the LAST row of E).
+        zrow = self.E[-1]
+        ionic_series = np.abs(zrow) @ np.abs(sol.y)
+        supplied = float(zrow @ q) * float(duration)
+        q_series = zrow @ sol.y
+        charge_ledger_resid = float(np.max(np.abs(q_series - float(zrow @ y0) - float(zrow @ q) * sol.t)))
+        ionic_scale = max(float(np.max(ionic_series)), abs(supplied))
+        cv = _adm.charge_validity(charged=any(sp.charge for sp in order), supplied=supplied,
+                                  accounted=charge_ledger_resid <= 1e-12 + 1e-6 * ionic_scale, ionic_scale=ionic_scale,
+                                  declared_net=float(zrow @ y0))
         solver_completed = bool(sol.success)
         notes = ()
         if not external_ledger_closed:
@@ -858,17 +1057,22 @@ class ChemicalSystem:
         structural_ok = solver_completed and positivity_held and external_ledger_closed
         structural_tier = STRUCTURALLY_CONSERVING if structural_ok else REFUSED
         admitted_tier = weakest(structural_tier, declared_kinetic_tier)
+        if cv.floors_admitted_tier:                                     # XXIV-1C: physically unsupported net charge
+            admitted_tier = REFUSED
         receipt = VerificationReceipt(
             solver_completed=solver_completed, positivity_held=positivity_held,
             external_ledger_closed=external_ledger_closed, conservation_residual=max_drift,
             external_ledger_residual=max_ledger_residual, min_inventory=min_amount, tolerance=ledger_tol,
             structural_tier=structural_tier, declared_kinetic_tier=declared_kinetic_tier,
-            admitted_tier=admitted_tier, notes=notes)
+            admitted_tier=admitted_tier, notes=notes, positivity_verdict=pos.verdict, negative_minima=negative_minima,
+            charge_validity=cv, source_domain=_adm.source_domain_label(owned, temperature_K))
 
         caveats = ()
-        if min_amount < -pos_tol:
-            caveats += (f"a species inventory went negative (min {min_amount:.3e}); the stiff solver's positivity "
-                        f"was violated -- treat this trajectory as numerically suspect",)
+        if not positivity_held:
+            caveats += (f"positivity {pos.verdict}: a species inventory went negative (min {min_amount:.3e}) beyond its "
+                        f"caller-independent physical floor -- no physical admissibility claim (XXIV-1B)",)
+        if cv.floors_admitted_tier:
+            caveats += (f"charge: {cv.bulk_electroneutrality} -- {cv.explanation}; admitted tier REFUSED (XXIV-1C)",)
         if not external_ledger_closed:
             caveats += notes
         return NetworkTrajectory(

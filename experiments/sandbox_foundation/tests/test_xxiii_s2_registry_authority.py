@@ -16,8 +16,6 @@ validation -- the boundary tests below say exactly what it does and does not sto
 """
 from __future__ import annotations
 
-import hashlib
-
 import pytest
 
 from experiments.sandbox_foundation import general_kernel as gk
@@ -204,8 +202,8 @@ def test_audit_pins_are_a_regression_anchor():
     classes[("experiments.sandbox_foundation.solid_equilibrium", "ActivityReversibleRate")] = se.ActivityReversibleRate
     assert set(classes) == set(gk._AUDITED_BUILTIN_PINS)
     for key, cls in classes.items():
-        digest = hashlib.sha256(gk._class_source(cls)[0].encode("utf-8")).hexdigest()
-        assert digest == gk._AUDITED_BUILTIN_PINS[key], f"{key} changed: re-audit it and update its pin"
+        digest = gk._audit_closure(cls)[0]               # XXIV-1D: the pin covers the in-tree dependency closure
+        assert digest == gk._AUDITED_BUILTIN_PINS[key], f"{key} or a hashed dependency changed: re-audit it and re-pin"
 
 
 def test_stale_pin_demotes_fail_closed_with_a_named_reason():

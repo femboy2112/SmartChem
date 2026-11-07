@@ -1,6 +1,55 @@
 # SmartChem roadmap
 
-> ## ▶ PRESENT STATE (2026-11-06) — OPERATION XXII
+> ## ▶ PRESENT STATE (2026-11-06, later) — OPERATION XXIII: release the compiler
+> The authoritative current picture. It supersedes the OPERATION XXII block below, which is kept intact for its
+> reasoning (its "1.6.0 NOT tagged" line was true when written and is now overtaken by this block). Reflects MERGED
+> code and current evidence, not PR descriptions.
+>
+> **Production releases** (GitHub Releases with wheel + sdist + `SHA256SUMS` + `release_manifest.json`; **never PyPI**)
+>
+> | version | status | tag → commit | oracle classes |
+> |---|---|---|---|
+> | 1.0.0 | RELEASED 2026-10-03 | `v1.0.0` → `8345bbb` | 17 |
+> | 1.1.0 | RELEASED 2026-10-24 | `v1.1.0` → `9e8fa5f` | 20 |
+> | 1.5.0 | RELEASED 2026-11-02 (the GitHub Release shipped **without** binary assets — see the 1.6 release-gate record) | `v1.5.0` → `c3d0d01` | 24 |
+> | **1.6.0** | **PRODUCTION MERGED, PENDING RELEASE** until the tag + GitHub Release exist; production source merged to `main` by PR #157 (`6a2686e`); this release-hygiene change is the last pre-tag commit | `v1.6.0` → *the verified merged-`main` SHA, set at tag time* | **25** |
+>
+> **2.0 research — integrated into `main` as EXCLUDED experimental source, NOT a stable supported API.** The physical
+> simulator (general kinetic/equilibrium/transport kernel, unified solid–liquid–gas world, conservation and execution
+> certificates, PHREEQC/NIST comparisons) lives under `experiments/sandbox_foundation/`, which `pyproject.toml`
+> (`packages.find include = ["smartchem*"]`) and `MANIFEST.in` (`prune experiments`) keep out of the wheel and sdist.
+> No `smartchem.*` import path exposes it, and nothing in it is covered by `COMPATIBILITY.md`. Its claims carry their
+> own tiers (ASSUMED / SOURCED / MEASURED / REFUTED) in the research dossiers.
+>
+> **3.0 — interactive physical laboratory: a FUTURE milestone.** Nothing ships yet.
+>
+> ### Milestone board — each gate is an executable check, not a vibe
+>
+> - **1.6.0 — production release.** Gate: (a) `scripts/run_suite.sh` green on the release commit; (b) the 7 required
+>   hosted CI contexts (`test (3.10)`, `test (3.12)`, `Wheel install matrix (3.10…3.13)`, `Optional PySCF backend
+>   (smoke)`) job-level `success` on the exact tagged SHA; (c) exactly 25 recognizers
+>   (`len(reaction_type_oracle._RECOGNIZERS) == 25`); (d) the version-independent payload golden and
+>   `semantic_digest` unmoved from 1.5.0, and the legacy v0.8 read-only leg still loading; (e) `scripts/build_release.py`
+>   artifacts rebuilt twice byte-identically from `git archive` of the tag, installed fresh on Python 3.10–3.13,
+>   `smartchem --version` = `smartchem 1.6.0`, and no `experiments/` path in either artifact; (f) annotated tag
+>   `v1.6.0` + GitHub Release carrying the four files. *Status: in progress (this change).*
+> - **2.0-alpha — research-only versioned physical API.** Gate: a versioned API object (inputs, inventories, phase
+>   state, boundary schedules, solver options, provenance, receipts, sampled frames) whose every claim carries a tier;
+>   exact structural conservation at construction; error-bounded numerical conservation with a typed per-component
+>   verdict; rate-law execution identity certified only relative to a closed audited authority (an extension can be
+>   attested, never silently promoted); at least one bounded physical domain validated against an independent
+>   measured holdout; fail-closed outside the declared domain. Ships as experimental source only — never `smartchem/`.
+> - **2.0 stable.** Gate: independent measurement validation (not model-vs-model), a written compatibility contract for
+>   the simulation API, a full acceptance matrix, and a hostile review that finds no false certification. Not before.
+> - **3.0 — interactive spatial chemistry world.** Gate: cells, walls, valves, thermal boundaries, species transport and
+>   reactions composed from the 2.0 kernel, with visual output that is a *projection of a verified computation* —
+>   no animated phenomenon certifies itself; anything without a calibrated mechanism is labeled MODELED, ILLUSTRATIVE
+>   or UNKNOWN.
+>
+> ---
+>
+> ## ▶ SUPERSEDED (2026-11-06) — OPERATION XXII
+> Kept intact for its reasoning; the authoritative picture is the OPERATION XXIII block above.
 > The authoritative current picture (supersedes the 2026-11-04 OPERATION XXI block below, kept for its reasoning).
 > Reflects MERGED code and current scientific evidence, not PR descriptions. Live `main` = `6a2686e` (`__version__` **1.6.0**).
 >

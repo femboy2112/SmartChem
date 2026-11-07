@@ -76,7 +76,10 @@ from experiments.sandbox_foundation.general_kernel import (
     Phase,
     Species,
     StaleCertificateError,
-    is_certified_rate_law_type,
+    AUDITED_BUILTIN,
+    CALLER_ATTESTED_EXTENSION,
+    rate_law_attestation,
+    rate_law_authority,
 )
 
 
@@ -103,6 +106,9 @@ def _species_key(sp: Species) -> tuple:
 #: integrate() consumes this fact: a world holding such a law has NO certified execution identity (see
 #: ``_uncertified_rate_laws`` and the receipt's ``execution_identity_certified``).
 _UNVERIFIABLE_MARKER = "UNVERIFIABLE_RATE_LAW"
+#: XXIII-2: the head of a CALLER-ATTESTED extension's descriptor -- its parameters ARE bound (mutation detected), but the
+#: binding rests on the plugin author's attestation, not an audit, so it never yields a certified execution identity.
+_ATTESTED_MARKER = "CALLER_ATTESTED_RATE_LAW"
 
 
 def _rate_law_descriptor(rl):
@@ -120,14 +126,21 @@ def _rate_law_descriptor(rl):
     in the explicitly-flagged, tier-floored EXECUTABLE-UNVERIFIED mode (or refuses under require_certified_execution)."""
     if rl is None:                                       # RATE_UNKNOWN
         return "RATE_UNKNOWN"
-    if is_certified_rate_law_type(type(rl)):             # XXII-2: audited implementation -> its descriptor is trusted
-        desc = getattr(rl, "descriptor", None)
-        if callable(desc):
-            try:
-                return list(rl.descriptor())
-            except NotImplementedError:
-                pass
+    authority = rate_law_authority(rl)                   # XXIII-2: closed audited table vs labeled caller attestation
+    if authority in (AUDITED_BUILTIN, CALLER_ATTESTED_EXTENSION):
+        try:
+            desc = list(rl.descriptor())
+        except NotImplementedError:
+            return [_UNVERIFIABLE_MARKER, type(rl).__qualname__]
+        if authority == CALLER_ATTESTED_EXTENSION:        # bound, but the certificate records that it is a CLAIM
+            return [_ATTESTED_MARKER, type(rl).__qualname__, rate_law_attestation(type(rl))] + desc
+        return desc
     return [_UNVERIFIABLE_MARKER, type(rl).__qualname__]
+
+
+def _descriptor_is_attested(desc) -> bool:
+    """True iff ``desc`` is a CALLER-ATTESTED extension's descriptor (XXIII-2)."""
+    return isinstance(desc, list) and len(desc) >= 1 and desc[0] == _ATTESTED_MARKER
 
 
 def _descriptor_is_uncertified(desc) -> bool:
@@ -422,6 +435,8 @@ class CoupledReceipt:
     max_step_material_residual: float = 0.0   # XX-3: max |E n(t) - E n0 - E integral(q_ext dt)| over EVERY accepted step (observer-invariant, not endpoint-only)
     first_violation: tuple = ()               # XX-3: (time, kind, compartment, species/component, value) of the FIRST step to breach positivity or the ledger (() if none)
     execution_identity_certified: bool = True  # XXI-2: False iff ANY reaction's rate law is UNVERIFIABLE (no bindable descriptor) -- then the world certificate cannot witness that the SAME physics executed, so no stable execution-identity claim is made (mutating such a law is invisible to the certificate BY CONSTRUCTION)
+    execution_identity_basis: str = "AUDITED_BUILTIN"  # XXIII-2: AUDITED_BUILTIN (every law sealed against the closed audit table) | CALLER_ATTESTED (>=1 plugin law bound only by its author's attestation; NOT certified) | UNVERIFIED (>=1 law with no trusted descriptor)
+    attested_extension_laws: tuple = ()       # XXIII-2: ((compartment, reaction, rate_law_class, attested_by), ...) laws whose identity rests on a caller attestation
     uncertified_rate_laws: tuple = ()          # XXI-2: ((compartment, reaction, rate_law_class), ...) the laws that voided the execution-identity claim -- surfaced so the limitation cannot be hidden behind an otherwise-clean receipt
     component_tolerance: dict = field(default_factory=dict)       # XXI-3: {conserved component: atol + rtol*scale_component} -- each component judged against ITS OWN scale
     component_max_residual: dict = field(default_factory=dict)    # XXI-3: {conserved component: max |E n(t) - E n0 - E integral(q_ext dt)| over every step}
@@ -586,6 +601,12 @@ class CoupledWorld:
             (c.name, r.name, type(r.rate_law).__qualname__)
             for c in self.compartments for r in c.system.reactions
             if r.rate_law is not None and _descriptor_is_uncertified(_rate_law_descriptor(r.rate_law))
+        )
+        # XXIII-2: laws whose descriptor is bound only by a CALLER attestation (a plugin claim, not an audit).
+        self._attested_extension_laws = tuple(
+            (c.name, r.name, type(r.rate_law).__qualname__, rate_law_attestation(type(r.rate_law)))
+            for c in self.compartments for r in c.system.reactions
+            if r.rate_law is not None and _descriptor_is_attested(_rate_law_descriptor(r.rate_law))
         )
 
     # ---------------------------------------------------------------- XIX-1D world execution certificate
@@ -964,6 +985,7 @@ class CoupledWorld:
     def integrate(self, initial: dict, *, duration: float, n_steps: int, scheme: str = "strang",
                   n_samples: int | None = None, rtol: float = 1e-10, atol: float = 1e-14,
                   declared_kinetic_tier: str | None = None, require_certified_execution: bool = False,
+                  accept_attested_extensions: bool = False,
                   _observer_perturb=None) -> CoupledTrajectory:
         """Advance the coupled world over ``duration`` seconds in ``n_steps`` equal macro-steps of the chosen scheme.
 
@@ -981,12 +1003,24 @@ class CoupledWorld:
                                     cannot witness that the same physics executed, and that limitation is not hidden.
           * REFUSED              -- with ``require_certified_execution=True`` a world holding any unverified law raises
                                     rather than run; a caller that needs a stable execution identity gets a refusal,
-                                    never a falsely-certified trajectory."""
+                                    never a falsely-certified trajectory.
+
+        XXIII-2 AUTHORITY: CERTIFIABLE now means SEALED against general_kernel's CLOSED audit table (AUDITED_BUILTIN).
+        A plugin registered with ``register_attested_rate_law`` is CALLER_ATTESTED: its descriptor is bound (mutation
+        detected), but ``execution_identity_certified`` stays False, ``execution_identity_basis`` is 'CALLER_ATTESTED',
+        its kinetic tier is floored to UNVERIFIED, and ``require_certified_execution`` REFUSES it unless the caller also
+        passes ``accept_attested_extensions=True`` -- an explicit, receipted decision to trust the plugin's author."""
         self._verify_world_certificate()          # XIX-1D: never integrate under a stale world/compartment certificate
         for c in self.compartments:
             miss = [r.name for r in c.system.reactions if r.rate_law is None]
             if miss:
                 raise CoupledError(f"compartment {c.name!r} has RATE_UNKNOWN reaction(s) {miss}; refusing to integrate")
+        if require_certified_execution and self._attested_extension_laws and not accept_attested_extensions:
+            raise CoupledError(
+                "require_certified_execution=True but rate law(s) "
+                f"{list(self._attested_extension_laws)} are CALLER-ATTESTED extensions, not audited built-ins: their "
+                "descriptor faithfulness rests on the plugin author's claim. Pass accept_attested_extensions=True to "
+                "run them under that explicitly-receipted trust, or seal the class through the closed audit table.")
         if require_certified_execution and self._uncertified_rate_laws:
             raise CoupledError(
                 "require_certified_execution=True but this world has no certified execution identity: rate law(s) "
@@ -1001,7 +1035,8 @@ class CoupledWorld:
         if declared_kinetic_tier is None:
             tiers = [r.rate_law.tier for c in self.compartments for r in c.system.reactions if r.rate_law is not None]
             declared_kinetic_tier = weakest(*tiers) if tiers else STRUCTURALLY_CONSERVING
-        if self._uncertified_rate_laws:
+        if self._uncertified_rate_laws or self._attested_extension_laws:
+            # XXIII-2: a caller attestation is a claim, not evidence -- it floors exactly like an unverifiable law.
             # XXI-2: an unbindable law cannot certify its own kinetics; floor the DERIVED claim to UNVERIFIED here,
             # from the descriptor's unverifiability -- NOT from the law's self-declared tier (a label is not a binding).
             declared_kinetic_tier = weakest(declared_kinetic_tier, UNVERIFIED)
@@ -1227,6 +1262,11 @@ class CoupledWorld:
                         f"executed (a mutation of their hidden parameters is invisible to it); the kinetic tier is "
                         f"floored to UNVERIFIED and this trajectory must NOT be read as a certified-identity result "
                         f"(XXI-2)",)
+        if self._attested_extension_laws:
+            caveats += (f"execution identity rests on CALLER ATTESTATION, not audit: rate law(s) "
+                        f"{list(self._attested_extension_laws)} are plugin extensions whose descriptor faithfulness is "
+                        f"claimed by their author; bound parameters are mutation-checked, but this is NOT a certified "
+                        f"execution identity and the kinetic tier is floored to UNVERIFIED (XXIII-2)",)
         if implicit_reservoir:
             note = (f"implicit-solvent reservoir components {sorted(implicit_reservoir)} exchange H/O/charge with a "
                     f"fast-equilibrium solvent and are reported (endpoint), not independently ledgered")
@@ -1244,7 +1284,10 @@ class CoupledWorld:
             raw_material_change=raw_material_change, ledger_adjusted_residual=ledger_residual,
             material_balance_closed=material_balance_closed, charge_balance_claim=charge_balance_claim, notes=notes,
             max_step_material_residual=max_step_material_residual, first_violation=(first_violation or ()),
-            execution_identity_certified=not self._uncertified_rate_laws,
+            execution_identity_certified=not (self._uncertified_rate_laws or self._attested_extension_laws),
+            execution_identity_basis=("UNVERIFIED" if self._uncertified_rate_laws
+                                      else "CALLER_ATTESTED" if self._attested_extension_laws else "AUDITED_BUILTIN"),
+            attested_extension_laws=self._attested_extension_laws,
             uncertified_rate_laws=self._uncertified_rate_laws,
             component_tolerance=dict(comp_tol), component_max_residual=dict(comp_max_resid),
             component_resolution=dict(component_resolution),

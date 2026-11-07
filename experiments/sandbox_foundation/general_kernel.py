@@ -235,42 +235,201 @@ class RateLaw:
         return sum(-coeff for _, coeff in reaction.stoich if coeff < 0)
 
 
-# ---------------------------------------------------------------------- XXII-2: the audited rate-law registry
-# A ``descriptor()`` is PROOF of a law's executable identity only when a maintainer has AUDITED that it faithfully
-# binds every operative parameter ``evaluate`` reads AND that the law holds no hidden mutable dependency the descriptor
-# omits.  An arbitrary user law can return a FROZEN descriptor while ``evaluate`` reads a MUTABLE hidden parameter (a
-# LYING descriptor), so the mere presence of a ``descriptor()`` method cannot elevate a class to CERTIFIABLE -- the
-# descriptor would be a self-attested claim, not proof of code behaviour.  This registry is that audit anchor: a law
-# type earns a CERTIFIABLE execution identity ONLY if its EXACT type is registered here (and it binds a descriptor).
-# Every unregistered law -- including one that supplies a descriptor() -- executes EXPLICITLY UNVERIFIED (XXI-2).
-_CERTIFIED_RATE_LAW_TYPES: set = set()
+# ---------------------------------------------------------------------- XXII-2 / XXIII-2: rate-law identity authority
+# A ``descriptor()`` is PROOF of a law's executable identity only when someone has AUDITED that it faithfully binds every
+# operative parameter ``evaluate`` reads AND that the law holds no hidden mutable dependency the descriptor omits.  An
+# arbitrary user law can return a FROZEN descriptor while ``evaluate`` reads a MUTABLE hidden parameter (a LYING
+# descriptor), so the mere presence of a ``descriptor()`` method cannot certify a class.
+#
+# XXIII-2 (RED -> GREEN): XXII-2 anchored certification in a registry, but the registry was an open, public ``set.add``
+# -- ``register_certified_rate_law(Lying)`` from ANY caller made a lying law run under require_certified_execution with
+# ``execution_identity_certified=True``, and a 10x hidden-parameter mutation then ran different physics under an
+# unchanged world certificate.  The "audit" was a docstring.  The authority is now split into three explicit tiers:
+#
+#   AUDITED_BUILTIN            a CLOSED, in-tree table (``_AUDITED_BUILTIN_PINS``) of (module, qualname) -> sha256 of the
+#                              reviewed class source.  Only a class whose canonical module attribute IS that class, whose
+#                              current source matches the pin, and whose evaluate/descriptor code was compiled from that
+#                              file can be sealed.  Editing an audited class without re-auditing (updating its pin)
+#                              DEMOTES it, fail-closed.  No public call adds to this table.
+#   CALLER_ATTESTED_EXTENSION  ``register_attested_rate_law(cls, attested_by=...)``: a plugin's author ATTESTS its
+#                              descriptor is faithful.  Its descriptor is bound into the certificate (so a mutation of a
+#                              bound parameter is still caught), but an attestation is a caller CLAIM, not an audit: it
+#                              never sets ``execution_identity_certified``, strict mode refuses it unless the caller
+#                              explicitly opts in (``accept_attested_extensions=True``), and it floors the kinetic tier.
+#   UNVERIFIABLE               everything else (XXI-2): runs EXPLICITLY UNVERIFIED, refused under strict mode.
+#
+# HONEST BOUNDARY: this is an in-process, trusted-code authority, NOT cryptographic or independent validation.  Code that
+# can rebind module globals, rewrite a module attribute, or forge a code object's filename is inside the trust boundary
+# and can defeat it.  What it does guarantee: the PUBLIC API can no longer elevate a caller's class to the audited tier,
+# a subclass / instance-level override / post-seal method swap of an audited class is demoted, and every receipt says
+# WHICH authority (audited vs caller-attested) backs its execution identity.
+AUDITED_BUILTIN = "AUDITED_BUILTIN"
+CALLER_ATTESTED_EXTENSION = "CALLER_ATTESTED_EXTENSION"
+UNVERIFIABLE_AUTHORITY = "UNVERIFIABLE"
+_RATE_LAW_METHODS = ("evaluate", "descriptor")
+
+#: The CLOSED audit table.  Each pin is the sha256 of the class's source text (decorators through the last line,
+#: ``\r\n`` normalised) as returned by ``_class_source``.  Changing an audited class REQUIRES re-auditing it and
+#: updating its pin here -- that edit is the audit event, visible in review.  ``test_xxiii_s2_registry_authority``
+#: fails loudly if a pin goes stale.
+_AUDITED_BUILTIN_PINS: dict = {
+    ("experiments.sandbox_foundation.general_kernel", "MassActionIrreversible"): "7d70dd7a28625ba4e6817731b7cf1dd016d99429d8fb0153e8c53b198856f902",
+    ("experiments.sandbox_foundation.general_kernel", "MassActionReversible"): "52cb60c28f948057365223bec8ef34154735fd75cda1b97cd9e65da3fdc628f5",
+    ("experiments.sandbox_foundation.unified_chemical_world", "BicarbonateDissolutionRate"): "69826a64cab8de88b974e6a9e7895932721a74b24290c0a86f502b17e8ec854c",
+}
 
 
-def register_certified_rate_law(cls):
-    """Register a RateLaw subclass as an AUDITED, trusted implementation whose ``descriptor()`` faithfully binds every
-    operative parameter -- so a post-construction mutation of a bound parameter moves the world certificate and is
-    caught at ``integrate`` (the general_coupled XIX-1D cert-recompute is the backstop; the audit is the premise that
-    the descriptor reflects the live parameters, which is what makes that backstop sound).  Fail-closed: the class MUST
-    override both ``evaluate`` and ``descriptor`` -- a class still carrying the base ``NotImplementedError`` descriptor
-    cannot be certified (its parameters are unbindable).  Usable as a decorator; returns the class unchanged."""
+@dataclass(frozen=True)
+class _SealRecord:
+    """What a sealed rate-law type was at seal time: its authority, the exact method objects (a later swap demotes it),
+    the source digest, and -- for an attestation -- who attested."""
+    authority: str
+    methods: tuple          # ((name, function object), ...) captured at seal time
+    source_sha256: str
+    attested_by: str = ""
+
+
+_AUDITED_BUILTINS: dict = {}       # type -> _SealRecord   (only _seal_audited_builtin writes here)
+_ATTESTED_EXTENSIONS: dict = {}    # type -> _SealRecord   (register_attested_rate_law writes here)
+_AUDIT_FAILURES: dict = {}         # (module, qualname) -> reason a pinned built-in could NOT be sealed (fail-closed)
+
+
+def _class_source(cls) -> tuple:
+    """(source_text, path, first_line, last_line) of a TOP-LEVEL class, located by parsing its defining module's file
+    with ``ast`` (decorators included, ``\r\n`` normalised).  Deterministic across Python versions (no reliance on
+    ``inspect.getsource`` heuristics).  Raises KernelError if the source cannot be located -- callers fail closed."""
+    import ast
+    import sys
+    mod = sys.modules.get(cls.__module__)
+    path = getattr(mod, "__file__", None)
+    if not path or "." in cls.__qualname__:
+        raise KernelError(f"cannot locate top-level source for {cls.__module__}.{cls.__qualname__}")
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read().replace("\r\n", "\n")
+    lines = text.split("\n")
+    for node in ast.parse(text).body:
+        if isinstance(node, ast.ClassDef) and node.name == cls.__qualname__:
+            first = min([node.lineno] + [d.lineno for d in node.decorator_list])
+            return "\n".join(lines[first - 1:node.end_lineno]), path, first, node.end_lineno
+    raise KernelError(f"no top-level class {cls.__qualname__!r} in {path}")
+
+
+def _check_rate_law_class(cls) -> None:
     if not (isinstance(cls, type) and issubclass(cls, RateLaw)):
-        raise KernelError("register_certified_rate_law expects a RateLaw subclass")
+        raise KernelError("expected a RateLaw subclass")
     if cls.evaluate is RateLaw.evaluate:
         raise KernelError(f"{cls.__qualname__} does not override evaluate(); a law with no kinetics cannot be certified")
     if cls.descriptor is RateLaw.descriptor:
         raise KernelError(f"{cls.__qualname__} does not override descriptor(); an un-descriptor'd law cannot be "
                           f"certified (its operative parameters are unbindable -- it runs EXPLICITLY UNVERIFIED)")
-    _CERTIFIED_RATE_LAW_TYPES.add(cls)
+
+
+def _method_snapshot(cls) -> tuple:
+    return tuple((name, cls.__dict__.get(name)) for name in _RATE_LAW_METHODS)
+
+
+def _seal_audited_builtin(cls):
+    """Seal an in-tree class against its CLOSED audit pin.  Fail-closed: any mismatch records the reason in
+    ``_AUDIT_FAILURES`` and leaves the class UNVERIFIABLE (it still runs, explicitly unverified) -- it never raises at
+    import and never certifies a class the table does not pin.  Returns ``cls`` unchanged (decorator-safe)."""
+    import sys
+    key = (cls.__module__, cls.__qualname__)
+    try:
+        _check_rate_law_class(cls)
+        pin = _AUDITED_BUILTIN_PINS.get(key)
+        if pin is None:
+            raise KernelError(f"{key} is not in the closed audit table")
+        mod = sys.modules.get(cls.__module__)
+        if mod is None or getattr(mod, cls.__qualname__, None) is not cls:
+            raise KernelError(f"{key}: the canonical module attribute is a different object")
+        src, path, first, last = _class_source(cls)
+        digest = hashlib.sha256(src.encode("utf-8")).hexdigest()
+        if digest != pin:
+            raise KernelError(f"{key}: source sha256 {digest} != audited pin {pin} (re-audit and update the pin)")
+        for name, fn in _method_snapshot(cls):
+            code = getattr(fn, "__code__", None)
+            if code is None or code.co_filename != path or not (first <= code.co_firstlineno <= last):
+                raise KernelError(f"{key}: {name} was not compiled from the audited source")
+    except KernelError as exc:
+        _AUDIT_FAILURES[key] = str(exc)
+        _AUDITED_BUILTINS.pop(cls, None)
+        return cls
+    _AUDIT_FAILURES.pop(key, None)
+    _AUDITED_BUILTINS[cls] = _SealRecord(AUDITED_BUILTIN, _method_snapshot(cls), digest)
     return cls
 
 
+def register_attested_rate_law(cls, *, attested_by: str):
+    """Register a plugin RateLaw as a CALLER-ATTESTED extension: ``attested_by`` (a non-empty name of the person/project
+    vouching for it) attests that ``descriptor()`` faithfully binds every operative parameter.  This is a CLAIM, not an
+    audit -- the class gets a bound descriptor (mutations of bound parameters are detected) but NEVER the audited tier:
+    the receipt reports ``execution_identity_basis='CALLER_ATTESTED'``, ``execution_identity_certified`` stays False,
+    strict mode refuses it unless ``accept_attested_extensions=True``, and its kinetic tier is floored.  A class in the
+    closed audit table cannot be re-registered as an attestation (it is audited or demoted, never downgraded-by-claim).
+    Usable as ``register_attested_rate_law(MyLaw, attested_by="my-lab")``; returns the class unchanged."""
+    _check_rate_law_class(cls)
+    if not (isinstance(attested_by, str) and attested_by.strip()):
+        raise KernelError("register_attested_rate_law requires a non-empty attested_by (who vouches for the descriptor)")
+    if (cls.__module__, cls.__qualname__) in _AUDITED_BUILTIN_PINS or cls in _AUDITED_BUILTINS:
+        raise KernelError(f"{cls.__qualname__} is governed by the closed audit table; it cannot be caller-attested")
+    try:
+        digest = hashlib.sha256(_class_source(cls)[0].encode("utf-8")).hexdigest()
+    except (KernelError, OSError, SyntaxError):
+        digest = "UNAVAILABLE"
+    _ATTESTED_EXTENSIONS[cls] = _SealRecord(CALLER_ATTESTED_EXTENSION, _method_snapshot(cls), digest,
+                                            attested_by.strip())
+    return cls
+
+
+def register_certified_rate_law(cls):
+    """REMOVED in XXIII-2 (it let ANY caller self-certify a lying law).  Always raises KernelError naming the two
+    truthful routes: add an audit pin to the closed table (in-tree code review), or ``register_attested_rate_law``."""
+    raise KernelError(
+        "register_certified_rate_law was removed (XXIII-2): self-registration cannot certify execution identity. "
+        "Use register_attested_rate_law(cls, attested_by=...) for a plugin (a labeled caller claim, never audited), or "
+        "add the class to the closed _AUDITED_BUILTIN_PINS table through code review.")
+
+
+def rate_law_authority(rl) -> str:
+    """The authority backing ``rl``'s execution identity: AUDITED_BUILTIN, CALLER_ATTESTED_EXTENSION or UNVERIFIABLE.
+    Exact type only (a subclass inherits nothing); the sealed evaluate/descriptor objects must still be the class's
+    own (a post-seal method swap demotes); an instance-level evaluate/descriptor override demotes."""
+    if rl is None:
+        return UNVERIFIABLE_AUTHORITY
+    t = type(rl)
+    inst = getattr(rl, "__dict__", {})
+    if any(name in inst for name in _RATE_LAW_METHODS):
+        return UNVERIFIABLE_AUTHORITY
+    for table in (_AUDITED_BUILTINS, _ATTESTED_EXTENSIONS):
+        rec = table.get(t)
+        if rec is not None:
+            return rec.authority if _method_snapshot(t) == rec.methods else UNVERIFIABLE_AUTHORITY
+    return UNVERIFIABLE_AUTHORITY
+
+
 def is_certified_rate_law_type(cls) -> bool:
-    """True iff ``cls`` is an AUDITED, registered rate-law implementation (XXII-2).  Registry membership -- NOT the
-    mere presence of a ``descriptor()`` method -- is what licenses a CERTIFIABLE execution identity for its instances."""
-    return isinstance(cls, type) and cls in _CERTIFIED_RATE_LAW_TYPES
+    """True iff ``cls`` is a SEALED audited built-in whose methods are intact (XXIII-2).  A caller attestation is NOT
+    certification and returns False."""
+    rec = _AUDITED_BUILTINS.get(cls) if isinstance(cls, type) else None
+    return rec is not None and _method_snapshot(cls) == rec.methods
 
 
-@register_certified_rate_law
+def rate_law_attestation(cls) -> str:
+    """Who attested a CALLER_ATTESTED_EXTENSION type ('' if none) -- surfaced on receipts so a claim names its source."""
+    rec = _ATTESTED_EXTENSIONS.get(cls)
+    return rec.attested_by if rec is not None else ""
+
+
+def audit_status() -> dict:
+    """{(module, qualname): 'SEALED' | 'NOT_LOADED' | <failure reason>} for every pinned built-in (a stale pin shows up
+    here and in the receipt's demotion, never as a silent certification)."""
+    out = {}
+    sealed = {(t.__module__, t.__qualname__) for t in _AUDITED_BUILTINS}
+    for key in _AUDITED_BUILTIN_PINS:
+        out[key] = "SEALED" if key in sealed else _AUDIT_FAILURES.get(key, "NOT_LOADED")
+    return out
+
+
 @dataclass(frozen=True)
 class MassActionIrreversible(RateLaw):
     """r_vol = k * prod(c[reactant]^|coeff|)  (mol L^-1 s^-1).  Forward only (no reverse term).
@@ -297,7 +456,6 @@ class MassActionIrreversible(RateLaw):
         return ("MassActionIrreversible", repr(float(self.k)), self.tier, self.source)
 
 
-@register_certified_rate_law
 @dataclass(frozen=True)
 class MassActionReversible(RateLaw):
     """r_vol = kf * prod(c[reactant]^|coeff|) - kr * prod(c[product]^coeff)  (mol L^-1 s^-1).
@@ -328,6 +486,11 @@ class MassActionReversible(RateLaw):
     def descriptor(self):
         # XX-2B: bind BOTH rate constants (kf, kr encode Kc) and provenance.
         return ("MassActionReversible", repr(float(self.kf)), repr(float(self.kr)), self.tier, self.source)
+
+
+# XXIII-2: seal the in-module audited built-ins against their closed pins (fail-closed on mismatch).
+_seal_audited_builtin(MassActionIrreversible)
+_seal_audited_builtin(MassActionReversible)
 
 
 #: Sentinel: a reaction whose kinetics are unknown.  It is NOT a rate of 0 -- a system containing it refuses to

@@ -33,7 +33,7 @@ from experiments.sandbox_foundation.general_kernel import (
     Species,
     StaleCertificateError,
     is_certified_rate_law_type,
-    register_certified_rate_law,
+    register_attested_rate_law,
 )
 
 _A = Species.of("A", {"R": 1}, charge=0, phase=Phase.AQUEOUS)
@@ -125,47 +125,51 @@ def test_builtin_types_are_registered():
     assert is_certified_rate_law_type(BicarbonateDissolutionRate)
 
 
-# ============================================================ the explicit promotion route: registration
-def test_custom_law_is_uncertified_until_registered_then_certifiable():
+# ============================================================ the explicit plugin route: ATTESTATION (XXIII-2)
+# XXII-2 originally promoted a custom law to CERTIFIED by caller registration.  OPERATION XXIII's predeclared probe
+# showed that route also certified a LYING law (FAIL), so promotion is now an explicitly-labeled ATTESTATION that is
+# never a certified execution identity (see test_xxiii_s2_registry_authority.py).
+def test_custom_law_is_uncertified_until_attested_and_attestation_is_not_certification():
     # UNREGISTERED: even a FAITHFUL descriptor does not certify (its faithfulness is unverifiable from outside)
     assert not is_certified_rate_law_type(_FaithfulCustomLaw)
     assert _rate_law_descriptor(_FaithfulCustomLaw(0.5))[0] == "UNVERIFIABLE_RATE_LAW"
     world, init = _world(_FaithfulCustomLaw(0.5))
     assert world.integrate(init, duration=1.0, n_steps=20).receipt.execution_identity_certified is False
-    # PROMOTE via the explicit verification route (registration), then it certifies
     try:
-        register_certified_rate_law(_FaithfulCustomLaw)
-        assert is_certified_rate_law_type(_FaithfulCustomLaw)
+        register_attested_rate_law(_FaithfulCustomLaw, attested_by="test-suite")
+        assert not is_certified_rate_law_type(_FaithfulCustomLaw)
         world2, init2 = _world(_FaithfulCustomLaw(0.5))
-        tr = world2.integrate(init2, duration=1.0, n_steps=20, require_certified_execution=True)
-        assert tr.receipt.execution_identity_certified is True
+        tr = world2.integrate(init2, duration=1.0, n_steps=20, require_certified_execution=True,
+                              accept_attested_extensions=True)
+        assert tr.receipt.execution_identity_certified is False
+        assert tr.receipt.execution_identity_basis == "CALLER_ATTESTED"
     finally:
-        gk._CERTIFIED_RATE_LAW_TYPES.discard(_FaithfulCustomLaw)   # keep the global registry clean for other tests
+        gk._ATTESTED_EXTENSIONS.pop(_FaithfulCustomLaw, None)      # keep the global registry clean for other tests
 
 
 def test_registered_law_mutation_is_caught_by_the_cert_backstop():
     """A registered law's descriptor is audited-faithful, so the XIX-1D cert-recompute catches a post-construction
     mutation of its bound parameter -- the backstop the lying law defeats precisely because its descriptor lies."""
     try:
-        register_certified_rate_law(_FaithfulCustomLaw)
+        register_attested_rate_law(_FaithfulCustomLaw, attested_by="test-suite")
         world, init = _world(_FaithfulCustomLaw(0.5))
         world.integrate(init, duration=1.0, n_steps=10)            # snapshot the cert at first integrate
         world.compartments[0].system.reactions[0].rate_law.k = 5.0 # mutate the FAITHFULLY-bound parameter
         with pytest.raises(StaleCertificateError):
             world.integrate(init, duration=1.0, n_steps=10)
     finally:
-        gk._CERTIFIED_RATE_LAW_TYPES.discard(_FaithfulCustomLaw)
+        gk._ATTESTED_EXTENSIONS.pop(_FaithfulCustomLaw, None)
 
 
 # ============================================================ registry is fail-closed
 def test_registering_a_non_ratelaw_is_refused():
     with pytest.raises(gk.KernelError):
-        register_certified_rate_law(int)
+        register_attested_rate_law(int, attested_by="x")
 
     class _NotALaw:
         pass
     with pytest.raises(gk.KernelError):
-        register_certified_rate_law(_NotALaw)
+        register_attested_rate_law(_NotALaw, attested_by="x")
 
 
 def test_registering_a_descriptorless_law_is_refused():
@@ -173,7 +177,7 @@ def test_registering_a_descriptorless_law_is_refused():
         def evaluate(self, reaction, concentrations):
             return 1.0
     with pytest.raises(gk.KernelError) as ei:
-        register_certified_rate_law(_NoDescriptor)
+        register_attested_rate_law(_NoDescriptor, attested_by="x")
     assert "descriptor" in str(ei.value)
     assert not is_certified_rate_law_type(_NoDescriptor)
 

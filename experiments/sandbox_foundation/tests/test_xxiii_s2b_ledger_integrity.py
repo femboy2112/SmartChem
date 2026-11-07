@@ -15,12 +15,14 @@ from __future__ import annotations
 
 import pytest
 
-from experiments.sandbox_foundation.claim_tiers import STRUCTURALLY_CONSERVING, UNVERIFIED, rank
+from experiments.sandbox_foundation.claim_tiers import REFUSED, STRUCTURALLY_CONSERVING, UNVERIFIED, rank
 from experiments.sandbox_foundation.general_coupled import (
     Compartment,
     CoupledError,
     CoupledWorld,
+    ElectroneutralBulkExchange,
     EquilibriumCoupling,
+    InterfaceTransfer,
 )
 from experiments.sandbox_foundation.general_equilibrium import (
     AcetateWaterEquilibriumOperator,
@@ -182,5 +184,77 @@ class TestF2EquilibriumOperatorDescriptor:
         assert tr.receipt.execution_identity_basis == "AUDITED_BUILTIN"
         assert tr.receipt.structural_tier == STRUCTURALLY_CONSERVING
         assert tr.amounts["c"][-1][_SP["NaAc"]] > 0.0                    # the ion pair actually ran
+
+
+# ===================================================================================================== F3 local charge
+_Na = Species.of("Na+", {"Na": 1}, 1, Phase.AQUEOUS)
+_Cl = Species.of("Cl-", {"Cl": 1}, -1, Phase.AQUEOUS)
+
+
+def _f3_cells():
+    return [Compartment(n, ChemicalSystem([_Na, _Cl], [], volume_L=1.0)) for n in ("A", "B")]
+
+
+class TestF3LocalElectroneutrality:
+    def test_selective_single_ion_interface_is_not_receipted_conserved(self):
+        w = CoupledWorld(_f3_cells(), interfaces=[InterfaceTransfer("na_only", "A", "B", _Na, _Na, k_transfer=1.0)])
+        tr = w.integrate({"A": {_Na: 1.0, _Cl: 1.0}, "B": {}}, duration=2.0, n_steps=8)
+        r = tr.receipt
+        assert r.local_electroneutrality_held is False
+        assert r.compartment_max_net_charge["A"] > 0.4 and r.compartment_max_net_charge["B"] > 0.4
+        assert r.compartment_max_charge_separation["A"] > 0.4 and r.compartment_max_charge_separation["B"] > 0.4
+        assert r.charge_balance_claim.startswith("GLOBAL_ONLY_LOCAL_VIOLATED")
+        assert not r.charge_balance_claim.startswith("CONSERVED")
+        assert rank(r.admitted_tier) == rank(REFUSED) and r.structural_tier == REFUSED
+        assert r.material_balance_closed is True                         # GLOBAL charge still closes -- separate facet
+        assert any("'A'" in c and "electroneutral" in c for c in tr.caveats)
+        assert any("na_only" in c and "charged species" in c for c in tr.caveats)
+
+    def test_bulk_exchange_fed_from_a_non_neutral_compartment_is_refused(self):
+        w = CoupledWorld(_f3_cells(),
+                         bulk_exchanges=[ElectroneutralBulkExchange("bx", "A", "B", ((_Na, _Na), (_Cl, _Cl)), 1.0)])
+        tr = w.integrate({"A": {_Na: 1.0}, "B": {_Na: 0.5, _Cl: 0.5}}, duration=2.0, n_steps=8)
+        r = tr.receipt
+        assert r.local_electroneutrality_held is False
+        assert r.charge_balance_claim.startswith("GLOBAL_ONLY_LOCAL_VIOLATED")
+        assert rank(r.admitted_tier) == rank(REFUSED)
+
+    def test_control_neutral_complete_bulk_exchange_stays_certified(self):
+        w = CoupledWorld(_f3_cells(),
+                         bulk_exchanges=[ElectroneutralBulkExchange("bx", "A", "B", ((_Na, _Na), (_Cl, _Cl)), 1.0)])
+        tr = w.integrate({"A": {_Na: 1.0, _Cl: 1.0}, "B": {_Na: 0.1, _Cl: 0.1}}, duration=2.0, n_steps=8)
+        r = tr.receipt
+        assert r.local_electroneutrality_held is True
+        assert r.charge_balance_claim.startswith("CONSERVED")
+        assert r.structural_tier == STRUCTURALLY_CONSERVING
+        assert set(r.compartment_max_net_charge) == {"A", "B"}
+        assert max(r.compartment_max_net_charge.values()) < 1e-12
+        assert not any("charged species" in c for c in tr.caveats)
+
+    def test_a_declared_non_neutral_input_is_reported_but_is_not_a_separation(self):
+        # the judged quantity is SEPARATION (charge the dynamics moved), not the input's own imbalance: one beaker seeded
+        # with a bare anion (the categorical bridge emits no spectator) is caveated and its absolute charge reported, but
+        # its charge-conserving kinetics are not refused (E N = 0 cannot separate charge within one compartment).
+        Ac = Species.of("Ac-", {"C": 2, "H": 3, "O": 2}, -1, Phase.AQUEOUS)
+        HAc = Species.of("HAc", {"C": 2, "H": 4, "O": 2}, 0, Phase.AQUEOUS)
+        Hp = Species.of("H+", {"H": 1}, 1, Phase.AQUEOUS)
+        rx = Reaction("diss", ((HAc, -1), (Ac, 1), (Hp, 1)), MassActionIrreversible(k=0.1))
+        w = CoupledWorld([Compartment("c", ChemicalSystem([HAc, Ac, Hp], [rx], 1.0))])
+        tr = w.integrate({"c": {HAc: 1.0, Ac: 1.0}}, duration=1.0, n_steps=4)
+        r = tr.receipt
+        assert r.local_electroneutrality_held is True
+        assert r.structural_tier == STRUCTURALLY_CONSERVING
+        assert r.compartment_max_net_charge["c"] == pytest.approx(1.0)
+        assert r.compartment_max_charge_separation["c"] < 1e-12
+        assert any("START non-electroneutral" in c and "'c'" in c for c in tr.caveats)
+
+    @pytest.mark.parametrize("mode", ("closed", "membrane", "bulk"))
+    def test_control_the_reactor_modes_stay_locally_neutral_and_certified(self, mode):
+        from experiments.sandbox_foundation.general_reactor_demo import run_reactor
+        tr, _sp, _p = run_reactor(mode, duration=30.0, n_steps=30)
+        r = tr.receipt
+        assert r.local_electroneutrality_held is True
+        assert r.structural_tier == STRUCTURALLY_CONSERVING
+        assert not r.charge_balance_claim.startswith("GLOBAL_ONLY_LOCAL_VIOLATED")
 
 

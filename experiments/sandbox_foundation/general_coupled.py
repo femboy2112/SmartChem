@@ -463,6 +463,9 @@ class CoupledReceipt:
     numerically_unresolved_components: tuple = ()                 # XXII-3: components whose inventory scale is at/below the absolute numerical floor -- conservation NOT certified (not stamped conserved, not proven violated)
     positivity_resolution_limited: bool = False                  # XXII-3: a negative dip passed the ABSOLUTE positivity floor but exceeded the dipping species' own inventory scale -- nonnegativity at that scale is unresolved, not guaranteed
     uncertified_equilibrium_operators: tuple = ()                # XXIII-2b (F2): ((compartment, operator_class), ...) operators binding none of their solve parameters -- they void the execution-identity claim exactly like an UNVERIFIABLE rate law
+    compartment_max_net_charge: dict = field(default_factory=dict)  # XXIII-2b (F3): {compartment: max |sum z_i n_i| (mol) over EVERY accepted step}
+    local_electroneutrality_held: bool = True                    # XXIII-2b (F3): no compartment's net charge moved by more than atol + rtol * sum|z_i n_i| from its first accepted state, at any accepted step (no charge SEPARATION)
+    compartment_max_charge_separation: dict = field(default_factory=dict)  # XXIII-2b (F3): {compartment: max |q(t) - q(0)| (mol)} -- the quantity local_electroneutrality_held judges
 
 
 @dataclass(frozen=True)
@@ -1113,6 +1116,17 @@ class CoupledWorld:
         accs = [acc.copy()]                                # XX-3: integrated external flux at EVERY accepted step
         step_min = [float(y.min())]                        # XX-3: min inventory at EVERY step (not just the sampled set)
         step_argmin = [int(np.argmin(y))]
+        # XXIII-2b (F3) LOCAL ELECTRONEUTRALITY record.  The global charge row cannot see a charge SEPARATION: a single-ion
+        # interface leaves A at -0.49 mol and B at +0.49 mol, and the sum is a perfect zero.  So each compartment's net
+        # charge sum z_i n_i and its ionic inventory sum |z_i n_i| are recorded at every accepted step (same cadence as
+        # the ledger, so the verdict is observer-invariant too).  A cheap pair of mat-vecs; a costly omission otherwise.
+        cnames = [c.name for c in self.compartments]
+        z_by_comp = np.zeros((len(cnames), self.n_slots))
+        for j, (cn, sp) in enumerate(self._slots):
+            z_by_comp[cnames.index(cn), j] = float(sp.charge)
+        abs_z_by_comp = np.abs(z_by_comp)
+        local_q = [z_by_comp @ y]
+        local_ionic = [abs_z_by_comp @ np.abs(y)]
         for step in range(1, n_steps + 1):
             y, acc, derived = self._step(y, acc, dt, scheme, rtol, atol)
             if _observer_perturb is not None:              # XX-3: test-only controlled perturbation (default: no-op)
@@ -1121,6 +1135,8 @@ class CoupledWorld:
             accs.append(acc.copy())
             step_min.append(float(y.min()))
             step_argmin.append(int(np.argmin(y)))
+            local_q.append(z_by_comp @ y)
+            local_ionic.append(abs_z_by_comp @ np.abs(y))
             if step % sample_every == 0 or step == n_steps:
                 times.append(step * dt)
                 ys.append(y.copy())
@@ -1243,6 +1259,42 @@ class CoupledWorld:
         else:
             charge_balance_claim = "CONSERVED (independently checked in the material balance)"
 
+        # XXIII-2b (F3) LOCAL CHARGE-SEPARATION VERDICT.  Each compartment is judged against ITS OWN ionic inventory:
+        # |q_c(t) - q_c(0)| <= atol + rtol * sum |z_i n_i| at every accepted step, where q_c = sum z_i n_i and q_c(0) is
+        # the compartment's first ACCEPTED state (post t=0 projection -- a fast-equilibrium cell's declared inventory is
+        # neutralised there by design).  What is judged is SEPARATION: net charge the dynamics moved into or out of the
+        # compartment.  Within-compartment kinetics conserve charge exactly (E N = 0), so only transport can do that --
+        # and a macroscopic charge separation between two beakers is not a subtle numerical artefact, it is a capacitor
+        # nobody declared, so the trajectory is not a result.  A compartment DECLARED non-neutral (a bare-ion seed with
+        # no counter-ion) is a property of the input, not of the dynamics: it is reported (absolute max + a caveat),
+        # never silently passed as neutral, but it is not a separation the run produced.
+        compartment_max_net_charge = {}                      # absolute max |q_c| (reported)
+        compartment_max_charge_separation = {}               # max |q_c(t) - q_c(0)| (judged)
+        local_violations = {}                                # {compartment: (t, separated charge, tol) at first breach}
+        declared_net_charge = {}                             # {compartment: q_c(0)} where the input itself is charged
+        for ci, cn in enumerate(cnames):
+            q0 = float(local_q[0][ci])
+            worst = sep_worst = 0.0
+            for s in range(len(local_q)):
+                qs = float(local_q[s][ci])
+                worst = max(worst, abs(qs))
+                sep_worst = max(sep_worst, abs(qs - q0))
+                tol_q = self._MATERIAL_ATOL + self._MATERIAL_RTOL * float(local_ionic[s][ci])
+                if cn not in local_violations and abs(qs - q0) > tol_q:
+                    local_violations[cn] = (s * dt, qs - q0, tol_q)
+            if abs(q0) > self._MATERIAL_ATOL + self._MATERIAL_RTOL * float(local_ionic[0][ci]):
+                declared_net_charge[cn] = q0
+            compartment_max_net_charge[cn] = worst
+            compartment_max_charge_separation[cn] = sep_worst
+        local_electroneutrality_held = not local_violations
+        if not local_electroneutrality_held:
+            charge_balance_claim = (
+                f"GLOBAL_ONLY_LOCAL_VIOLATED: compartment(s) {sorted(local_violations)} gained or lost a macroscopic net "
+                f"charge beyond their electroneutrality tolerance (max |q(t) - q(0)| = "
+                f"{max(compartment_max_charge_separation[cn] for cn in local_violations):.3e} mol); whatever the global "
+                f"charge row says, charge was SEPARATED between compartments, so no local charge-conservation claim is "
+                f"made.")
+
         positivity_held = min_amount >= -pos_tol
         # XXII-3 positivity resolution audit: the negativity gate is an ABSOLUTE floor (pos_tol).  If the deepest dip is
         # negative, passed that floor, yet the dipping species' own inventory scale is itself <= pos_tol, then the floor
@@ -1257,7 +1309,8 @@ class CoupledWorld:
         conserved_components_held = material_balance_closed
         feed_ledger_closed = all(feed_max_resid[lab] <= comp_tol[lab] for lab in feed_max_resid)   # XXI-3: per-component
         solver_completed = True
-        structural_ok = solver_completed and positivity_held and material_balance_closed
+        structural_ok = (solver_completed and positivity_held and material_balance_closed
+                         and local_electroneutrality_held)        # XXIII-2b (F3): a charged beaker floors to REFUSED
         structural_tier = STRUCTURALLY_CONSERVING if structural_ok else REFUSED
         admitted_tier = weakest(structural_tier, declared_kinetic_tier)
 
@@ -1311,6 +1364,25 @@ class CoupledWorld:
                         f"{list(self._attested_extension_laws)} are plugin extensions whose descriptor faithfulness is "
                         f"claimed by their author; bound parameters are mutation-checked, but this is NOT a certified "
                         f"execution identity and the kinetic tier is floored to UNVERIFIED (XXIII-2)",)
+        if local_violations:                                  # XXIII-2b (F3)
+            first_cn = min(local_violations, key=lambda cn: local_violations[cn][0])
+            t_v, q_v, tol_v = local_violations[first_cn]
+            caveats += (f"local electroneutrality VIOLATED in compartment(s) {sorted(local_violations)}: compartment "
+                        f"{first_cn!r} first had {q_v:+.3e} mol of net charge moved into it at t={t_v:.3e}s (> its tol "
+                        f"{tol_v:.3e} mol); global charge closing does not make a charge separation physical -- tier "
+                        f"REFUSED",)
+        if declared_net_charge:                               # XXIII-2b (F3): a charged INPUT is reported, not hidden
+            q_txt = ", ".join(f"{cn!r}: {q:+.3e}" for cn, q in sorted(declared_net_charge.items()))
+            caveats += (f"compartment(s) {sorted(declared_net_charge)} START non-electroneutral (net charge {q_txt} mol "
+                        f"after the t=0 projection): the declared inventory lacks counter-ions. That input imbalance is "
+                        f"REPORTED here, not gated (only charge the run itself moves -- separation -- is gated), but the "
+                        f"input is not a physical bulk solution",)
+        for iface in self.interfaces:                         # XXIII-2b (F3): name every selective charged flux
+            if iface.species_a.charge != 0:
+                caveats += (f"interface {iface.name!r} selectively moves the charged species {iface.species_a.name!r} "
+                            f"(z={iface.species_a.charge:+d}) from {iface.a!r} to {iface.b!r} with no counter-ion; a "
+                            f"single-ion flux transports net charge, so local electroneutrality is VERIFIED per "
+                            f"compartment, not assumed",)
         if implicit_reservoir:
             note = (f"implicit-solvent reservoir components {sorted(implicit_reservoir)} exchange H/O/charge with a "
                     f"fast-equilibrium solvent and are reported (endpoint), not independently ledgered")
@@ -1339,7 +1411,10 @@ class CoupledWorld:
             component_tolerance=dict(comp_tol), component_max_residual=dict(comp_max_resid),
             component_resolution=dict(component_resolution),
             numerically_unresolved_components=numerically_unresolved_components,
-            positivity_resolution_limited=positivity_resolution_limited)
+            positivity_resolution_limited=positivity_resolution_limited,
+            compartment_max_net_charge=compartment_max_net_charge,
+            compartment_max_charge_separation=compartment_max_charge_separation,
+            local_electroneutrality_held=local_electroneutrality_held)
 
         amounts = {c.name: tuple({sp: float(yj[self._slot[(c.name, sp)]]) for sp in c.system.species} for yj in ys)
                    for c in self.compartments}

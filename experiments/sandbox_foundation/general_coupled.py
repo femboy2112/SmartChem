@@ -69,7 +69,7 @@ from experiments.sandbox_foundation.claim_tiers import (
     rank,
     weakest,
 )
-from experiments.sandbox_foundation.general_equilibrium import EquilibriumOperator
+from experiments.sandbox_foundation.general_equilibrium import EquilibriumError, EquilibriumOperator
 from experiments.sandbox_foundation.general_kernel import (
     ChemicalSystem,
     KernelError,
@@ -136,6 +136,25 @@ def _rate_law_descriptor(rl):
             return [_ATTESTED_MARKER, type(rl).__qualname__, rate_law_attestation(type(rl))] + desc
         return desc
     return [_UNVERIFIABLE_MARKER, type(rl).__qualname__]
+
+
+#: XXIII-2b (F2): the head of an equilibrium operator's descriptor when it binds NONE of its solve parameters.
+_UNVERIFIABLE_EQ_MARKER = "UNVERIFIABLE_EQUILIBRIUM_OPERATOR"
+
+
+def _equilibrium_operator_descriptor(op):
+    """XXIII-2b (F2): the operator's OWN solve-parameter descriptor, or the UNVERIFIABLE sentinel.  Fail-closed: the
+    descriptor must be defined on the operator's EXACT type (a subclass that inherits its parent's descriptor while
+    replacing ``speciate`` would otherwise borrow a signature for physics it does not perform), must not be shadowed on
+    the instance, and must not be the refusing base."""
+    t = type(op)
+    own = t.__dict__.get("descriptor")
+    if own is None or own is EquilibriumOperator.__dict__["descriptor"] or "descriptor" in getattr(op, "__dict__", {}):
+        return [_UNVERIFIABLE_EQ_MARKER, t.__qualname__]
+    try:
+        return list(op.descriptor())
+    except (NotImplementedError, EquilibriumError):      # unbindable (or mutated into something un-encodable)
+        return [_UNVERIFIABLE_EQ_MARKER, t.__qualname__]
 
 
 def _descriptor_is_attested(desc) -> bool:
@@ -443,6 +462,7 @@ class CoupledReceipt:
     component_resolution: dict = field(default_factory=dict)      # XXII-3: {conserved component: VERIFIED_WITHIN_RESOLUTION | VIOLATED | NUMERICALLY_UNRESOLVED_AT_REQUESTED_SCALE}
     numerically_unresolved_components: tuple = ()                 # XXII-3: components whose inventory scale is at/below the absolute numerical floor -- conservation NOT certified (not stamped conserved, not proven violated)
     positivity_resolution_limited: bool = False                  # XXII-3: a negative dip passed the ABSOLUTE positivity floor but exceeded the dipping species' own inventory scale -- nonnegativity at that scale is unresolved, not guaranteed
+    uncertified_equilibrium_operators: tuple = ()                # XXIII-2b (F2): ((compartment, operator_class), ...) operators binding none of their solve parameters -- they void the execution-identity claim exactly like an UNVERIFIABLE rate law
 
 
 @dataclass(frozen=True)
@@ -608,6 +628,14 @@ class CoupledWorld:
             for c in self.compartments for r in c.system.reactions
             if r.rate_law is not None and _descriptor_is_attested(_rate_law_descriptor(r.rate_law))
         )
+        # XXIII-2b (F2): equilibrium operators that bind none of their solve parameters -- the certificate cannot see
+        # them change, so the world gets the same treatment as for an UNVERIFIABLE rate law.
+        self._uncertified_equilibrium_operators = tuple(
+            (c.name, type(c.equilibrium.operator).__qualname__)
+            for c in self.compartments
+            if c.equilibrium is not None
+            and _equilibrium_operator_descriptor(c.equilibrium.operator)[:1] == [_UNVERIFIABLE_EQ_MARKER]
+        )
 
     # ---------------------------------------------------------------- XIX-1D world execution certificate
     def _equilibrium_descriptor(self, c: Compartment):
@@ -622,6 +650,9 @@ class CoupledWorld:
             "activity_model": getattr(ec.operator, "activity_model", None),
             "table": sorted((nm, _species_key(sp)) for nm, sp in ec.species_table.items()),
             "reservoir_components": sorted(ec.reservoir_components),
+            # XXIII-2b (F2): every parameter the solve reads (include_ion_pair was invisible here before), or the
+            # UNVERIFIABLE sentinel -- in which case the world has no certified execution identity (see __init__).
+            "operator_descriptor": _equilibrium_operator_descriptor(ec.operator),
         }
 
     def _compute_world_certificate(self) -> str:
@@ -1028,6 +1059,13 @@ class CoupledWorld:
                 "witness that the same physics executes (a mutation of their hidden parameters is invisible to it). "
                 "Give each such law a descriptor() binding its operative parameters, or run without "
                 "require_certified_execution to execute in the explicitly-flagged, tier-floored research mode.")
+        if require_certified_execution and self._uncertified_equilibrium_operators:
+            raise CoupledError(                                       # XXIII-2b (F2)
+                "require_certified_execution=True but this world has no certified execution identity: equilibrium "
+                f"operator(s) {list(self._uncertified_equilibrium_operators)} bind none of their solve parameters "
+                "(no descriptor() of their own), so the world certificate cannot witness that the same equilibrium "
+                "physics executes. Give the operator a descriptor() binding every parameter speciate reads, or run "
+                "without require_certified_execution in the explicitly-flagged, tier-floored research mode.")
         if not (isinstance(duration, (int, float)) and math.isfinite(duration) and duration > 0):
             raise CoupledError("duration must be finite and > 0")
         if not (isinstance(n_steps, int) and not isinstance(n_steps, bool) and n_steps >= 1):
@@ -1035,7 +1073,8 @@ class CoupledWorld:
         if declared_kinetic_tier is None:
             tiers = [r.rate_law.tier for c in self.compartments for r in c.system.reactions if r.rate_law is not None]
             declared_kinetic_tier = weakest(*tiers) if tiers else STRUCTURALLY_CONSERVING
-        if self._uncertified_rate_laws or self._attested_extension_laws:
+        if self._uncertified_rate_laws or self._attested_extension_laws or self._uncertified_equilibrium_operators:
+            # XXIII-2b (F2): an unbound equilibrium operator floors exactly like an unverifiable law.
             # XXIII-2: a caller attestation is a claim, not evidence -- it floors exactly like an unverifiable law.
             # XXI-2: an unbindable law cannot certify its own kinetics; floor the DERIVED claim to UNVERIFIED here,
             # from the descriptor's unverifiability -- NOT from the law's self-declared tier (a label is not a binding).
@@ -1262,6 +1301,11 @@ class CoupledWorld:
                         f"executed (a mutation of their hidden parameters is invisible to it); the kinetic tier is "
                         f"floored to UNVERIFIED and this trajectory must NOT be read as a certified-identity result "
                         f"(XXI-2)",)
+        if self._uncertified_equilibrium_operators:
+            caveats += (f"NO certified execution identity: equilibrium operator(s) "
+                        f"{list(self._uncertified_equilibrium_operators)} bind none of their solve parameters, so the "
+                        f"world certificate cannot witness that the same equilibrium physics executed; the tier is "
+                        f"floored to UNVERIFIED (XXIII-2b)",)
         if self._attested_extension_laws:
             caveats += (f"execution identity rests on CALLER ATTESTATION, not audit: rate law(s) "
                         f"{list(self._attested_extension_laws)} are plugin extensions whose descriptor faithfulness is "
@@ -1284,11 +1328,14 @@ class CoupledWorld:
             raw_material_change=raw_material_change, ledger_adjusted_residual=ledger_residual,
             material_balance_closed=material_balance_closed, charge_balance_claim=charge_balance_claim, notes=notes,
             max_step_material_residual=max_step_material_residual, first_violation=(first_violation or ()),
-            execution_identity_certified=not (self._uncertified_rate_laws or self._attested_extension_laws),
-            execution_identity_basis=("UNVERIFIED" if self._uncertified_rate_laws
+            execution_identity_certified=not (self._uncertified_rate_laws or self._attested_extension_laws
+                                              or self._uncertified_equilibrium_operators),
+            execution_identity_basis=("UNVERIFIED" if (self._uncertified_rate_laws
+                                                       or self._uncertified_equilibrium_operators)
                                       else "CALLER_ATTESTED" if self._attested_extension_laws else "AUDITED_BUILTIN"),
             attested_extension_laws=self._attested_extension_laws,
             uncertified_rate_laws=self._uncertified_rate_laws,
+            uncertified_equilibrium_operators=self._uncertified_equilibrium_operators,
             component_tolerance=dict(comp_tol), component_max_residual=dict(comp_max_resid),
             component_resolution=dict(component_resolution),
             numerically_unresolved_components=numerically_unresolved_components,

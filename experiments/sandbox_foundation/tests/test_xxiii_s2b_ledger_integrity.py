@@ -15,10 +15,18 @@ from __future__ import annotations
 
 import pytest
 
-from experiments.sandbox_foundation.claim_tiers import STRUCTURALLY_CONSERVING
+from experiments.sandbox_foundation.claim_tiers import STRUCTURALLY_CONSERVING, UNVERIFIED, rank
 from experiments.sandbox_foundation.general_coupled import (
     Compartment,
+    CoupledError,
     CoupledWorld,
+    EquilibriumCoupling,
+)
+from experiments.sandbox_foundation.general_equilibrium import (
+    AcetateWaterEquilibriumOperator,
+    EquilibriumOperator,
+    EquilibriumState,
+    MixedAcetateCarbonateEquilibriumOperator,
 )
 from experiments.sandbox_foundation.general_kernel import (
     MassActionIrreversible,
@@ -89,5 +97,90 @@ class TestF1ReactionRebind:
         tr = w.integrate({"c": {_A: 0.1}}, duration=1.0, n_steps=20, require_certified_execution=True)
         assert tr.receipt.execution_identity_certified is True
         assert tr.receipt.structural_tier == STRUCTURALLY_CONSERVING
+
+
+# ===================================================================================================== F2 operator
+_SIG = AcetateWaterEquilibriumOperator.species_signature
+_SP = {nm: Species.of(nm, dict(_SIG[nm][0]), _SIG[nm][1], Phase.AQUEOUS) for nm in _SIG}
+_F2_INIT = {"c": {_SP["HAc"]: 0.2, _SP["Na+"]: 0.1}}
+
+
+def _f2_world(op):
+    ec = EquilibriumCoupling(op, dict(_SP), reservoir_components=frozenset({"H", "O", "charge"}))
+    return CoupledWorld([Compartment("c", ChemicalSystem(list(_SP.values()), [], volume_L=1.0), equilibrium=ec)])
+
+
+class _AcetateSubclassNoOwnDescriptor(AcetateWaterEquilibriumOperator):
+    """Inherits descriptor() but overrides the solve -- the inherited descriptor does not describe THIS physics."""
+
+    def speciate(self, component_amounts, *, volume_L, temperature_K=298.15):
+        return super().speciate(component_amounts, volume_L=volume_L, temperature_K=temperature_K)
+
+
+class _BareOperator(EquilibriumOperator):
+    """A minimal conserving operator with NO descriptor(): its solve parameters are unbindable."""
+    components = frozenset({"x"})
+    species = ("X",)
+    species_signature = {"X": ((("Q", 1),), 0)}
+    accepted_solver_verdicts = frozenset({"ok"})
+
+    def speciate(self, component_amounts, *, volume_L, temperature_K=298.15):
+        tot = float(component_amounts.get("x", 0.0))
+        return EquilibriumState(species_amounts={"X": tot}, volume_L=volume_L, temperature_K=temperature_K,
+                                component_inputs=dict(component_amounts), component_residuals={}, derived={},
+                                structural_tier=STRUCTURALLY_CONSERVING, solver_verdict="ok")
+
+    def component_totals(self, species_amounts):
+        return {"x": species_amounts.get("X", 0.0)}
+
+
+class TestF2EquilibriumOperatorDescriptor:
+    def test_two_physically_distinct_worlds_no_longer_share_a_certificate(self):
+        w_off = _f2_world(AcetateWaterEquilibriumOperator(activity_model="davies", include_ion_pair=False))
+        w_on = _f2_world(AcetateWaterEquilibriumOperator(activity_model="davies", include_ion_pair=True))
+        assert w_off._world_certificate != w_on._world_certificate
+
+    def test_post_construction_ion_pair_toggle_is_refused(self):
+        op = AcetateWaterEquilibriumOperator(activity_model="davies", include_ion_pair=False)
+        w = _f2_world(op)
+        op.include_ion_pair = True
+        with pytest.raises(StaleCertificateError):
+            w.integrate(_F2_INIT, duration=1.0, n_steps=2, require_certified_execution=True)
+
+    def test_post_construction_activity_model_toggle_on_the_mixed_operator_is_refused(self):
+        op = MixedAcetateCarbonateEquilibriumOperator(activity_model="davies")
+        tab = {nm: Species.of(nm, dict(sig[0]), sig[1], Phase.AQUEOUS)
+               for nm, sig in MixedAcetateCarbonateEquilibriumOperator.species_signature.items()}
+        ec = EquilibriumCoupling(op, tab, reservoir_components=frozenset({"H", "O", "charge"}))
+        w = CoupledWorld([Compartment("c", ChemicalSystem(list(tab.values()), [], 1.0), equilibrium=ec)])
+        op.activity_model = "ideal"
+        with pytest.raises(StaleCertificateError):
+            w.integrate({"c": {tab["HAc"]: 0.1}}, duration=1.0, n_steps=1)
+
+    @pytest.mark.parametrize("op_factory", [_BareOperator, _AcetateSubclassNoOwnDescriptor])
+    def test_an_operator_without_its_own_descriptor_voids_the_execution_identity(self, op_factory):
+        op = op_factory()
+        if isinstance(op, _BareOperator):
+            X = Species.of("X", {"Q": 1}, 0, Phase.AQUEOUS)
+            ec = EquilibriumCoupling(op, {"X": X})
+            w = CoupledWorld([Compartment("c", ChemicalSystem([X], [], 1.0), equilibrium=ec)])
+            init = {"c": {X: 1.0}}
+        else:
+            w, init = _f2_world(op), _F2_INIT
+        tr = w.integrate(init, duration=1.0, n_steps=1)
+        assert tr.receipt.execution_identity_certified is False
+        assert tr.receipt.execution_identity_basis == "UNVERIFIED"
+        assert rank(tr.receipt.admitted_tier) == rank(UNVERIFIED)          # floored (weakest() canonicalises the synonym)
+        assert any("equilibrium operator" in c for c in tr.caveats)
+        with pytest.raises(CoupledError):
+            w.integrate(init, duration=1.0, n_steps=1, require_certified_execution=True)
+
+    def test_control_an_untouched_in_tree_operator_integrates_certified(self):
+        w = _f2_world(AcetateWaterEquilibriumOperator(activity_model="davies", include_ion_pair=True))
+        tr = w.integrate(_F2_INIT, duration=1.0, n_steps=2, require_certified_execution=True)
+        assert tr.receipt.execution_identity_certified is True
+        assert tr.receipt.execution_identity_basis == "AUDITED_BUILTIN"
+        assert tr.receipt.structural_tier == STRUCTURALLY_CONSERVING
+        assert tr.amounts["c"][-1][_SP["NaAc"]] > 0.0                    # the ion pair actually ran
 
 

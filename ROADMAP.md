@@ -1,5 +1,45 @@
 # SmartChem roadmap
 
+> ## ▶ PRESENT STATE (2026-11-07) — OPERATION XXIV: the honest universe (research only)
+> This block supersedes only the research-lane status lines of the OPERATION XXIII block below, which stays
+> authoritative for the 1.6.0 release record. It reflects merged code and current evidence.
+>
+> - **Production 1.x — frozen.** 1.6.0 is the release; the tag never moves. XXIV changes nothing under `smartchem/`,
+>   packaging, frozen contracts or wire semantics. No new tag, and no PyPI.
+>
+> - **Research 2.0 — five P0 certification gaps, each reproduced RED then repaired** (predeclared probes and committed
+>   receipts in `xxiv_p0_probes.py` / `benchmarks/p0_xxiv/`):
+>   - **F2-gap.** Equilibrium operators now use the closed-audit / attested / unverifiable authority, like rate laws.
+>   - **p6b.** The positivity floor is caller-independent. A typed verdict separates
+>     `UNRESOLVED_AT_REQUESTED_TOLERANCE` from `VIOLATED`.
+>   - **Charge.** One typed charge contract is shared by the kernel and coupled paths. It keeps three claims apart:
+>     E_qN = 0, external-charge accounting, and bulk electroneutrality.
+>   - **Audit pins.** They now hash the in-tree dependency closure, not just the class source.
+>   - **Temperature.** A sourced constant run off its temperature is REFUSED on both paths.
+>
+> - **Source grounding** (`docs/research/OPERATION_XXIV_SOURCE_GROUNDING.md`):
+>   - The molal→molar log K transport closes the calcite-vs-PHREEQC gap from 0.30% to 0.007%. This is model-vs-model.
+>   - The pitzer.dat −0.074 anomaly is EXPLAINED: it is the 2015 β2(Na⁺,HCO₃⁻) = 8.22 parameter.
+>   - The NIST provenance is corrected; SRM 186g expired on 2023-04-30.
+>   - The phosphate discriminator is not run (underpowered as sourced).
+>
+> - **The 2.0 API is general.** A world-builder registry now carries a second, distinct system
+>   (`calcite_closed_dissolution`), and the shared run path names no chemistry. Every result carries a four-rung
+>   validation ladder. The empirical rung is False for both worlds.
+>
+> - **Research 3.0 — the first spatial crystal.** `spatial_grid_xxiv.py` is a ≤9×9 finite-volume grid on the general
+>   kernel, with walls, scheduled valves, a source/sink, and equal-and-opposite face fluxes. It is checked against an
+>   independent `expm` reference discretization, and its frames are a typed, write-back-proof projection.
+>
+> - **Milestone status.**
+>   - 1.6.0: RELEASED (unchanged).
+>   - **2.0-alpha: NOT MET.** No bounded domain is validated against an independent measurement with a stated
+>     uncertainty. The best candidate, Kline/Frear & Johnston 1929, lacks an uncertainty and a read method.
+>   - 2.0 stable: not before 2.0-alpha.
+>   - 3.0: research prototype only.
+>
+> Dossier: `docs/research/OPERATION_XXIV_HANDOFF.md`.
+>
 > ## ▶ PRESENT STATE (2026-11-06, later) — OPERATION XXIII: release the compiler
 > The authoritative current picture. It supersedes the OPERATION XXII block below, which is kept intact for its
 > reasoning (its "1.6.0 NOT tagged" line was true when written and is now overtaken by this block). Reflects MERGED

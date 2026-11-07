@@ -10,16 +10,19 @@ live public-API false-VOUCH exists. A conserved fiction is DEMOTED (readiness_ti
 FORMAL_CANDIDATE, not REACTION_VOUCHED; admissible_route_digests = ()) in LINEAR mode, and NOT
 ADMITTED (admissible_dag_digests = (); fit_status never "FITS") in CONVERGENT-DAG mode.
 
-LATENT HOLE (Conjectured -- documented here as scoped future work, NOT closed): the convergent
-DAG path is genuinely ORACLE-BLIND. search_dags / rank_dags / dag_bench_fit never consult the
-reaction-type oracle, and RankedDAGSummary carries no readiness field. What contains a fiction
-TODAY is the UNRELATED "undeclared-conditions => UNKNOWN fit" wall -- dag_bench_fit returns FITS
-only with zero gaps under a constraining box, and generated steps declare no conditions, so
-every generated DAG pins to fit_status=UNKNOWN and never reaches admissible_dag_digests. The
-moment a DAG step ever carries declared conditions sufficient to clear those gaps, a conserved
-fiction reaches admissible_dag_digests with the oracle never consulted = a true false-VOUCH.
-A DAG-mode oracle/fiction surface (or an enforced "generated DAG steps declare no conditions"
-invariant) is the real fix; it is scoped but not built here. THIS control locks the current
+LATENT HOLE -- ADMISSION HALF CLOSED by DAG-ADMIT-02 (31edffc, 2026-10-29; record corrected 2026-11-06).
+As first documented here, the convergent-DAG path was ORACLE-BLIND: admissible_dag_digests gated
+purely on fit_status == "FITS" and never consulted the reaction-type oracle, so a conserved fiction
+that cleared its fit gaps would have been admitted. DAG-ADMIT-02 re-derives recognition from the
+replay_payload at the admission point: a FITS dossier is admitted only when EVERY step is positively
+recognized (pinned by tests/test_dag_admission_recognition_gate.py::
+test_unrecognized_fits_dag_is_withheld_from_admission). STILL OPEN, and stated by that commit:
+(a) on a THIN_ADVISORY wire the replay is absent, so recognition is unverifiable and stays advisory
+-- a fully fail-closed gate needs recognition stored on the dossier (a declared schema move, staged);
+(b) search_dags / rank_dags / dag_bench_fit and RankedDAGSummary remain oracle-blind (they rank and
+fit; they do not admit). The "undeclared-conditions => UNKNOWN fit" wall still contains every
+generated DAG today, as a second, independent layer.
+THIS control locks the current
 behaviour so any regression -- a DAG fiction reaching FITS, or a linear fiction reaching
 REACTION_VOUCHED -- goes red before release.
 

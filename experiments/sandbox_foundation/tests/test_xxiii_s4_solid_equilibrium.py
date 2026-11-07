@@ -351,3 +351,26 @@ def test_existing_proxy_has_no_domain_guard_which_is_why_the_new_law_exists():
     # contrast only: the empirical Qsp = S^2 proxy happily evaluates at I ~ 1.2 mol/L (no guard); the new law refuses.
     import inspect
     assert "OutOfDomainError" not in inspect.getsource(BicarbonateDissolutionRate)
+
+
+# --------------------------------------------------- (7) hermetic constants: vendored, SHA-pinned, fail-closed on drift
+def test_constants_come_only_from_vendored_sha_pinned_databases():
+    # REGRESSION (hosted CI on PR #161): the harness used to read phreeqc.dat / wateq4f_PWN.dat from the INSTALLED
+    # phreeqpython under sys.prefix -- absent on CI (27 FileNotFoundErrors), and unpinned wherever it did exist.
+    repo_sandbox = H.SANDBOX.resolve()
+    assert set(H.DB_SHA256) == {H.MINTEQ, H.PHREEQC_DAT, H.WATEQ_DAT}
+    for path, pinned in H.DB_SHA256.items():
+        assert path.resolve().is_relative_to(repo_sandbox), f"{path} lives outside the repo"
+        assert "site-packages" not in path.parts
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == pinned, path.name
+    assert H.PHREEQC_DAT.parent == H.WATEQ_DAT.parent == H.DB_DIR
+
+
+def test_drifted_or_unpinned_database_fails_closed(monkeypatch, tmp_path):
+    monkeypatch.setitem(H.DB_SHA256, H.PHREEQC_DAT, "0" * 64)
+    with pytest.raises(ValueError, match="refusing drifted constants"):
+        H.load_constants()
+    stray = tmp_path / "phreeqc.dat"
+    stray.write_bytes(H.PHREEQC_DAT.read_bytes())      # byte-identical copy, but not a pinned path
+    with pytest.raises(ValueError, match="not a pinned database"):
+        H._read_block(stray, "Calcite")

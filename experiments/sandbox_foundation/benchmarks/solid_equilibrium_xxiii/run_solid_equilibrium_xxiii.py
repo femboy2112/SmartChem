@@ -14,9 +14,9 @@ Nothing is fitted.  k_diss and kf are ASSUMED kinetic scales that set how fast, 
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
-import sys
 from pathlib import Path
 
 from experiments.sandbox_foundation.aqueous_equilibrium import DAVIES_A_25C, SourcedConstant, _davies_gamma
@@ -33,9 +33,18 @@ HERE = Path(__file__).resolve().parent
 SANDBOX = HERE.parent.parent
 RESULT = HERE / "result_solid_equilibrium_xxiii.json"
 MINTEQ = SANDBOX / "benchmarks" / "carbonate_na_pair_s6" / "db" / "minteq.v4.dat"
-PHREEQC_DAT = Path(sys.prefix) / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / \
-    "site-packages" / "phreeqpython" / "database" / "phreeqc.dat"
-WATEQ_DAT = PHREEQC_DAT.parent / "wateq4f_PWN.dat"
+# The two PHREEQC databases this harness reads constants from are VENDORED verbatim under db/ (provenance + licence in
+# db/README.md) and SHA-pinned.  They used to be read out of the INSTALLED phreeqpython package under sys.prefix, which
+# made the "frozen" constants depend on whichever phreeqpython (if any) the interpreter had: hosted CI has none, so 27
+# tests died on FileNotFoundError while a dev venv passed.  Never read a constant from an unpinned installed file.
+DB_DIR = HERE / "db"
+PHREEQC_DAT = DB_DIR / "phreeqc.dat"
+WATEQ_DAT = DB_DIR / "wateq4f_PWN.dat"
+DB_SHA256 = {
+    MINTEQ: "4a48bf5c357b3da3084606a5e322426c3ab1e969dd1c86f9c62a3a7995836ca3",
+    PHREEQC_DAT: "6bb5ebc1d0ecca0e921c13a2241d05d3a3333b142d1d740b2ed03a786442bdf5",
+    WATEQ_DAT: "1c4de8335cd87b4227ffe562a838c485669801273a8e43d4724b834d51aa61f4",
+}
 
 T_K = 298.15
 K_DISS = 1.0e-6        # mol L^-1 s^-1  ASSUMED dissolution kinetic scale (steady state independent of it)
@@ -48,9 +57,20 @@ TABULATION_HALF_UNIT = 0.5e-2   # half of the last tabulated decimal of a 2-deci
 
 
 # --------------------------------------------------------------------------------------------- database readers
+def _pinned_bytes(path: Path) -> bytes:
+    """The database's bytes, ONLY if they hash to the pinned sha256 (fail closed on an unpinned or drifted file)."""
+    if path not in DB_SHA256:
+        raise ValueError(f"{path} is not a pinned database; refusing to read constants from it")
+    data = path.read_bytes()
+    got = hashlib.sha256(data).hexdigest()
+    if got != DB_SHA256[path]:
+        raise ValueError(f"{path.name}: sha256 {got} != pinned {DB_SHA256[path]}; refusing drifted constants")
+    return data
+
+
 def _read_block(path: Path, header: str, occurrence: int = 0) -> dict:
     """The log_k (and -analytic coefficients, if any) of the block whose header line is exactly ``header``."""
-    lines = path.read_text(encoding="latin-1").replace("\r\n", "\n").split("\n")
+    lines = _pinned_bytes(path).decode("latin-1").replace("\r\n", "\n").split("\n")
     hits = [i for i, ln in enumerate(lines) if ln.strip() == header and not ln.startswith(("\t", " "))]
     if len(hits) <= occurrence:
         raise ValueError(f"{header!r} not found in {path}")
@@ -196,7 +216,8 @@ def kernel_summary(traj, sp) -> dict:
 # --------------------------------------------------------------------------------------------- PHREEQC reference
 def phreeqc_reference() -> dict:
     from phreeqpython import PhreeqPython
-    pp = PhreeqPython(database="phreeqc.dat")
+    _pinned_bytes(PHREEQC_DAT)               # the reference solver reads the SAME pinned file the constants came from
+    pp = PhreeqPython(database=PHREEQC_DAT.name, database_directory=DB_DIR)   # a Path: phreeqpython 1.6.2 does dir / db
     s = pp.add_solution({"units": "mmol/kgw", "temp": 25})
     s.saturate("Calcite", 0.0, 10)           # EQUILIBRIUM_PHASES Calcite SI=0, 10 mol available
     m = s.species_molalities

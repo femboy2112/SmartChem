@@ -1,0 +1,2 @@
+# Vendored PHREEQC databases: keep the pinned bytes exactly (mixed LF / CRLF upstream); never EOL-convert.
+*.dat -text

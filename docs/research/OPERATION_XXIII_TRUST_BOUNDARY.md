@@ -49,7 +49,7 @@ code-object filenames sits inside the trust boundary.
 
 A directed adversarial bearing produced five findings. The orchestrator re-ran the first four repro scripts
 independently and observed every false claim before any fix. Fixes are on `fix/xxiii-s2b-ledger-integrity`, merged in
-`4f2ec70`; there are 26 tests in `tests/test_xxiii_s2b_ledger_integrity.py`.
+`4f2ec70`; there are 26 tests in `experiments/sandbox_foundation/tests/test_xxiii_s2b_ledger_integrity.py`.
 
 | # | false certification (RED, observed) | fix | GREEN (re-run on the merged head) |
 |---|---|---|---|

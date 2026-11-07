@@ -579,6 +579,30 @@ class NetworkTrajectory:
     caveats: tuple = field(default_factory=tuple)
 
 
+def _species_identity_key(sp: Species) -> tuple:
+    """The FULL species identity the model certificate binds (name, composition, charge, phase, substance) -- one
+    definition, used for both the species columns and every reaction's stoichiometry, so the two cannot drift apart."""
+    return (sp.name, sp.composition, sp.charge, sp.phase.value, sp.substance)
+
+
+def _kernel_rate_law_descriptor(rl) -> tuple:
+    """XXIII-2b (F1): the kernel-side canonical descriptor of a reaction's rate law, mirroring general_coupled's
+    ``_rate_law_descriptor`` authority tiers (the coupled module imports the kernel, so the kernel cannot import it back).
+    An AUDITED or CALLER-ATTESTED law binds its authority, class and full ``descriptor()``; anything else binds only
+    ``UNVERIFIABLE`` + its class -- the certificate makes no claim about parameters it cannot see, and a post-construction
+    demotion (a method swap) still MOVES the descriptor, because the authority token itself changes."""
+    if rl is RATE_UNKNOWN:
+        return ("RATE_UNKNOWN",)
+    authority = rate_law_authority(rl)
+    if authority in (AUDITED_BUILTIN, CALLER_ATTESTED_EXTENSION):
+        try:
+            desc = tuple(rl.descriptor())
+        except NotImplementedError:
+            return (UNVERIFIABLE_AUTHORITY, type(rl).__qualname__)
+        return (authority, type(rl).__qualname__, rate_law_attestation(type(rl))) + desc
+    return (UNVERIFIABLE_AUTHORITY, type(rl).__qualname__)
+
+
 class ChemicalSystem:
     """The general carrier: an ordered species list + declared reactions + a reactor volume, with the stoichiometric
     matrix N and the element-charge conservation matrix E built and the conservation law E N = 0 PROVEN (EXACTLY, in
@@ -670,24 +694,71 @@ class ChemicalSystem:
 
     def _compute_certificate(self) -> str:
         """A deterministic hash over the EXACT execution basis the integrator runs against: species identity (name,
-        composition, charge, phase, substance) in column order, the float E and N matrices, and the reactor volume."""
+        composition, charge, phase, substance) in column order, the float E and N matrices, the reactor volume, and --
+        XXIII-2b (F1) -- a canonical descriptor of EVERY reaction re-derived from the CURRENT ``self.reactions``: its
+        name, its ordered stoichiometry as (full species identity, coeff), and its rate-law descriptor + authority.
+
+        Why the reactions themselves: the RHS reads ``self.reactions`` live (each law's ``evaluate`` takes its own
+        reaction's stoich to form the rate), while the old hash bound only the stored ``self.N``.  Rebinding
+        ``self.reactions`` to 2A -> 2B therefore ran a second-order rate under an unchanged certificate.  The chart
+        described a patient who had already left the table."""
         h = hashlib.sha256()
-        keys = [(sp.name, sp.composition, sp.charge, sp.phase.value, sp.substance) for sp in self.species]
+        keys = [_species_identity_key(sp) for sp in self.species]
         h.update(repr(keys).encode())
         for m in (self.E, self.N):
             arr = np.ascontiguousarray(m, dtype=float)
             h.update(str(arr.shape).encode())
             h.update(arr.tobytes())
         h.update(repr(float(self.volume_L)).encode())
+        rxns = [(r.name, tuple((_species_identity_key(sp), int(c)) for sp, c in r.stoich),
+                 _kernel_rate_law_descriptor(r.rate_law)) for r in self.reactions]
+        h.update(repr(rxns).encode())
         return h.hexdigest()
+
+    def _rederive_N_int(self) -> tuple:
+        """XXIII-2b (F1): the integer stoichiometric matrix the CURRENT ``self.reactions`` imply, over the certified
+        species columns.  Raises StaleCertificateError if a reaction is malformed or names a species outside them."""
+        rows = [[0] * len(self.reactions) for _ in self.species]
+        for k, r in enumerate(self.reactions):
+            if type(r) is not Reaction:
+                raise StaleCertificateError(f"reaction slot {k} holds a {type(r).__name__}, not a Reaction")
+            for sp, coeff in r.stoich:
+                i = self._index.get(sp)
+                if i is None:
+                    raise StaleCertificateError(
+                        f"reaction {r.name!r} references species {getattr(sp, 'name', sp)!r} outside the certified set")
+                rows[i][k] = coeff
+        return tuple(tuple(row) for row in rows)
 
     def _verify_certificate(self) -> None:
         """XVIII-2: refuse to execute if the live execution basis no longer matches the certificate proven at
-        construction (self.E/self.N rebound, species reordered, or the volume changed afterward)."""
-        if self._compute_certificate() != self._model_certificate:
+        construction (self.E/self.N rebound, species reordered, or the volume changed afterward).
+
+        XXIII-2b (F1): ALSO refuse if the reactions were rebound (their descriptors are in the hash), and -- separately,
+        so a re-sealed hash cannot relicense it -- if the stored N (the matrix the exact E N = 0 proof was made over)
+        is no longer the N the current reactions re-derive to.  A certificate re-stamped over a new stoichiometry
+        without a new conservation proof is a forged signature on someone else's operative note."""
+        try:
+            current = self._compute_certificate()
+            n_live = self._rederive_N_int()
+        except StaleCertificateError:
+            raise
+        except (AttributeError, TypeError, ValueError, KeyError) as exc:   # a malformed rebind cannot be re-derived
             raise StaleCertificateError(
-                "the model's execution basis (species / E / N / volume) was mutated after certification; refusing to "
-                "integrate under a stale certificate (XVIII-2 deep-immutability).")
+                f"the model's reactions can no longer be re-derived ({type(exc).__name__}: {exc}); refusing to "
+                f"integrate under a stale certificate (XXIII-2b).") from exc
+        if current != self._model_certificate:
+            raise StaleCertificateError(
+                "the model's execution basis (species / E / N / volume / reactions) was mutated after certification; "
+                "refusing to integrate under a stale certificate (XVIII-2 deep-immutability, XXIII-2b).")
+        n_float = (np.array(n_live, dtype=float) if self.reactions
+                   else np.zeros((len(self.species), 0), dtype=float))
+        if n_live != self._N_int or np.asarray(self.N).shape != n_float.shape \
+                or not np.array_equal(np.asarray(self.N, dtype=float), n_float):
+            raise StaleCertificateError(
+                "the stored stoichiometric matrix N no longer equals the N re-derived from the current reactions; the "
+                "exact conservation proof covers a stoichiometry that is no longer the one declared -- refusing to "
+                "integrate (XXIII-2b).")
 
     def component_amounts(self, amounts: dict) -> dict:
         """E n: the conserved element + charge totals of an inventory dict."""

@@ -28,6 +28,7 @@ introduced -- the verified numerics are reused verbatim.
 """
 from __future__ import annotations
 
+import dataclasses
 import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -39,6 +40,45 @@ from experiments.sandbox_foundation.general_kernel import KernelError
 
 class EquilibriumError(KernelError):
     """Fail-closed error for the general equilibrium interface."""
+
+
+def _canon(v):
+    """XXIII-2b (F2): a lossless, order-stable, JSON-safe encoding of a solve parameter for a world certificate.
+    Floats go through float.hex (exact IEEE-754 bits); a bool is kept distinct from the int it would coerce to; sets
+    and dicts are sorted; a dataclass (e.g. a SourcedConstant record) is encoded field by field.  Anything else is
+    refused rather than repr()'d -- a collision-prone fallback is how two different worlds end up sharing a signature."""
+    if isinstance(v, bool):
+        return f"bool:{v}"
+    if isinstance(v, int):
+        return f"int:{v}"
+    if isinstance(v, float):
+        return f"float:{v.hex()}"
+    if isinstance(v, str):
+        return f"str:{v}"
+    if v is None:
+        return "None"
+    if isinstance(v, (tuple, list)):
+        return ["seq"] + [_canon(x) for x in v]
+    if isinstance(v, (set, frozenset)):
+        return ["set"] + sorted((_canon(x) for x in v), key=repr)
+    if isinstance(v, dict):
+        return ["map"] + sorted(([_canon(k), _canon(x)] for k, x in v.items()), key=repr)
+    if dataclasses.is_dataclass(v) and not isinstance(v, type):
+        return [type(v).__qualname__] + [[f.name, _canon(getattr(v, f.name))] for f in dataclasses.fields(v)]
+    raise EquilibriumError(f"cannot canonically encode a {type(v).__name__} solve parameter for a certificate")
+
+
+def _dataclass_defaults(cls, names: tuple) -> list:
+    """The DEFAULT values ``cls`` will hand its solver for the named fields -- the sourced constants an adapter relies
+    on by omission (it never passes them), which are therefore operative solve parameters all the same."""
+    by_name = {f.name: f for f in dataclasses.fields(cls)}
+    return [[nm, _canon(by_name[nm].default)] for nm in names]
+
+
+def _module_constants(module, names: tuple) -> list:
+    """Module-level constants a wrapped solver reads AT CALL TIME -- read live here, so a post-construction rebind of
+    one moves the descriptor instead of quietly changing the physics."""
+    return [[nm, _canon(getattr(module, nm))] for nm in names]
 
 
 @dataclass(frozen=True)
@@ -86,6 +126,21 @@ class EquilibriumOperator(ABC):
                  temperature_K: float = 298.15) -> EquilibriumState:
         ...
 
+    def descriptor(self) -> list:
+        """XXIII-2b (F2): a canonical descriptor of EVERY parameter that changes what ``speciate`` returns -- instance
+        options (activity model, ion pairing, ...), the sourced constants the wrapped solver consumes, and the class-level
+        declarations the world relies on.  The coupled world binds it into its certificate, so a post-construction toggle
+        is DETECTED, not executed.  The base REFUSES (NotImplementedError): an operator that does not bind its own solve
+        parameters -- including a subclass that inherits a parent's descriptor while replacing its physics -- gives the
+        world no certified execution identity (fail-closed, the same treatment as an UNVERIFIABLE rate law)."""
+        raise NotImplementedError
+
+    def _class_descriptor(self) -> list:
+        """The class-level part every in-tree descriptor shares: exact type, components, species, signature, verdicts."""
+        t = type(self)
+        return [t.__module__, t.__qualname__, _canon(self.components), _canon(self.species),
+                _canon(self.species_signature), _canon(self.accepted_solver_verdicts)]
+
     def _validate(self, component_amounts: dict, volume_L: float, temperature_K: float) -> None:
         if isinstance(volume_L, bool) or not (isinstance(volume_L, (int, float))
                                               and math.isfinite(volume_L) and volume_L > 0):
@@ -131,6 +186,17 @@ class AcetateWaterEquilibriumOperator(EquilibriumOperator):
             raise EquilibriumError("activity_model must be 'ideal' or 'davies'")
         self.activity_model = activity_model
         self.include_ion_pair = bool(include_ion_pair)
+
+    def descriptor(self) -> list:
+        # XXIII-2b (F2): include_ion_pair was the unbound knob -- two different worlds, one certificate.  Bound now,
+        # with the activity model, the Ka/Kw/K_assoc records AcetateWaterSystem supplies by default, and the module
+        # constants aqueous_equilibrium.solve reads at call time.
+        return self._class_descriptor() + [
+            ["activity_model", _canon(self.activity_model)],
+            ["include_ion_pair", _canon(self.include_ion_pair)],
+            ["system_defaults", _dataclass_defaults(aqueous_equilibrium.AcetateWaterSystem, ("Ka", "Kw", "K_assoc"))],
+            ["module_constants", _module_constants(aqueous_equilibrium, ("DAVIES_A_25C", "C_REF"))],
+        ]
 
     def speciate(self, component_amounts: dict, *, volume_L: float,
                  temperature_K: float = 298.15) -> EquilibriumState:
@@ -197,6 +263,12 @@ class AmmoniaWaterEquilibriumOperator(EquilibriumOperator):
         "Cl-": ((("Cl", 1),), -1),
     }
     accepted_solver_verdicts = frozenset({ammonia_equilibrium.SOLVED_IDEAL})   # XVII-A1; REFUSED is not admissible
+
+    def descriptor(self) -> list:
+        # XXIII-2b (F2): no instance options; ammonia_equilibrium.solve reads its Ka/Kw as module globals at call time.
+        return self._class_descriptor() + [
+            ["module_constants", _module_constants(ammonia_equilibrium, ("KA_NH4", "KW"))],
+        ]
 
     def speciate(self, component_amounts: dict, *, volume_L: float,
                  temperature_K: float = 298.15) -> EquilibriumState:
@@ -269,6 +341,16 @@ class MixedAcetateCarbonateEquilibriumOperator(EquilibriumOperator):
         if activity_model not in ("ideal", "davies"):
             raise EquilibriumError("activity_model must be 'ideal' or 'davies'")
         self.activity_model = activity_model
+
+    def descriptor(self) -> list:
+        # XXIII-2b (F2): the activity model, the Ka/K1/K2/Kw records VinegarBicarbonateSystem supplies by default, and
+        # the module constants coupled_equilibrium.solve reads at call time.
+        return self._class_descriptor() + [
+            ["activity_model", _canon(self.activity_model)],
+            ["system_defaults", _dataclass_defaults(coupled_equilibrium.VinegarBicarbonateSystem,
+                                                    ("Ka", "K1", "K2", "Kw"))],
+            ["module_constants", _module_constants(coupled_equilibrium, ("DAVIES_A_25C", "C_REF"))],
+        ]
 
     def speciate(self, component_amounts: dict, *, volume_L: float,
                  temperature_K: float = 298.15) -> EquilibriumState:

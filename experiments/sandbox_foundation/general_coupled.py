@@ -1175,6 +1175,16 @@ class CoupledWorld:
         comp_scale = {}
         for i in checked_idx:
             scale_i = max(abs(float(comp0[i])), abs(float(ext_comp[i])))
+            if labels[i] == "charge":
+                # XXIII-2b (F5): the charge row is a SIGNED sum, so its net is ~0 for every honest neutral inventory and
+                # |net| measures float roundoff (0.3 vs 0.1 + 0.2 -> 2.8e-17), not an inventory -- the verdict flipped
+                # to UNRESOLVED on the luck of the last ULP.  The scale charge is resolved against is the IONIC
+                # inventory sum |z_i n_i| (declared, and as fed through every boundary), exactly as every element row is
+                # resolved against the material it actually carries.
+                ionic0 = float(np.abs(self._Eg[i]) @ np.abs(y_declared))
+                z_bound = np.array([abs(self._Eg[i, self._slot[(b.compartment, b.species)]]) for b in self.boundaries])
+                ionic_fed = max(float(z_bound @ np.abs(a)) for a in accs) if self.boundaries else 0.0
+                scale_i = max(scale_i, ionic0, ionic_fed)
             comp_scale[labels[i]] = scale_i
             comp_tol[labels[i]] = self._MATERIAL_ATOL + self._MATERIAL_RTOL * scale_i
         tol = max(comp_tol.values()) if comp_tol else self._MATERIAL_ATOL   # representative scalar (loosest component tol)

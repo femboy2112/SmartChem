@@ -306,3 +306,34 @@ class TestF4DeclaredBaseline:
         assert tr.receipt.structural_tier == STRUCTURALLY_CONSERVING
 
 
+# ===================================================================================================== F5 roundoff
+_Br = Species.of("Br-", {"Br": 1}, -1, Phase.AQUEOUS)
+
+
+def _f5_world():
+    return CoupledWorld([Compartment("c", ChemicalSystem([_Na, _Cl, _Br], [], 1.0))])
+
+
+class TestF5ChargeResolutionScale:
+    @pytest.mark.parametrize("init", ({_Na: 0.3, _Cl: 0.1, _Br: 0.2}, {_Na: 0.5, _Cl: 0.25, _Br: 0.25}))
+    def test_a_neutral_inventory_is_verified_whatever_its_net_roundoff(self, init):
+        r = _f5_world().integrate({"c": init}, duration=1.0, n_steps=1).receipt
+        assert r.component_resolution["charge"] == "VERIFIED_WITHIN_RESOLUTION"
+        assert r.material_balance_closed is True
+        assert r.structural_tier == STRUCTURALLY_CONSERVING
+
+    def test_control_a_genuine_charge_leak_is_still_violated(self):
+        idx_na = None
+
+        def leak(step, y):
+            y = y.copy()
+            if step == 1:
+                y[idx_na] += 1e-4                                            # 1e-4 mol Na+ from nowhere
+            return y
+
+        w = _f5_world()
+        idx_na = w._slot[("c", _Na)]
+        r = w.integrate({"c": {_Na: 0.3, _Cl: 0.1, _Br: 0.2}}, duration=1.0, n_steps=2, _observer_perturb=leak).receipt
+        assert r.component_resolution["charge"] == "VIOLATED"
+        assert r.material_balance_closed is False
+        assert r.structural_tier == REFUSED

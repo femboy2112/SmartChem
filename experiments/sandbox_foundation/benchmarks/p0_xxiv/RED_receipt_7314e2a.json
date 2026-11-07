@@ -1,0 +1,274 @@
+{
+ "P1_f2_operator_authority": {
+  "one_compartment": {
+   "basis": "AUDITED_BUILTIN",
+   "certificates_equal": true,
+   "certified": true,
+   "final_X1": [
+    0.2,
+    0.8
+   ],
+   "mutation": "RAN",
+   "mutation_certified": true,
+   "named_in_receipt": false,
+   "physics_differs": true,
+   "strict": "RAN",
+   "strict_certified": true
+  },
+  "two_compartment_transport": {
+   "basis": "AUDITED_BUILTIN",
+   "certificates_equal": true,
+   "certified": true,
+   "final_X1": [
+    0.19625915038439368,
+    0.7415374897302803
+   ],
+   "mutation": "RAN",
+   "mutation_certified": true,
+   "named_in_receipt": false,
+   "physics_differs": true,
+   "strict": "RAN",
+   "strict_certified": true
+  },
+  "verdict": "FAIL"
+ },
+ "P2_p6b_positivity": {
+  "controls_conserving": true,
+  "coupled_control": [
+   {
+    "admitted_tier": "STRUCTURALLY_CONSERVING",
+    "atol": 1e-14,
+    "material_balance_closed": true,
+    "min_inventory": 0.0,
+    "positivity_held": true,
+    "positivity_resolution_limited": false,
+    "positivity_verdict": "<no field>",
+    "structural_tier": "STRUCTURALLY_CONSERVING"
+   },
+   {
+    "admitted_tier": "STRUCTURALLY_CONSERVING",
+    "atol": 0.01,
+    "material_balance_closed": true,
+    "min_inventory": 0.0,
+    "positivity_held": true,
+    "positivity_resolution_limited": false,
+    "positivity_verdict": "<no field>",
+    "structural_tier": "STRUCTURALLY_CONSERVING"
+   }
+  ],
+  "coupled_negative": [
+   {
+    "admitted_tier": "OUT_OF_DOMAIN",
+    "atol": 1e-14,
+    "material_balance_closed": true,
+    "min_inventory": -0.49999999999999983,
+    "positivity_held": false,
+    "positivity_resolution_limited": false,
+    "positivity_verdict": "<no field>",
+    "structural_tier": "REFUSED"
+   },
+   {
+    "admitted_tier": "OUT_OF_DOMAIN",
+    "atol": 1e-08,
+    "material_balance_closed": true,
+    "min_inventory": -0.5000000000000001,
+    "positivity_held": false,
+    "positivity_resolution_limited": false,
+    "positivity_verdict": "<no field>",
+    "structural_tier": "REFUSED"
+   },
+   {
+    "admitted_tier": "OUT_OF_DOMAIN",
+    "atol": 0.0001,
+    "material_balance_closed": true,
+    "min_inventory": -0.5000000000000006,
+    "positivity_held": false,
+    "positivity_resolution_limited": false,
+    "positivity_verdict": "<no field>",
+    "structural_tier": "REFUSED"
+   },
+   {
+    "admitted_tier": "STRUCTURALLY_CONSERVING",
+    "atol": 0.01,
+    "material_balance_closed": true,
+    "min_inventory": -0.5000000000000014,
+    "positivity_held": true,
+    "positivity_resolution_limited": false,
+    "positivity_verdict": "<no field>",
+    "structural_tier": "STRUCTURALLY_CONSERVING"
+   }
+  ],
+  "kernel_control": [
+   {
+    "admitted_tier": "ASSUMED_PARAMETER",
+    "atol": 1e-15,
+    "external_ledger_closed": true,
+    "min_inventory": 0.0,
+    "positivity_held": true,
+    "positivity_resolution_limited": "<no field>",
+    "positivity_verdict": "<no field>",
+    "structural_tier": "STRUCTURALLY_CONSERVING"
+   },
+   {
+    "admitted_tier": "ASSUMED_PARAMETER",
+    "atol": 0.1,
+    "external_ledger_closed": true,
+    "min_inventory": 0.0,
+    "positivity_held": true,
+    "positivity_resolution_limited": "<no field>",
+    "positivity_verdict": "<no field>",
+    "structural_tier": "STRUCTURALLY_CONSERVING"
+   }
+  ],
+  "kernel_negative": [
+   {
+    "admitted_tier": "OUT_OF_DOMAIN",
+    "atol": 1e-15,
+    "external_ledger_closed": true,
+    "min_inventory": -0.5000000000000007,
+    "positivity_held": false,
+    "positivity_resolution_limited": "<no field>",
+    "positivity_verdict": "<no field>",
+    "structural_tier": "REFUSED"
+   },
+   {
+    "admitted_tier": "OUT_OF_DOMAIN",
+    "atol": 1e-08,
+    "external_ledger_closed": true,
+    "min_inventory": -0.5,
+    "positivity_held": false,
+    "positivity_resolution_limited": "<no field>",
+    "positivity_verdict": "<no field>",
+    "structural_tier": "REFUSED"
+   },
+   {
+    "admitted_tier": "OUT_OF_DOMAIN",
+    "atol": 0.01,
+    "external_ledger_closed": true,
+    "min_inventory": -0.49999999999999956,
+    "positivity_held": false,
+    "positivity_resolution_limited": "<no field>",
+    "positivity_verdict": "<no field>",
+    "structural_tier": "REFUSED"
+   },
+   {
+    "admitted_tier": "ASSUMED_PARAMETER",
+    "atol": 0.1,
+    "external_ledger_closed": true,
+    "min_inventory": -0.49999999999999956,
+    "positivity_held": true,
+    "positivity_resolution_limited": "<no field>",
+    "positivity_verdict": "<no field>",
+    "structural_tier": "STRUCTURALLY_CONSERVING"
+   }
+  ],
+  "verdict": "FAIL"
+ },
+ "P3_charge_contract": {
+  "coupled1_neutral_feed": {
+   "admitted_tier": "STRUCTURALLY_CONSERVING",
+   "charge_balance_claim": "CONSERVED (independently checked in the material balance)",
+   "charge_validity": null,
+   "structural_tier": "STRUCTURALLY_CONSERVING"
+  },
+  "coupled1_unbalanced_feed": {
+   "admitted_tier": "OUT_OF_DOMAIN",
+   "charge_balance_claim": "GLOBAL_ONLY_LOCAL_VIOLATED: compartment(s) ['c'] gained or lost a macroscopic net charge beyond their electroneutrality tolerance (max |q(t) - q(0)| = 1.000e-02 mol); whatever the global charge row says, charge was SEPARATED between compartments, so no local charge-conservation claim is made.",
+   "charge_validity": null,
+   "structural_tier": "REFUSED"
+  },
+  "coupled2_neutral_salt_transport": {
+   "admitted_tier": "STRUCTURALLY_CONSERVING",
+   "charge_balance_claim": "CONSERVED (independently checked in the material balance)",
+   "charge_validity": null,
+   "structural_tier": "STRUCTURALLY_CONSERVING"
+  },
+  "coupled2_single_ion_transport": {
+   "admitted_tier": "OUT_OF_DOMAIN",
+   "charge_balance_claim": "GLOBAL_ONLY_LOCAL_VIOLATED: compartment(s) ['a', 'b'] gained or lost a macroscopic net charge beyond their electroneutrality tolerance (max |q(t) - q(0)| = 9.516e-03 mol); whatever the global charge row says, charge was SEPARATED between compartments, so no local charge-conservation claim is made.",
+   "charge_validity": null,
+   "structural_tier": "REFUSED"
+  },
+  "kernel_neutral_feed": {
+   "admitted_tier": "ASSUMED_PARAMETER",
+   "charge_balance_claim": "<no field>",
+   "charge_validity": null,
+   "structural_tier": "STRUCTURALLY_CONSERVING"
+  },
+  "kernel_unbalanced_feed": {
+   "admitted_tier": "ASSUMED_PARAMETER",
+   "charge_balance_claim": "<no field>",
+   "charge_validity": null,
+   "structural_tier": "STRUCTURALLY_CONSERVING"
+  },
+  "verdict": "FAIL"
+ },
+ "P4_dependency_closure": {
+  "baseline": {
+   "audit_status": "SEALED",
+   "certificates_equal": false,
+   "certified": [
+    true,
+    true
+   ],
+   "final_M": [
+    0.0010368605130778466,
+    0.002103933132730632
+   ],
+   "mutation_applied": false
+  },
+  "class_body_edit_control": {
+   "audit_status": "('experiments.sandbox_foundation.solid_equilibrium', 'ActivitySolubilityRate'): source sha256 9e3dc80e9fc30102a7bf034cdfd47fc65fd6e5d846028cfb67d16747bbba36d5 != audited pin 5d4e1059ea6ec9623a3211596babf6859158c51bf67519bf684a2b74bd77202e (re-audit and update the pin)",
+   "certificates_equal": true,
+   "certified": [
+    false,
+    false
+   ],
+   "final_M": [
+    0.0010368605130778466,
+    0.002103933132730632
+   ],
+   "mutation_applied": true
+  },
+  "control_demoted": true,
+  "helper_edit": {
+   "audit_status": "SEALED",
+   "certificates_equal": true,
+   "certified": [
+    true,
+    true
+   ],
+   "final_M": [
+    0.0010368605130778466,
+    0.002103933132730632
+   ],
+   "mutation_applied": true
+  },
+  "verdict": "FAIL"
+ },
+ "P5_temperature_transport": {
+  "298.15": {
+   "admitted_tier": "ASSUMED_PARAMETER",
+   "certified": true,
+   "coupled": "RAN",
+   "final_M": 0.0010368605130778466,
+   "kernel": "RAN",
+   "kernel_admitted": "ASSUMED_PARAMETER",
+   "kernel_final_M": 0.0010368605130780103,
+   "kernel_source_domain": "<no field>",
+   "source_domain": "<no field>"
+  },
+  "350.0": {
+   "admitted_tier": "ASSUMED_PARAMETER",
+   "certified": true,
+   "coupled": "RAN",
+   "final_M": 0.0010368605130778466,
+   "kernel": "RAN",
+   "kernel_admitted": "ASSUMED_PARAMETER",
+   "kernel_final_M": 0.0010368605130780103,
+   "kernel_source_domain": "<no field>",
+   "source_domain": "<no field>"
+  },
+  "verdict": "FAIL"
+ }
+}

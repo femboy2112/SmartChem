@@ -61,6 +61,7 @@ from experiments.sandbox_foundation.coupled_equilibrium import (   # the 25 C K-
 from experiments.sandbox_foundation.general_coupled import (
     Compartment,
     CoupledWorld,
+    ElectroneutralBulkExchange,   # XXII-5: the completeness-gated whole-solution bulk-exchange mode
     EquilibriumCoupling,
     ExternalBoundary,
     InterfaceTransfer,
@@ -183,11 +184,36 @@ class _Build:
     sp: _Species
 
 
-def build_unified_world(params: UnifiedParams, sp: _Species, *, valve_open: bool, sealed: bool) -> _Build:
-    """Assemble the two-liquid-cell + gas-headspace CoupledWorld for one phase (valve open/closed, vessel sealed/open).
+#: XXII-5: the complete dissolved (aqueous) roster both liquid cells share -- the bulk parcel carries exactly this set.
+_AQUEOUS_ORDER = ("HAc", "Ac", "CO2aq", "HCO3", "CO3", "Hp", "OHm", "Nap")
 
-    The generic integrator is reused verbatim; the only thing that changes between phases is WHICH interfaces/boundaries
-    are present -- the typed external commands the op calls step 1."""
+
+def _resolve_transport_mode(transport_mode, valve_open) -> str:
+    """Back-compatible resolution: an explicit ``transport_mode`` wins; otherwise the legacy ``valve_open`` bool maps to
+    the selective MEMBRANE (open) or CLOSED (shut).  XXII-5 adds BULK as a third interchangeable declaration."""
+    if transport_mode is None:
+        return "membrane" if valve_open else "closed"
+    if transport_mode not in ("closed", "membrane", "bulk"):
+        raise ValueError(f"transport_mode must be 'closed' | 'membrane' | 'bulk' (got {transport_mode!r})")
+    return transport_mode
+
+
+def build_unified_world(params: UnifiedParams, sp: _Species, *, valve_open: bool = False, sealed: bool,
+                        transport_mode: str | None = None) -> _Build:
+    """Assemble the two-liquid-cell + gas-headspace CoupledWorld for one phase.  The inter-chamber mechanism is ONE of
+    three interchangeable physical declarations (XXII-5) -- the generic integrator is reused verbatim; only WHICH
+    interfaces / bulk-exchanges are present changes:
+
+      * "closed"   -- no A<->B transport (valve shut).
+      * "membrane" -- a SELECTIVE membrane: InterfaceTransfer of the NEUTRAL carriers HAc and CO2(aq) only (charge-safe;
+                      ions cannot cross, so the Na+ gradient never relaxes).  (legacy ``valve_open=True``.)
+      * "bulk"     -- an ElectroneutralBulkExchange swapping equal LIQUID PARCELS carrying the COMPLETE dissolved roster
+                      (all 8 aqueous species at one Q), so Na / total acetate / total inorganic carbon ALL relax toward
+                      a common well-mixed composition and no cell is left charged (XXII-1 completeness-gated).
+
+    The Henry gas-liquid CO2 transfer (B<->gas) and the optional open-vessel CO2 export are independent of the A<->B
+    mechanism and present in every mode."""
+    mode = _resolve_transport_mode(transport_mode, valve_open)
     op = MixedAcetateCarbonateEquilibriumOperator(activity_model=params.activity_model)
     table = _liquid_species_table(sp)
     aqueous = (sp.HAc, sp.Ac, sp.CO2aq, sp.HCO3, sp.CO3, sp.Hp, sp.OHm, sp.Nap)
@@ -211,16 +237,23 @@ def build_unified_world(params: UnifiedParams, sp: _Species, *, valve_open: bool
     henry = InterfaceTransfer("henry_B_gas", "B", "gas", sp.CO2aq, sp.CO2g,
                               k_transfer=params.kLa_per_s * params.V_B_L, partition=KH_CO2_25C.value * RT)
     interfaces = [henry]
-    if valve_open:
+    bulk_exchanges = ()
+    if mode == "membrane":
         # selective membrane: only neutral HAc and CO2(aq) cross (charge-safe), A <-> B
         interfaces.append(InterfaceTransfer("valve_HAc", "A", "B", sp.HAc, sp.HAc, k_transfer=params.k_valve_Lps))
         interfaces.append(InterfaceTransfer("valve_CO2", "A", "B", sp.CO2aq, sp.CO2aq, k_transfer=params.k_valve_Lps))
+    elif mode == "bulk":
+        # bulk-liquid exchange: the COMPLETE dissolved roster advects at one Q (XXII-1 completeness-gated, charge-safe)
+        bulk_exchanges = (ElectroneutralBulkExchange(
+            "bulk_mix", "A", "B", species_pairs=tuple((s, s) for s in aqueous),
+            Q_L_per_s=params.k_valve_Lps),)
 
     boundaries = []
     if not sealed:
         boundaries.append(ExternalBoundary("co2_export", "gas", sp.CO2g, "fixed_activity",
                                            k_transfer=params.k_export_Lps, target_conc=0.0))
     return _Build(CoupledWorld([cell_a, cell_b, gas], interfaces=interfaces, boundaries=boundaries,
+                               bulk_exchanges=bulk_exchanges,
                                temperature_K=params.temperature_K), sp)   # XIX-1C: ONE temperature, no 298.15 hard-code
 
 

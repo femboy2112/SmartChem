@@ -203,3 +203,43 @@ def test_coupled_replay_is_bit_identical(coupled):
 def test_coupled_run_refuses_a_non_solid_ledger_species():
     with pytest.raises(px.ParticleError, match="SOLID"):
         px.run_coupled_particles(COUPLED_SPEC, COUPLED_INIT, COUPLED_SEGS, solid="u", dt=0.5, sweeps_per_segment=1)
+
+
+# ---------------------------------------------------------------- red-team regressions (XXV-4 fix round)
+W = Species.of("w", {"X": 2})
+
+
+@pytest.mark.parametrize("rx, match", [
+    (("dissolve", (("S", -1), ("u", 1)), 1e-3, 5.0, None), "kr"),                  # probe p6: kr > 0 nucleates
+    (("grow", (("u", -1), ("S", 1)), 1e-3, 0.0, None), "PRODUCES"),               # forward precipitation
+    (("pair", (("S", -1), ("u", -1), ("w", 1)), 1e-3, 0.0, None), "first-order"),
+    (("dimer", (("S", -2), ("w", 1)), 1e-3, 0.0, None), "first-order"),
+])
+def test_a_reaction_that_could_create_solid_or_is_not_first_order_dissolution_is_refused(rx, match):
+    """Finding 7 (probe p6): kr = 5 created 10442 grains in cells holding no solid, under the dissolution label."""
+    spec = _spec(1, 3, species=(S, U, W), conductance=(("S", SC(0.0)), ("u", SC(0.05)), ("w", SC(0.05))),
+                 reactions=(rx,))
+    with pytest.raises(px.ParticleError, match=match):
+        px.run_coupled_particles(spec, {(0, 0): {"u": 0.01}}, (rg.ValveSegment("s", 4.0),), solid="S", dt=1.0,
+                                 sweeps_per_segment=0)
+
+
+def test_the_dissolution_label_is_derived_from_the_validated_law(coupled):
+    assert px.solid_law_label(COUPLED_SPEC, "S") == px.SYNTHETIC_FIRST_ORDER_DISSOLUTION == coupled.dissolution_label
+    inert = _spec(1, 2)
+    run = px.run_coupled_particles(inert, {(0, 0): {"S": 2.0 ** -10}}, (rg.ValveSegment("s", 1.0),), solid="S",
+                                   dt=1.0, sweeps_per_segment=1)
+    assert run.dissolution_label == px.NO_SOLID_REACTION
+    assert px.particle_frame_dict(run, run.frames[-1])["dissolution"] == "NO_SOLID_REACTION"
+
+
+def test_an_inexact_initial_inventory_is_refused_not_rounded_off_the_ledger():
+    """Finding 15 (probe p6): Fraction(1, 3) was silently float-rounded with no ledger entry."""
+    spec = _spec(1, 2)
+    segs = (rg.ValveSegment("s", 1.0),)
+    for inv in ({(0, 0): {"S": Fraction(1, 3)}}, {(0, 0): {"S": 1e-3, "u": Fraction(1, 10)}}):
+        with pytest.raises(px.ParticleError, match="not exactly representable"):
+            px.run_coupled_particles(spec, inv, segs, solid="S", dt=1.0, sweeps_per_segment=1)
+    exact = Fraction(3, 2 ** 22)                                         # dyadic: a float holds it exactly
+    run = px.run_coupled_particles(spec, {(0, 0): {"S": exact}}, segs, solid="S", dt=1.0, sweeps_per_segment=1)
+    assert run.frames[0].projection.inventory[0] == exact

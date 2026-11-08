@@ -30,7 +30,10 @@ exact ``handoff_rounding_mol`` term in the solid ledger.
 DISSOLUTION.  The sourced, audited calcite rate law is not reused: it produces charged ions, and the grid transports
 neutral species only.  The dissolution coupled here is a SYNTHETIC first-order law (a ``GridReaction`` solid -> solute
 with kr = 0: rate = kf * n_solid / V), labelled ``SYNTHETIC_FIRST_ORDER_DISSOLUTION``.  No nucleation or precipitation
-rate is modelled (kr = 0), so grains are never created from solution.
+rate is modelled, so grains are never created from solution: ``run_coupled_particles`` REFUSES any reaction that
+produces the solid, has kr != 0 (a mass-action reverse rate needs no solid present), or is not exactly solid -> products
+at first order.  The label is derived from that validation (``NO_SOLID_REACTION`` when no reaction touches the solid).
+An initial inventory that a float cannot hold exactly is refused rather than rounded off the ledger.
 """
 from __future__ import annotations
 
@@ -49,6 +52,7 @@ from experiments.sandbox_foundation.spatial_grid_xxiv import GridError
 GRAIN_QUANTUM_MOL = Fraction(1, 2 ** 20)
 ILLUSTRATIVE_GRANULAR_AUTOMATON = "ILLUSTRATIVE_GRANULAR_AUTOMATON"
 SYNTHETIC_FIRST_ORDER_DISSOLUTION = "SYNTHETIC_FIRST_ORDER_DISSOLUTION"
+NO_SOLID_REACTION = "NO_SOLID_REACTION"
 
 
 class ParticleError(GridError):
@@ -289,6 +293,33 @@ def _amounts_with(spec, base: dict, solid: str, proj: GrainProjection) -> Mappin
     return MappingProxyType(out)
 
 
+def solid_law_label(spec: ReactiveGridSpec, solid: str) -> str:
+    """Validate every reaction touching ``solid`` as SYNTHETIC first-order dissolution (solid is the sole reactant,
+    coefficient -1, kr == 0) and return the label that validation earns.  Anything that could create solid from
+    solution is refused: there is no nucleation or precipitation law here to label it with."""
+    touching = [r for r in spec.reactions if any(sp == solid for sp, _ in r.stoich)]
+    for r in touching:
+        if dict(r.stoich)[solid] > 0:
+            raise ParticleError(f"reaction {r.name!r} PRODUCES the solid {solid!r}: no nucleation/precipitation law is "
+                                f"modelled, so grains may not be created from solution")
+        if r.kr != 0.0:
+            raise ParticleError(f"reaction {r.name!r} has kr = {r.kr!r}: its reverse mass-action rate precipitates "
+                                f"{solid!r} even where no solid exists (nucleation); dissolution requires kr == 0")
+        if [(sp, c) for sp, c in r.stoich if c < 0] != [(solid, -1)]:
+            raise ParticleError(f"reaction {r.name!r} is not first-order dissolution: {solid!r} must be its only "
+                                f"reactant, with coefficient -1")
+    return SYNTHETIC_FIRST_ORDER_DISSOLUTION if touching else NO_SOLID_REACTION
+
+
+def _float_exactly(v, what: str) -> float:
+    x = _exact(v)
+    f = float(x)
+    if Fraction(f) != x:
+        raise ParticleError(f"initial amount {what} = {x} is not exactly representable as a float; the kernel would "
+                            f"round it off the ledger (by {Fraction(f) - x} mol) -- pass the float you mean")
+    return f
+
+
 def run_coupled_particles(spec: ReactiveGridSpec, initial: dict, segments, *, solid: str, dt: float,
                           sweeps_per_segment: int, scheme: str = "strang", capacity: int | None = None, seed: int = 0,
                           quantum: Fraction = GRAIN_QUANTUM_MOL, rtol: float = 1e-10,
@@ -299,6 +330,7 @@ def run_coupled_particles(spec: ReactiveGridSpec, initial: dict, segments, *, so
         raise ParticleError(f"{solid!r} is not a SOLID species")
     if type(sweeps_per_segment) is not int or sweeps_per_segment < 0:
         raise ParticleError("sweeps_per_segment must be an int >= 0")
+    law_label = solid_law_label(spec, solid)
     segments = tuple(segments)
     if not segments or any(type(s) is not ValveSegment for s in segments):
         raise ParticleError("segments must be a non-empty sequence of ValveSegment")
@@ -307,7 +339,7 @@ def run_coupled_particles(spec: ReactiveGridSpec, initial: dict, segments, *, so
     state = {c: {nm: 0.0 for nm in names} for c in cells}
     for ij, inv in initial.items():
         for nm, v in inv.items():
-            state[tuple(ij)][nm] = float(v)
+            state[tuple(ij)][nm] = _float_exactly(v, f"{tuple(ij)}/{nm}")
     proj = GrainProjection.of(cells, [state[c][solid] for c in cells], quantum)
     frames = [ParticleFrame(0, 0.0, "initial", segments[0].name, None, proj, _amounts_with(spec, state, solid, proj))]
     transfers, ledgers, kernel_runs = [], [], []
@@ -347,7 +379,7 @@ def run_coupled_particles(spec: ReactiveGridSpec, initial: dict, segments, *, so
                                    max((abs(d) for d in diffs), default=Fraction(0))))
         t0 += seg.duration_s
     final = MappingProxyType({c: MappingProxyType(dict(state[c])) for c in cells})
-    return ParticleRun(spec, solid, quantum, ILLUSTRATIVE_GRANULAR_AUTOMATON, SYNTHETIC_FIRST_ORDER_DISSOLUTION,
+    return ParticleRun(spec, solid, quantum, ILLUSTRATIVE_GRANULAR_AUTOMATON, law_label,
                        tuple(kernel_runs), tuple(frames), tuple(transfers), tuple(ledgers), final)
 
 

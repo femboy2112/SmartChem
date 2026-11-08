@@ -13,13 +13,15 @@ left byte-stable) gains three things:
      the two-point finite-volume flux of Fick's law on a uniform mesh of square cells, V = A dx.  A species with k = 0
      gets no interface at all (a SOLID must have k = 0: it does not diffuse).
   3. AN INDEPENDENT REFERENCE for first-order networks: ``reference_solution_coupled`` assembles the full
-     (n_species * n_cells + 1) augmented affine generator [[L (+) K, q], [0, 0]] from the face list and the
-     stoichiometry and propagates it with ``scipy.linalg.expm``.  It never builds a CoupledWorld.
+     (n_species * n_cells + 1) augmented affine generator [[L (+) K, q], [0, 0]] from its OWN face enumeration
+     (``reference_open_faces``, written independently of the spec's face list) and the stoichiometry and propagates it
+     with ``scipy.linalg.expm``.  It never builds a CoupledWorld.
 
 SPLITTING.  The engine runs the kernel's Lie / Strang / monolithic macro-steps.  With one conductance shared by all
 species and the same reaction in every cell, transport (I_s (x) L) and reaction (K (x) I_c) commute and every
 splitting is exact -- a splitting comparison on such a grid proves nothing.  ``splitting_commutator_norm`` measures
-||[T, R]|| on the assembled generators so a test can establish non-commutation before it claims an order.
+||[T_aug, R_aug]|| on the AUGMENTED affine generators (the source vector q rides with transport) so a test can
+establish non-commutation before it claims an order.
 
 TEMPERATURE AND DOMAIN.  ``T_K`` is explicit; a DerivedConductance whose diffusivity was stated at another temperature
 is REFUSED (``GridSourceDomainError``, same 0.01 K match rule as ``admissibility``): no temperature law for D is
@@ -42,7 +44,8 @@ import numpy as np
 from scipy.linalg import expm
 
 from experiments.sandbox_foundation import admissibility as _adm
-from experiments.sandbox_foundation.claim_tiers import rank as _tier_rank
+from experiments.sandbox_foundation.claim_tiers import (ASSUMED_PARAMETER, CALIBRATED_TO_MEASUREMENT, UNVERIFIED,
+                                                        rank as _tier_rank)
 from experiments.sandbox_foundation.general_coupled import (Compartment, CoupledWorld, ExternalBoundary,
                                                             InterfaceTransfer)
 from experiments.sandbox_foundation.general_kernel import (ChemicalSystem, MassActionReversible, Phase, Reaction,
@@ -59,6 +62,10 @@ SYNTHETIC_RATE_SOURCE = "SYNTHETIC: caller-declared kf/kr; no source citation"
 DEFAULT_MODEL_DOMAIN = ("isothermal; ideal concentration basis (activity == concentration); well-mixed cells; "
                         "neutral species only; no advection")
 FRAME_SCHEMA = "xxv-reactive-grid-frame-v1"
+# The claim tiers an INPUT diffusivity can honestly carry: assumed, or fitted to a measured dataset.  The other tiers
+# describe a solve (STRUCTURALLY_CONSERVING .. BENCHMARKED) or a validated prediction (PREDICTIVE_WITHIN_...), or are
+# the refusal floor (OUT_OF_DOMAIN / REFUSED) -- none is a property a bare caller-supplied D can have.
+D_INPUT_TIERS = frozenset({ASSUMED_PARAMETER, UNVERIFIED, CALIBRATED_TO_MEASUREMENT})
 
 QUANTITIES = MappingProxyType({
     "amount_mol": MappingProxyType({"quantity": "amount_of_substance", "unit": "mol", "kind": "CANONICAL",
@@ -121,6 +128,9 @@ class DerivedConductance:
         _finite(self.dx_m, "dx_m", positive=True)
         _finite(self.D_T_K, "D_T_K", positive=True)
         _tier_rank(self.D_source_tier)                         # an unknown tier token raises
+        if self.D_source_tier not in D_INPUT_TIERS:
+            raise GridError(f"D_source_tier {self.D_source_tier!r} is not a tier an input diffusivity can carry; "
+                            f"expected one of {sorted(D_INPUT_TIERS)}")
         if not isinstance(self.D_citation, str) or not self.D_citation.strip():
             raise GridError("DerivedConductance needs a non-empty D_citation (state where D came from)")
         object.__setattr__(self, "k_Lps", float(self.D_m2ps) * float(self.area_m2) / float(self.dx_m) * 1000.0)
@@ -232,21 +242,42 @@ class ReactiveGridSpec:
                     raise GridError(f"DerivedConductance geometry for {nm!r} implies a cell volume A*dx = {v_geom!r} L "
                                     f"but cell_volume_L = {self.cell_volume_L!r}: k = D A / dx is the FV flux only on "
                                     f"square cells with V = A dx")
+        derived = [(nm, c) for nm, c in cond if type(c) is DerivedConductance]
+        for nm, c in derived[1:]:
+            ref_nm, ref = derived[0]
+            if (abs(c.dx_m - ref.dx_m) > 1e-9 * ref.dx_m or abs(c.area_m2 - ref.area_m2) > 1e-9 * ref.area_m2):
+                raise GridError(f"DerivedConductance geometry for {nm!r} (A={c.area_m2!r} m^2, dx={c.dx_m!r} m) differs "
+                                f"from {ref_nm!r} (A={ref.area_m2!r} m^2, dx={ref.dx_m!r} m): one grid has one mesh, so "
+                                f"every derived conductance must share its face area and cell spacing")
         object.__setattr__(self, "conductance", cond)
+
+        # Freeze every caller container: a finished run's identity must not move when the caller's list does.
+        try:
+            valves = tuple((name, tuple(a), tuple(b)) for name, a, b in self.valves)
+            sources = tuple((tuple(ij), sp, val) for ij, sp, val in self.sources)
+            sinks = tuple((tuple(ij), sp, val) for ij, sp, val in self.sinks)
+        except (TypeError, ValueError):
+            raise GridError("valves are (name, (i, j), (i2, j2)); sources/sinks are ((i, j), species, value)") from None
+        object.__setattr__(self, "valves", valves)
+        object.__setattr__(self, "sources", sources)
+        object.__setattr__(self, "sinks", sinks)
 
         object.__setattr__(self, "walls", frozenset(_face(a, b) for a, b in self.walls))
         valid = set(self.all_faces())
         for f in self.walls:
             if f not in valid:
                 raise GridError(f"wall {f} is not a face between axis-adjacent cells of the grid")
-        seen = set()
+        seen, valved = set(), {}
         for name, a, b in self.valves:
             f = _face(a, b)
             if f not in valid or f in self.walls:
                 raise GridError(f"valve {name!r} {f} must be an existing, non-wall face")
             if name in seen:
                 raise GridError(f"duplicate valve name {name!r}")
+            if f in valved:
+                raise GridError(f"valves {valved[f]!r} and {name!r} share face {f}: one face carries at most one valve")
             seen.add(name)
+            valved[f] = name
         cells = set(self.cells())
         for tag, items in (("source", self.sources), ("sink", self.sinks)):
             for ij, sp, val in items:
@@ -254,7 +285,12 @@ class ReactiveGridSpec:
                     raise GridError(f"{tag} cell {ij} is outside the grid")
                 if sp not in by_name:
                     raise GridError(f"{tag} species {sp!r} is not declared")
-                _finite(val, f"{tag} value", positive=(tag == "sink"))
+                if by_name[sp].phase is Phase.SOLID:
+                    raise GridError(f"{tag} species {sp!r} is a SOLID: a solid neither diffuses nor crosses a "
+                                    f"boundary, so it cannot be fed or drained")
+                # A source is a FEED (rate >= 0).  A drain must be a declared first-order sink: a constant negative
+                # feed keeps removing material after the inventory is gone, which no physical boundary does.
+                _finite(val, f"{tag} value", positive=(tag == "sink"), nonneg=(tag == "source"))
 
         rx = tuple(GridReaction.coerce(r) for r in self.reactions)
         if len({r.name for r in rx}) != len(rx):
@@ -408,6 +444,7 @@ class ReactiveRun:
     final: MappingProxyType              # {(i, j): {species: mol}}
     step_count: int
     initial_digest: str                  # identity of the state the FIRST run of this chain started from
+    segment_start_digests: tuple = ()    # exact digest of the state each segment was integrated FROM (one per segment)
 
     @property
     def conductance_report(self) -> dict:
@@ -453,6 +490,70 @@ def _make_frame(spec, index, step, dt, seg, state) -> ReactiveFrame:
                          MappingProxyType(tot))
 
 
+def _component_coeff(spec, label: str) -> dict:
+    """{species: coefficient} of one conserved component row (an element of the composition, or 'charge')."""
+    if label == "charge":
+        return {s.name: float(s.charge) for s in spec.species}
+    if not any(el == label for s in spec.species for el, _ in s.composition):
+        raise GridError(f"start ledger names component {label!r} that no species of the spec carries")
+    return {s.name: float(dict(s.composition).get(label, 0)) for s in spec.species}
+
+
+def _component_total(spec, amounts, coeff: dict) -> float:
+    return math.fsum(coeff[s.name] * float(amounts[c][s.name]) for c in spec.cells() for s in spec.species)
+
+
+def _verify_start(spec: ReactiveGridSpec, start: "ReactiveRun", dt: float) -> None:
+    """Re-derive what a continuation would otherwise trust.  ``start.final`` must be EXACTLY its last frame, the
+    frame chain must be one frame per global step, and every recorded segment ledger must close on the frames it
+    covers: |E n(end) - E n(begin) - integrated external flux| <= that ledger's own component tolerance.  A hand-off
+    state edited between segments (or a frame edited without its ledger) is refused."""
+    if type(start.segments) is not tuple or type(start.frames) is not tuple or type(start.ledgers) is not tuple:
+        raise GridError("start is not a well-formed ReactiveRun")
+    if len(start.ledgers) != len(start.segments) or len(start.segment_start_digests) != len(start.segments):
+        raise GridError("start must carry one ledger and one start-state digest per segment")
+    if len(start.frames) != start.step_count + 1 or any(f.index != k or f.step != k for k, f in enumerate(start.frames)):
+        raise GridError("start frames are not one frame per global step")
+    cells, names = spec.cells(), [s.name for s in spec.species]
+
+    def exact(amounts):
+        if set(amounts) != set(cells) or any(set(amounts[c]) != set(names) for c in cells):
+            raise GridError("start state does not cover exactly the spec's cells and species")
+        return [[float(amounts[c][nm]).hex() for nm in names] for c in cells]
+    if exact(start.final) != exact(start.frames[-1].amounts):
+        raise GridError("start.final is not the state of start's last frame: the continuation hand-off was edited")
+
+    def digest(amounts):
+        return _state_digest(spec, {cell_name(c): {s: float(amounts[c][s.name]) for s in spec.species} for c in cells})
+    if digest(start.frames[0].amounts) != start.initial_digest:
+        raise GridError("start's first frame is not the state its initial_digest records")
+    s0 = 0
+    for k, (seg, led) in enumerate(zip(start.segments, start.ledgers)):
+        n = _segment_steps(seg, dt)
+        if led.segment != seg.name or led.n_steps != n:
+            raise GridError(f"start ledger {led.segment!r} does not match segment {seg.name!r}")
+        if led.positivity_verdict not in (_adm.POSITIVITY_HELD, _adm.POSITIVITY_WITHIN_FLOOR) \
+                or led.structural_tier != "STRUCTURALLY_CONSERVING":
+            raise GridError(f"start segment {seg.name!r} ledger is not an admitted segment")
+        begin, end = start.frames[s0], start.frames[s0 + n]
+        if any(f.segment != seg.name for f in start.frames[s0 + 1:s0 + n + 1]):
+            raise GridError(f"start frames {s0 + 1}..{s0 + n} do not belong to segment {seg.name!r}")
+        if digest(begin.amounts) != start.segment_start_digests[k]:
+            raise GridError(f"start segment {seg.name!r} did not begin from the state its start digest records")
+        if not led.material or set(led.material) != set(led.component_tolerance):
+            raise GridError(f"start segment {seg.name!r} ledger does not gate every component it reports")
+        for lab, (_change, flux) in led.material.items():
+            co = _component_coeff(spec, lab)
+            resid = _component_total(spec, end.amounts, co) - _component_total(spec, begin.amounts, co) - float(flux)
+            if not abs(resid) <= float(led.component_tolerance[lab]):
+                raise GridError(f"start segment {seg.name!r}: component {lab!r} does not close on its frames "
+                                f"(residual {resid!r} mol > tolerance {float(led.component_tolerance[lab])!r}): the "
+                                f"recorded run was edited")
+        s0 += n
+    if s0 != start.step_count:
+        raise GridError("start segments do not account for its step count")
+
+
 def _segment_steps(seg: ValveSegment, dt: float) -> int:
     n = int(round(seg.duration_s / dt))
     if n < 1 or abs(n * dt - seg.duration_s) > 1e-9 * seg.duration_s:
@@ -484,6 +585,7 @@ def run_reactive_grid(spec: ReactiveGridSpec, initial, segments, *, scheme: str 
         state = _initial_state(spec, initial)
         frames = [_make_frame(spec, 0, 0, dt, segments[0], state)]
         ledgers, step0, init_digest = [], 0, _state_digest(spec, state)
+        start_digests = []
     else:
         if initial is not None:
             raise GridError("pass either initial or start, not both")
@@ -491,15 +593,18 @@ def run_reactive_grid(spec: ReactiveGridSpec, initial, segments, *, scheme: str 
             raise GridError("start must be a ReactiveRun of the SAME spec")
         if (start.scheme, start.dt, start.rtol, start.atol) != (scheme, dt, rtol, atol):
             raise GridError("continuation must keep the scheme, dt and tolerances of the run it continues")
+        _verify_start(spec, start, dt)                        # re-derived, not trusted
         state = {cell_name(c): {s: float(start.final[c][s.name]) for s in spec.species} for c in spec.cells()}
         frames, ledgers = list(start.frames), list(start.ledgers)
         step0, init_digest = start.step_count, start.initial_digest
+        start_digests = list(start.segment_start_digests)
     all_names = [s.name for s in (start.segments if start is not None else ())] + [s.name for s in segments]
     if len(set(all_names)) != len(all_names):
         raise GridError("segment names must be unique across a run (frames bind to their segment's ledger by name)")
     step = step0
     for seg in segments:
         n = _segment_steps(seg, dt)
+        start_digests.append(_state_digest(spec, state))      # the state this segment is integrated FROM
         world = build_reactive_world(spec, seg.open_valves)
         traj = world.integrate(state, duration=float(seg.duration_s), n_steps=n, scheme=scheme, rtol=rtol, atol=atol,
                                require_certified_execution=True)
@@ -523,16 +628,36 @@ def run_reactive_grid(spec: ReactiveGridSpec, initial, segments, *, scheme: str 
             MappingProxyType(dict(rc.negative_minima)), rc.execution_identity_basis, rc.structural_tier))
         state = {cn: dict(traj.amounts[cn][-1]) for cn in traj.compartments}
     return ReactiveRun(spec, scheme, dt, float(rtol), float(atol), tuple(start.segments if start else ()) + segments,
-                       tuple(frames), tuple(ledgers), _amounts(spec, state), step, init_digest)
+                       tuple(frames), tuple(ledgers), _amounts(spec, state), step, init_digest, tuple(start_digests))
 
 
 # ============================================================ the independent reference (first-order networks)
+def reference_open_faces(nx: int, ny: int, walls, valves, open_valves=frozenset()) -> frozenset:
+    """The reference's OWN face enumeration, written independently of ``ReactiveGridSpec.all_faces/open_faces`` and
+    of the canonical orientation: every unordered pair of cells one unit apart along x or y, minus walls and minus
+    faces whose valve is not in ``open_valves``.  Faces are returned as frozensets of two cells."""
+    def pair(a, b):
+        return frozenset((tuple(a), tuple(b)))
+    faces = set()
+    for x in range(nx):
+        for y in range(ny):
+            for dx_, dy_ in ((1, 0), (0, 1)):
+                if x + dx_ < nx and y + dy_ < ny:
+                    faces.add(pair((x, y), (x + dx_, y + dy_)))
+    names = {v[0] for v in valves}
+    if not set(open_valves) <= names:
+        raise GridError(f"unknown valve(s) {sorted(set(open_valves) - names)}")
+    faces -= {pair(a, b) for a, b in walls}
+    faces -= {pair(a, b) for name, a, b in valves if name not in open_valves}
+    return frozenset(faces)
+
+
 def reference_generator(spec: ReactiveGridSpec, open_valves=frozenset()):
     """(T, R, q, index): the transport generator T (faces + sinks), the reaction generator R, and the source vector q
     of dn/dt = (T + R) n + q, assembled directly from the face list and the stoichiometry with numpy.  State index
     (species s, cell c) -> s * n_cells + c.  Only first-order networks are linear: a reaction with kf > 0 must have
     reactant order 1, and one with kr > 0 product order 1; anything else is refused."""
-    cells = spec.cells()
+    cells = [(x, y) for x in range(spec.nx) for y in range(spec.ny)]       # the reference's own cell order
     nc, ns = len(cells), len(spec.species)
     ci = {c: k for k, c in enumerate(cells)}
     si = {s.name: k for k, s in enumerate(spec.species)}
@@ -545,7 +670,8 @@ def reference_generator(spec: ReactiveGridSpec, open_valves=frozenset()):
         if g == 0.0:
             continue
         o = si[s.name] * nc
-        for a, b in spec.open_faces(open_valves):
+        for face in reference_open_faces(spec.nx, spec.ny, spec.walls, spec.valves, open_valves):
+            a, b = tuple(face)
             ia, ib = o + ci[a], o + ci[b]
             T[ia, ia] -= g
             T[ib, ia] += g
@@ -575,9 +701,16 @@ def reference_generator(spec: ReactiveGridSpec, open_valves=frozenset()):
 
 
 def splitting_commutator_norm(spec: ReactiveGridSpec, open_valves=frozenset()) -> float:
-    """||T R - R T||_F on the assembled generators: zero means Lie/Strang splitting is exact for this configuration."""
-    T, R, _, _ = reference_generator(spec, open_valves)
-    return float(np.linalg.norm(T @ R - R @ T))
+    """||[T_aug, R_aug]||_F on the AUGMENTED affine generators T_aug = [[T, q], [0, 0]] (boundaries belong to the
+    transport sub-flow) and R_aug = [[R, 0], [0, 0]]:  [T_aug, R_aug] = [[T R - R T, -R q], [0, 0]].  Zero means
+    Lie/Strang splitting of dn/dt = (T + R) n + q is exact for this configuration; a source feeding a reacting species
+    makes it nonzero even when T and R commute."""
+    T, R, q, _ = reference_generator(spec, open_valves)
+    m = T.shape[0]
+    Ta, Ra = np.zeros((m + 1, m + 1)), np.zeros((m + 1, m + 1))
+    Ta[:m, :m], Ta[:m, m] = T, q
+    Ra[:m, :m] = R
+    return float(np.linalg.norm(Ta @ Ra - Ra @ Ta))
 
 
 def reference_solution_coupled(spec: ReactiveGridSpec, initial: dict, segments) -> dict:
@@ -600,10 +733,14 @@ def reference_solution_coupled(spec: ReactiveGridSpec, initial: dict, segments) 
 
 # ============================================================ projection: receipt, snapshot, frame dict
 def model_identity(run: ReactiveRun) -> str:
+    """Content identity of the run's model AND of every state a segment was integrated from: a continuation that
+    starts from a different state can never share an identity with the honest chain (which, being bit-exact, shares
+    the identity of the uncut run of the same schedule)."""
     return _canon({"engine": "reactive_grid_xxv", "spec": run.spec.describe(), "scheme": run.scheme,
                    "dt": float(run.dt).hex(), "rtol": float(run.rtol).hex(), "atol": float(run.atol).hex(),
                    "initial": run.initial_digest,
-                   "segments": [[s.name, float(s.duration_s).hex(), sorted(s.open_valves)] for s in run.segments]})
+                   "segments": [[s.name, float(s.duration_s).hex(), sorted(s.open_valves)] for s in run.segments],
+                   "segment_start_states": list(run.segment_start_digests)})
 
 
 def run_numerics(run: ReactiveRun) -> dict:
@@ -638,10 +775,17 @@ def run_receipt(run: ReactiveRun):
     return ModelRunReceipt.unadmitted_transport(model_identity(run), run_numerics(run))
 
 
-def to_snapshot(run: ReactiveRun, frame: ReactiveFrame, receipt=None):
+def to_snapshot(run: ReactiveRun, frame: ReactiveFrame):
     """A PhysicalWorldSnapshot (the existing renderer contract) built from a PRIVATE copy of one frame, carrying the
-    run's ModelRunReceipt.  Returns (snapshot, oriented interfaces as cell-index pairs)."""
+    run's OWN ModelRunReceipt (derived here; a caller cannot supply one).  Returns (snapshot, oriented interfaces as
+    cell-index pairs)."""
+    return _to_snapshot(run, frame, run_receipt(run))
+
+
+def _to_snapshot(run: ReactiveRun, frame: ReactiveFrame, receipt):
     from experiments.sandbox_foundation.snapshot import PhysicalWorldSnapshot
+    if receipt.model_identity != model_identity(run):
+        raise GridError("a receipt can only travel with the run whose model identity it carries")
     spec = run.spec
     cells = spec.cells()
     idx = {c: k for k, c in enumerate(cells)}
@@ -667,7 +811,7 @@ def to_snapshot(run: ReactiveRun, frame: ReactiveFrame, receipt=None):
                   "temperature_K": float(spec.T_K), "model_domain": spec.model_domain,
                   "claim": "computed projection only -- not a measurement, not a validated physical prediction"},
         display_hints={"layout": "grid2d", "nx": spec.nx, "ny": spec.ny, "cell_ij": [list(c) for c in cells]},
-        receipt=receipt if receipt is not None else run_receipt(run))
+        receipt=receipt)
     return snap, tuple((idx[a], idx[b]) for a, b in open_faces)
 
 
@@ -678,13 +822,14 @@ def face_flux(spec: ReactiveGridSpec, amounts, species_name: str, tail, head) ->
     return k * (amounts[tuple(tail)][species_name] / V - amounts[tuple(head)][species_name] / V)
 
 
-def frame_dict(run: ReactiveRun, frame: ReactiveFrame, receipt=None) -> dict:
+def frame_dict(run: ReactiveRun, frame: ReactiveFrame) -> dict:
     """A renderer-neutral, strict-JSON frame built fresh from the immutable run: every quantity carries a unit and a
     quantity identity (``quantities``), faces carry their valve state and per-species instantaneous flux.  It is a new
-    plain dict on every call, so a renderer writing into it cannot reach the run."""
+    plain dict on every call, so a renderer writing into it cannot reach the run.  The receipt is the run's own, derived
+    here; a caller cannot supply one."""
     spec = run.spec
-    receipt = receipt if receipt is not None else run_receipt(run)
-    snap, _ = to_snapshot(run, frame, receipt)
+    receipt = run_receipt(run)
+    snap, _ = _to_snapshot(run, frame, receipt)
     cells = spec.cells()
     open_set = set(spec.open_faces(frame.open_valves))
     valve_of = {f: nm for nm, f in spec.valve_faces().items()}
@@ -718,5 +863,5 @@ def frame_dict(run: ReactiveRun, frame: ReactiveFrame, receipt=None) -> dict:
     }
 
 
-def frame_digest(run: ReactiveRun, frame: ReactiveFrame, receipt=None) -> str:
-    return _canon(frame_dict(run, frame, receipt))
+def frame_digest(run: ReactiveRun, frame: ReactiveFrame) -> str:
+    return _canon(frame_dict(run, frame))

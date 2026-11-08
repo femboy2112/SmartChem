@@ -4,16 +4,21 @@ contract."""
 from __future__ import annotations
 
 import ast
+import dataclasses
 import json
 import math
+import random
 import re
+from types import MappingProxyType
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 from experiments.sandbox_foundation import reactive_grid_xxv as rg
+from experiments.sandbox_foundation import claim_tiers as ct
 from experiments.sandbox_foundation.claim_tiers import ASSUMED_PARAMETER, InvalidClaimTierError
+from experiments.sandbox_foundation.general_coupled import CoupledWorld, ExternalBoundary
 from experiments.sandbox_foundation.general_kernel import ConservationError, Phase, SourceDomainError, Species
 
 A = Species.of("A", {"X": 1})
@@ -299,8 +304,22 @@ def test_a_trace_species_alone_in_its_component_is_refused_as_unresolved_not_cer
         rg.run_reactive_grid(spec, {(0, 0): {"A": 1.0, "T": 1e-12}}, (rg.ValveSegment("s", 1.0),), dt=1.0)
 
 
-def test_over_drain_is_refused_with_the_raw_minimum_reported():
-    spec = rg.ReactiveGridSpec(2, 1, (A,), (("A", SC(0.1)),), sources=(((0, 0), "A", -1e-3),))
+def _with_feed(world, compartment, species, rate):
+    """The same cells and faces with one extra feed boundary: a world the (now refusing) spec cannot declare."""
+    return CoupledWorld(world.compartments, world.interfaces,
+                        list(world.boundaries) + [ExternalBoundary("smuggled", compartment, species, "feed", rate=rate)],
+                        temperature_K=world.temperature_K)
+
+
+def test_over_drain_is_refused_with_the_raw_minimum_reported(monkeypatch):
+    # finding 6a: a negative feed is refused at declaration (a drain must be a declared first-order sink) ...
+    with pytest.raises(rg.GridError, match=">= 0"):
+        rg.ReactiveGridSpec(2, 1, (A,), (("A", SC(0.1)),), sources=(((0, 0), "A", -1e-3),))
+    # ... and the run-time positivity gate behind that refusal still holds when the drain is smuggled into the world.
+    spec = rg.ReactiveGridSpec(2, 1, (A,), (("A", SC(0.1)),))
+    real = rg.build_reactive_world
+    monkeypatch.setattr(rg, "build_reactive_world",
+                        lambda sp, ov=frozenset(): _with_feed(real(sp, ov), rg.cell_name((0, 0)), A, -1e-3))
     with pytest.raises(rg.GridError, match="VIOLATED") as exc:
         rg.run_reactive_grid(spec, {(0, 0): {"A": 1e-3}}, (rg.ValveSegment("s", 5.0),), dt=0.5)
     msg = str(exc.value)
@@ -433,3 +452,183 @@ def test_the_source_scan_is_calibrated_it_flags_planted_chemistry(tmp_path):
     assert _BANNED_WORDS.search(code)
     assert [w for w in _BANNED_SUBSTR if re.search(r"(?<![a-z])" + w, code.lower())] == ["acet"]
     assert "calcit" not in code.lower()                                   # docstrings are excluded, as intended
+
+
+# ---------------------------------------------------------------- red-team regressions (XXV-4 fix round)
+C = Species.of("C", {"X": 1})
+
+
+def test_a_foreign_receipt_cannot_ride_a_grid_frame(mono):
+    """Finding 1 (probe p4): an ADMITTED receipt minted for an unrelated mechanism made a SYNTHETIC frame read
+    ADMITTED / supported_prediction.  The public projections now take no receipt; the private path checks identity."""
+    from experiments.sandbox_foundation.snapshot import ModelRunReceipt
+    from experiments.sandbox_foundation.tests.test_snapshot import _verified_executable
+    verified, _, policy = _verified_executable()
+    foreign = ModelRunReceipt.from_executable(verified, policy, rg.run_receipt(mono).numerics)
+    assert foreign.admitted and foreign.model_identity != rg.model_identity(mono)     # the forgery is real
+    frame = mono.frames[-1]
+    with pytest.raises(TypeError):
+        rg.frame_dict(mono, frame, receipt=foreign)
+    with pytest.raises(TypeError):
+        rg.to_snapshot(mono, frame, receipt=foreign)
+    with pytest.raises(TypeError):
+        rg.frame_digest(mono, frame, foreign)
+    with pytest.raises(rg.GridError, match="model identity"):
+        rg._to_snapshot(mono, frame, foreign)
+    rec = rg.frame_dict(mono, frame)["receipt"]
+    assert rec["admitted"] is False and rec["model_identity"] == rg.model_identity(mono)
+
+
+def test_continuation_refuses_a_forged_start_and_binds_the_start_state_into_identity():
+    """Finding 2 (probe p3): ``dataclasses.replace(half, final=<+1 mol>)`` injected a mole at the hand-off with the
+    identity unchanged and every ledger green.  The start is now re-checked against its own frames and ledgers, and the
+    state each segment starts from is part of the identity."""
+    spec = rg.ReactiveGridSpec(2, 1, (A,), (("A", SC(0.05)),))
+    init = {(0, 0): {"A": 0.01}}
+    s1, s2 = rg.ValveSegment("s1", 2.0), rg.ValveSegment("s2", 2.0)
+    half = rg.run_reactive_grid(spec, init, (s1,), dt=1.0)
+    full = rg.run_reactive_grid(spec, init, (s1, s2), dt=1.0)
+    honest = rg.run_reactive_grid(spec, None, (s2,), dt=1.0, start=half)
+    assert [{c: dict(v) for c, v in f.amounts.items()} for f in honest.frames] == \
+        [{c: dict(v) for c, v in f.amounts.items()} for f in full.frames]
+    assert rg.model_identity(honest) == rg.model_identity(full)          # the honest cut is invisible
+    inj = {c: dict(v) for c, v in half.final.items()}
+    inj[(1, 0)]["A"] += 1.0
+    forged = MappingProxyType({c: MappingProxyType(v) for c, v in inj.items()})
+    with pytest.raises(rg.GridError, match="last frame"):
+        rg.run_reactive_grid(spec, None, (s2,), dt=1.0, start=dataclasses.replace(half, final=forged))
+    frames = half.frames[:-1] + (dataclasses.replace(half.frames[-1], amounts=forged),)
+    with pytest.raises(rg.GridError, match="does not close"):
+        rg.run_reactive_grid(spec, None, (s2,), dt=1.0, start=dataclasses.replace(half, final=forged, frames=frames))
+    # A forgery made consistent end to end (final, frame AND ledger flux) is not detectable from the record alone --
+    # but it can never share the honest chain's identity, because the state s2 starts from is hashed into it.
+    led = half.ledgers[-1]
+    mat = dict(led.material)
+    mat["X"] = (mat["X"][0] + 1.0, mat["X"][1] + 1.0)
+    deep = dataclasses.replace(half, final=forged, frames=frames,
+                               ledgers=(dataclasses.replace(led, material=MappingProxyType(mat)),))
+    out = rg.run_reactive_grid(spec, None, (s2,), dt=1.0, start=deep)
+    assert rg.model_identity(out) != rg.model_identity(honest)
+    with pytest.raises(rg.GridError, match="initial_digest"):
+        rg.run_reactive_grid(spec, None, (s2,), dt=1.0,
+                             start=dataclasses.replace(half, initial_digest="0" * 64))
+
+
+def test_known_gap_the_kernel_floor_holds_a_trace_dip_deeper_than_the_trace_inventory():
+    """KNOWN GAP (red-team finding 6b) -- asserted as CURRENT behaviour, deliberately not fixed here.
+
+    The coupled kernel's positivity floor is ABS_FLOOR (1e-10 mol) + POS_REL_FLOOR * max_t |n_j|.  A 1e-12 mol trace
+    species beside a 1 mol bulk species of the same component, drained by a -1e-11 mol/s feed, reaches about -4e-11
+    mol (~40x its whole inventory) and still reads HELD_WITHIN_PHYSICAL_FLOOR.  The repair (relative floor on the
+    POSITIVE peak; never HELD when |min| exceeds that peak) was attempted and reverted: it flips the pinned XXII
+    contract test_xxii_s3_numerical_resolution::test_negative_trace_dip_within_the_floor_is_flagged_resolution_limited.
+    The grid closes its own route to this state (a negative feed is refused at declaration, finding 6a); the kernel
+    does surface ``positivity_resolution_limited``.  If the kernel is repaired, this test must be rewritten."""
+    spec = rg.ReactiveGridSpec(2, 1, (A, C), (("A", SC(0.1)), ("C", SC(0.1))))
+    world = _with_feed(rg.build_reactive_world(spec), rg.cell_name((1, 0)), C, -1e-11)
+    tr = world.integrate(rg._initial_state(spec, {(0, 0): {"A": 1.0}, (1, 0): {"C": 1e-12}}), duration=5.0, n_steps=5,
+                         scheme="strang", rtol=1e-10, atol=1e-14, require_certified_execution=True)
+    r = tr.receipt
+    assert min(r.negative_minima.values()) < -10 * 1e-12               # deeper than C's whole inventory, ten times
+    assert r.positivity_verdict == "HELD_WITHIN_PHYSICAL_FLOOR" and r.positivity_held      # the gap, pinned
+    assert r.positivity_resolution_limited                              # what the kernel does say about it
+
+
+def test_spec_containers_are_frozen_so_a_finished_runs_identity_cannot_move():
+    """Finding 8 (probe p9): caller lists for sources/sinks/valves were stored by reference."""
+    src, snk, vlv = [((0, 0), "A", 1e-3)], [[[1, 0], "A", 0.01]], [["v", [0, 0], [1, 0]]]
+    spec = rg.ReactiveGridSpec(2, 1, (A,), (("A", SC(0.1)),), sources=src, sinks=snk, valves=vlv)
+    for items in (spec.sources, spec.sinks, spec.valves):
+        assert type(items) is tuple and all(type(e) is tuple for e in items)
+    assert all(type(e[0]) is tuple for e in spec.sources + spec.sinks)
+    assert all(type(e[1]) is tuple and type(e[2]) is tuple for e in spec.valves)
+    run = rg.run_reactive_grid(spec, {(0, 0): {"A": 0.01}}, (rg.ValveSegment("s", 2.0),), dt=1.0)
+    mid = rg.model_identity(run)
+    src[0] = ((1, 0), "A", 5.0)
+    snk[0][0][0] = 0
+    vlv.append(["w", [0, 0], [1, 0]])
+    assert rg.model_identity(run) == mid
+
+
+def test_derived_conductances_on_one_grid_must_share_one_mesh():
+    """Finding 9 (probe p5 case 1): same D, same grid, A*dx = V for each species, yet k differed 100x."""
+    D, V = 1e-9, 1.0
+    cA = rg.DerivedConductance(D, 1e-2, 1e-1, ASSUMED_PARAMETER, "same D", 298.15)
+    cB = rg.DerivedConductance(D, 1e-1, 1e-2, ASSUMED_PARAMETER, "same D", 298.15)
+    with pytest.raises(rg.GridError, match="one mesh"):
+        rg.ReactiveGridSpec(2, 1, (A, B), (("A", cA), ("B", cB)), cell_volume_L=V)
+    cB2 = rg.DerivedConductance(3 * D, 1e-2, 1e-1, ASSUMED_PARAMETER, "another D", 298.15)
+    ok = rg.ReactiveGridSpec(2, 1, (A, B), (("A", cA), ("B", cB2)), cell_volume_L=V)       # one mesh, two D: fine
+    assert ok.conductance_of("B").k_Lps == pytest.approx(3 * ok.conductance_of("A").k_Lps, rel=1e-15)
+
+
+def test_the_commutator_sees_the_affine_source_and_the_control_discriminates():
+    """Finding 10 (probe p5 case 5): uniform conductance + uniform reaction commute, but a source feeding the reacting
+    species does not commute with the reaction; the old ||[T, R]|| read 0 while Lie splitting was first-order wrong."""
+    kw = dict(conductance=(("A", SC(0.1)), ("B", SC(0.1))), reactions=(("iso", (("A", -1), ("B", 1)), 0.3, 0.1, None),))
+    fed = rg.ReactiveGridSpec(2, 1, (A, B), sources=(((0, 0), "A", 1e-3),), **kw)
+    unfed = rg.ReactiveGridSpec(2, 1, (A, B), **kw)
+    init, segs = {(0, 0): {"A": 0.01}}, (rg.ValveSegment("s", 4.0),)
+
+    def lie_err(spec):
+        ref = rg.reference_solution_coupled(spec, init, segs)
+        lie = rg.run_reactive_grid(spec, init, segs, scheme="lie", dt=1.0)
+        return max(abs(lie.final[c][s] - ref[s][c]) for c in spec.cells() for s in ("A", "B"))
+    assert rg.splitting_commutator_norm(unfed) == 0.0 and lie_err(unfed) < 1e-11
+    assert rg.splitting_commutator_norm(fed) > 1e-4 and lie_err(fed) > 1e-4
+
+
+def test_a_solid_can_neither_be_fed_nor_drained():
+    """Finding 11 (probe p5 case 4)."""
+    S = Species.of("S", {"X": 1}, 0, Phase.SOLID)
+    base = dict(species=(S, A), conductance=(("S", SC(0.0)), ("A", SC(0.1))))
+    with pytest.raises(rg.GridError, match="SOLID"):
+        rg.ReactiveGridSpec(2, 1, sinks=(((0, 0), "S", 0.5),), **base)
+    with pytest.raises(rg.GridError, match="SOLID"):
+        rg.ReactiveGridSpec(2, 1, sources=(((1, 0), "S", 1e-3),), **base)
+    rg.ReactiveGridSpec(2, 1, sources=(((1, 0), "A", 1e-3),), sinks=(((0, 0), "A", 0.5),), **base)
+
+
+def test_one_face_carries_at_most_one_valve():
+    """Finding 13 (probe p5 case 3): valve 'b' open, the frame reported the face CLOSED under valve 'b'."""
+    with pytest.raises(rg.GridError, match="share face"):
+        rg.ReactiveGridSpec(2, 1, (A,), (("A", SC(0.1)),), valves=(("a", (0, 0), (1, 0)), ("b", (1, 0), (0, 0))))
+
+
+@pytest.mark.parametrize("tier", sorted(ct.CLAIM_TIERS))
+def test_an_input_diffusivity_carries_only_an_input_tier(tier):
+    """Finding 14 (probe p10): the top claim tier was accepted on a bare string."""
+    if tier in (ct.ASSUMED_PARAMETER, ct.UNVERIFIED, ct.CALIBRATED_TO_MEASUREMENT):
+        assert rg.DerivedConductance(1e-9, 1e-2, 1e-1, tier, "cited", 298.15).D_source_tier == tier
+    else:
+        with pytest.raises(rg.GridError, match="input diffusivity"):
+            rg.DerivedConductance(1e-9, 1e-2, 1e-1, tier, "cited", 298.15)
+
+
+def test_reference_face_enumeration_agrees_with_the_executing_world_on_random_specs():
+    """The expm reference enumerates faces itself (no spec.all_faces/open_faces/_face), so a geometry bug in the
+    engine is not common-mode.  Checked against the interfaces the integrator actually executes; the control drops
+    the walls from the reference and must then disagree."""
+    rng = random.Random(20261108)
+    discriminated = 0
+    for _ in range(80):
+        nx, ny = rng.randint(1, 5), rng.randint(1, 5)
+        faces = [tuple(f) for f in sorted(rg.reference_open_faces(nx, ny, (), ()), key=sorted)]
+        faces = [f if rng.random() < 0.5 else f[::-1] for f in faces]          # orientation must not matter
+        rng.shuffle(faces)
+        nw = rng.randint(0, len(faces) // 2)
+        walls, rest = faces[:nw], faces[nw:]
+        valves = tuple((f"v{k}", a, b) for k, (a, b) in enumerate(rest[:rng.randint(0, len(rest))]))
+        open_set = frozenset(nm for nm, _, _ in valves if rng.random() < 0.5)
+        spec = rg.ReactiveGridSpec(nx, ny, (A,), (("A", SC(0.1)),), walls=frozenset(walls), valves=valves)
+        executed = {frozenset((i.a, i.b)) for i in rg.build_reactive_world(spec, open_set).interfaces}
+        engine = {frozenset(map(rg.cell_name, f)) for f in spec.open_faces(open_set)}
+        ref = {frozenset(map(rg.cell_name, f))                            # the RAW caller walls/valves, not the spec's
+               for f in rg.reference_open_faces(nx, ny, walls, valves, open_set)}
+        assert executed == engine == ref
+        if walls:
+            no_walls = {frozenset(map(rg.cell_name, f))
+                        for f in rg.reference_open_faces(nx, ny, (), valves, open_set)}
+            assert no_walls != executed
+            discriminated += 1
+    assert discriminated > 20

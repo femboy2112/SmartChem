@@ -4,13 +4,13 @@
   "entries": [
     {
       "id": "GUIDONE2025-CA-XXV",
-      "description": "Calcite-saturated solution under air, 22 +/- 2 C: measured [Ca]tot (Guidone et al. 2025, RSC Adv. 15, 38762, Table 1) vs the open-air P&B calcite model. Preregistered rules: docs/research/OPERATION_XXV_PREREGISTRATION.md sections 1-8; pins: section 9.",
+      "description": "Calcite-saturated solution under air, 22 +/- 2 C: measured [Ca]tot (Guidone et al. 2025, RSC Adv. 15, 38762, Table 1) vs the open-air P&B calcite model. Preregistered rules: docs/research/OPERATION_XXV_PREREGISTRATION.md sections 1-8; pins: section 9. Run 2026-11-08 at 312fb0a: PASS (tier W, qualified false: CORROBORATED-weak; cannot satisfy the 2.0-alpha gate).",
       "prereg_commit": "150225022e703c2f14a766c637b1552309d58a64",
       "qualified": false,
       "tier": "W",
-      "outcome": "PENDING",
-      "evidence": "experiments/sandbox_foundation/holdouts/guidone2025_ca_prereg_xxv.json",
-      "evidence_sha256": "9f054d207f6a25397a4e39797fdd319aaeaa76419a8877775e1fb721c8ac9485"
+      "outcome": "PASS",
+      "evidence": "experiments/sandbox_foundation/holdouts/guidone2025_ca_receipt_xxv.json",
+      "evidence_sha256": "00c7bcf3eede67bd0a8569b3d936a77a4437ff6125e4bd6719ea4dc6f693b2de"
     }
   ]
 }

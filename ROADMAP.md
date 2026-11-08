@@ -4,9 +4,12 @@
 > This block supersedes only the research-lane status lines of the OPERATION XXIV block below. Dossier:
 > `docs/research/OPERATION_XXV_HANDOFF.md`.
 >
-> - **Production 1.x.** 1.6.0 is the release and is unchanged. A 1.7 candidate (the 26th class, alcohol dehydration,
->   #116) lives on its own branch and ships only through its full gate. Its outcome is recorded in the follow-up
->   record, not here.
+> - **Production 1.x.** 1.6.0 is the release and is unchanged. **1.7.0 (alcohol dehydration, #116) is DEFERRED**
+>   (`docs/research/V1_7_DEHYDRATION_DEFER.md`). Four blind attacks on four successive implementations each found
+>   false VOUCHes. After the heteroatom side went molecule-wide, the carbon skeleton decided the chemistry
+>   (cyclialkylation, Nazarov, hydroalkoxylation). The branch `feat/1.7-dehydration-116-r2` is kept unmerged. The
+>   closed `coproduct_producers` set, the positional producer and the independent-witness pattern are reusable.
+>   Research PR #167 merged → `main` `3a1c46f` (CI 9/9); #168 filed (COT bond-shift identity).
 > - **Compiler (Phase I).**
 >   - A live, machine-readable coverage gap map (`experiments/coverage_gap_map_xxv.json`, seven categories).
 >   - Three route invariants that had no test are now pinned.

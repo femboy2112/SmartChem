@@ -534,6 +534,19 @@ def test_known_gap_the_kernel_floor_holds_a_trace_dip_deeper_than_the_trace_inve
     assert r.positivity_resolution_limited                              # what the kernel does say about it
 
 
+def test_a_resolution_limited_positivity_pass_is_refused_not_certified(monkeypatch):
+    """Finding 6, grid side of 6b: the kernel passes the trace dip above (HELD_WITHIN_PHYSICAL_FLOOR) but flags it
+    positivity_resolution_limited.  The grid previously ignored the flag and certified the segment; it now refuses it,
+    as it refuses a trace component the ledger cannot resolve.  The drain is smuggled past the declaration (6a)."""
+    spec = rg.ReactiveGridSpec(2, 1, (A, C), (("A", SC(0.1)), ("C", SC(0.1))))
+    real = rg.build_reactive_world
+    monkeypatch.setattr(rg, "build_reactive_world",
+                        lambda sp, ov=frozenset(): _with_feed(real(sp, ov), rg.cell_name((1, 0)), C, -1e-11))
+    with pytest.raises(rg.GridError, match=rg.RESOLUTION_LIMITED_POSITIVITY) as exc:
+        rg.run_reactive_grid(spec, {(0, 0): {"A": 1.0}, (1, 0): {"C": 1e-12}}, (rg.ValveSegment("s", 5.0),), dt=1.0)
+    assert re.search(r"'c1_0/C': -\d", str(exc.value))                  # the raw minimum travels with the refusal
+
+
 def test_spec_containers_are_frozen_so_a_finished_runs_identity_cannot_move():
     """Finding 8 (probe p9): caller lists for sources/sinks/valves were stored by reference."""
     src, snk, vlv = [((0, 0), "A", 1e-3)], [[[1, 0], "A", 0.01]], [["v", [0, 0], [1, 0]]]
@@ -597,8 +610,9 @@ def test_one_face_carries_at_most_one_valve():
 
 @pytest.mark.parametrize("tier", sorted(ct.CLAIM_TIERS))
 def test_an_input_diffusivity_carries_only_an_input_tier(tier):
-    """Finding 14 (probe p10): the top claim tier was accepted on a bare string."""
-    if tier in (ct.ASSUMED_PARAMETER, ct.UNVERIFIED, ct.CALIBRATED_TO_MEASUREMENT):
+    """Finding 14 (probe p10): the top claim tier was accepted on a bare string.  Only the assumed tier survives: a cited
+    D is provenance (D_citation), not CALIBRATED_TO_MEASUREMENT (a fit with a preserved fit/validation split)."""
+    if tier in (ct.ASSUMED_PARAMETER, ct.UNVERIFIED):
         assert rg.DerivedConductance(1e-9, 1e-2, 1e-1, tier, "cited", 298.15).D_source_tier == tier
     else:
         with pytest.raises(rg.GridError, match="input diffusivity"):

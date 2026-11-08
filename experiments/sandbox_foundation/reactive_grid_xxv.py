@@ -44,8 +44,7 @@ import numpy as np
 from scipy.linalg import expm
 
 from experiments.sandbox_foundation import admissibility as _adm
-from experiments.sandbox_foundation.claim_tiers import (ASSUMED_PARAMETER, CALIBRATED_TO_MEASUREMENT, UNVERIFIED,
-                                                        rank as _tier_rank)
+from experiments.sandbox_foundation.claim_tiers import ASSUMED_PARAMETER, UNVERIFIED, rank as _tier_rank
 from experiments.sandbox_foundation.general_coupled import (Compartment, CoupledWorld, ExternalBoundary,
                                                             InterfaceTransfer)
 from experiments.sandbox_foundation.general_kernel import (ChemicalSystem, MassActionReversible, Phase, Reaction,
@@ -62,10 +61,12 @@ SYNTHETIC_RATE_SOURCE = "SYNTHETIC: caller-declared kf/kr; no source citation"
 DEFAULT_MODEL_DOMAIN = ("isothermal; ideal concentration basis (activity == concentration); well-mixed cells; "
                         "neutral species only; no advection")
 FRAME_SCHEMA = "xxv-reactive-grid-frame-v1"
-# The claim tiers an INPUT diffusivity can honestly carry: assumed, or fitted to a measured dataset.  The other tiers
-# describe a solve (STRUCTURALLY_CONSERVING .. BENCHMARKED) or a validated prediction (PREDICTIVE_WITHIN_...), or are
-# the refusal floor (OUT_OF_DOMAIN / REFUSED) -- none is a property a bare caller-supplied D can have.
-D_INPUT_TIERS = frozenset({ASSUMED_PARAMETER, UNVERIFIED, CALIBRATED_TO_MEASUREMENT})
+# The claim tiers an INPUT diffusivity can honestly carry: assumed (ASSUMED_PARAMETER, synonym UNVERIFIED).  The other
+# tiers describe a solve (STRUCTURALLY_CONSERVING .. BENCHMARKED), a fit with a preserved fit/validation split
+# (CALIBRATED_TO_MEASUREMENT -- a cited literature D is not that), a validated prediction (PREDICTIVE_WITHIN_...), or the
+# refusal floor (OUT_OF_DOMAIN / REFUSED).  Where D came from travels separately, as D_citation provenance.
+D_INPUT_TIERS = frozenset({ASSUMED_PARAMETER, UNVERIFIED})
+RESOLUTION_LIMITED_POSITIVITY = "RESOLUTION_LIMITED_POSITIVITY"
 
 QUANTITIES = MappingProxyType({
     "amount_mol": MappingProxyType({"quantity": "amount_of_substance", "unit": "mol", "kind": "CANONICAL",
@@ -565,8 +566,9 @@ def run_reactive_grid(spec: ReactiveGridSpec, initial, segments, *, scheme: str 
                       rtol: float = 1e-10, atol: float = 1e-14, start: ReactiveRun | None = None) -> ReactiveRun:
     """Integrate the valve schedule through the ONE generic coupled integrator (``CoupledWorld.integrate`` with
     ``require_certified_execution=True``).  Each segment is a separate integration continued from the previous final
-    state.  A segment whose receipt does not hold positivity (caller-independent floor), close its per-step
-    per-component material ledger, or keep a STRUCTURALLY_CONSERVING tier is REFUSED (raised, raw minima reported).
+    state.  A segment whose receipt does not hold positivity (caller-independent floor), holds it only resolution-limited
+    (``RESOLUTION_LIMITED_POSITIVITY``), fails to close its per-step per-component material ledger, or loses the
+    STRUCTURALLY_CONSERVING tier is REFUSED (raised, raw minima reported).
 
     ``start`` continues a previous run of the same spec / scheme / dt / tolerances from its final state (``initial``
     must then be None); frame indices and global steps continue, so two continued half-runs reproduce one run of the
@@ -613,6 +615,13 @@ def run_reactive_grid(spec: ReactiveGridSpec, initial, segments, *, scheme: str 
             raise GridError(f"segment {seg.name!r} refused: positivity {rc.positivity_verdict} (raw minima "
                             f"{dict(rc.negative_minima)}), material balance closed={rc.material_balance_closed} "
                             f"{dict(rc.component_resolution)}, first violation {rc.first_violation}")
+        if rc.positivity_resolution_limited:
+            # The kernel's floor passed a negative dip at a species whose own scale is at or below that floor: the pass
+            # cannot tell nonnegativity from a dip deeper than the whole inventory, so it certifies nothing.
+            raise GridError(f"segment {seg.name!r} refused: {RESOLUTION_LIMITED_POSITIVITY} -- positivity "
+                            f"{rc.positivity_verdict} only within an absolute floor that exceeds the dipping species' own "
+                            f"inventory (raw minima {dict(rc.negative_minima)}); nonnegativity is not resolved at this "
+                            f"scale")
         if len(traj.times) != n + 1:
             raise GridError("internal: expected one sample per macro-step")
         for j in range(1, n + 1):

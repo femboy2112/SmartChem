@@ -73,11 +73,24 @@ Still open, all DISCLOSED:
 
 - **Inventory (introspected live, `experiments/coverage_gap_map_xxv.py`).** 25 classes @ `d9f7e867e8f1a1d2` at start, and four algebra profiles. 14 issues from the 2026-10 audits were already solved and are not gaps. 17 gaps remain, classified into the seven categories (machine-readable: `experiments/coverage_gap_map_xxv.json`).
 - **New family (#116, dehydration slice).** See §5.
-- **Route invariants.** Three invariants that had no test are now pinned:
+- **Route invariants (pinned on the DEFERRED branch only; not on `main`).** Three invariants that had no test are
+  pinned in `tests/test_route_invariants_xxv.py` on `feat/1.7-dehydration-116-r2`:
   - the same precursor listed in both `available` and `commodities` is one supply;
-  - "an ancestor that is also stock" is unreachable in all three searches, because a stocked node is never expanded (the ISSUE-124 guard's second half never changes an outcome);
+  - "an ancestor that is also stock" is unreachable in all three searches, because a stocked node is never expanded (the
+    ISSUE-124 guard's second half never changes an outcome);
   - default-grammar `coproduct_events_truncated` reports INCOMPLETE.
-- **Multi-step route through the public API.** `search_event_routes` with dehydration enabled finds two 2-step routes, from stock 1,3-propanediol + acetic acid to allyl acetate (COMPLETE). The default grammar finds 0. The hostile counterpart: no stock gives no route; dehydration plus its inverse cannot manufacture stock, because the coproduct budget never resets.
+
+  They are production-agnostic, and porting them to `main` alone is a cheap follow-up.
+- **Multi-step route through the public API (deferred branch).** `search_event_routes` with dehydration enabled finds a
+  2-step route in both orders, COMPLETE, while the default grammar finds 0. The demo target changed twice, and both
+  changes are recorded:
+  1. allyl acetate from 1,3-propanediol left the safe set at attack 3;
+  2. but-3-enyl acetate from butane-1,4-diol was itself a false VOUCH at attack 4, because acid gives THF;
+  3. the current demo is ethyl crotonate from 3-hydroxybutanoic acid + ethanol.
+
+  Hostile counterparts: no stock gives no route; dehydration plus its inverse cannot manufacture stock (the coproduct
+  budget never resets); under (M) dehydration cannot chain down one lineage. None of this is on `main`, because the
+  class is deferred (§5).
 - **#130 identity (design + controls, `IDENTITY_CARRIER_DESIGN_XXV.md`).** Route terminals and stock are constitution-only (enantiomers and isotopologues merge). **New finding (CORROBORATED, two readings):** an *unmarked* stereogenic element reads `configuration_complete=True`, the same identity class as an achiral molecule. This is latent today, but a #130 implementation must not trust that flag. No 1.x semantics changed.
 - **#105 (per-atom charge).** Not started. Recorded as a digest-migration prerequisite.
 

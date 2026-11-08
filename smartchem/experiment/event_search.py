@@ -35,7 +35,9 @@ of (:class:`EventType`):
   bounds the type-3 events per route exactly as ``lateral_hops`` bounds the laterals).  ``CappedScission``'s
   >=2-component contract (#125) still cannot represent it -- this is a SEPARATE typed producer, not an overloaded
   scission.  :func:`classify_event` still certifies only its SHAPE; the intramolecular connectivity is the
-  PRODUCER's and the RECOGNIZER's proof obligation (both carry the atom-map), never the shape check's.
+  PRODUCER's and the RECOGNIZER's proof obligation (both carry the atom-map), never the shape check's.  #116 adds a
+  second, OPT-IN type-3 producer -- alcohol dehydration (:func:`smartchem.elimination.retro_dehydration_enumeration`,
+  the 26th oracle class) -- selected through ``coproduct_producers``; the default producer set is lactonization alone.
 
 THE TERMINATION PROOF (#125 acceptance clause 4; the #104 "well-founded non-atom-count measure").  Termination
 is OVERDETERMINED -- two independent well-founded measures each strictly decrease on every recursion edge.  Be
@@ -96,6 +98,7 @@ from enum import Enum
 
 from ..category import Molecule
 from ..contracts import Digestible, canonical_digest
+from ..elimination import retro_dehydration_enumeration
 from ..intramolecular_condensation import retro_lactonization_enumeration
 from ..lateral_rewrite import LATERAL_FAMILIES, _SigmatropicFamily, guarded_isomer_edges
 from ..transform_provider import (
@@ -114,6 +117,32 @@ from .step import ExperimentRoute, ExperimentStep
 #: silent schema mutation.  (This is the opt-in event-route surface, NOT the frozen 1.0 RouteSearchReceipt.)
 EVENT_ROUTE_SEARCH_RECEIPT_SCHEMA = "smartchem.experiment.event-route-search-receipt/v2"
 EVENT_ROUTE_SEARCH_RESULT_SCHEMA = "smartchem.experiment.event-route-search-result/v2"
+
+
+@dataclass(frozen=True)
+class CoproductProducer:
+    """A bounded INTRAMOLECULAR_COPRODUCT (type-3) producer: ``enumerate(target, budget=...)`` returns a record with
+    ``.edges`` (decomposition-convention edges whose synthesis expels a coproduct) and ``.exhaustive`` (whether the
+    candidate-site scan was complete).  Not a TransformProvider: a type-3 step is rank-INCREASING, so it never enters
+    the W1 registry / decompiler path; it is consumed only by :func:`search_event_routes`."""
+
+    provider_id: str
+    enumerate: object
+
+    def __post_init__(self) -> None:
+        if not (isinstance(self.provider_id, str) and self.provider_id):
+            raise ValueError("provider_id must be a non-empty string")
+        if not callable(self.enumerate):
+            raise ValueError("enumerate must be callable")
+
+
+#: The lactonization producer (OPERATION XIV) -- the DEFAULT type-3 grammar.
+LACTONIZATION_PRODUCER = CoproductProducer("lactonization-v1", retro_lactonization_enumeration)
+#: The alcohol-dehydration producer (#116) -- OPT-IN: pass it in ``coproduct_producers``.
+DEHYDRATION_PRODUCER = CoproductProducer("dehydration-v1", retro_dehydration_enumeration)
+#: The default producer set.  With it, the receipt, the grammar digest and every route are byte-identical to the
+#: single-producer grammar that shipped in 1.6.0.
+DEFAULT_COPRODUCT_PRODUCERS: tuple[CoproductProducer, ...] = (LACTONIZATION_PRODUCER,)
 
 
 class EventClassificationError(ValueError):
@@ -320,6 +349,7 @@ def search_event_routes(
     max_coproduct_events: int = 1,
     coproduct_match_budget: int = 10_000,
     registry: TransformProviderRegistry = DEFAULT_TRANSFORM_REGISTRY,
+    coproduct_producers: tuple[CoproductProducer, ...] = DEFAULT_COPRODUCT_PRODUCERS,
 ) -> EventRouteSearchResult:
     """Bounded typed-event retrosynthesis: find routes to ``target`` that interleave rank-descending SCISSION
     events with up to ``lateral_hops`` rank-flat CONNECTED_LATERAL hops and up to ``max_coproduct_events``
@@ -335,9 +365,20 @@ def search_event_routes(
     electrocyclizations -- the forcing consumers #123 names).  The receipt is an honest completeness fact:
     INCOMPLETE whenever any budget, the depth, the lateral-hop bound, the coproduct-event bound, or the result
     limit truncated the search.
+
+    ``coproduct_producers`` names the type-3 producers (default ``(LACTONIZATION_PRODUCER,)``, the 1.6.0 grammar).
+    Alcohol dehydration (#116) is opt-in: ``coproduct_producers=(LACTONIZATION_PRODUCER, DEHYDRATION_PRODUCER)``.
+    Every producer shares the ONE per-route ``max_coproduct_events`` budget and ``coproduct_match_budget``, so the
+    termination measure is unchanged.  A non-default producer set is folded into the grammar digest; the default set
+    leaves it byte-identical.
     """
     if type(target) is not Molecule:
         raise TypeError("target must be a Molecule")
+    if (type(coproduct_producers) is not tuple
+            or any(type(p) is not CoproductProducer for p in coproduct_producers)):
+        raise TypeError("coproduct_producers must be a tuple of CoproductProducer")
+    if len({p.provider_id for p in coproduct_producers}) != len(coproduct_producers):
+        raise ValueError("coproduct_producers must not repeat a provider_id")
     assert_registry_supports_use(registry, ProviderUse.LINEAR_ROUTE)
     for name, value in (("max_depth", max_depth), ("max_routes", max_routes), ("cut_budget", cut_budget),
                         ("lateral_match_budget", lateral_match_budget),
@@ -349,12 +390,17 @@ def search_event_routes(
             raise ValueError(f"{name} must be a non-negative integer")
 
     on_hand = {_ident(m) for m in (*available, *reagents, *commodities)}
+    if coproduct_producers == DEFAULT_COPRODUCT_PRODUCERS:
+        coproduct_grammar = ("coproduct", "lactonization-v1", max_coproduct_events)   # the 1.6.0 digest, byte-stable
+    else:
+        coproduct_grammar = ("coproduct", tuple(sorted(p.provider_id for p in coproduct_producers)),
+                             max_coproduct_events)
     grammar_digest = canonical_digest((
         "event-route",
         search_algebra_digest("linear-route", registry),
         tuple(sorted(f.provider_id for f in lateral_families)),
         lateral_hops,
-        ("coproduct", "lactonization-v1", max_coproduct_events),
+        coproduct_grammar,
     ))
     identity = dict(
         target_identity_digest=_ident(target),
@@ -475,28 +521,34 @@ def search_event_routes(
                     found_successor = True
             if found_successor:
                 lateral_hops_truncated += 1
-        # -- INTRAMOLECULAR_COPRODUCT events (rank-INCREASING lactonization; the coproduct budget drops) --
-        # The generator is the PRODUCER (it proves intramolecularity at construction + reports exhaustiveness); the
-        # 25th oracle class recognises the emitted step independently.  Like a lateral, a type-3 edge is a typed
-        # event, so it takes the forget()-FREE path (envelope=None): it never enters the W1 scission decompiler.
+        # -- INTRAMOLECULAR_COPRODUCT events (rank-INCREASING; the coproduct budget drops) --
+        # Each producer proves its own certificate at construction + reports exhaustiveness; the oracle recognises
+        # the emitted step independently (lactonization = 25th class, dehydration = 26th).  Like a lateral, a type-3
+        # edge is a typed event, so it takes the forget()-FREE path (envelope=None): it never enters the W1 scission
+        # decompiler.  All producers draw on the one cop_left budget.
         if cop_left > 0:
-            enum = retro_lactonization_enumeration(t, budget=coproduct_match_budget)
-            if not enum.exhaustive:
-                coproduct_match_truncated += 1        # a truncated candidate-site scan cannot feed a COMPLETE receipt
-            for edge in enum.edges:
-                coproduct_events_considered += 1
-                step = ExperimentStep.from_transform(edge, envelope=None)
-                yield from _branch(step, t, depth, hops_left, cop_left - 1, ancestors)
+            for producer in coproduct_producers:
+                enum = producer.enumerate(t, budget=coproduct_match_budget)
+                if not enum.exhaustive:
+                    coproduct_match_truncated += 1    # a truncated candidate-site scan cannot feed a COMPLETE receipt
+                for edge in enum.edges:
+                    coproduct_events_considered += 1
+                    step = ExperimentStep.from_transform(edge, envelope=None)
+                    yield from _branch(step, t, depth, hops_left, cop_left - 1, ancestors)
         elif max_coproduct_events > 0:
             # coproduct events were ENABLED but this branch spent them all, yet a deeper node could still have a
             # type-3 successor -- the coproduct analogue of lateral_hops_truncated (fail-closed INCOMPLETE).  When
             # max_coproduct_events==0 the user opted OUT, so we never pay to probe.  The enumeration REPORTS its own
             # exhaustiveness, so a non-exhaustive probe flags coproduct_match_truncated even if it found nothing --
             # honesty must not rest on the unasserted accident that a cut scan happened to return no edges.
-            enum = retro_lactonization_enumeration(t, budget=coproduct_match_budget)
-            if not enum.exhaustive:
-                coproduct_match_truncated += 1
-            if enum.edges:
+            found_coproduct_successor = False
+            for producer in coproduct_producers:
+                enum = producer.enumerate(t, budget=coproduct_match_budget)
+                if not enum.exhaustive:
+                    coproduct_match_truncated += 1
+                if enum.edges:
+                    found_coproduct_successor = True
+            if found_coproduct_successor:
                 coproduct_events_truncated += 1
 
     for route in routes_making(target, 1, lateral_hops, max_coproduct_events, frozenset()):

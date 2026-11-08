@@ -30,15 +30,16 @@ def test_default_registry_generates_with_exactly_one_provider():
     assert DEFAULT_TRANSFORM_REGISTRY.provider_ids == ("capped-scission-mediated",)
 
 
-def test_oracle_recognises_twenty_five_classes_but_none_are_wired_into_the_default():
+def test_oracle_recognises_twenty_six_classes_but_none_are_wired_into_the_default():
     # MINOR coverage expansion: 1.1.0 base 20 (#110 activated acyl 18th, #111 sulfonate-ester 19th, #115 Claisen
     # 20th) + #114 hydrogenation (21st) + #111 oxoacid (nitrate/phosphate) ester (22nd) + #112 SN2 substitution
-    # (23rd) + #119 imine condensation (24th) + OPERATION XIV intramolecular lactonization (25th) are new RULES that
-    # widen coverage (COMPATIBILITY.md sec 1/sec 7).  The "recognised != generated" gap this test pins is unchanged:
-    # the oracle is a readiness-layer demoter, not a search provider, and none of these recognizers adds a DEFAULT
-    # provider -- imine condensation AND lactonization ship OPT-IN providers (lactonization into search_event_routes),
-    # absent from DEFAULT_TRANSFORM_REGISTRY.
-    assert _oracle_class_count() == 25
+    # (23rd) + #119 imine condensation (24th) + OPERATION XIV intramolecular lactonization (25th) + #116 alcohol
+    # dehydration (26th) are new RULES that widen coverage (COMPATIBILITY.md sec 1/sec 7).  The "recognised !=
+    # generated" gap this test pins is unchanged: the oracle is a readiness-layer demoter, not a search provider, and
+    # none of these recognizers adds a DEFAULT provider -- imine condensation, lactonization and dehydration ship
+    # OPT-IN producers (lactonization and dehydration into search_event_routes; dehydration only when passed in
+    # coproduct_producers), absent from DEFAULT_TRANSFORM_REGISTRY.
+    assert _oracle_class_count() == 26
     # every non-capped family is opt-in: none but capped-scission is in the default.
     rows = build_rows()
     in_default = [r["provider_id"] for r in rows if r["in_default"]]

@@ -216,8 +216,8 @@ def test_enumerate_on_a_molecule_with_no_cn_is_empty_and_complete():
 
 
 # -- obligation 9: compatibility / version-differential -------------------------------------------------------
-def test_recognizer_count_is_twenty_five():
-    assert len(_RECOGNIZERS) == 25  # base 20 + hydrogenation + oxoacid ester + SN2 + imine + XIV lactonization (25th)
+def test_recognizer_count_is_twenty_six():
+    assert len(_RECOGNIZERS) == 26  # base 20 + hydrogenation + oxoacid ester + SN2 + imine + XIV lactonization + #116 dehydration (26th)
 
 
 def test_registry_digest_moves_when_the_imine_provider_is_added():

@@ -38,6 +38,7 @@ from smartchem.experiment.step import ExperimentStep
 from smartchem.smiles import parse_smiles
 
 CLAISEN = "Claisen condensation (ester/ketone + ester/carbonate -> 1,3-dicarbonyl + alcohol)"
+DEHYDRATION = "dehydration (1,2-elimination, alcohol -> alkene + water)"   # #116, the 26th class
 
 
 def _step(rs, ps, catalysts=None):
@@ -66,14 +67,16 @@ def _diels_alder():
 _HYDROGENATION = "hydrogenation (partial bond-order edit, precursor + H2 -> saturated; one unsaturation reduced)"
 
 
-def test_class_keyed_ledger_is_claisen_only():
+def test_class_keyed_ledger_is_claisen_and_dehydration_only():
     # A DELIBERATE set. The CLASS-KEYED ledger carries ONLY a requirement universal across EVERY instance of the
     # class -- today exactly the Claisen condensation's enolizing base. Hydrogenation was MOVED to a step-CONDITIONAL
     # requirement (OPERATION XII 1A): its H2-activation need splits by the reduced bond -- a C=N/C#N reduction admits
     # a metal-free FLP catalyst (Stephan 2007), a C=C/C=O one does not -- so a blanket class-keyed TRANSITION_METAL
     # entry would be exactly the false universal the metal-free counterexample refutes. SN2 is likewise conditional.
-    assert set(REQUIRED_ACTIVATORS) == {CLAISEN}
+    # #116 (2026-11-08 review) added alcohol dehydration, which always needs an acid catalyst.
+    assert set(REQUIRED_ACTIVATORS) == {CLAISEN, DEHYDRATION}
     assert REQUIRED_ACTIVATORS[CLAISEN] == frozenset({ActivatorRole.ENOLIZING_BASE})
+    assert REQUIRED_ACTIVATORS[DEHYDRATION] == frozenset({ActivatorRole.ACID_DEHYDRATION_CATALYST})
     assert _HYDROGENATION not in REQUIRED_ACTIVATORS
 
 
@@ -83,10 +86,11 @@ def test_every_ledger_key_is_a_live_oracle_class_name():
 
 
 def test_registry_fingerprint_guard_is_armed_and_matches_live_registry():
-    # The growth guard: the reviewed snapshot must equal the live 24-class registry, and the guard must pass on it.
+    # The growth guard: the reviewed snapshot must equal the live 26-class registry, and the guard must pass on it.
     import hashlib
     live = sorted(name for name, _pred in _RECOGNIZERS)
-    assert len(live) == al._REVIEWED_CLASS_COUNT
+    assert len(live) == al._REVIEWED_CLASS_COUNT == 26
+    assert al._REVIEWED_REGISTRY_DIGEST == "370164278ebb3bf8"
     assert hashlib.sha256("\n".join(live).encode()).hexdigest()[:16] == al._REVIEWED_REGISTRY_DIGEST
     al._assert_registry_unchanged_since_ledger_review()  # must not raise on the reviewed registry
 
@@ -99,12 +103,12 @@ def test_registry_fingerprint_guard_fires_on_drift(monkeypatch):
         al._assert_registry_unchanged_since_ledger_review()
 
 
-def test_only_claisen_carries_a_class_keyed_requirement():
+def test_only_claisen_and_dehydration_carry_a_class_keyed_requirement():
     # The base-rate guard, proven over the WHOLE registry without constructing a step per class: every class but
     # Claisen must map to an empty CLASS-KEYED requirement, so no pericyclic / Fischer / activated-acyl /
     # oxoacid-ester / hydrogenation / SN2 step is ever demoted by the blanket dict (the conditional ones key on the
     # step, tested separately).
-    carriers = {CLAISEN}
+    carriers = {CLAISEN, DEHYDRATION}
     for name, _pred in _RECOGNIZERS:
         required = REQUIRED_ACTIVATORS.get(name, frozenset())
         if name in carriers:
@@ -147,7 +151,7 @@ _FILLS_ACIDIC_PROTON_BASE = [
 #: boundary of the acidic-oxygen clearing set (a SAFE under-claim). An entry here fills neither role -> clears nothing.
 _FILLS_NO_ROLE_AT_ALL = [
     "NaHCO3", "sodium bicarbonate", "pyridine", "ammonia", "sodium acetate", "water", "acetic acid",
-    "sulfuric acid", "base-free", "", "   ",
+    "base-free", "", "   ",   # "sulfuric acid" left this list at #116: it now fills ACID_DEHYDRATION_CATALYST only
     "n-BuLi", "t-BuLi", "tert-butyllithium", "MeLi", "methyllithium", "PhLi", "EtMgBr", "ethylmagnesium bromide",
 ]
 
@@ -405,10 +409,11 @@ def test_diels_alder_is_not_demoted():
 
 
 def test_unrecognized_step_is_not_our_concern():
-    # A conserved, formula-balanced non-reaction (ethanol -> ethene + water): recognized by nothing -> the oracle's
-    # route_reaction_type_blockers demotes it, the activator ledger stays silent (it speaks only about classes it has
-    # a requirement for).
-    junk = _step(("CCO",), ("C=C", "O"))
+    # A conserved, formula-balanced non-reaction: recognized by nothing -> the oracle's route_reaction_type_blockers
+    # demotes it, the activator ledger stays silent (it speaks only about classes it has a requirement for).  (#116:
+    # the former junk step, ethanol -> ethene + water, is now a recognized dehydration; 1-butanol -> 2-butene + water
+    # -- a remote alkene no 1,2-elimination forms -- keeps the probe a genuine non-recognition.)
+    junk = _step(("CCCCO",), ("CC=CC", "O"))
     assert recognize_reaction_type(junk) is None
     assert step_activator_blockers(junk) == ()
 

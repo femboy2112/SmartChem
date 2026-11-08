@@ -27,8 +27,8 @@ def test_recognizer_matrix_and_no_false_vouch():
     assert m["false_vouch_as_sulfonate"] == 0, "a non-sulfonate case was vouched AS sulfonate (CARDINAL)"
 
 
-def test_oracle_now_has_twenty_five_recognizers():
-    assert len(_RECOGNIZERS) == 25  # base 20 + #114 hydrogenation + #111 oxoacid ester + #112 SN2 + #119 imine + XIV lactonization (25th)
+def test_oracle_now_has_twenty_six_recognizers():
+    assert len(_RECOGNIZERS) == 26  # base 20 + #114 hydrogenation + #111 oxoacid ester + #112 SN2 + #119 imine + XIV lactonization + #116 dehydration (26th)
 
 
 def test_does_not_poach_acyl_transfer_or_etherification():

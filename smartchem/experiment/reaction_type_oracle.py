@@ -68,13 +68,14 @@ section-10.4 G6 -- a blocker dominates cost), so a route with any unrecognized s
 frontier. It runs DOWNSTREAM of ``ranked``; it never touches ``_score_tuple``.
 
 Boundaries carried as documented debt (R56 acyl + R57 etherification + R63 N-alkylation scope, per the gates).
-* TWENTY-FIVE ACTIVE CLASSES -- three dehydrative condensations + one activated acyl transfer + one alkyl
+* TWENTY-SIX ACTIVE CLASSES -- three dehydrative condensations + one activated acyl transfer + one alkyl
   sulfonate-ester transfer (#111) + one Claisen 1,3-dicarbonyl condensation (#115) + eight Diels-Alder [4+2]
   families + four [3,3] sigmatropic isomerizations + two electrocyclizations + one hydrogenation (#114) + one
   oxoacid (nitrate/phosphate) ester condensation (#111) + one SN2 substitution (#112) + one imine condensation
-  (#119) + one intramolecular lactonization (OPERATION XIV, the 25th), each with its own conservation-lock
+  (#119) + one intramolecular lactonization (OPERATION XIV, the 25th) + one alcohol dehydration (#116, the 26th;
+  see :func:`_dehydration`), each with its own conservation-lock
   (condensation / activated transfer / sulfonate-ester / Claisen / oxoacid-ester) or re-derivation-certificate
-  (pericyclic / sigmatropic / electrocyclic / hydrogenation / SN2 / imine / lactonization) proof.  The numbered derivation below enumerates the first EIGHTEEN core families; the #111 alkyl
+  (pericyclic / sigmatropic / electrocyclic / hydrogenation / SN2 / imine / lactonization / dehydration) proof.  The numbered derivation below enumerates the first EIGHTEEN core families; the #111 alkyl
   sulfonate-ester transfer (an sp3-alkyl carbinol O sulfonylated by a sulfonyl halide, coproduct H-X) and the
   #115 Claisen condensation (two esters -> a 1,3-dicarbonyl + an alcohol) are the 19th and 20th; #114
   hydrogenation, #111 oxoacid ester, #112 SN2 and #119 imine condensation are the 21st-24th (1.5 consolidation):
@@ -180,6 +181,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..decompiler import Formula
+from ..elimination import DEHYDRATION_CLASS as _DEHYDRATION_CLASS
 from ..intramolecular_condensation import LACTONIZATION_CLASS as _LACTONIZATION_CLASS
 
 __all__ = [
@@ -1938,6 +1940,46 @@ def _intramolecular_lactonization(step) -> bool:
         return False                                   # fail-closed: a witness fault demotes, never vouches
 
 
+
+def _dehydration(step) -> bool:
+    """Recognizer (#116): an alcohol DEHYDRATION -- a 1,2-elimination of H-OH across two adjacent sp3 carbons
+    (``alcohol -> alkene + H2O``).  The 26th class and the second type-3 ``INTRAMOLECULAR_COPRODUCT`` recognizer.
+
+    CONTENT-DETERMINISTIC and GENERATOR-INDEPENDENT: it reads only the step's conserved molecules (never a carried
+    ``reaction_center``, never ``classify_event``'s shape verdict) and RE-DERIVES the forward elimination from the
+    single precursor's OWN hydroxyls (:func:`~smartchem.elimination._dehydrates_to`): remove the hydroxyl O, its H and
+    one H on C_beta, raise C_alpha--C_beta to a double bond, and require resonance-canonical identity with the target.
+
+    SHAPE GATE (each a fail-closed abstain): exactly ONE reactant; the byproducts are exactly ``(water,)`` (so the HX
+    slice, a two-water step and an ether -> alkene + alcohol split all abstain); the precursor is exactly three atoms
+    larger than the target (explicit-H O + H + H); both species closed-shell neutral.  STRUCTURAL GUARDS live in the
+    forward certificate (terminal hydroxyl; sp3 C_alpha with no second heteroatom; sp3 C_beta bearing H with only C/H
+    neighbours; no new C=C in a three-membered ring; no aromatising ring closure).  Because the C=C is formed between
+    the carbinol carbon and one of its own neighbours, a 1,2-shift or remote-alkene product is never re-derived, and
+    BOTH regiochemistries are recognised -- no Zaitsev selectivity is claimed.  Disjoint from lactonization (that
+    re-derivation forms a ring ester, never a C=C) and from every >=2-reactant or coproduct-free class."""
+    from ..diels_alder import is_closed_shell_neutral
+    from ..elimination import _dehydrates_to
+    from .feasibility import _is_water
+    reactants = getattr(step, "reactants", ())
+    if len(reactants) != 1:
+        return False                                   # one precursor; water is EXPELLED, never consumed
+    precursor = reactants[0]
+    target = getattr(step, "target", None)
+    if target is None or len(getattr(step, "products", ())) != 2:
+        return False
+    byproducts = step.byproducts
+    if len(byproducts) != 1 or not _is_water(byproducts[0]):
+        return False                                   # exactly one WATER coproduct
+    if len(precursor.atoms) != len(target.atoms) + 3:
+        return False                                   # precursor = target + H2O, all hydrogens explicit
+    if not (is_closed_shell_neutral(precursor) and is_closed_shell_neutral(target)):
+        return False
+    try:
+        return _dehydrates_to(precursor, target)       # the structural witness: forward elimination == target
+    except Exception:
+        return False                                   # fail-closed: a witness fault demotes, never vouches
+
 _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
     ("acyl condensation (esterification/amidation)", _acyl_condensation),
     ("etherification (dehydrative, R-OH + R'-OH -> ether + water)", _etherification),
@@ -1978,6 +2020,8 @@ _RECOGNIZERS: tuple[tuple[str, "object"], ...] = (
     # OPERATION XIV, the 25th class: the display name is imported from the generator so the recognizer and the
     # generator's edge stamp NAME the same reaction class -- one canonical string, no drift.
     (_LACTONIZATION_CLASS, _intramolecular_lactonization),
+    # #116, the 26th class: the display name is imported from the generator (one canonical string, no drift).
+    (_DEHYDRATION_CLASS, _dehydration),
 )
 
 

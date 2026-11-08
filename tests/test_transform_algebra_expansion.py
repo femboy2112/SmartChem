@@ -27,28 +27,35 @@ def _lateral_step(family, smi):
     return ExperimentStep.from_transform(rewrite_edges(family, parse_smiles(smi))[0], envelope=None)
 
 
+def _dehydration_step():
+    from smartchem.elimination import retro_dehydration_edges
+    (edge,) = retro_dehydration_edges(parse_smiles("C1=CCCCC1"))   # cyclohexanol -> cyclohexene + H2O
+    return ExperimentStep.from_transform(edge, envelope=None)
+
+
 def _thia_diene_step():
     edge = ThiaDieneDielsAlderProvider().enumerate_transforms(parse_smiles("C1CCC=CS1"), (), budget=100000)[0][0]
     return ExperimentStep.from_transform(edge, envelope=None)
 
 
-#: (label, step, expected recognizer-name substring) for each of the five new classes.
+#: (label, step, expected recognizer-name substring) for each of the five new classes (+ #116 dehydration).
 _NEW_CLASS_STEPS = [
     ("thia-diene-DA", _thia_diene_step(), "1-thiadiene"),
     ("aza-Claisen", _lateral_step(AZA_CLAISEN, "C=CCCC=N"), "aza-Claisen"),
     ("thia-Claisen", _lateral_step(THIA_CLAISEN, "C=CCCC=S"), "thia-Claisen"),
     ("electro-4pi", _lateral_step(ELECTRO_4PI, "C1=CCC1"), "4pi"),
     ("electro-6pi", _lateral_step(ELECTRO_6PI, "C1=CCCC=C1"), "6pi"),
+    ("dehydration-116", _dehydration_step(), "dehydration (1,2-elimination"),
 ]
 
 
-def test_oracle_has_twenty_five_recognizers():
+def test_oracle_has_twenty_six_recognizers():
     # 1.1.0 base 20 (#110 activated acyl 18th, #111 sulfonate-ester 19th, #115 Claisen 20th) + #114 hydrogenation
     # (21st) + #111 oxoacid (nitrate/phosphate) ester (22nd) + #112 SN2 substitution at sp3 carbon (23rd) + #119
-    # imine condensation (24th) + OPERATION XIV intramolecular lactonization (25th) -- MINOR coverage expansions.
-    # The version-independent golden stays UNMOVED (no corpus case is a hydrogenation, oxoacid ester, SN2, imine or
-    # lactonization), so this is a pure coverage add, not a semantic re-freeze.
-    assert len(_RECOGNIZERS) == 25
+    # imine condensation (24th) + OPERATION XIV intramolecular lactonization (25th) + #116 alcohol dehydration (26th)
+    # -- MINOR coverage expansions.  The version-independent golden stays UNMOVED (no corpus case is a hydrogenation,
+    # oxoacid ester, SN2, imine, lactonization or dehydration), so this is a pure coverage add, not a semantic re-freeze.
+    assert len(_RECOGNIZERS) == 26
 
 
 @pytest.mark.parametrize("label,step,expect", _NEW_CLASS_STEPS, ids=[c[0] for c in _NEW_CLASS_STEPS])

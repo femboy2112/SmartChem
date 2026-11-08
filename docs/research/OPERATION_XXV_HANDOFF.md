@@ -44,8 +44,11 @@ Toolchain: CPython 3.12.3, numpy 2.5.1, scipy 1.18.0, phreeqpython 1.6.2 (dev ve
 Four independent attackers were used, each with a separate responsibility (Phase VII):
 - numerical physics: grid, particles, ladder, science receipt;
 - scientific provenance: the holdout model and runner, before the pin;
-- chemical algebra: the 26th class, attacked twice;
-- integration: the release gate, §13.
+- chemical algebra: the 26th class. There were five attacks; four reported and one report was lost (§5,
+  `V1_7_DEHYDRATION_DEFER.md`);
+- integration: **no dedicated release-gate reviewer ran**, because the candidate failed the chemistry gate first
+  (§13). Attacks 4 and 5 did check default-grammar byte-identity against 1.6.0 and digest determinism under
+  PYTHONHASHSEED.
 
 | finding | severity | status |
 |---|---|---|
@@ -226,7 +229,9 @@ Full record: [`V1_7_DEHYDRATION_DEFER.md`](V1_7_DEHYDRATION_DEFER.md). In brief:
   - an independent temperature series.
 - **Most consequential refuted hypothesis.** "A conserving, witness-agreed dehydration is a real reaction." It was
   refuted by adamantene and cubene, which were vouched by production and witness together. A shared class definition
-  makes the witness blind exactly where the definition is.
+  makes the witness blind exactly where the definition is. Its successor was also refuted, by attack 5: "a
+  molecule-wide heteroatom whitelist makes acid dehydration certifiable". The carbon skeleton decides the
+  carbocation's fate (cyclialkylation, Nazarov, hydroalkoxylation).
 
 ## 12. CI / test matrix
 

@@ -1,6 +1,6 @@
 {
   "schema": "smartchem-science-manifest/1",
-  "note": "OPERATION XXV-2 (#166). The designated live-reference-solver and git-history no-tune test files. The science workflow runs exactly these and FAILS (check_junit.py) on any skip or if fewer than expected_executed tests ran. Raise expected_executed only when tests are added here, in the same commit.",
+  "note": "OPERATION XXV-2 (#166). The designated live-reference-solver and git-history no-tune test files. The science workflow runs exactly these and FAILS (check_junit.py --manifest) on any skip, on a testcase not from these files, on a designated file with no executed testcase, on a duplicate (classname, name), or if fewer than expected_executed tests ran. sandbox_expected_executed is the floor for the whole experiments/sandbox_foundation/tests run (measured 2026-11-08 with pytest --collect-only -q: 1463 collected). Raise a count only when tests are added, in the same commit; a PR that lowers a count or drops a file FAILS (manifest_guard.py) unless science/MANIFEST_CHANGE_JUSTIFICATION.md is updated in that PR and names each drop verbatim.",
   "tests": [
     "experiments/sandbox_foundation/tests/test_ammonia_phreeqc_benchmark_xv.py",
     "experiments/sandbox_foundation/tests/test_xxi_s6_na_pair_ablation.py",
@@ -10,5 +10,6 @@
     "experiments/sandbox_foundation/tests/test_xxi_s4_three_comparators.py",
     "experiments/sandbox_foundation/tests/test_xx_s5_unit_convention.py"
   ],
-  "expected_executed": 60
+  "expected_executed": 60,
+  "sandbox_expected_executed": 1463
 }

@@ -13,6 +13,7 @@ on:
   pull_request:
     paths:
       - "experiments/sandbox_foundation/**"
+      - "smartchem/**"                # the sandbox imports the core package; a core change can move a science result
       - ".github/workflows/science.yml"
 
 permissions:
@@ -26,7 +27,9 @@ jobs:
     env:
       SCI: experiments/sandbox_foundation/science
       OUT: ${{ github.workspace }}/science-out
-      # the PR head (what ci.yml runs on) for the production lane; github.sha for push/schedule/dispatch
+      # the PR head (what ci.yml reports as headSha) for the production lane; github.sha for push/schedule/dispatch.
+      # The receipt counts a ci.yml run only if this equals the run commit ($GITHUB_SHA), so on a pull_request (where
+      # $GITHUB_SHA is the test merge commit) the production lane is NOT_EVALUATED by construction, never borrowed.
       HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
     steps:
@@ -46,6 +49,33 @@ jobs:
           pip install --require-hashes --no-deps --only-binary :all: -r "$SCI/requirements-science.txt"
           pip check
           pip freeze > "$OUT/pip-freeze.txt"
+
+      # Red-team residual (a): a PR may not lower the manifest floors or drop a designated file in the same change
+      # unless science/MANIFEST_CHANGE_JUSTIFICATION.md is updated in it and names each drop verbatim.
+      - name: Manifest floors vs the PR base (no silent lowering)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          M="$SCI/manifest.json"
+          J="$SCI/MANIFEST_CHANGE_JUSTIFICATION.md"
+          BASE="origin/$BASE_REF"
+          if ! git rev-parse --verify --quiet "$BASE^{commit}" > /dev/null; then
+            echo "::error::PR base $BASE is not available in this checkout; cannot compare the manifest"
+            exit 1
+          fi
+          if ! git cat-file -e "$BASE:$M" 2> /dev/null; then
+            echo "the PR base has no science manifest yet; nothing to compare"
+            exit 0
+          fi
+          git show "$BASE:$M" > "$RUNNER_TEMP/base-manifest.json"
+          args=(--base "$RUNNER_TEMP/base-manifest.json" --head "$M" --justification "$J")
+          if git cat-file -e "$BASE:$J" 2> /dev/null; then
+            git show "$BASE:$J" > "$RUNNER_TEMP/base-justification.md"
+            args+=(--base-justification "$RUNNER_TEMP/base-justification.md")
+          fi
+          python -m experiments.sandbox_foundation.science.manifest_guard "${args[@]}"
 
       - name: Gate -- the reference solver must import (no silent skip)
         run: |
@@ -112,6 +142,12 @@ jobs:
         if: always()
         timeout-minutes: 25
         run: python -m pytest experiments/sandbox_foundation/tests -p no:cacheprovider -q -rs --junit-xml "$OUT/sandbox-junit.xml"
+
+      - name: Sandbox junit -- no skip, unique cases, executed >= manifest sandbox floor
+        if: always()
+        run: |
+          N=$(python -c "import json, sys; print(json.load(open(sys.argv[1]))['sandbox_expected_executed'])" "$SCI/manifest.json")
+          python -m experiments.sandbox_foundation.science.check_junit "$OUT/sandbox-junit.xml" --expected-executed "$N"
 
       - name: Pinned database bytes, after tests (nothing rewrote a vendored file)
         if: always()

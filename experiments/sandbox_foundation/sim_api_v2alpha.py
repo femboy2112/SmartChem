@@ -45,6 +45,20 @@ COMPOSITION LAWS (what holds and what does NOT -- tested in tests/test_sim_api_v
     (c) OBSERVER INVARIANCE holds: n_samples (frame cadence) changes neither the final state nor any receipt verdict
         (XX-3: verification cadence is split from sampling cadence).  The RUN identity therefore excludes n_samples;
         the cadence lives in a separate OBSERVATION identity.
+
+WHAT A SimulationResult BINDS, AND THE IN-PROCESS TRUST BOUNDARY (XXV red-team, finding 5):
+    * identities <-> spec: SimulationResult.__post_init__ recomputes spec_identities(spec) and REFUSES a result whose
+      carried model/run/evidence/observation identities differ.  ``dataclasses.replace(legacy_result, spec=molar_spec)``
+      therefore raises instead of re-deriving a molar ladder over legacy frames.
+    * rung 1 <-> frames: for every phase whose rebuilt world declares NO boundary (nothing enters or leaves), the
+      conserved-component totals recomputed from each sampled frame must stay within that phase receipt's declared
+      component tolerance of the phase's declared start; otherwise rung 1 does not hold, whatever the receipt says.
+    * NOT bound (trusted in-process): frames themselves are not re-integrated -- a caller who replaces frames AND
+      receipts together with a self-consistent, conserving forgery under the SAME spec is not detected; an OPEN phase
+      (any boundary) has no frames-only ledger (the integrated external flux lives only in the receipt), so its
+      material-balance verdict is the receipt's; the receipt's tolerance, execution-identity, resolution and
+      positivity fields are taken as recorded.  Only run() is the trusted constructor; a result built or edited
+      elsewhere carries these checks and nothing more.
 """
 from __future__ import annotations
 
@@ -637,8 +651,15 @@ class SimulationResult:
     validation_ladder: MappingProxyType = field(init=False)
 
     def __post_init__(self):
+        # identities are BOUND to the spec: a result whose carried identities are not spec_identities(spec) is refused,
+        # so a relabelled spec cannot buy a ladder its frames and evidence identity do not support
+        if type(self.spec) is not SimulationSpec:
+            raise SimulationSpecError("SimulationResult.spec must be a SimulationSpec")
+        if _plain(self.identities) != _plain(spec_identities(self.spec)):
+            raise SimulationSpecError("IDENTITY_SPEC_MISMATCH: the carried model/run/evidence/observation identities "
+                                      "are not those of this spec; a result cannot be re-labelled with another spec")
         object.__setattr__(self, "validation_ladder", _freeze_map(
-            compute_validation_ladder(self.spec, self.structural_conservation, self.receipts)))
+            compute_validation_ladder(self.spec, self.structural_conservation, self.receipts, self.frames)))
 
     @property
     def final_frame(self) -> Frame:
@@ -707,20 +728,84 @@ def structural_conservation_check(world) -> dict:
 
 
 # ============================================================ XXV-1 the computed claim ladder
-def compute_validation_ladder(spec: SimulationSpec, structural, receipts) -> dict:
+def _frame_state(frame, cat: dict) -> dict:
+    state = {}
+    for (c, s), v in frame.amounts.items():
+        state.setdefault(c, {})[cat[s]] = float(v)
+    return state
+
+
+def frames_conservation_check(spec: SimulationSpec, receipts, frames) -> dict:
+    """XXV red-team (5): rung 1 re-checked from the FRAMES wherever the frames alone can decide it.
+
+    For each phase whose rebuilt world declares no boundary, every sampled frame's conserved-component totals must lie
+    within the phase receipt's ``component_tolerance`` of the phase's DECLARED start -- spec.initial for phase 0, the
+    restitch of the previous phase's final frame afterwards (the exact state run() integrated from, and the baseline
+    the integrator's own ledger uses).  An OPEN phase is reported OPEN_BOUNDARY_RECEIPT_TRUSTED: its ledger needs the
+    integrated external flux, which only the receipt carries.  Anything that cannot be checked fails closed."""
+    phases = spec.schedule.phases
+    rc = tuple(receipts)
+    verdicts = {}
+    try:
+        b = _builder(spec.model.world)
+        cat = _species_catalog(spec.model.world)
+        vols = b.volumes(spec.model.params)
+        fr = tuple(frames)
+        if len(rc) != len(phases) or any(type(f) is not Frame for f in fr) or \
+                any(f.phase_index not in range(len(phases)) for f in fr):
+            return {"holds": False, "reason": "FRAMES_OR_RECEIPTS_DO_NOT_MATCH_THE_SCHEDULE", "phases": {}}
+        declared = _initial_state_dict(spec, cat)
+        for k, ph in enumerate(phases):
+            pf = [f for f in fr if f.phase_index == k]
+            if not pf:
+                verdicts[ph.name] = "NO_FRAMES"
+                break
+            world = build_phase_world(spec, ph)
+            if world.boundaries:
+                verdicts[ph.name] = "OPEN_BOUNDARY_RECEIPT_TRUSTED"
+            else:
+                ref = b.component_totals(declared)
+                tol = rc[k].component_tolerance
+                verdict = "CONSTANT_WITHIN_DECLARED_TOLERANCE"
+                totals = [b.component_totals(_frame_state(f, cat)) for f in pf]
+                for comp in world.conserved_components:
+                    t = tol.get(comp) if hasattr(tol, "get") else None
+                    if isinstance(t, bool) or not isinstance(t, (int, float)) or not (math.isfinite(t) and t >= 0):
+                        verdict = "TOLERANCE_MISSING"
+                        break
+                    drift = max(abs(tt.get(comp, 0.0) - ref.get(comp, 0.0)) for tt in totals)
+                    if not drift <= t:
+                        verdict = "DRIFT_EXCEEDS_DECLARED_TOLERANCE"
+                        break
+                verdicts[ph.name] = verdict
+            declared, _ct, _cm, violations, _adj = _restitch(_frame_state(pf[-1], cat), vols)
+            if violations:                                  # run() refuses such a phase; a result cannot carry one
+                verdicts[ph.name] = "REAL_POSITIVITY_EXCURSION_AT_STITCH"
+                break
+    except Exception as exc:                                # unverifiable is not verified
+        return {"holds": False, "reason": f"FRAMES_UNVERIFIABLE: {type(exc).__name__}", "phases": verdicts}
+    ok = len(verdicts) == len(phases) and all(
+        v in ("CONSTANT_WITHIN_DECLARED_TOLERANCE", "OPEN_BOUNDARY_RECEIPT_TRUSTED") for v in verdicts.values())
+    return {"holds": ok, "reason": "FRAMES_CONSISTENT_WITH_RECEIPTS" if ok else "FRAMES_CONTRADICT_OR_CANNOT_CONFIRM",
+            "phases": verdicts}
+
+
+def compute_validation_ladder(spec: SimulationSpec, structural, receipts, frames) -> dict:
     """The four XXIV-2C rungs (admissibility.CLAIM_LADDER order), each {"holds": bool, "reason": str, ...}.
-    Rung 1 from the exact structural law + every phase receipt; rungs 2-3 from the builder's claim_rungs(params);
-    rung 4 is False here for EVERY builder: no qualified independent holdout exists (2.0-alpha gate NOT MET), and no
-    builder can override it."""
+    Rung 1 from the exact structural law + every phase receipt + the frames-derived closed-phase re-check
+    (frames_conservation_check); rungs 2-3 from the builder's claim_rungs(params); rung 4 is False here for EVERY
+    builder: no qualified independent holdout exists (2.0-alpha gate NOT MET), and no builder can override it."""
     rc = tuple(receipts)
     structural_holds = bool(structural is not None and structural["holds"] is True)
     certified = bool(rc) and all(r.execution_identity_certified for r in rc)
     closed = bool(rc) and all(r.material_balance_closed and r.positivity_held for r in rc)
     unresolved = sorted({c for r in rc for c in r.numerically_unresolved_components})
-    exe_ok = structural_holds and certified and closed and not unresolved
+    frames_ck = frames_conservation_check(spec, rc, frames)
+    exe_ok = structural_holds and certified and closed and not unresolved and frames_ck["holds"]
     rung1 = {"holds": exe_ok, "reason": "STRUCTURAL_LAW_AND_CERTIFIED_RECEIPTS" if exe_ok else "EXECUTION_NOT_CERTIFIED",
              "structural_conservation_holds": structural_holds, "execution_identity_certified": certified,
-             "material_balance_closed_and_positive": closed, "numerically_unresolved_components": tuple(unresolved)}
+             "material_balance_closed_and_positive": closed, "numerically_unresolved_components": tuple(unresolved),
+             "frames_conservation": frames_ck}
     rungs = _builder(spec.model.world).claim_rungs(spec.model.params)
     rung4 = {"holds": False, "reason": "NO_QUALIFIED_INDEPENDENT_HOLDOUT",
              "detail": "no qualified independent holdout is registered (XXIV section 6: 2.0-alpha gate NOT MET); "

@@ -6,6 +6,9 @@ committed ``expected_hashes.json``.
 Exit 0 iff every pinned file exists and hashes to its pin (and, unless --vendored-only, the installed phreeqpython
 distribution has the pinned version and database bytes).  Exit 1 on any mismatch or missing file; exit 2 on unusable
 input.  phreeqpython is located with importlib.util.find_spec, never imported here.  Stdlib only.
+
+With --report, a report is written on EVERY exit path: an unusable input writes {"ok": false, "error": ...} before
+exit 2, so a downstream reader never mistakes "no report" for "nothing to report".
 """
 from __future__ import annotations
 
@@ -70,8 +73,12 @@ def main(argv=None) -> int:
     try:
         expected = json.loads(Path(a.expected).read_text())
         res = verify(expected, Path(a.root).resolve(), installed=not a.vendored_only)
-    except (OSError, ValueError, KeyError) as exc:
-        print(f"verify_hashes: INPUT ERROR: {exc}", file=sys.stderr)
+    except Exception as exc:                     # any unusable input: fail closed, and say so in the report
+        print(f"verify_hashes: INPUT ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
+        if a.report:
+            Path(a.report).write_text(json.dumps({"ok": False, "error": f"INPUT_ERROR: {type(exc).__name__}: {exc}",
+                                                  "files": [], "installed": {"checked": False}},
+                                                 indent=2, sort_keys=True))
         return 2
     if a.report:
         Path(a.report).write_text(json.dumps(res, indent=2, sort_keys=True))

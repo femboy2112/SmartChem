@@ -3,8 +3,13 @@
     python -m experiments.sandbox_foundation.science.check_junit JUNIT.xml --manifest science/manifest.json
     python -m experiments.sandbox_foundation.science.check_junit JUNIT.xml --expected-executed 60
 
-Exit 0 only if the junit file parses, has zero failures, zero errors, zero skips, and executed >= expected.
+Exit 0 only if the junit file parses, has zero failures, zero errors, zero skips, executed >= expected, and every
+(classname, name) pair is unique.  With --manifest, every testcase must also come from one of the manifest's designated
+test files (matched on the pytest classname) and every designated file must contribute an executed testcase.
 Exit 1 on any of those violations; exit 2 on a missing or unreadable input.  Stdlib only.
+
+An outcome element is recognised by its LOCAL name (namespace stripped) anywhere beneath its <testcase>, not only as a
+direct child: a <skipped/> tucked inside <properties>, or spelled <j:skipped/>, is still a skip.
 """
 from __future__ import annotations
 
@@ -32,29 +37,76 @@ def junit_summary(path) -> dict:
         raise JunitError(f"junit file {p} has root <{root.tag}>, expected <testsuites> or <testsuite>")
     cases = list(root.iter("testcase"))
     out = {"path": str(p), "tests": len(cases), "passed": 0, "failures": 0, "errors": 0, "skipped": 0,
-           "skipped_cases": [], "failed_cases": []}
+           "skipped_cases": [], "failed_cases": [], "duplicate_cases": [], "classnames": [],
+           "executed_classnames": []}
+    seen = set()
     for tc in cases:
-        name = f"{tc.get('classname', '')}::{tc.get('name', '')}"
-        kinds = {child.tag for child in tc}
-        if "failure" in kinds:
+        key = (tc.get("classname", ""), tc.get("name", ""))
+        name = f"{key[0]}::{key[1]}"
+        if key in seen:
+            out["duplicate_cases"].append(name)
+        seen.add(key)
+        out["classnames"].append(key[0])
+        # every descendant, namespace stripped: nesting or a prefix must not hide an outcome
+        found = {}
+        for el in tc.iter():
+            if el is not tc:
+                found.setdefault(_local(el.tag), el)
+        if "failure" in found:
             out["failures"] += 1
             out["failed_cases"].append({"case": name, "kind": "failure"})
-        elif "error" in kinds:
+        elif "error" in found:
             out["errors"] += 1
             out["failed_cases"].append({"case": name, "kind": "error"})
-        elif "skipped" in kinds:
-            sk = tc.find("skipped")
+        elif "skipped" in found:
+            sk = found["skipped"]
             out["skipped"] += 1
             out["skipped_cases"].append({"case": name, "reason": (sk.get("message") or sk.text or "").strip()})
         else:
             out["passed"] += 1
+        if "skipped" not in found:
+            out["executed_classnames"].append(key[0])
     out["executed"] = out["tests"] - out["skipped"]
     return out
 
 
-def violations(summary: dict, expected_executed: int) -> list:
-    """Every reason this run cannot count as a complete science run (empty list = clean)."""
+def _local(tag) -> str:
+    """The local name of an element tag ('{urn:x}skipped' -> 'skipped'); comments/PIs have no string tag."""
+    return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+
+
+def module_of(test_file: str) -> str:
+    """The pytest junit classname prefix of a repo-relative test file ('a/b/test_x.py' -> 'a.b.test_x')."""
+    rel = str(test_file)
+    if not rel.endswith(".py"):
+        raise JunitError(f"designated test file {rel!r} is not a .py file")
+    return rel[:-3].replace("/", ".")
+
+
+def _from(classname: str, module: str) -> bool:
+    return classname == module or classname.startswith(module + ".")
+
+
+def designated_violations(summary: dict, designated) -> list:
+    """Every testcase must come from a designated file; every designated file must contribute an executed case."""
+    mods = [module_of(t) for t in designated]
     v = []
+    foreign = sorted({c for c in summary["classnames"] if not any(_from(c, m) for m in mods)})
+    if foreign:
+        v.append(f"testcase(s) not from the designated files: {foreign[:5]}")
+    idle = [t for t, m in zip(designated, mods) if not any(_from(c, m) for c in summary["executed_classnames"])]
+    if idle:
+        v.append(f"designated file(s) with no executed testcase: {idle}")
+    return v
+
+
+def violations(summary: dict, expected_executed: int, designated=None) -> list:
+    """Every reason this run cannot count as a complete science run (empty list = clean).  ``designated``: the
+    manifest's test files, when the cases must come from them."""
+    v = []
+    if summary["duplicate_cases"]:
+        v.append(f"{len(summary['duplicate_cases'])} duplicate (classname, name) testcase(s): "
+                 + "; ".join(sorted(set(summary["duplicate_cases"]))[:5]))
     if summary["failures"] or summary["errors"]:
         v.append(f"{summary['failures']} failure(s), {summary['errors']} error(s)")
     if summary["skipped"]:
@@ -64,6 +116,8 @@ def violations(summary: dict, expected_executed: int) -> list:
         v.append(f"executed {summary['executed']} < expected {expected_executed}")
     if summary["executed"] == 0:
         v.append("no test executed")
+    if designated is not None:
+        v.extend(designated_violations(summary, designated))
     return v
 
 
@@ -75,6 +129,14 @@ def expected_from_manifest(path) -> int:
     return n
 
 
+def designated_from_manifest(path) -> list:
+    data = json.loads(Path(path).read_text())
+    t = data.get("tests")
+    if not isinstance(t, list) or not t or not all(isinstance(x, str) and x.endswith(".py") for x in t):
+        raise JunitError(f"{path}: tests must be a non-empty list of .py paths")
+    return t
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("junit")
@@ -84,11 +146,12 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     try:
         expected = expected_from_manifest(a.manifest) if a.manifest else a.expected_executed
+        designated = designated_from_manifest(a.manifest) if a.manifest else None
         s = junit_summary(a.junit)
     except (JunitError, OSError, json.JSONDecodeError) as exc:
         print(f"check_junit: INPUT ERROR: {exc}", file=sys.stderr)
         return 2
-    v = violations(s, expected)
+    v = violations(s, expected, designated)
     print(json.dumps({"summary": {k: s[k] for k in ("tests", "executed", "passed", "failures", "errors", "skipped")},
                       "expected_executed": expected, "violations": v}, indent=2))
     if v:

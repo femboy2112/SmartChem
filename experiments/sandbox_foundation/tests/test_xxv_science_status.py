@@ -2,17 +2,25 @@
 
 check_junit must go red on a skip / short count; verify_hashes must go red on a flipped byte; status_record must keep
 its four lanes separate and must never produce PASS from a skip, an empty registry, or a non-ancestor preregistration.
+
+XXV red-team regressions (findings 3, 4, 12 + check_junit shapes + residuals a/b/c) are pinned below, each against a
+discriminating control that the hardened code still passes.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import shutil
+import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from experiments.sandbox_foundation.benchmarks.solid_equilibrium_xxiii import run_solid_equilibrium_xxiii as h
 from experiments.sandbox_foundation.science import check_junit as cj
+from experiments.sandbox_foundation.science import manifest_guard as mg
 from experiments.sandbox_foundation.science import status_record as sr
 from experiments.sandbox_foundation.science import verify_hashes as vh
 
@@ -34,6 +42,18 @@ def _junit(tmp_path, *, passed=3, skipped=0, failed=0, name="j.xml"):
 def _registry(tmp_path, entries):
     p = tmp_path / "REGISTRY.json"
     p.write_text(json.dumps({"schema": "smartchem-holdout-registry/1", "entries": entries}))
+    return p
+
+
+def _hashes_ok(tmp_path):
+    p = tmp_path / "hashes-ok.json"
+    p.write_text(json.dumps({"ok": True, "installed": {"checked": True}, "files": [{"ok": True}]}))
+    return p
+
+
+def _xml(tmp_path, name, body):
+    p = tmp_path / name
+    p.write_text('<?xml version="1.0" encoding="utf-8"?>' + body)
     return p
 
 
@@ -119,40 +139,152 @@ def test_failures_fail_and_missing_junit_is_not_evaluated(tmp_path):
 def test_empty_registry_is_unverified_and_the_committed_registry_is_empty():
     committed = json.loads((REPO / "experiments/sandbox_foundation/holdouts/REGISTRY.json").read_text())
     assert committed["entries"] == [] and "schema_note" in committed
-    lane = sr.measured_lane(REPO / "experiments/sandbox_foundation/holdouts/REGISTRY.json", "HEAD",
-                            is_ancestor=lambda a, b: True)
+    lane = sr.measured_lane(REPO / "experiments/sandbox_foundation/holdouts/REGISTRY.json", "HEAD")
     assert lane["status"] == sr.UNVERIFIED and lane["reason"] == "REGISTRY_EMPTY"
 
 
-def test_registry_pass_requires_qualified_true_and_an_ancestor_preregistration(tmp_path):
-    entry = {"id": "h1", "prereg_commit": "abc1234", "qualified": True, "outcome": "PASS"}
-    yes, no = (lambda a, b: True), (lambda a, b: False)
-    assert sr.measured_lane(_registry(tmp_path, [entry]), "run", yes)["status"] == sr.PASS
-    assert sr.measured_lane(_registry(tmp_path, [entry]), "run", no)["status"] == sr.UNVERIFIED
-    for bad in ({"qualified": "true"}, {"qualified": 1}, {"qualified": False}, {"outcome": "PENDING"},
-                {"prereg_commit": ""}, {"prereg_commit": None}):
-        assert sr.measured_lane(_registry(tmp_path, [dict(entry, **bad)]), "run", yes)["status"] == sr.UNVERIFIED, bad
-    fail = dict(entry, id="h2", outcome="FAIL")
-    assert sr.measured_lane(_registry(tmp_path, [entry, fail]), "run", yes)["status"] == sr.FAIL
-    assert sr.measured_lane(tmp_path / "absent.json", "run", yes)["status"] == sr.UNVERIFIED
+# --- finding 3: a REAL git history (tmp repo), so ancestry, blob bytes and add-commits are measured, not stubbed
+def _g(repo, *args):
+    return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false",
+                           *args], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
 
 
+REG_REL = "holdouts/REGISTRY.json"
+
+
+@pytest.fixture
+def history(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _g(repo, "init", "-q")
+
+    def commit(msg, files):
+        for rel, content in files.items():
+            f = repo / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(content)
+        _g(repo, "add", "-A")
+        _g(repo, "commit", "-q", "-m", msg)
+        return _g(repo, "rev-parse", "HEAD")
+
+    pending = {"qualified": True, "outcome": "PENDING", "evidence": "ev/result.json"}
+    root = commit("root", {"README": "root"})
+    early = commit("a result committed BEFORE any preregistration", {"ev/early.json": '{"r": 0}'})
+    pre = commit("preregister h1/h2/hearly", {REG_REL: json.dumps({"entries": [
+        dict(pending, id="h1"), dict(pending, id="h2"), dict(pending, id="hearly", evidence="ev/early.json")]})})
+    ev = commit("results", {"ev/result.json": '{"r": 1}', "ev/fail.json": '{"r": -1}'})
+    run = commit("the run commit", {"other": "y"})
+    sha = {rel: hashlib.sha256((repo / rel).read_bytes()).hexdigest()
+           for rel in ("ev/result.json", "ev/fail.json", "ev/early.json")}
+    return SimpleNamespace(repo=repo, root=root, early=early, pre=pre, ev=ev, run=run, sha=sha)
+
+
+def _entry(h, **kw):
+    e = {"id": "h1", "qualified": True, "outcome": "PASS", "prereg_commit": h.pre, "evidence": "ev/result.json",
+         "evidence_sha256": h.sha["ev/result.json"]}
+    e.update(kw)
+    return e
+
+
+def _lane(h, entries, run=None):
+    reg = h.repo / REG_REL
+    reg.write_text(json.dumps({"entries": entries}))           # the registry as it stands at run time
+    return sr.measured_lane(reg, h.run if run is None else run, repo=h.repo)
+
+
+def test_a_verified_preregistered_holdout_passes_the_control(history):
+    lane = _lane(history, [_entry(history)])
+    assert lane["status"] == sr.PASS, lane
+    assert lane["qualified_entries"][0]["verified"] is True
+
+
+def test_prereg_must_be_a_full_sha_strictly_before_the_run(history):
+    h = history
+    for pre in ("HEAD", "main", "HEAD~0", h.pre[:12], h.pre.upper(), h.run, "0" * 40, h.root):
+        lane = _lane(h, [_entry(h, prereg_commit=pre)])
+        assert lane["status"] == sr.INVALID_REGISTRY, (pre, lane)
+    # the root IS a strict ancestor of everything; what it lacks is a PENDING registration of h1
+    root_lane = _lane(h, [_entry(h, prereg_commit=h.root)])
+    assert any("PENDING" in p for p in root_lane["invalid_entries"][0]["problems"])
+
+
+def test_evidence_must_exist_match_and_postdate_the_preregistration(history):
+    h = history
+    assert _lane(h, [_entry(h, evidence="ev/absent.json")])["status"] == sr.INVALID_REGISTRY
+    assert _lane(h, [_entry(h, evidence_sha256="0" * 64)])["status"] == sr.INVALID_REGISTRY
+    assert _lane(h, [_entry(h, evidence_sha256=None)])["status"] == sr.INVALID_REGISTRY
+    assert _lane(h, [_entry(h, evidence="../outside.json")])["status"] == sr.INVALID_REGISTRY
+    early = _lane(h, [_entry(h, id="hearly", evidence="ev/early.json", evidence_sha256=h.sha["ev/early.json"])])
+    assert early["status"] == sr.INVALID_REGISTRY                            # result committed before the prereg
+    assert any("not a strict ancestor of evidence-adding" in p for p in early["invalid_entries"][0]["problems"])
+    # evidence that exists in the working tree but not AT the run commit does not count
+    (h.repo / "ev" / "later.json").write_text("{}")
+    later = _entry(h, evidence="ev/later.json",
+                   evidence_sha256=hashlib.sha256((h.repo / "ev" / "later.json").read_bytes()).hexdigest())
+    assert _lane(h, [later])["status"] == sr.INVALID_REGISTRY
+    # and a run commit that precedes the evidence cannot see it
+    assert _lane(h, [_entry(h)], run=h.pre)["status"] == sr.INVALID_REGISTRY
+    assert _lane(h, [_entry(h)], run="not-a-commit")["status"] == sr.INVALID_REGISTRY
+
+
+def test_malformed_qualified_entries_invalidate_and_a_verified_fail_beats_a_pass(history):
+    h = history
+    good_fail = _entry(h, id="h2", outcome="FAIL", evidence="ev/fail.json", evidence_sha256=h.sha["ev/fail.json"])
+    assert _lane(h, [_entry(h), good_fail])["status"] == sr.FAIL                # a sibling PASS does not outvote it
+    bad_fail = dict(good_fail, prereg_commit="deadbeef")                       # the red-team (b2) shape
+    assert _lane(h, [bad_fail, _entry(h)])["status"] == sr.INVALID_REGISTRY     # never dropped, never PASS
+    for bad in ({"qualified": "true"}, {"qualified": 1}, {"qualified": None}, {"outcome": "pass"}, {"id": ""}):
+        assert _lane(h, [_entry(h, **bad)])["status"] == sr.INVALID_REGISTRY, bad
+    assert _lane(h, ["not an object", _entry(h)])["status"] == sr.INVALID_REGISTRY
+    assert _lane(h, [_entry(h, qualified=False)])["status"] == sr.UNVERIFIED     # not qualified: not counted
+    assert _lane(h, [_entry(h, outcome="PENDING")])["status"] == sr.UNVERIFIED
+    assert sr.measured_lane(h.repo / "absent.json", h.run, repo=h.repo)["status"] == sr.UNVERIFIED
+
+
+def test_a_registry_outside_the_repository_cannot_show_a_preregistration(history, tmp_path):
+    lane = sr.measured_lane(_registry(tmp_path, [_entry(history)]), history.run, repo=history.repo)
+    assert lane["status"] == sr.INVALID_REGISTRY
+
+
+# --- finding 12: the production lane counts only a ci.yml run whose headSha IS the run commit
 def test_production_lane_is_never_inferred(tmp_path):
-    assert sr.production_lane(None, "abc")["status"] == sr.NOT_EVALUATED
+    a, b = "a" * 40, "b" * 40
+    assert sr.production_lane(None, a, a)["status"] == sr.NOT_EVALUATED
     runs = tmp_path / "runs.json"
-    runs.write_text(json.dumps([{"databaseId": 1, "headSha": "abc", "status": "in_progress", "conclusion": ""}]))
-    assert sr.production_lane(runs, "abc")["status"] == sr.PENDING
-    assert sr.production_lane(runs, "other")["status"] == sr.NOT_EVALUATED
-    runs.write_text(json.dumps([{"databaseId": 1, "headSha": "abc", "status": "completed", "conclusion": "failure"},
-                                {"databaseId": 2, "headSha": "abc", "status": "completed", "conclusion": "success"}]))
-    assert sr.production_lane(runs, "abc")["status"] == sr.PASS                  # the latest attempt decides
+
+    def ci(**kw):
+        return dict({"databaseId": 1, "headSha": a, "status": "completed", "conclusion": "success",
+                     "workflowName": sr.CI_WORKFLOW_NAME}, **kw)
+    runs.write_text(json.dumps([ci(status="in_progress", conclusion="")]))
+    assert sr.production_lane(runs, a, a)["status"] == sr.PENDING
+    assert sr.production_lane(runs, b, b)["status"] == sr.NOT_EVALUATED
+    runs.write_text(json.dumps([ci(conclusion="failure"), ci(databaseId=2)]))
+    assert sr.production_lane(runs, a, a)["status"] == sr.PASS                   # the latest attempt decides
     runs.write_text("not json")
-    assert sr.production_lane(runs, "abc")["status"] == sr.NOT_EVALUATED
+    assert sr.production_lane(runs, a, a)["status"] == sr.NOT_EVALUATED
+
+
+def test_production_lane_refuses_another_workflow_and_another_commit(tmp_path):
+    a, b = "a" * 40, "b" * 40
+    runs = tmp_path / "runs.json"
+    runs.write_text(json.dumps([{"databaseId": 9, "headSha": a, "status": "completed", "conclusion": "success",
+                                 "workflowName": "Science reproduction", "url": "x"}]))
+    assert sr.production_lane(runs, a, a)["status"] == sr.NOT_EVALUATED       # the red-team (c) shape
+    runs.write_text(json.dumps([{"databaseId": 9, "headSha": a, "status": "completed", "conclusion": "success",
+                                 "workflowName": sr.CI_WORKFLOW_NAME}]))
+    assert sr.production_lane(runs, a, a)["status"] == sr.PASS                 # the control
+    assert sr.production_lane(runs, a, b)["status"] == sr.NOT_EVALUATED       # head SHA is not the run commit
+    assert sr.production_lane(runs, "HEAD", "HEAD")["status"] == sr.NOT_EVALUATED
+
+
+def test_ci_workflow_name_constant_matches_ci_yml():
+    names = re.findall(r"^name:\s*(.+?)\s*$", (REPO / ".github/workflows/ci.yml").read_text(), re.M)
+    assert names[0].strip("'\"") == sr.CI_WORKFLOW_NAME
 
 
 def test_receipt_keeps_four_separate_lanes_and_no_overall_verdict(tmp_path):
-    rec = sr.build_receipt(run_commit="r", science_junit=_junit(tmp_path, passed=60), manifest=SCIENCE / "manifest.json",
-                           registry=_registry(tmp_path, []), is_ancestor=lambda a, b: True)
+    rec = sr.build_receipt(run_commit="r", science_junit=_designated_junit(tmp_path), manifest=SCIENCE / "manifest.json",
+                           registry=_registry(tmp_path, []), hashes_report=_hashes_ok(tmp_path))
     assert tuple(rec["lanes"]) == sr.LANES
     assert rec["lanes"]["live_reference_solver"]["status"] == sr.PASS
     assert rec["lanes"]["measured_validation"]["status"] == sr.UNVERIFIED       # a live PASS implies nothing here
@@ -165,10 +297,151 @@ def test_receipt_keeps_four_separate_lanes_and_no_overall_verdict(tmp_path):
 def test_unverified_pins_demote_a_live_pass(tmp_path):
     bad = tmp_path / "hashes.json"
     bad.write_text(json.dumps({"ok": False}))
-    rec = sr.build_receipt(run_commit="r", science_junit=_junit(tmp_path, passed=60), hashes_report=bad,
-                           manifest=SCIENCE / "manifest.json", registry=_registry(tmp_path, []),
-                           is_ancestor=lambda a, b: True)
+    rec = sr.build_receipt(run_commit="r", science_junit=_designated_junit(tmp_path), hashes_report=bad,
+                           manifest=SCIENCE / "manifest.json", registry=_registry(tmp_path, []))
     assert rec["lanes"]["live_reference_solver"]["status"] == sr.UNVERIFIED
+
+
+# --- finding 4: an absent / unreadable / vendored-only pinned-bytes report can never leave the live lane PASS
+def _designated_junit(tmp_path, *, per_file=None, name="designated.xml", extra=""):
+    man = json.loads((SCIENCE / "manifest.json").read_text())
+    n = per_file or -(-man["expected_executed"] // len(man["tests"]))
+    cases = "".join(f'<testcase classname="{cj.module_of(t)}" name="test_{i}"/>' for t in man["tests"] for i in range(n))
+    return _xml(tmp_path, name, f"<testsuites><testsuite>{cases}{extra}</testsuite></testsuites>")
+
+
+def test_the_live_lane_needs_a_present_ok_pinned_bytes_report(tmp_path):
+    j = _designated_junit(tmp_path)
+    kw = dict(science_junit=j, manifest=SCIENCE / "manifest.json", registry=_registry(tmp_path, []))
+    live = "live_reference_solver"
+    assert sr.build_receipt(run_commit="r", hashes_report=_hashes_ok(tmp_path), **kw)["lanes"][live]["status"] == sr.PASS
+    absent = sr.build_receipt(run_commit="r", **kw)["lanes"][live]
+    assert absent["status"] == sr.UNVERIFIED and absent["reason"] == "PINNED_BYTES_REPORT_ABSENT"
+    garbled = tmp_path / "garbled.json"
+    garbled.write_text("{")
+    assert sr.build_receipt(run_commit="r", hashes_report=garbled, **kw)["lanes"][live]["status"] == sr.UNVERIFIED
+    vendored_only = tmp_path / "vendored-only.json"
+    vendored_only.write_text(json.dumps({"ok": True, "installed": {"checked": False}, "files": [{"ok": True}]}))
+    assert sr.build_receipt(run_commit="r", hashes_report=vendored_only, **kw)["lanes"][live]["status"] == sr.UNVERIFIED
+    # the CLI maps a path that does not exist to "not supplied": that is now UNVERIFIED, not PASS (red-team (a))
+    out = tmp_path / "receipt.json"
+    sr.main(["--run-commit", "r", "--out", str(out), "--science-junit", str(j), "--hashes-report",
+             str(tmp_path / "MISSING-hashes-after.json"), "--registry", str(_registry(tmp_path, []))])
+    assert json.loads(out.read_text())["lanes"][live]["status"] == sr.UNVERIFIED
+
+
+def test_verify_hashes_writes_a_report_even_on_unusable_input(tmp_path):
+    report = tmp_path / "r.json"
+    assert vh.main(["--expected", str(tmp_path / "absent.json"), "--report", str(report)]) == 2
+    rep = json.loads(report.read_text())
+    assert rep["ok"] is False and "INPUT_ERROR" in rep["error"]
+    (tmp_path / "e.json").write_text(json.dumps({"vendored": ["not", "a", "map"]}))
+    report.unlink()
+    assert vh.main(["--expected", str(tmp_path / "e.json"), "--root", str(tmp_path), "--vendored-only",
+                    "--report", str(report)]) == 2
+    assert json.loads(report.read_text())["ok"] is False
+
+
+def test_the_live_lane_counts_only_designated_files_and_unique_cases(tmp_path):
+    man = json.loads((SCIENCE / "manifest.json").read_text())
+    kw = dict(expected_executed=man["expected_executed"], designated=man["tests"])
+    assert sr.junit_lane(_designated_junit(tmp_path), **kw)["status"] == sr.PASS          # the control
+    foreign = _designated_junit(tmp_path, name="foreign.xml", extra='<testcase classname="tests.test_other" name="x"/>')
+    assert sr.junit_lane(foreign, **kw)["status"] == sr.UNVERIFIED
+    # enough cases, but all from ONE designated file: the other designated files never ran
+    one = "".join(f'<testcase classname="{cj.module_of(man["tests"][0])}" name="t{i}"/>' for i in range(100))
+    lane = sr.junit_lane(_xml(tmp_path, "one.xml", f"<testsuite>{one}</testsuite>"), **kw)
+    assert lane["status"] == sr.UNVERIFIED and "no executed testcase" in lane["reason"]
+    # 60 copies of one test name (the red-team shape) -- even from a designated file
+    same = f'<testcase classname="{cj.module_of(man["tests"][0])}" name="same"/>' * 100
+    assert sr.junit_lane(_xml(tmp_path, "same.xml", f"<testsuite>{same}</testsuite>"), **kw)["status"] == sr.UNVERIFIED
+    # a class inside a designated module counts as that module
+    cls = _designated_junit(tmp_path, name="cls.xml").read_text().replace(
+        f'classname="{cj.module_of(man["tests"][0])}"', f'classname="{cj.module_of(man["tests"][0])}.TestX"')
+    assert sr.junit_lane(_xml(tmp_path, "cls2.xml", cls.split("?>", 1)[1]), **kw)["status"] == sr.PASS
+
+
+def test_the_receipt_reads_the_sandbox_floor_from_the_manifest(tmp_path):
+    man = json.loads((SCIENCE / "manifest.json").read_text())
+    floor = man["sandbox_expected_executed"]
+    assert isinstance(floor, int) and not isinstance(floor, bool) and floor > 1000      # a measured floor, not 1
+    rec = sr.build_receipt(run_commit="r", sandbox_junit=_junit(tmp_path, passed=floor - 1),
+                           manifest=SCIENCE / "manifest.json", registry=_registry(tmp_path, []))
+    assert rec["lanes"]["sandbox_numerical"]["status"] == sr.UNVERIFIED
+    rec = sr.build_receipt(run_commit="r", sandbox_junit=_junit(tmp_path, passed=floor, name="full.xml"),
+                           manifest=SCIENCE / "manifest.json", registry=_registry(tmp_path, []))
+    assert rec["lanes"]["sandbox_numerical"]["status"] == sr.PASS
+
+
+# --- check_junit: the three handcrafted shapes that fooled it, each beside a control that still passes
+def test_check_junit_sees_nested_and_namespaced_outcomes_and_duplicates(tmp_path):
+    ok = "".join(f'<testcase classname="c" name="t{i}"/>' for i in range(60))
+    shapes = {
+        "skip nested in properties": '<testcase classname="c" name="s"><properties><skipped message="x"/></properties>'
+                                     '</testcase>',
+        "namespaced skip": '<testcase classname="c" name="s"><j:skipped/></testcase>',
+        "namespaced failure": '<testcase classname="c" name="s"><j:failure message="boom"/></testcase>',
+        "nested error": '<testcase classname="c" name="s"><system-out><error/></system-out></testcase>',
+        "duplicate name": '<testcase classname="c" name="t0"/>',
+    }
+    control = _xml(tmp_path, "control.xml", f'<testsuite xmlns:j="urn:x">{ok}<testcase classname="c" name="s">'
+                                            f'<properties><property name="k" value="v"/></properties>'
+                                            f'<system-out>skipped error failure</system-out></testcase></testsuite>')
+    assert cj.main([str(control), "--expected-executed", "60"]) == 0
+    for label, case in shapes.items():
+        p = _xml(tmp_path, label.replace(" ", "_") + ".xml", f'<testsuite xmlns:j="urn:x">{ok}{case}</testsuite>')
+        assert cj.main([str(p), "--expected-executed", "60"]) == 1, label
+        assert sr.junit_lane(p, 60)["status"] != sr.PASS, label
+    same = _xml(tmp_path, "same.xml", "<testsuite>" + '<testcase classname="c" name="same"/>' * 60 + "</testsuite>")
+    assert cj.main([str(same), "--expected-executed", "60"]) == 1
+
+
+def test_check_junit_manifest_mode_enforces_the_designated_files(tmp_path):
+    assert cj.main([str(_designated_junit(tmp_path)), "--manifest", str(SCIENCE / "manifest.json")]) == 0
+    foreign = _designated_junit(tmp_path, name="f.xml", extra='<testcase classname="x.test_y" name="z"/>')
+    assert cj.main([str(foreign), "--manifest", str(SCIENCE / "manifest.json")]) == 1
+
+
+# --- residual (a): the manifest floors may not drop silently against the PR base
+def test_manifest_guard_refuses_an_unjustified_drop(tmp_path):
+    base = json.loads((SCIENCE / "manifest.json").read_text())
+    bp, hp, jp = tmp_path / "base.json", tmp_path / "head.json", tmp_path / "J.md"
+    bp.write_text(json.dumps(base))
+
+    def guard(head, just=None, base_just=None):
+        hp.write_text(json.dumps(head))
+        if just is None:
+            jp.unlink(missing_ok=True)
+        else:
+            jp.write_text(just)
+        args = ["--base", str(bp), "--head", str(hp), "--justification", str(jp)]
+        if base_just is not None:
+            (tmp_path / "BJ.md").write_text(base_just)
+            args += ["--base-justification", str(tmp_path / "BJ.md")]
+        return mg.main(args)
+
+    n = base["expected_executed"]
+    assert guard(base) == 0                                                         # unchanged: the control
+    assert guard(dict(base, expected_executed=n + 5, tests=base["tests"] + ["x/test_new.py"])) == 0     # raising
+    lowered = dict(base, expected_executed=n - 1)
+    assert guard(lowered) == 1
+    assert guard(lowered, "we dropped some tests") == 1                            # does not name the change
+    token = f"expected_executed: {n} -> {n - 1}"
+    assert guard(lowered, f"why: {token}") == 0
+    assert guard(lowered, f"why: {token}", base_just=f"why: {token}") == 1         # a stale note excuses nothing
+    gone = dict(base, tests=base["tests"][1:])
+    assert guard(gone) == 1 and guard(gone, f"removed {base['tests'][0]}: reason") == 0
+    sb = base["sandbox_expected_executed"]
+    assert guard(dict(base, sandbox_expected_executed=sb - 1)) == 1
+    assert guard({k: v for k, v in base.items() if k != "sandbox_expected_executed"}) == 1
+
+
+# --- residual (b): a core-package change must trigger the science workflow
+def test_science_workflow_triggers_on_the_core_package_and_guards_the_manifest():
+    wf = (REPO / ".github/workflows/science.yml").read_text()
+    paths = wf.split("pull_request:", 1)[1].split("permissions:", 1)[0]
+    assert '"smartchem/**"' in paths and '"experiments/sandbox_foundation/**"' in paths
+    assert "science.manifest_guard" in wf and "sandbox_expected_executed" in wf
 
 
 def test_requirements_are_hash_locked():
@@ -182,7 +455,7 @@ def test_requirements_are_hash_locked():
     assert f"--hash=sha256:{exp['installed_phreeqpython']['wheel']['sha256']}" in hashes
 
 
-@pytest.mark.parametrize("mod", [cj, sr, vh])
+@pytest.mark.parametrize("mod", [cj, sr, vh, mg])
 def test_helpers_are_stdlib_only(mod):
     import ast
     import sys as _sys

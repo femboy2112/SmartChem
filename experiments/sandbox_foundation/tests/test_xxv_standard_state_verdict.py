@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import dataclasses
 import itertools
+from types import MappingProxyType
 
 import pytest
 
@@ -92,10 +93,29 @@ def test_a_caller_cannot_inject_a_verdict_or_a_ladder(runs):
         res.validation_ladder[adm.WITHIN_DECLARED_FORMULA_DOMAIN] = {"holds": True}
     with pytest.raises(TypeError):
         res.validation_ladder[adm.WITHIN_DECLARED_FORMULA_DOMAIN]["holds"] = True
-    # re-labelling the spec re-derives the ladder from the NEW spec; it never keeps a stale one
-    relabelled = dataclasses.replace(res, spec=runs[MOLAR].spec)
-    assert relabelled.validation_ladder[adm.WITHIN_DECLARED_FORMULA_DOMAIN]["holds"] is True
     assert res.validation_ladder[adm.WITHIN_DECLARED_FORMULA_DOMAIN]["holds"] is False
+
+
+def test_relabelling_a_legacy_result_with_a_molar_spec_is_refused(runs):
+    """XXV red-team finding 5: the identities are bound to the spec, so swapping the spec under legacy frames raises
+    instead of re-deriving WITHIN_DECLARED_FORMULA_DOMAIN holds=True over a LEGACY evidence identity."""
+    legacy, molar = runs[LEGACY], runs[MOLAR]
+    with pytest.raises(api.SimulationSpecError, match="IDENTITY_SPEC_MISMATCH"):
+        dataclasses.replace(legacy, spec=molar.spec)
+    with pytest.raises(api.SimulationSpecError, match="IDENTITY_SPEC_MISMATCH"):
+        dataclasses.replace(molar, spec=legacy.spec)
+    # the carried identities cannot be swapped under the spec either
+    with pytest.raises(api.SimulationSpecError, match="IDENTITY_SPEC_MISMATCH"):
+        dataclasses.replace(legacy, identities=molar.identities)
+    # a cadence-only change moves the OBSERVATION identity and is refused too
+    cadence = dataclasses.replace(legacy.spec, solver=dataclasses.replace(legacy.spec.solver, n_samples=7))
+    with pytest.raises(api.SimulationSpecError, match="IDENTITY_SPEC_MISMATCH"):
+        dataclasses.replace(legacy, spec=cadence)
+    with pytest.raises(api.SimulationSpecError):
+        dataclasses.replace(legacy, spec="not a spec")
+    # the control: an unchanged rebuild is accepted and keeps its own (legacy) ladder
+    same = dataclasses.replace(legacy)
+    assert same.validation_ladder[adm.WITHIN_DECLARED_FORMULA_DOMAIN]["holds"] is False
 
 
 @pytest.mark.parametrize("constants_mode, allow_precipitation, i_max",
@@ -169,3 +189,60 @@ def test_no_tuning_the_molar_constants_are_the_tabulated_ones_transported_and_no
         nu = ss.aqueous_nu(r_mol.stoich, getattr(r_mol.rate_law, "unit_activity", ()))
         assert math.log10(k["mol"]) - math.log10(k["leg"]) == pytest.approx(nu * math.log10(ss.RHO_W_25C_KG_PER_L),
                                                                              abs=1e-12), r_mol.name
+
+
+def _bump(frame, species, delta):
+    amounts = dict(frame.amounts)
+    amounts[("cell", species)] = amounts[("cell", species)] + delta
+    return dataclasses.replace(frame, amounts=MappingProxyType(amounts))
+
+
+def test_rung_one_is_rechecked_from_the_frames_of_a_closed_phase(runs):
+    """XXV red-team finding 5 (rung 1 forgery): the calcite phase is closed (no boundary), so the frames alone decide
+    whether calcium was conserved; a receipt that says 'closed' cannot outvote frames that are not."""
+    res = runs[MOLAR]
+    r1 = res.validation_ladder[adm.NUMERICALLY_EXECUTABLE]
+    assert r1["holds"] is True and r1["frames_conservation"]["holds"] is True          # the honest control
+    assert dict(r1["frames_conservation"]["phases"]) == {"dissolve": "CONSTANT_WITHIN_DECLARED_TOLERANCE"}
+    tol_ca = res.receipts[0].component_tolerance["Ca"]
+    assert tol_ca <= res.receipts[0].component_tolerance["C"]          # so the C row cannot be the one that trips
+    charged = dataclasses.replace(res, frames=(_bump(res.frames[0], "Ca+2", 0.5 * tol_ca),) + res.frames[1:])
+    assert charged.validation_ladder[adm.NUMERICALLY_EXECUTABLE]["holds"] is False     # charge band is far tighter
+    mid = len(res.frames) // 2
+    for delta, holds in ((0.5 * tol_ca, True), (10.0 * tol_ca, False)):     # inside vs outside the declared band
+        # a NEUTRAL Ca carrier: bumping Ca+2 would also move charge, whose band is ~1e-12 mol
+        frames = res.frames[:mid] + (_bump(res.frames[mid], "CaCO3(aq)", delta),) + res.frames[mid + 1:]
+        forged = dataclasses.replace(res, frames=frames)
+        assert forged.receipts == res.receipts and forged.receipts[0].material_balance_closed is True
+        f1 = forged.validation_ladder[adm.NUMERICALLY_EXECUTABLE]
+        assert f1["holds"] is holds, delta
+        if not holds:
+            assert f1["frames_conservation"]["phases"]["dissolve"] == "DRIFT_EXCEEDS_DECLARED_TOLERANCE"
+            assert f1["reason"] == "EXECUTION_NOT_CERTIFIED"
+
+
+def test_rung_one_fails_closed_when_the_frames_cannot_confirm_the_receipt(runs):
+    res = runs[MOLAR]
+    rc = res.receipts[0]
+    no_ca_tol = dataclasses.replace(rc, component_tolerance=MappingProxyType(
+        {k: v for k, v in rc.component_tolerance.items() if k != "Ca"}))
+    lad = dataclasses.replace(res, receipts=(no_ca_tol,)).validation_ladder[adm.NUMERICALLY_EXECUTABLE]
+    assert lad["holds"] is False and lad["frames_conservation"]["phases"]["dissolve"] == "TOLERANCE_MISSING"
+    assert dataclasses.replace(res, frames=()).validation_ladder[adm.NUMERICALLY_EXECUTABLE]["holds"] is False
+    assert dataclasses.replace(res, receipts=()).validation_ladder[adm.NUMERICALLY_EXECUTABLE]["holds"] is False
+    alien = (dataclasses.replace(res.frames[0], phase_index=3),) + res.frames[1:]
+    assert dataclasses.replace(res, frames=alien).validation_ladder[adm.NUMERICALLY_EXECUTABLE]["holds"] is False
+
+
+def test_an_open_phase_is_reported_as_receipt_trusted_not_frame_verified():
+    """The in-process trust boundary, stated in the ladder itself: a vented phase has an external CO2 flux that only
+    the receipt's ledger integrates, so the frames cannot decide it; the sealed phases around it are still checked."""
+    sched = api.BoundarySchedule((api.BoundaryPhase("s", 5.0, 5, "membrane", False),
+                                  api.BoundaryPhase("v", 5.0, 5, "bulk", True),
+                                  api.BoundaryPhase("s2", 5.0, 5, "closed", False)))
+    res = api.run(api.SimulationSpec(model=api.ModelSpec(), initial=(api.SpeciesInventory("A", "HAc", "aqueous", 0.1),),
+                                     schedule=sched))
+    fc = res.validation_ladder[adm.NUMERICALLY_EXECUTABLE]["frames_conservation"]
+    assert dict(fc["phases"]) == {"s": "CONSTANT_WITHIN_DECLARED_TOLERANCE", "v": "OPEN_BOUNDARY_RECEIPT_TRUSTED",
+                                  "s2": "CONSTANT_WITHIN_DECLARED_TOLERANCE"}
+    assert fc["holds"] is True and res.validation_ladder[adm.NUMERICALLY_EXECUTABLE]["holds"] is True

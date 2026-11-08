@@ -13,6 +13,7 @@ import json
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -136,10 +137,21 @@ def test_failures_fail_and_missing_junit_is_not_evaluated(tmp_path):
     assert sr.junit_lane(tmp_path / "absent.xml")["status"] == sr.NOT_EVALUATED
 
 
-def test_empty_registry_is_unverified_and_the_committed_registry_is_empty():
+def test_empty_registry_is_unverified_and_the_committed_registry_has_no_qualified_entry():
+    # XXV section 9: the committed registry now records the tier-W Guidone holdout (qualified false). No committed
+    # entry is qualified, so the measured lane must stay UNVERIFIED; an EMPTY registry reads REGISTRY_EMPTY.
     committed = json.loads((REPO / "experiments/sandbox_foundation/holdouts/REGISTRY.json").read_text())
-    assert committed["entries"] == [] and "schema_note" in committed
+    assert "schema_note" in committed
+    assert all(e["qualified"] is False for e in committed["entries"])
+    assert [e["tier"] for e in committed["entries"] if e["id"] == "GUIDONE2025-CA-XXV"] == ["W"]
     lane = sr.measured_lane(REPO / "experiments/sandbox_foundation/holdouts/REGISTRY.json", "HEAD")
+    assert lane["status"] == sr.UNVERIFIED and lane["qualified_entries"] == []
+    empty = json.loads(json.dumps(committed))
+    empty["entries"] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "REGISTRY.json"
+        path.write_text(json.dumps(empty))
+        lane = sr.measured_lane(path, "HEAD")
     assert lane["status"] == sr.UNVERIFIED and lane["reason"] == "REGISTRY_EMPTY"
 
 

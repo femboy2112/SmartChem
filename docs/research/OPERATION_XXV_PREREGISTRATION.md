@@ -110,3 +110,67 @@ The shifts are sized so that each predicted outcome holds even if the unmutated 
 
 To be appended, dated, before the run: the commit SHA of the model, its `model_identity_digest`, the frozen runner JSON
 (an encoding of §4–§6 with its sha256), and confirmation that §1–§8 are unchanged since this commit.
+
+---
+
+## 9. Model-identity addendum (2026-11-08, written before any evaluation at the holdout state)
+
+§1–§8 are byte-identical to commit `150225022e703c2f14a766c637b1552309d58a64`, which was pushed to
+`origin/research/operation-xxv` before the model existed. The transcription is unchanged (sha256 `9f33b540…19ea`).
+
+### 9.1 Pins
+
+| item | value |
+|---|---|
+| model `model_identity_digest` (default `model_config {}`) | `0f89db30b9f161d4174876bc2489152726349ce039bd3c495a40a2bc7b5be3e4` |
+| runner `runner_sha256` (`experiments/sandbox_foundation/holdout_guidone_xxv.py`) | `c3aed503081f0b4cc5a5981d77746c7f9bdb00cb7419d8c5ac43c161e290385f` |
+| frozen runner JSON | `experiments/sandbox_foundation/holdouts/guidone2025_ca_prereg_xxv.json`, sha256 `9f054d207f6a25397a4e39797fdd319aaeaa76419a8877775e1fb721c8ac9485` |
+| model code | integration tree `7522711` (the runner refuses to run if either pin differs) |
+| run command | `python -m experiments.sandbox_foundation.holdout_guidone_xxv <frozen JSON> <its sha256> <receipt path>` (re-executes itself in a fresh interpreter with an empty bytecode cache) |
+
+Both pins were recomputed by the registrant at `7522711`; the runner sha also matches an independent hash of the file.
+A load-only validation of the frozen JSON (no model evaluation) computed M = [5.52, 6.06] × 10⁻⁴ M from the
+transcription.
+
+### 9.2 Instrument clarifications (fixed now, before the run)
+
+None of these changes the §5 outcome logic. Each makes §5–§6 precise or stricter.
+1. All controls run first. If any control misbehaves, the run is INVALID and the main grid is not evaluated.
+2. The C1/C2 shifts are added to every grid shift value.
+3. C3 injects seven 25 °C values one at a time at 295.15 K: Kc, the two carbonate formation constants, Kw, K_H, a
+   298.15 K Davies A, and a 298.15 K water density. Each must be REFUSED, and the same slot must accept the value made
+   at 295.15 K. The second check shows the refusal comes from the temperature, not the injection route.
+4. Ca must rise strictly with pCO₂ at every (T, shift) pair, and from the top of the grid to the ceiling. A violation
+   makes the run INVALID.
+5. The FAIL_LOW bisection tolerance is 0.001 in log₁₀ pCO₂. It affects only the reported pCO₂, not the verdict.
+6. A model error anywhere on the main grid makes the run INVALID.
+
+### 9.3 Corrections to §2–§3 (recorded here; the frozen text is not edited)
+
+- **§2 is wrong about phreeqc.dat.** It does not carry the P&B K_H: its CO₂(g) is a different six-term fit. One
+  CaCO₃° digit also differs (b = −0.299440 there vs −0.299444 in wateq4f_PWN.dat). The model uses the wateq4f_PWN.dat
+  P&B transcriptions. So the §3 PHREEQC proxy (5.71 × 10⁻⁴ M) did not use the model's K_H. On the allowed grid, that
+  difference moves Ca by at most 0.27 percentage points.
+- **§2 omits constants that are not from P&B 1982.** None of them was fitted to the holdout:
+  - Kw is a phreeqc.dat analytic fit; its primary source is not identified.
+  - Davies A is anchored at 0.509 at 25 °C and scaled with the Malmberg & Maryott (1956) dielectric correlation.
+  - Water density uses the Kell (1975) correlation.
+  - The coefficients of both correlations were reproduced from memory (tier `RECALLED_LITERATURE_CORRELATION`).
+  - The Kell polynomial was checked in this session against tabulated densities: ≤ 3 × 10⁻⁶ relative over 0–80 °C.
+- **Tiers of the P&B sets.** Kc, K_H and K₁ were transcribed from the vendored database files; the equation images in
+  P&B were not read. K₂ is printed in the abstract.
+
+### 9.4 Further disclosures
+
+- 425.62 ppm is a dry-air mole fraction. In wet air at 1 atm it is about 4.15–4.20 × 10⁻⁴ atm, which the
+  4.00 × 10⁻⁴ atm floor covers. Lab barometric pressure is not stated.
+- **In-process trust boundary.** A temperature tag is checked, not believed: a constant stamped with the right T but
+  carrying a 25 °C value is not refused. numpy, scipy and site-packages code are not covered by the running-code check.
+- **Two independent pre-run reviews** (a numerical red-team, then a provenance red-team) each state that they did not
+  evaluate the reserved box.
+  - The provenance reviewer re-solved the system from the raw coefficients with its own equations. At four states
+    outside the box it agrees with the model to ≤ 7.2 × 10⁻⁴ relative in Ca and ≤ 2 × 10⁻⁴ in pH.
+  - That review found five defects in the instrument (no INVALID path; C3/C4 not expressible; an unchecked 25 °C
+    Davies A; an interval not bound to the transcription; an unpinned runner). All five were repaired before this pin.
+- **Registry.** `holdouts/REGISTRY.json` gains entry `GUIDONE2025-CA-XXV`, recorded as qualified false, tier W,
+  outcome PENDING. Tier W can never qualify (§8).

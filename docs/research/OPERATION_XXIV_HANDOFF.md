@@ -22,7 +22,7 @@ Everything here is **research-only** (`experiments/`, `docs/research/`, `ROADMAP
 | `1cf5a94` | xxiv-3: source grounding |
 | (docs commit) | this handoff + ROADMAP |
 
-**Merge:** through a protected-main PR. The merge SHA and CI run are recorded in the PR and in the post-merge report.
+**Merge:** PR #162, merged 2026-11-07T23:18:18Z as `404a21744292e9b6a453f27ede1125371f996d77` (parents `7314e2a` + `f33d77d`; merge tree `98e2038` identical to the tested head tree). PR CI run `42418820286` on `f33d77d`: 9/9 success; main CI run `42424631693` (push) on `404a217`: 9/9 success.
 
 **Toolchain:** CPython 3.12.3, numpy 2.5.1, scipy 1.18.0. phreeqpython 1.6.2 is in the dev venv only. The CI-equivalent venv runs `pip install -e '.[dev]'` and has no phreeqpython.
 
@@ -51,7 +51,7 @@ Each was reproduced RED by `experiments/sandbox_foundation/xxiv_p0_probes.py`, w
 | Full sandbox, first post-fix run | dev venv | 1289 passed, **3 failed**: XXIII pin-anchor tests still hashing class source, which is the expected consequence of the re-pin. Updated to closure digests; that file then 41 passed. An earlier `-x` run had stopped on the s2 anchor of the same kind. |
 | Probes after repairs | `run_probes` (dev) | 22 PASS / 0 FAIL |
 | XXIV test files | CI-equivalent venv | 74 passed, 1 skipped (live PHREEQC cell: no phreeqpython) |
-| Full sandbox on the committed tree | CI-equivalent venv | posted as a PR comment (it was still running when this file was committed) |
+| Full sandbox on the committed tree | CI-equivalent venv | 1263 passed, 4 skipped (all phreeqpython importorskip), 566.4 s on `1cf5a94` (code-identical to the head). Hosted sandbox job: 1267 collected = 1259 passed + 8 skipped; the extra 4 are the shallow-clone git-history guards (`test_xxi_s4` :93/:101, `test_xx_s5` :112/:121), confirmed by a depth-1 `-rs` re-run |
 | Production suite | `smartchem/` and `tests/` unchanged vs `main` | evidence = hosted `test (3.10)` / `test (3.12)` on the PR head. `scripts/run_suite.sh` was **not** re-run locally in XXIV (the production tree is byte-identical to the 1.6.0 tag apart from the #160 test record already on main) |
 
 Two harness or test errors of mine were caught and fixed, not hidden:

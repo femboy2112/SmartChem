@@ -1,0 +1,34 @@
+{
+  "schema": "smartchem.research.measurement_transcription/xxv-1",
+  "citation": "Guidone, R. et al. Uptake of H14CO3-/14CO3 2- by calcite: impact of ISA and chloride. RSC Advances 2025, 15(46), 38762-38773. DOI 10.1039/D5RA05547D. Licence CC BY 3.0.",
+  "source_urls_read": [
+    "https://pmc.ncbi.nlm.nih.gov/articles/PMC12525538/",
+    "Europe PMC supplementary-files endpoint for PMC12525538 (reader 1 only)"
+  ],
+  "read_on": "2026-11-08",
+  "readers": [
+    "reader 1: source-research subagent (PMC HTML + Europe PMC SI); italics read as the modeled row",
+    "reader 2: blind web-fetch subagent given no numbers (PMC HTML, verbatim passes); row mapping inferred from caption and text"
+  ],
+  "reader_agreement": "all four measured Table 1 values, the 2-sigma convention, T = (22 +/- 2) C under air, S/L 1 g/L, >= 24 h equilibration agree between readers",
+  "table": "Table 1. Composition of the calcite saturated solution (CSS) under air atmosphere used in this work",
+  "uncertainty_convention": "two times the standard deviation (2 sigma) of mean values; replicate count NOT STATED",
+  "measured": {
+    "pH": {"value": 8.3, "u_2sigma": 0.1, "note": "Orion Ross electrode, 3.0 M KCl fill, buffers pH 7-10; whether pH_exp or pH_m is NOT STATED"},
+    "Ca_tot_M": {"value": 5.79e-4, "u_2sigma": 0.27e-4, "method": "ICP-OES (PerkinElmer Optima8300) or ICP-MS (Nexion 2000P); which one for Table 1 NOT STATED"},
+    "C_tot_M": {"value": 1.21e-3, "u_2sigma": 0.10e-3, "definition": "[HCO3-] + [CO3 2-] per the caption; measured as TIC (Shimadzu TOC-L)"},
+    "Cl_tot_M": {"value": 8.40e-5, "u_2sigma": 0.10e-5, "method": "ion chromatography (Dionex ICS-3000)"}
+  },
+  "modeled_row_not_used": {"pH": 8.3, "Ca_tot_M": 5.0e-4, "C_tot_M": 1.0e-3, "basis": "ThermoChimie v.12a calculation (paper Fig. 7 caption cites pCO2 = -3.5, units unstated)"},
+  "conditions": {
+    "T_C": {"value": 22, "pm": 2, "pm_convention": "NOT STATED (treated as a bound by the preregistration)"},
+    "atmosphere": "air; air-gloveboxes for active work; pCO2 NOT MEASURED",
+    "solid": "CaCO3, Sigma-Aldrich ACS reagent 99.0%, BET ~0.56 m2/g",
+    "water": "Milli-Q 18.2 MOhm cm",
+    "solid_to_liquid_g_per_L": 1,
+    "equilibration": "magnetic stirring 100 rpm, room temperature, at least 24 hours",
+    "separation": "centrifugation 6000 g 10 min or 10 kDa ultrafiltration"
+  },
+  "article_bytes_pinned": false,
+  "article_bytes_note": "PMC/Europe PMC served bot-challenge pages to non-browser clients, so no stable article bytes could be hashed; this transcription is the frozen dataset and its sha256 is recorded in docs/research/OPERATION_XXV_PREREGISTRATION.md"
+}

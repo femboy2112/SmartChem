@@ -39,6 +39,7 @@
 >   - 3.0: research prototype only.
 >
 > Dossier: `docs/research/OPERATION_XXIV_HANDOFF.md`.
+> - **POST-3.0 FUTURE MILESTONE — LibGibson synthesis-path explorer/tester (PLANNED, NOT STARTED).** Once the 3.0 falling-sand/reactive-spatial simulator passes its own acceptance gate, build an interactive, evidence-carrying synthesis hypergraph explorer: use the **general compiler/decompiler, bounded linear/DAG/event-route search, identity/stock policies, recognition and capability/conditions receipts** as the authority; project them through LibGibson with optional **model-relative** virtual tests only when validated physical data exist. Missing data remain UNKNOWN; visualization mints no chemistry or safety claim. Do NOT delay core reaction-family/charged/configuration-aware compiler work until 3.0. Acceptance matrix and cross-repo wire dependency: [post-3.0 explorer roadmap](docs/research/POST_3_0_LIBGIBSON_SYNTHESIS_EXPLORER_ROADMAP.md), [libgibson#290](https://github.com/femboy2112/libgibson/issues/290). Version number after 3.0 remains TBD.
 >
 > ## ▶ PRESENT STATE (2026-11-06, later) — OPERATION XXIII: release the compiler
 > The authoritative current picture. It supersedes the OPERATION XXII block below, which is kept intact for its

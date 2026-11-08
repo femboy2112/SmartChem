@@ -1,0 +1,246 @@
+{
+  "boundary": "Issue states were read from GitHub on the snapshot date; categories are an audit judgement, not a theorem. A gap in category 2 is a pathway gap, never a proof of impossibility.",
+  "categories": {
+    "1": "UNREPRESENTABLE",
+    "2": "REPRESENTABLE_NOT_GENERATED",
+    "3": "GENERATED_NOT_RECOGNIZED",
+    "4": "RECOGNIZED_NOT_FEASIBLE",
+    "5": "SUPPORTED_NOT_SOURCED",
+    "6": "BUDGET_TRUNCATED",
+    "7": "INTERNAL_ERROR"
+  },
+  "gaps": [
+    {
+      "category": 2,
+      "category_name": "REPRESENTABLE_NOT_GENERATED",
+      "gap": "alkenes from alcohols/halides (elimination, dehydration)",
+      "id": "G1",
+      "issue": 116,
+      "note": "rank-increasing; legal only in the event_search INTRAMOLECULAR_COPRODUCT lane; oracle ABSTAINs"
+    },
+    {
+      "category": 2,
+      "category_name": "REPRESENTABLE_NOT_GENERATED",
+      "gap": "aldol / Knoevenagel / Henry / Michael C-C enolate chemistry",
+      "id": "G2",
+      "issue": 117
+    },
+    {
+      "category": 2,
+      "category_name": "REPRESENTABLE_NOT_GENERATED",
+      "gap": "[2+2] cycloaddition, hetero-ene",
+      "id": "G3",
+      "issue": 118
+    },
+    {
+      "category": 1,
+      "category_name": "UNREPRESENTABLE",
+      "gap": "Grignard / RLi addition to C=O with two-stage workup",
+      "id": "G4",
+      "issue": 120,
+      "note": "needs Li/Mg organometallic representation and charge"
+    },
+    {
+      "category": 1,
+      "category_name": "UNREPRESENTABLE",
+      "gap": "1,3-dipolar [3+2] cycloadditions",
+      "id": "G5",
+      "issue": 121,
+      "note": "needs per-atom charge (#105)"
+    },
+    {
+      "category": 2,
+      "category_name": "REPRESENTABLE_NOT_GENERATED",
+      "gap": "oxidation / dehydrogenative FGI",
+      "id": "G6",
+      "issue": 122
+    },
+    {
+      "category": 3,
+      "category_name": "GENERATED_NOT_RECOGNIZED",
+      "gap": "Kumada/Negishi/Stille/Heck/Sonogashira/Buchwald recognition",
+      "id": "G7",
+      "issue": 113,
+      "note": "needs a hybridization predicate and a catalyst gate"
+    },
+    {
+      "category": 3,
+      "category_name": "GENERATED_NOT_RECOGNIZED",
+      "gap": "aryl ethers, thioethers, aryl sulfonates, sulfonamides, AcOH->Ac2O",
+      "id": "G8",
+      "issue": 111,
+      "note": "hand-built probe steps return no class"
+    },
+    {
+      "category": 2,
+      "category_name": "REPRESENTABLE_NOT_GENERATED",
+      "gap": "Dieckmann, intramolecular aldol, lactam, cyclic-ether producers",
+      "id": "G9",
+      "issue": "104/125",
+      "note": "Wittig additionally needs charge"
+    },
+    {
+      "category": 1,
+      "category_name": "UNREPRESENTABLE",
+      "gap": "per-atom charge rail",
+      "id": "G10",
+      "issue": 105
+    },
+    {
+      "category": 1,
+      "category_name": "UNREPRESENTABLE",
+      "gap": "Li, Sn, Ni, Al, Ti, bracket [B] elements",
+      "id": "G11",
+      "issue": 108
+    },
+    {
+      "category": 1,
+      "category_name": "UNREPRESENTABLE",
+      "gap": "R/S, E/Z and isotope identity at terminal/stock matching",
+      "id": "G12",
+      "issue": 130,
+      "note": "resonance_identity equates enantiomers, E/Z isomers and isotopologues (probed)"
+    },
+    {
+      "category": 3,
+      "category_name": "GENERATED_NOT_RECOGNIZED",
+      "gap": "must-not-vouch pins missing for some conserved fictions",
+      "id": "G13",
+      "issue": 109
+    },
+    {
+      "category": 5,
+      "category_name": "SUPPORTED_NOT_SOURCED",
+      "gap": "conditions/procedure corpus small; most classes cap at REACTION_VOUCHED",
+      "id": "G14",
+      "issue": 103
+    },
+    {
+      "category": 4,
+      "category_name": "RECOGNIZED_NOT_FEASIBLE",
+      "gap": "aqueous free-acid UNKNOWN guard; anti-Bredt/strain not modeled",
+      "id": "G15",
+      "issue": 103
+    },
+    {
+      "category": 6,
+      "category_name": "BUDGET_TRUNCATED",
+      "gap": "cut/lateral/coproduct budgets and max_depth bound reachability",
+      "id": "G16",
+      "issue": 127
+    },
+    {
+      "category": 7,
+      "category_name": "INTERNAL_ERROR",
+      "gap": "typed INTERNAL_RECOGNIZER_ERROR exists; no open instance known",
+      "id": "G17",
+      "issue": 131,
+      "note": "completeness of this row is UNVERIFIED"
+    }
+  ],
+  "inventory": {
+    "algebra_profiles": {
+      "bond-order-edit-v1": [
+        "capped-scission-mediated",
+        "bond-order-edit"
+      ],
+      "certified-decompile-v07": [
+        "heterolytic-scission",
+        "redox-half-reaction"
+      ],
+      "certified-route-v07": [
+        "capped-scission-mediated",
+        "diels-alder-retro",
+        "diels-alder-alkyne-retro",
+        "diels-alder-aza-retro",
+        "diels-alder-oxa-retro",
+        "diels-alder-thia-retro",
+        "diels-alder-aza-diene-retro",
+        "diels-alder-oxa-diene-retro",
+        "diels-alder-thia-diene-retro"
+      ],
+      "legacy-capped-v1": [
+        "capped-scission-mediated"
+      ]
+    },
+    "default_route_algebra_profile": "certified-route-v07",
+    "recognizer_classes": [
+      "acyl condensation (esterification/amidation)",
+      "etherification (dehydrative, R-OH + R'-OH -> ether + water)",
+      "N-alkylation (dehydrative, non-carbonyl N-H + alkyl-OH -> N-alkyl + water)",
+      "activated acyl transfer (anhydride/acyl-halide + R-OH/R-NH/R-SH -> ester/amide/thioester + acid/HX)",
+      "sulfonate-ester transfer (sulfonyl halide + R-OH -> sulfonate ester + HX)",
+      "Claisen condensation (ester/ketone + ester/carbonate -> 1,3-dicarbonyl + alcohol)",
+      "Diels-Alder [4+2] cycloaddition (all-carbon diene + alkene dienophile -> cyclohexene adduct)",
+      "Diels-Alder [4+2] cycloaddition (all-carbon diene + alkyne dienophile -> 1,4-cyclohexadiene)",
+      "aza-Diels-Alder [4+2] cycloaddition (diene + imine dienophile -> tetrahydropyridine)",
+      "oxa-Diels-Alder [4+2] cycloaddition (diene + carbonyl dienophile -> dihydropyran)",
+      "thia-Diels-Alder [4+2] cycloaddition (diene + thiocarbonyl dienophile -> dihydrothiopyran)",
+      "aza-Diels-Alder [4+2] cycloaddition (1-azadiene + alkene dienophile -> tetrahydropyridine isomer)",
+      "oxa-Diels-Alder [4+2] cycloaddition (1-oxadiene inverse-demand + alkene dienophile -> dihydropyran isomer)",
+      "thia-Diels-Alder [4+2] cycloaddition (1-thiadiene + alkene dienophile -> dihydrothiopyran isomer)",
+      "Cope [3,3] sigmatropic rearrangement (1,5-diene -> [3,3] isomer)",
+      "Claisen [3,3] sigmatropic rearrangement (allyl vinyl ether -> gamma,delta-unsaturated carbonyl)",
+      "aza-Claisen [3,3] sigmatropic rearrangement (allyl vinyl amine -> gamma,delta-unsaturated imine)",
+      "thia-Claisen [3,3] sigmatropic rearrangement (allyl vinyl sulfide -> gamma,delta-unsaturated thiocarbonyl)",
+      "electrocyclization 4pi (1,3-butadiene -> cyclobutene)",
+      "electrocyclization 6pi ((Z)-1,3,5-hexatriene -> 1,3-cyclohexadiene)",
+      "hydrogenation (partial bond-order edit, precursor + H2 -> saturated; one unsaturation reduced)",
+      "oxoacid ester condensation (alcohol + nitric/phosphoric acid -> nitrate/phosphate ester + water)",
+      "SN2 substitution (R-X + O/N/S-nucleophile -> R-Nu + halide-salt/HX; sp3 non-tertiary carbon)",
+      "imine condensation (carbonyl + amine/hydroxylamine/hydrazine -> imine/oxime/hydrazone + water)",
+      "intramolecular-lactonization (hydroxy acid -> lactone + water)"
+    ],
+    "recognizer_count": 25,
+    "registry_digest": "d9f7e867e8f1a1d2"
+  },
+  "schema": "smartchem.research.coverage_gap_map/xxv-1",
+  "snapshot_commit": "11d05bb7b17fd3546b45c329e08dadbfb2dcb79b",
+  "snapshot_date": "2026-11-08",
+  "solved_since_2026_10_audits": {
+    "106": [
+      "ade0f28"
+    ],
+    "107": [
+      "ab35f5d",
+      "40d1e7f"
+    ],
+    "110": [
+      "cb79877"
+    ],
+    "112": [
+      "ade0f28"
+    ],
+    "114": [
+      "8776c28",
+      "34e1891"
+    ],
+    "115": [
+      "cf3d942"
+    ],
+    "119": [
+      "be5f8a1"
+    ],
+    "123": [
+      "466e0e3"
+    ],
+    "124": [
+      "474e018"
+    ],
+    "126": [
+      "eacc086"
+    ],
+    "127": [
+      "measured null result"
+    ],
+    "128": [
+      "246fbd2"
+    ],
+    "129": [
+      "246fbd2"
+    ],
+    "131": [
+      "d8adf19"
+    ]
+  }
+}

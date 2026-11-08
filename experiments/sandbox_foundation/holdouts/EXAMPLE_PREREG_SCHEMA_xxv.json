@@ -1,0 +1,89 @@
+{
+  "schema": "smartchem.xxv.holdout_prereg/2",
+  "holdout_id": "EXAMPLE-synthetic-not-a-holdout",
+  "note": "SYNTHETIC SCHEMA EXAMPLE -- NOT A PREREGISTRATION. It encodes docs/research/OPERATION_XXV_PREREGISTRATION.md sections 4-6 field by field, with every STATE moved out of the reserved holdout box (T 313.15-317.15 K instead of 293.15-297.15 K; pCO2 1.0e-3 / 1.064e-3 atm instead of 4.00e-4 / 4.2562e-4) and a synthetic transcription. runner_sha256 and model_identity_digest are all-zero PLACEHOLDERS, so the runner refuses to execute this file; the real preregistration is written by the orchestrator at the pin commit. Field map: state_grid = section 4 envelope (3 T values = nominal +/- 2 K as a bound; logKc_shift = P&B's +/-0.020; 2 pCO2 values, floor and mean); measured = section 1 (the runner computes M = value +/- u_2sigma from the sha-pinned transcription); verdict_rule = section 5 (PASS = inclusive closed-interval intersection; FAIL_HIGH and FAIL_LOW strict; FAIL_LOW needs the pCO2 bisected at the FIXED rescue corner (min T, +0.020) to exceed the 2.0e-3 atm ceiling); controls = section 6 (C1 +0.60 on every grid point -> FAIL_HIGH; C2 -1.50 on every grid point -> FAIL_LOW; C3 each 25 C constant and a 298.15 K Davies A and rho_w injected at the nominal T -> REFUSED each; C4 T = 370 K -> REFUSED); informational_point = section 7 point (nominal T, upper pCO2, no shift), reported without verdict weight.",
+  "runner_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "model_identity_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "model_config": {},
+  "observable": "Ca_total_M",
+  "measured": {
+    "transcription_path": "experiments/sandbox_foundation/holdouts/EXAMPLE_TRANSCRIPTION_xxv.json",
+    "transcription_sha256": "965dfda111f7d54855e971ba817e405333d19dc1704899c14681f811ee9fc0ef",
+    "quantity": "Ca_tot_M"
+  },
+  "state_grid": {
+    "T_K": [
+      313.15,
+      315.15,
+      317.15
+    ],
+    "logKc_shift": [
+      -0.02,
+      0.0,
+      0.02
+    ],
+    "pCO2_atm": [
+      0.001,
+      0.001064
+    ]
+  },
+  "verdict_rule": {
+    "kind": "interval_overlap_with_pco2_rescue",
+    "pass": "closed_interval_intersection_inclusive",
+    "fail_high": "min_P_strictly_above_max_M",
+    "fail_low": "max_P_strictly_below_min_M_and_needed_pCO2_strictly_above_ceiling",
+    "fail_low_pco2_ceiling_atm": 0.002,
+    "rescue_corner": {
+      "T_K": 313.15,
+      "logKc_shift": 0.02
+    },
+    "bisection_log10_tol": 0.001
+  },
+  "mandatory_control_kinds": [
+    "LOGKC_SHIFT",
+    "OFF_TEMPERATURE_CONSTANT",
+    "OUT_OF_DOMAIN_TEMPERATURE"
+  ],
+  "controls": [
+    {
+      "name": "C1",
+      "kind": "LOGKC_SHIFT",
+      "logKc_shift": 0.6,
+      "expected": "FAIL_HIGH"
+    },
+    {
+      "name": "C2",
+      "kind": "LOGKC_SHIFT",
+      "logKc_shift": -1.5,
+      "expected": "FAIL_LOW"
+    },
+    {
+      "name": "C3",
+      "kind": "OFF_TEMPERATURE_CONSTANT",
+      "T_K": 315.15,
+      "pCO2_atm": 0.001064,
+      "slots": [
+        "Kc_calcite",
+        "K HCO3- formation",
+        "K CO2(aq) formation",
+        "K water formation",
+        "KH_CO2",
+        "davies_A",
+        "rho_w"
+      ],
+      "expected": "REFUSED"
+    },
+    {
+      "name": "C4",
+      "kind": "OUT_OF_DOMAIN_TEMPERATURE",
+      "T_K": 370.0,
+      "pCO2_atm": 0.001064,
+      "expected": "REFUSED"
+    }
+  ],
+  "informational_point": {
+    "T_K": 315.15,
+    "pCO2_atm": 0.001064,
+    "logKc_shift": 0.0
+  }
+}

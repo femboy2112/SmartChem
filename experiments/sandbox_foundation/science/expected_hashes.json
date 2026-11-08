@@ -1,0 +1,48 @@
+{
+  "schema": "smartchem-science-hashes/1",
+  "note": "OPERATION XXV-2 (#166). Pins checked by experiments/sandbox_foundation/science/verify_hashes.py before AND after the science tests. 'vendored' = every committed .dat under benchmarks/*/db (the bytes the harnesses read; each harness also pins its own subset in code). 'installed_phreeqpython' = the database files inside the pip-installed phreeqpython 1.6.2 wheel (the wheel itself is hash-locked by requirements-science.txt). 'installed_equals_vendored' records which installed files are byte-identical to a vendored copy.",
+  "vendored": {
+    "experiments/sandbox_foundation/benchmarks/carbonate_na_pair_s6/db/minteq.v4.dat": "4a48bf5c357b3da3084606a5e322426c3ab1e969dd1c86f9c62a3a7995836ca3",
+    "experiments/sandbox_foundation/benchmarks/carbonate_na_pair_s6/db/minteq.v4.fac_---.dat": "37030159157d390b2a26b7d1bb71f8ac8a6b73c9f3a80a96d1d642978a59b54a",
+    "experiments/sandbox_foundation/benchmarks/carbonate_na_pair_s6/db/minteq.v4.fac_--C.dat": "b4586e90971c03ec34282a84091c3d1f4bd0659ffcd1796c10341d12624767c8",
+    "experiments/sandbox_foundation/benchmarks/carbonate_na_pair_s6/db/minteq.v4.fac_-B-.dat": "385cd5ffa799553431f05d95b0272de083a3ac6157bfeb1b13a7950065db441c",
+    "experiments/sandbox_foundation/benchmarks/carbonate_na_pair_s6/db/minteq.v4.fac_-BC.dat": "b8f536cfe59a4c644c63e327d5eab96e7f74de2e477cf027d39db0d39d157fbd",
+    "experiments/sandbox_foundation/benchmarks/carbonate_na_pair_s6/db/minteq.v4.fac_A--.dat": "6ada9d3f17bd1a101b446ed5eb67cb520bd923e842f3b0547a5261f3493a3082",
+    "experiments/sandbox_foundation/benchmarks/carbonate_na_pair_s6/db/minteq.v4.fac_A-C.dat": "4cde6150809cd33770c3ec9e93ca322ba843551e2d8ade4b1e25cd0a92f6d26f",
+    "experiments/sandbox_foundation/benchmarks/carbonate_na_pair_s6/db/minteq.v4.fac_AB-.dat": "073f52da2ac44aac1d7d42456c6af2777d7cdf51456e43c000a67abc5a087bc6",
+    "experiments/sandbox_foundation/benchmarks/carbonate_na_pair_s6/db/minteq.v4.fac_ABC.dat": "4a48bf5c357b3da3084606a5e322426c3ab1e969dd1c86f9c62a3a7995836ca3",
+    "experiments/sandbox_foundation/benchmarks/carbonate_na_pair_s6/db/minteq.v4.nopairs.dat": "6ada9d3f17bd1a101b446ed5eb67cb520bd923e842f3b0547a5261f3493a3082",
+    "experiments/sandbox_foundation/benchmarks/pitzer_anomaly_xxiv/db/pitzer.dat": "eb5051704fad461c4e5325721afc7b9025fad7c2906f72ed48ae182aa2c1a5c9",
+    "experiments/sandbox_foundation/benchmarks/solid_equilibrium_xxiii/db/phreeqc.dat": "6bb5ebc1d0ecca0e921c13a2241d05d3a3333b142d1d740b2ed03a786442bdf5",
+    "experiments/sandbox_foundation/benchmarks/solid_equilibrium_xxiii/db/wateq4f_PWN.dat": "1c4de8335cd87b4227ffe562a838c485669801273a8e43d4724b834d51aa61f4"
+  },
+  "installed_phreeqpython": {
+    "distribution": "phreeqpython",
+    "version": "1.6.2",
+    "files": {
+      "database/phreeqc.dat": "6bb5ebc1d0ecca0e921c13a2241d05d3a3333b142d1d740b2ed03a786442bdf5",
+      "database/pitzer.dat": "eb5051704fad461c4e5325721afc7b9025fad7c2906f72ed48ae182aa2c1a5c9",
+      "database/vitens.dat": "877129acf06a6927950ac974567cb5183d640a739980f3660ca2a8f288fcf698",
+      "database/wateq4f_PWN.dat": "1c4de8335cd87b4227ffe562a838c485669801273a8e43d4724b834d51aa61f4"
+    },
+    "wheel": {
+      "filename": "phreeqpython-1.6.2-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "c63b2dcbe504973a16beb057e152617fa51d6337032767f7516751a47ae2938c",
+      "source": "https://pypi.org/pypi/phreeqpython/1.6.2/json (fetched 2026-11-08); re-hashed from a download"
+    }
+  },
+  "installed_equals_vendored": [
+    [
+      "installed:database/phreeqc.dat",
+      "experiments/sandbox_foundation/benchmarks/solid_equilibrium_xxiii/db/phreeqc.dat"
+    ],
+    [
+      "installed:database/pitzer.dat",
+      "experiments/sandbox_foundation/benchmarks/pitzer_anomaly_xxiv/db/pitzer.dat"
+    ],
+    [
+      "installed:database/wateq4f_PWN.dat",
+      "experiments/sandbox_foundation/benchmarks/solid_equilibrium_xxiii/db/wateq4f_PWN.dat"
+    ]
+  ]
+}

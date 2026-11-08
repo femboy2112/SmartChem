@@ -1,5 +1,41 @@
 # SmartChem roadmap
 
+> ## ▶ PRESENT STATE (2026-11-08) — OPERATION XXV: the general chemical universe (research)
+> This block supersedes only the research-lane status lines of the OPERATION XXIV block below. Dossier:
+> `docs/research/OPERATION_XXV_HANDOFF.md`.
+>
+> - **Production 1.x.** 1.6.0 is the release and is unchanged. A 1.7 candidate (the 26th class, alcohol dehydration,
+>   #116) lives on its own branch and ships only through its full gate. Its outcome is recorded in the follow-up
+>   record, not here.
+> - **Compiler (Phase I).**
+>   - A live, machine-readable coverage gap map (`experiments/coverage_gap_map_xxv.json`, seven categories).
+>   - Three route invariants that had no test are now pinned.
+>   - #130 design and controls. New finding: an unmarked stereocentre reads as configuration-complete.
+> - **Provenance (Phase II).**
+>   - #165: a typed, derived standard-state verdict; the API default for new scenarios is source-consistent.
+>   - #166: a separate `science.yml` with hash-locked PHREEQC, designated tests that may not skip, and a four-lane
+>     receipt in which a skip is never PASS.
+> - **Measurement (Phase III).**
+>   - Plummer & Busenberg temperature laws, a generic Henry boundary and an open-air calcite world.
+>   - The Guidone 2025 calcite holdout was preregistered (rules, then pins, each pushed first) and returned **PASS,
+>     tier W (CORROBORATED-weak)**. pCO₂ was not measured, so it cannot satisfy the 2.0-alpha gate.
+> - **Spatial 3.0 (Phase IV).**
+>   - A reaction–transport engine (SYNTHETIC kinetics), checked against an independent `expm` reference.
+>   - Splitting orders 1.08 / 1.97 and spatial O(dx²) convergence.
+>   - An exact `Fraction` grain ledger with an illustrative granular automaton.
+> - **LibGibson (Phase V).**
+>   - A producer-side typed frame with units, kinds, faces and receipts.
+>   - The wire-v1 loss list is posted on libgibson#290; no integration is claimed.
+>   - Explorer P1 schema prototype only.
+> - **Adversarial review.** Four attackers. Every HIGH and MEDIUM finding was repaired before merge or pin; the open
+>   residuals are listed in handoff §2.
+> - **Milestones.**
+>   - 2.0-alpha NOT MET.
+>   - 2.0 stable not started.
+>   - 3.0 research prototype, not accepted.
+>   - Post-3.0 explorer planned.
+>
+
 > ## ▶ PRESENT STATE (2026-11-07) — OPERATION XXIV: the honest universe (research only)
 > This block supersedes only the research-lane status lines of the OPERATION XXIII block below, which stays
 > authoritative for the 1.6.0 release record. It reflects merged code and current evidence.
@@ -39,6 +75,7 @@
 >   - 3.0: research prototype only.
 >
 > Dossier: `docs/research/OPERATION_XXIV_HANDOFF.md`.
+> - **POST-3.0 FUTURE MILESTONE — LibGibson synthesis-path explorer/tester (PLANNED, NOT STARTED).** Once the 3.0 falling-sand/reactive-spatial simulator passes its own acceptance gate, build an interactive, evidence-carrying synthesis hypergraph explorer: use the **general compiler/decompiler, bounded linear/DAG/event-route search, identity/stock policies, recognition and capability/conditions receipts** as the authority; project them through LibGibson with optional **model-relative** virtual tests only when validated physical data exist. Missing data remain UNKNOWN; visualization mints no chemistry or safety claim. Do NOT delay core reaction-family/charged/configuration-aware compiler work until 3.0. Acceptance matrix and cross-repo wire dependency: [post-3.0 explorer roadmap](docs/research/POST_3_0_LIBGIBSON_SYNTHESIS_EXPLORER_ROADMAP.md), [libgibson#290](https://github.com/femboy2112/libgibson/issues/290). Version number after 3.0 remains TBD.
 >
 > ## ▶ PRESENT STATE (2026-11-06, later) — OPERATION XXIII: release the compiler
 > The authoritative current picture. It supersedes the OPERATION XXII block below, which is kept intact for its

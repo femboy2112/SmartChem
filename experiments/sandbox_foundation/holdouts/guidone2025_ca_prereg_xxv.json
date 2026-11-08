@@ -1,0 +1,89 @@
+{
+  "schema": "smartchem.xxv.holdout_prereg/2",
+  "holdout_id": "GUIDONE2025-CA-XXV",
+  "note": "Machine encoding of docs/research/OPERATION_XXV_PREREGISTRATION.md sections 4-6 (rules frozen in commit 150225022e703c2f14a766c637b1552309d58a64), pinned by the dated section-9 addendum before any evaluation at this state. state_grid = section 4 envelope; measured = section 1 (interval computed by the runner as value +/- u_2sigma from the sha-pinned transcription); verdict_rule = section 5; controls = section 6 (C1 +0.60 and C2 -1.50 added to every grid shift; C3 the 25 C constants plus 298.15 K Davies A and rho_w injected at 295.15 K, each must be REFUSED; C4 370 K must be REFUSED); informational_point = section 7 point, reported without verdict weight. Tier W: cannot by itself satisfy the 2.0-alpha gate (section 8).",
+  "runner_sha256": "c3aed503081f0b4cc5a5981d77746c7f9bdb00cb7419d8c5ac43c161e290385f",
+  "model_identity_digest": "0f89db30b9f161d4174876bc2489152726349ce039bd3c495a40a2bc7b5be3e4",
+  "model_config": {},
+  "observable": "Ca_total_M",
+  "measured": {
+    "transcription_path": "experiments/sandbox_foundation/holdouts/guidone2025_table1_transcription.json",
+    "transcription_sha256": "9f33b5407bf775bc4cf18afbf43961fb9e1011e45796fca2c51f5ac912a819ea",
+    "quantity": "Ca_tot_M"
+  },
+  "state_grid": {
+    "T_K": [
+      293.15,
+      295.15,
+      297.15
+    ],
+    "logKc_shift": [
+      -0.02,
+      0.0,
+      0.02
+    ],
+    "pCO2_atm": [
+      0.0004,
+      0.00042562
+    ]
+  },
+  "verdict_rule": {
+    "kind": "interval_overlap_with_pco2_rescue",
+    "pass": "closed_interval_intersection_inclusive",
+    "fail_high": "min_P_strictly_above_max_M",
+    "fail_low": "max_P_strictly_below_min_M_and_needed_pCO2_strictly_above_ceiling",
+    "fail_low_pco2_ceiling_atm": 0.002,
+    "rescue_corner": {
+      "T_K": 293.15,
+      "logKc_shift": 0.02
+    },
+    "bisection_log10_tol": 0.001
+  },
+  "mandatory_control_kinds": [
+    "LOGKC_SHIFT",
+    "OFF_TEMPERATURE_CONSTANT",
+    "OUT_OF_DOMAIN_TEMPERATURE"
+  ],
+  "controls": [
+    {
+      "name": "C1",
+      "kind": "LOGKC_SHIFT",
+      "logKc_shift": 0.6,
+      "expected": "FAIL_HIGH"
+    },
+    {
+      "name": "C2",
+      "kind": "LOGKC_SHIFT",
+      "logKc_shift": -1.5,
+      "expected": "FAIL_LOW"
+    },
+    {
+      "name": "C3",
+      "kind": "OFF_TEMPERATURE_CONSTANT",
+      "T_K": 295.15,
+      "pCO2_atm": 0.00042562,
+      "slots": [
+        "Kc_calcite",
+        "K HCO3- formation",
+        "K CO2(aq) formation",
+        "K water formation",
+        "KH_CO2",
+        "davies_A",
+        "rho_w"
+      ],
+      "expected": "REFUSED"
+    },
+    {
+      "name": "C4",
+      "kind": "OUT_OF_DOMAIN_TEMPERATURE",
+      "T_K": 370.0,
+      "pCO2_atm": 0.00042562,
+      "expected": "REFUSED"
+    }
+  ],
+  "informational_point": {
+    "T_K": 295.15,
+    "pCO2_atm": 0.00042562,
+    "logKc_shift": 0.0
+  }
+}

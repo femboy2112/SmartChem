@@ -52,8 +52,8 @@ def test_calcite_world_closes_the_basis_gap_against_phreeqc():
                                          initial=init, schedule=sched, solver=api.SolverOptions(rtol=1e-10, atol=1e-18)))
         ca[basis] = sum(res.final_frame.amount("cell", s) for s in ("Ca+2", "CaCO3(aq)", "CaHCO3+", "CaOH+"))
         ladder = dict(res.validation_ladder)
-        assert ladder["EMPIRICALLY_VALIDATED_WITHIN_MEASURED_BAND"] is False
-        assert "model-vs-model" in ladder["COMPARED_TO_REFERENCE_IMPLEMENTATION"]
+        assert ladder["EMPIRICALLY_VALIDATED_WITHIN_MEASURED_BAND"]["holds"] is False      # XXV-1: structured rungs
+        assert ladder["COMPARED_TO_REFERENCE_IMPLEMENTATION"]["kind"] == "MODEL_VS_MODEL"
     phreeqc_molar = 1.23007e-4 * ss.RHO_W_25C_KG_PER_L          # XXIII-S4 PHREEQC Ca (mol/kgw) -> mol/L
     assert ca["as_tabulated_molal"] / phreeqc_molar - 1 == pytest.approx(0.0030, abs=2e-4)   # the disclosed bias
     assert abs(ca["converted_to_molar"] / phreeqc_molar - 1) < 2e-4                           # closed by transport

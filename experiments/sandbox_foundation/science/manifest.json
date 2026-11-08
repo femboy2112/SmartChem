@@ -8,8 +8,9 @@
     "experiments/sandbox_foundation/tests/test_xxiv_pitzer_anomaly.py",
     "experiments/sandbox_foundation/tests/test_xxv_calcite_live_phreeqc.py",
     "experiments/sandbox_foundation/tests/test_xxi_s4_three_comparators.py",
-    "experiments/sandbox_foundation/tests/test_xx_s5_unit_convention.py"
+    "experiments/sandbox_foundation/tests/test_xx_s5_unit_convention.py",
+    "experiments/sandbox_foundation/tests/test_xxv_open_calcite.py"
   ],
-  "expected_executed": 60,
-  "sandbox_expected_executed": 1463
+  "expected_executed": 72,
+  "sandbox_expected_executed": 1539
 }

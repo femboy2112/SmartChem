@@ -34,7 +34,9 @@ SOURCES AND TIERS.
   ``water_density_kg_per_L`` (Kell 1975 form) and ``davies_A`` (Debye-Huckel A from the Malmberg & Maryott 1956 dielectric
   constant) are correlations whose coefficients were reproduced from the literature, not re-read in this session.  Davies A
   is ANCHORED to the sandbox's existing ``DAVIES_A_25C`` (0.509) and only its temperature RATIO is computed, so a 298.15 K
-  world uses the same A as every existing 25 C world.
+  world uses the same A as every existing 25 C world.  Both are also produced as T-TAGGED ``SourcedConstant`` values
+  (``davies_A``, ``water_density``) so a world builder can refuse one produced for another temperature; a bare float
+  carries no tag and cannot be checked (the XXV runner review's Davies-A injection went unseen for exactly that reason).
 """
 from __future__ import annotations
 
@@ -286,6 +288,22 @@ def water_density_kg_per_L(T_K) -> float:
     t = _water_T_check(T_K, KELL_T_MIN_K, KELL_T_MAX_K, "water density") - 273.15
     num = sum(float(c) * t ** k for k, c in enumerate(KELL_1975_NUM))
     return num / (1.0 + float(KELL_1975_DEN) * t) / 1000.0
+
+
+def water_density(T_K) -> SourcedConstant:
+    """Pure-water density (kg/L) at T_K as a T-TAGGED typed value (Kell 1975), so a consumer can verify the temperature
+    it was produced for.  Error bar: the coefficient-transcription resolution FLOOR (half a unit in the last printed
+    digit of every Kell coefficient, propagated at T_K); NOT a measurement uncertainty.  Valid ONLY at T_K."""
+    T = _water_T_check(T_K, KELL_T_MIN_K, KELL_T_MAX_K, "water density")
+    t = T - 273.15
+    b = float(KELL_1975_DEN)
+    num = sum(float(c) * t ** k for k, c in enumerate(KELL_1975_NUM))
+    floor = (sum(_half_unit(c) * abs(t) ** k for k, c in enumerate(KELL_1975_NUM))
+             + abs(num) * _half_unit(KELL_1975_DEN) * abs(t) / (1.0 + b * t)) / (1.0 + b * t) / 1000.0
+    return SourcedConstant(
+        "rho_w", water_density_kg_per_L(T), floor, "kg/L (pure water, 1 atm)", T, KELL_SOURCE, "DERIVED",
+        f"Kell (1975) evaluated at T_K={T}; the error bar ({floor:.3g} kg/L) is the coefficient-transcription resolution "
+        f"FLOOR only, NOT a measurement uncertainty; valid ONLY at T_K={T}")
 
 
 def water_dielectric_constant(T_K) -> float:

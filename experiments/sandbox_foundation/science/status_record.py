@@ -13,7 +13,8 @@
                            a full 40-hex commit and a STRICT ancestor of the run commit AND of every commit that added
                            its evidence file (preregistration before result); the registry AT prereg_commit already
                            holds the entry's id as a qualified PENDING entry; the evidence file exists at the run
-                           commit and hashes to evidence_sha256.  ANY malformed or unverifiable qualified entry =>
+                           commit and hashes to evidence_sha256.  A qualified entry of tier "W" is malformed by
+                           definition (tier W can never qualify).  ANY malformed or unverifiable qualified entry =>
                            INVALID_REGISTRY (never silently dropped); any verified qualified FAIL => FAIL (a sibling
                            PASS does not outvote it); PASS only for a verified qualified PASS; otherwise UNVERIFIED.
 
@@ -44,6 +45,8 @@ REGISTRY = HERE.parent / "holdouts" / "REGISTRY.json"
 
 PASS, FAIL, UNVERIFIED, NOT_EVALUATED, PENDING = "PASS", "FAIL", "UNVERIFIED", "NOT_EVALUATED", "PENDING"
 INVALID_REGISTRY = "INVALID_REGISTRY"
+#: registry tier that can never qualify (OPERATION XXV preregistration section 8)
+TIER_WEAK = "W"
 LANES = ("production_compat", "sandbox_numerical", "live_reference_solver", "measured_validation")
 #: the top-level ``name:`` of .github/workflows/ci.yml (pinned by test_xxv_science_status.py)
 CI_WORKFLOW_NAME = "CI"
@@ -176,6 +179,9 @@ def verify_holdout_entry(e: dict, run_full: str, repo=REPO, registry_rel=None) -
     """Every reason a QUALIFIED registry entry cannot be verified at ``run_full`` (empty list = verified).
     ``registry_rel``: the registry's repo-relative path, used to confirm the entry was PENDING at prereg_commit."""
     probs = []
+    if isinstance(e.get("tier"), str) and e["tier"].strip().upper() == TIER_WEAK:
+        probs.append("tier W (weak, nuisance-limited) can never qualify: it cannot by itself satisfy the 2.0-alpha "
+                     "gate whatever its outcome")
     if not (isinstance(e.get("id"), str) and e["id"]):
         probs.append("id must be a non-empty string")
     if e.get("outcome") not in ("PASS", "FAIL", "PENDING"):

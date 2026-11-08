@@ -25,6 +25,15 @@ less; the PHREEQC verification reports it per grid point.
 KINETIC SCALES (k_diss, kf, kLa) are ASSUMED_PARAMETER: they set how fast the steady state is reached, never where it is.
 ``logKc_shift`` exists ONLY for mutation controls; a nonzero shift marks the constant and the receipt as MUTATED.
 
+TEMPERATURE TAGS.  Every temperature-dependent quantity the builder consumes -- each log K, K_H, Kw, Davies A and the
+water density -- arrives as a T-TAGGED ``SourcedConstant``.  ``require_constants_at`` checks EVERY tag against the world
+temperature (``admissibility.TEMPERATURE_MATCH_TOL_K``) BEFORE any rate law, boundary or world is constructed and raises
+``OffTemperatureConstantError`` otherwise.  Before this, Davies A and rho_w travelled as bare floats the kernel's
+source-domain check never saw: a 25 C Davies A injected into a 313.15 K world shifted Ca by -0.53 % unrefused.
+``substitute`` (mutation controls only) replaces named slots with caller-supplied SourcedConstants that pass through the
+SAME check; it accepts no bare float.  A tag can be checked, not believed: a constant re-stamped with the right T_K but
+the wrong value is out of reach of this check (see the holdout runner's in-process boundary note).
+
 CLAIM LEVEL: NUMERICALLY_EXECUTABLE + WITHIN_DECLARED_FORMULA_DOMAIN.  Agreement with PHREEQC (which shares the P&B
 constants) is model-vs-model verification, never validation against nature.
 """
@@ -38,7 +47,8 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from experiments.sandbox_foundation.aqueous_equilibrium import SourcedConstant
+from experiments.sandbox_foundation.admissibility import TEMPERATURE_MATCH_TOL_K
+from experiments.sandbox_foundation.aqueous_equilibrium import SourcedConstant, _is_molar_standard_state
 from experiments.sandbox_foundation.claim_tiers import ASSUMED_PARAMETER
 from experiments.sandbox_foundation.gas_boundary_xxv import (
     GasLiquidBoundary,
@@ -47,7 +57,14 @@ from experiments.sandbox_foundation.gas_boundary_xxv import (
     verify_world_boundaries,
 )
 from experiments.sandbox_foundation.general_coupled import Compartment
-from experiments.sandbox_foundation.general_kernel import ChemicalSystem, KernelError, Phase, Reaction, Species
+from experiments.sandbox_foundation.general_kernel import (
+    ChemicalSystem,
+    KernelError,
+    Phase,
+    Reaction,
+    SourceDomainError,
+    Species,
+)
 from experiments.sandbox_foundation.solid_equilibrium import ActivityReversibleRate, ActivitySolubilityRate
 from experiments.sandbox_foundation.standard_state import aqueous_nu
 from experiments.sandbox_foundation.temperature_law_xxv import (
@@ -59,7 +76,7 @@ from experiments.sandbox_foundation.temperature_law_xxv import (
     PB82_LOG_KC,
     PHREEQC_DAT_KW,
     davies_A,
-    water_density_kg_per_L,
+    water_density,
 )
 
 MODEL_NAME = "open_calcite_xxv"
@@ -90,6 +107,20 @@ class OpenCalciteError(KernelError):
 
 class SteadyStateNotCertifiedError(OpenCalciteError):
     """The integration did not reach a state satisfying every equilibrium residual to EQ_RTOL."""
+
+
+class OffTemperatureConstantError(OpenCalciteError, SourceDomainError):
+    """A temperature-dependent quantity is untagged (not a SourcedConstant) or was produced for another temperature."""
+
+
+#: the builder's temperature-dependent slots, by the name each carries in the receipt's constants list
+KC_SLOT = "Kc_calcite"
+KH_SLOT = "KH_CO2"
+DAVIES_A_SLOT = "davies_A"
+RHO_W_SLOT = "rho_w"
+SPECIATION_SLOTS = ("K HCO3- formation", "K CO2(aq) formation", "K water formation")
+ION_PAIR_SLOTS = ("K CaCO3(aq) pair", "K CaHCO3+ pair")
+SLOTS = (KC_SLOT,) + SPECIATION_SLOTS + ION_PAIR_SLOTS + (KH_SLOT, DAVIES_A_SLOT, RHO_W_SLOT)
 
 
 # ------------------------------------------------------------------------------------------------ species
@@ -165,12 +196,41 @@ class _Assembled:
     rxns: tuple
     constants: tuple
     davies_A: SourcedConstant
-    rho_w: float
+    rho_w: SourcedConstant
+    substituted: tuple = ()
+
+
+def require_constants_at(T_K, tagged: dict) -> None:
+    """Refuse unless every value in ``tagged`` ({slot: value}) is a SourcedConstant whose T_K is within
+    TEMPERATURE_MATCH_TOL_K of the world temperature.  Called BEFORE any rate law is constructed."""
+    T = _finite(T_K, "T_K")
+    bad = []
+    for slot, c in tagged.items():
+        if type(c) is not SourcedConstant:
+            bad.append((slot, f"UNTAGGED {type(c).__name__}"))
+            continue
+        t = c.T_K
+        if isinstance(t, bool) or not isinstance(t, (int, float)) or not math.isfinite(t) \
+                or abs(float(t) - T) > TEMPERATURE_MATCH_TOL_K:
+            bad.append((slot, t))
+    if bad:
+        raise OffTemperatureConstantError(
+            f"world temperature {T} K: temperature-dependent quantities {bad} (slot, produced-for T_K) are untagged or "
+            f"were produced for another temperature (tol {TEMPERATURE_MATCH_TOL_K} K); refusing before any rate law "
+            f"is constructed")
+
+
+def _substituted_row(slot: str, c: SourcedConstant) -> dict:
+    return {"name": slot, "substituted": True, "mutated": True, "T_K": c.T_K, "value": c.value, "units": c.units,
+            "constant_name": c.name, "status": c.status, "source": c.source}
 
 
 def assemble_open_calcite_world(T_K, pCO2_atm, *, logKc_shift=0.0, include_ion_pairs=True, spectator_nacl_M=0.0,
-                                kLa_per_s=KLA_DEFAULT_PER_S, k_diss=K_DISS_DEFAULT, kf=KF_DEFAULT) -> _Assembled:
-    """The un-integrated world (for inspection / mutation tests).  Refuses out-of-domain T, pCO2."""
+                                kLa_per_s=KLA_DEFAULT_PER_S, k_diss=K_DISS_DEFAULT, kf=KF_DEFAULT,
+                                substitute=None) -> _Assembled:
+    """The un-integrated world (for inspection / mutation tests).  Refuses out-of-domain T, pCO2, and any
+    temperature-dependent quantity not tagged for T (``require_constants_at``).  ``substitute`` ({slot: SourcedConstant},
+    slots in SLOTS) exists ONLY for mutation controls; every substituted constant goes through the same tag check."""
     T = _finite(T_K, "T_K")
     p = _finite(pCO2_atm, "pCO2_atm")
     shift = _finite(logKc_shift, "logKc_shift")
@@ -178,17 +238,21 @@ def assemble_open_calcite_world(T_K, pCO2_atm, *, logKc_shift=0.0, include_ion_p
         raise OpenCalciteError(f"pCO2 {p} atm outside (0, {PCO2_MAX_ATM}] atm ({PCO2_DOMAIN_BASIS})")
     cfg = _config(include_ion_pairs=include_ion_pairs, spectator_nacl_M=spectator_nacl_M, kLa_per_s=kLa_per_s,
                   k_diss=k_diss, kf=kf)
+    sub = {} if substitute is None else substitute
+    if not isinstance(sub, dict):
+        raise OpenCalciteError("substitute must be a dict {slot: SourcedConstant}")
+    allowed = set(SLOTS) - (set() if cfg["include_ion_pairs"] else set(ION_PAIR_SLOTS))
+    if set(sub) - allowed:
+        raise OpenCalciteError(f"substitute slots {sorted(set(sub) - allowed)} are not among {sorted(allowed)}")
+    if KC_SLOT in sub and shift != 0.0:
+        raise OpenCalciteError("substituting Kc and shifting it in the same run is refused (one mutation at a time)")
     sp = open_calcite_species(cfg["spectator_nacl_M"] > 0)
-    A = davies_A(T)
-    rho = water_density_kg_per_L(T)
     H2O = sp["H2O"]
-    rows = []
+    # 1. every temperature-dependent quantity, as a tagged constant (nothing is constructed from them yet)
+    tagged = {DAVIES_A_SLOT: davies_A(T), RHO_W_SLOT: water_density(T)}
+    rows = {}
     st_cal = ((sp["calcite"], -1), (sp["Ca"], 1), (sp["CO3"], 1))
-    ksp, row = _law_constant(PB82_LOG_KC, T, st_cal, (), "Kc_calcite", shift=shift)
-    rows.append(row)
-    rxns = [Reaction("calcite dissolution", st_cal,
-                     ActivitySolubilityRate(cfg["k_diss"], ksp, st_cal, davies_A=A.value,
-                                            ionic_strength_max=IONIC_STRENGTH_MAX))]
+    tagged[KC_SLOT], rows[KC_SLOT] = _law_constant(PB82_LOG_KC, T, st_cal, (), KC_SLOT, shift=shift)
     spec = [
         ("HCO3- formation", PB82_K2.reversed("log_K_HCO3_formation_PB82", "CO3-2 + H+ = HCO3-"),
          ((sp["CO3"], -1), (sp["H"], -1), (sp["HCO3"], 1)), ()),
@@ -203,20 +267,35 @@ def assemble_open_calcite_world(T_K, pCO2_atm, *, logKc_shift=0.0, include_ion_p
             ("CaHCO3+ pair", PB82_CAHCO3, ((sp["Ca"], -1), (sp["HCO3"], -1), (sp["CaHCO3"], 1)), ()),
         ]
     for nm, law, st, unit in spec:
-        K, row = _law_constant(law, T, st, unit, "K " + nm)
-        rows.append(row)
-        rxns.append(Reaction(nm, st, ActivityReversibleRate(cfg["kf"], K, st, unit_activity=unit, davies_A=A.value,
-                                                            ionic_strength_max=IONIC_STRENGTH_MAX)))
+        tagged["K " + nm], rows["K " + nm] = _law_constant(law, T, st, unit, "K " + nm)
+    tagged[KH_SLOT] = PB82_KH_CO2.sourced_constant(T, basis="molal")    # what GasLiquidBoundary.from_law evaluates
+    for slot, c in sub.items():
+        tagged[slot] = c
+    # 2. every tag must belong to the world temperature, BEFORE any rate law / boundary / world exists
+    require_constants_at(T, tagged)
+    A, rho = tagged[DAVIES_A_SLOT], tagged[RHO_W_SLOT]
+    # 3. construction, from the verified constants only
+    rxns = [Reaction("calcite dissolution", st_cal,
+                     ActivitySolubilityRate(cfg["k_diss"], tagged[KC_SLOT], st_cal, davies_A=A.value,
+                                            ionic_strength_max=IONIC_STRENGTH_MAX))]
+    for nm, _law, st, unit in spec:
+        rxns.append(Reaction(nm, st, ActivityReversibleRate(cfg["kf"], tagged["K " + nm], st, unit_activity=unit,
+                                                            davies_A=A.value, ionic_strength_max=IONIC_STRENGTH_MAX)))
     species = [s for k, s in sp.items() if cfg["include_ion_pairs"] or k not in ("CaCO3aq", "CaHCO3")]
     cell = Compartment("cell", ChemicalSystem(species, rxns, VOLUME_L))
-    gas = GasLiquidBoundary.from_law(PB82_KH_CO2, T, name="pCO2 reservoir", compartment="cell", dissolved=sp["CO2"],
-                                     p_atm=p, kLa_per_s=cfg["kLa_per_s"], volume_L=VOLUME_L)
-    rows.append({"name": "KH_CO2", "law": PB82_KH_CO2.name, "reaction_as_written": PB82_KH_CO2.reaction,
-                 "tier": PB82_KH_CO2.tier, "T_K": T, "basis": "molal law -> molar target via rho_w(T)",
-                 "log10K_molal": PB82_KH_CO2.log10_K(T), "log10K_molar": math.log10(gas.henry_molar()),
-                 "uncertainty_log10": PB82_KH_CO2.uncertainty_log10(T)[0],
-                 "uncertainty_kind": PB82_KH_CO2.uncertainty_log10(T)[1], "law_digest": PB82_KH_CO2.digest(),
-                 "source": PB82_KH_CO2.source, "mutated": False})
+    henry = tagged[KH_SLOT]
+    gas = GasLiquidBoundary("pCO2 reservoir", "cell", sp["CO2"], henry,
+                            "molar" if _is_molar_standard_state(henry.units) else "molal", p, cfg["kLa_per_s"], VOLUME_L)
+    rows[KH_SLOT] = {"name": KH_SLOT, "law": PB82_KH_CO2.name, "reaction_as_written": PB82_KH_CO2.reaction,
+                     "tier": PB82_KH_CO2.tier, "T_K": T, "basis": "molal law -> molar target via rho_w(T)",
+                     "log10K_molal": PB82_KH_CO2.log10_K(T), "log10K_molar": math.log10(gas.henry_molar()),
+                     "uncertainty_log10": PB82_KH_CO2.uncertainty_log10(T)[0],
+                     "uncertainty_kind": PB82_KH_CO2.uncertainty_log10(T)[1], "law_digest": PB82_KH_CO2.digest(),
+                     "source": PB82_KH_CO2.source, "mutated": False}
+    for slot, c in sub.items():
+        if slot in rows:
+            rows[slot] = _substituted_row(slot, c)
+    order = [KC_SLOT] + ["K " + nm for nm, *_ in spec] + [KH_SLOT]
     world = build_open_world([cell], [gas], T)
     V = VOLUME_L
     initial = {sp["calcite"]: SOLID_MOL, H2O: N_WATER_MOL, sp["H"]: 1e-7 * V, sp["OH"]: 1e-7 * V,
@@ -224,7 +303,8 @@ def assemble_open_calcite_world(T_K, pCO2_atm, *, logKc_shift=0.0, include_ion_p
     if "Na" in sp:
         initial[sp["Na"]] = cfg["spectator_nacl_M"] * V
         initial[sp["Cl"]] = cfg["spectator_nacl_M"] * V
-    return _Assembled(world, sp, {"cell": initial}, gas, tuple(rxns), tuple(rows), A, rho)
+    return _Assembled(world, sp, {"cell": initial}, gas, tuple(rxns), tuple(rows[k] for k in order), A, rho,
+                      tuple(sorted(sub)))
 
 
 # ------------------------------------------------------------------------------------------------ residuals
@@ -308,11 +388,21 @@ def model_identity_digest(*, include_ion_pairs=True, spectator_nacl_M=0.0, kLa_p
     """sha256 over (model name/version, the code closure, every temperature law's full descriptor, and every structural
     and numerical parameter).  The STATE (T_K, pCO2, logKc_shift) is not in it: it is the model a preregistration pins;
     each result's run_identity_digest binds this digest to its state."""
+    return model_identity_digest_for_code(code_closure(), include_ion_pairs=include_ion_pairs,
+                                          spectator_nacl_M=spectator_nacl_M, kLa_per_s=kLa_per_s, k_diss=k_diss, kf=kf)
+
+
+def model_identity_digest_for_code(code: dict, *, include_ion_pairs=True, spectator_nacl_M=0.0,
+                                   kLa_per_s=KLA_DEFAULT_PER_S, k_diss=K_DISS_DEFAULT, kf=KF_DEFAULT) -> str:
+    """The digest of ``model_identity_digest`` over a GIVEN code closure ({module: sha256}).  A caller that has read
+    the closure bytes once (to bind them to the running code) digests exactly those bytes, not a second disk read."""
+    if not isinstance(code, dict) or set(code) != set(code_closure()):
+        raise OpenCalciteError("code must be {module: sha256} over exactly the model's code closure")
     cfg = _config(include_ion_pairs=include_ion_pairs, spectator_nacl_M=spectator_nacl_M, kLa_per_s=kLa_per_s,
                   k_diss=k_diss, kf=kf)
     laws = [PB82_LOG_KC, PB82_K1, PB82_K2, PB82_KH_CO2, PHREEQC_DAT_KW] + (
         [PB82_CACO3, PB82_CAHCO3] if cfg["include_ion_pairs"] else [])
-    payload = {"model": MODEL_NAME, "version": MODEL_VERSION, "code": code_closure(),
+    payload = {"model": MODEL_NAME, "version": MODEL_VERSION, "code": dict(sorted(code.items())),
                "laws": [repr(law.descriptor()) for law in laws], "config": cfg}
     return hashlib.sha256(_canon(payload).encode()).hexdigest()
 
@@ -348,11 +438,14 @@ def _summarise(asm: _Assembled, amounts: dict) -> dict:
 
 
 def build_open_calcite_world(T_K, pCO2_atm, *, logKc_shift=0.0, include_ion_pairs=True, spectator_nacl_M=0.0,
-                             kLa_per_s=KLA_DEFAULT_PER_S, k_diss=K_DISS_DEFAULT, kf=KF_DEFAULT) -> OpenCalciteResult:
+                             kLa_per_s=KLA_DEFAULT_PER_S, k_diss=K_DISS_DEFAULT, kf=KF_DEFAULT,
+                             substitute=None) -> OpenCalciteResult:
     """Assemble the open world at (T_K, pCO2_atm), integrate it to a CERTIFIED steady state, and return the composition
-    with a receipt naming every constant (tier, T_K, basis), the activity model, the ledger and the identity digests."""
+    with a receipt naming every constant (tier, T_K, basis), the activity model, the ledger and the identity digests.
+    ``substitute``: see ``assemble_open_calcite_world`` (mutation controls only; marks the run MUTATED)."""
     asm = assemble_open_calcite_world(T_K, pCO2_atm, logKc_shift=logKc_shift, include_ion_pairs=include_ion_pairs,
-                                      spectator_nacl_M=spectator_nacl_M, kLa_per_s=kLa_per_s, k_diss=k_diss, kf=kf)
+                                      spectator_nacl_M=spectator_nacl_M, kLa_per_s=kLa_per_s, k_diss=k_diss, kf=kf,
+                                      substitute=substitute)
     T = float(T_K)
     state = asm.initial
     chunks, residuals, traj = [], None, None
@@ -381,17 +474,20 @@ def build_open_calcite_world(T_K, pCO2_atm, *, logKc_shift=0.0, include_ion_pair
     cfg = dict(include_ion_pairs=include_ion_pairs, spectator_nacl_M=spectator_nacl_M, kLa_per_s=kLa_per_s,
                k_diss=k_diss, kf=kf)
     mid = model_identity_digest(**cfg)
-    run_id = hashlib.sha256(_canon({"model_identity_digest": mid, "T_K": T, "pCO2_atm": float(pCO2_atm),
-                                    "logKc_shift": float(logKc_shift)}).encode()).hexdigest()
-    rho = asm.rho_w
+    run_state = {"model_identity_digest": mid, "T_K": T, "pCO2_atm": float(pCO2_atm), "logKc_shift": float(logKc_shift)}
+    if asm.substituted:
+        run_state["substitute"] = {k: repr(substitute[k]) for k in asm.substituted}
+    run_id = hashlib.sha256(_canon(run_state).encode()).hexdigest()
+    rho = asm.rho_w.value
     receipt = {
         "model": MODEL_NAME, "version": MODEL_VERSION, "model_identity_digest": mid, "run_identity_digest": run_id,
         "state": {"T_K": T, "pCO2_atm": float(pCO2_atm), "logKc_shift": float(logKc_shift)},
-        "mutated": float(logKc_shift) != 0.0, "config": _config(**cfg),
+        "mutated": float(logKc_shift) != 0.0 or bool(asm.substituted), "substituted_slots": list(asm.substituted),
+        "config": _config(**cfg),
         "constants": list(asm.constants),
         "davies_A": {"value": asm.davies_A.value, "status": asm.davies_A.status, "T_K": asm.davies_A.T_K,
                      "source": asm.davies_A.source},
-        "rho_w_kg_per_L": rho, "gas_boundary": {"name": asm.gas.name, "p_atm": asm.gas.p_atm,
+        "rho_w_kg_per_L": rho, "rho_w_T_K": asm.rho_w.T_K, "gas_boundary": {"name": asm.gas.name, "p_atm": asm.gas.p_atm,
                                                 "c_sat_M": asm.gas.target_conc_molar(), "kLa_tier": asm.gas.kLa_tier,
                                                 "digest": asm.gas.digest()},
         "ion_pairs": {"included": bool(include_ion_pairs), "CaOH+": "OMITTED (no temperature law in either database)"},

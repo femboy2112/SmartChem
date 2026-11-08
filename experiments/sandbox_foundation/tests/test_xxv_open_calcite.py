@@ -7,7 +7,9 @@ PASS = (1) every constant is stamped with the world temperature and named in the
 (2) refusal outside 273.15-363.15 K and above 1 atm pCO2, and the kernel refuses an off-temperature world; (3) a
 certified steady state whose ledger closes with the boundary term; (4) independent of kLa and k_diss; (5) dCa/dpCO2 > 0
 and dCa/dT < 0 on the allowed grid; (6) logKc_shift = +0.30 raises Ca by ~10^0.1 (cube-root law); (7) the identity
-digest binds code + parameters; (8) live PHREEQC agreement (model-vs-model), skipped where phreeqpython is absent.
+digest binds code + parameters; (8) live PHREEQC agreement (model-vs-model), skipped where phreeqpython is absent;
+(9) every temperature-dependent quantity (each log K, K_H, Davies A, rho_w) is a T-tagged SourcedConstant checked against
+the world temperature BEFORE any rate law exists, so a 25 C value of any of them is refused (XXV runner review, 3).
 """
 from __future__ import annotations
 
@@ -17,6 +19,8 @@ import math
 import pytest
 
 from experiments.sandbox_foundation import open_calcite_xxv as OC
+from experiments.sandbox_foundation import temperature_law_xxv as TL
+from experiments.sandbox_foundation.aqueous_equilibrium import DAVIES_A_25C, SourcedConstant
 from experiments.sandbox_foundation.benchmarks.open_calcite_xxv import run_open_calcite_xxv as HV
 from experiments.sandbox_foundation.gas_boundary_xxv import GasBoundaryTemperatureError, build_open_world
 from experiments.sandbox_foundation.general_coupled import CoupledSourceDomainError, CoupledWorld
@@ -155,3 +159,70 @@ def test_live_phreeqc_agreement_model_vs_model(T, p):
     d = row["rel_diff_vs_pb82"]
     assert abs(d["Ca_total"]) < 0.02 and abs(d["DIC"]) < 0.02 and abs(d["pH_abs_diff"]) < 0.01, d
     assert abs(row["phreeqc_pb82_co2"]["si_calcite"]) < 1e-6
+
+
+# --- XXV runner review finding 3: Davies A and rho_w were bare floats the temperature check never saw
+_OFF = getattr(OC, "OffTemperatureConstantError", SourceDomainError)
+
+
+def _no_construction(monkeypatch):
+    """Make any rate-law / boundary / world construction fail loudly: a refusal must come BEFORE all of them."""
+    def boom(*a, **k):
+        raise AssertionError("constructed before the temperature tags were checked")
+    for name in ("ActivitySolubilityRate", "ActivityReversibleRate", "GasLiquidBoundary", "build_open_world"):
+        monkeypatch.setattr(OC, name, boom)
+
+
+def test_every_temperature_dependent_quantity_arrives_tagged():
+    asm = OC.assemble_open_calcite_world(*_state(313.15, 0.1))
+    assert type(asm.davies_A) is SourcedConstant and asm.davies_A.T_K == 313.15
+    assert type(asm.rho_w) is SourcedConstant and asm.rho_w.T_K == 313.15
+    assert asm.gas.henry.T_K == 313.15
+    assert asm.rho_w.value == TL.water_density_kg_per_L(313.15)
+
+
+@pytest.mark.parametrize("patch", ["davies_A", "water_density", "Kc", "Kw"])
+def test_a_25C_value_injected_into_a_313K_world_is_refused_before_construction(monkeypatch, patch):
+    T, p = _state(313.15, 0.1)
+    orig = OC._law_constant
+    if patch == "davies_A":                                     # the reviewer's p2_c3 (b): -0.53 % in Ca, unrefused
+        monkeypatch.setattr(OC, "davies_A", lambda T_K: DAVIES_A_25C)
+    elif patch == "water_density":
+        monkeypatch.setattr(OC, "water_density", lambda T_K: TL.water_density(298.15), raising=False)
+    else:
+        target = {"Kc": "Kc_calcite", "Kw": "K water formation"}[patch]
+
+        def lc(law, T_K, st, unit, name, shift=0.0):
+            return orig(law, 298.15 if name == target else T_K, st, unit, name, shift=shift)
+        monkeypatch.setattr(OC, "_law_constant", lc)
+    _no_construction(monkeypatch)
+    with pytest.raises(_OFF) as exc:
+        OC.assemble_open_calcite_world(T, p)
+    assert isinstance(exc.value, SourceDomainError) and "298.15" in str(exc.value)
+
+
+def test_substitution_is_typed_and_goes_through_the_same_check(monkeypatch):
+    T, p = _state(313.15, 0.1)
+    asm = OC.assemble_open_calcite_world(T, p)
+    at_T = {OC.DAVIES_A_SLOT: asm.davies_A, OC.RHO_W_SLOT: asm.rho_w, OC.KH_SLOT: asm.gas.henry}
+    for slot, c in at_T.items():                               # control: the at-T constant is accepted
+        sub = OC.assemble_open_calcite_world(T, p, substitute={slot: c})
+        assert sub.substituted == (slot,)
+    _no_construction(monkeypatch)
+    for bad in ({OC.DAVIES_A_SLOT: 0.509}, {OC.RHO_W_SLOT: 0.997047}, {OC.DAVIES_A_SLOT: DAVIES_A_25C},
+                {OC.RHO_W_SLOT: TL.water_density(298.15)}):
+        with pytest.raises(OC.OffTemperatureConstantError):
+            OC.assemble_open_calcite_world(T, p, substitute=bad)
+    for bad in ({"not a slot": DAVIES_A_25C}, [("davies_A", DAVIES_A_25C)]):
+        with pytest.raises(OC.OpenCalciteError):
+            OC.assemble_open_calcite_world(T, p, substitute=bad)
+    with pytest.raises(OC.OpenCalciteError, match="one mutation"):
+        OC.assemble_open_calcite_world(T, p, logKc_shift=0.1, substitute={OC.KC_SLOT: asm.rxns[0].rate_law.ksp})
+
+
+def test_a_tag_is_checked_not_believed_residual():
+    # documented boundary: a constant re-stamped with the RIGHT T_K but a 25 C value is out of reach of a tag check
+    T, p = _state(313.15, 0.1)
+    lying = SourcedConstant("davies_A", DAVIES_A_25C.value, 0.001, DAVIES_A_25C.units, T, "x", "SOURCED", "")
+    OC.require_constants_at(T, {"davies_A": lying})            # passes: the residual is recorded, not hidden
+    assert "checked, not believed" in OC.__doc__

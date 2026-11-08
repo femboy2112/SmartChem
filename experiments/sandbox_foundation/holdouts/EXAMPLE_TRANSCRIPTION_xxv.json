@@ -1,0 +1,19 @@
+{
+  "schema": "smartchem.research.measurement_transcription/xxv-1",
+  "note": "SYNTHETIC. Not a measurement. A schema example for EXAMPLE_PREREG_SCHEMA_xxv.json only; every number is invented. The runner reads measured.<quantity>.value and .u_2sigma and computes M = [value - u_2sigma, value + u_2sigma] itself.",
+  "uncertainty_convention": "two times the standard deviation (2 sigma) -- SYNTHETIC",
+  "measured": {
+    "Ca_tot_M": {
+      "value": 0.001,
+      "u_2sigma": 5e-05
+    },
+    "C_tot_M": {
+      "value": 0.002,
+      "u_2sigma": 0.0001
+    },
+    "pH": {
+      "value": 7.9,
+      "u_2sigma": 0.1
+    }
+  }
+}

@@ -156,3 +156,14 @@ def test_water_properties():
     for f in (TL.water_density_kg_per_L, TL.davies_A):
         with pytest.raises(SourceDomainError):
             f(272.0)
+
+
+def test_water_density_is_a_temperature_tagged_value():
+    # XXV runner review finding 3: rho_w used to travel as a bare float no temperature check could see
+    for T in (273.15, 298.15, 313.15, 363.15):
+        rho = TL.water_density(T)
+        assert type(rho).__name__ == "SourcedConstant" and rho.T_K == T and rho.status == "DERIVED"
+        assert rho.value == TL.water_density_kg_per_L(T)
+        assert 0 < rho.uncertainty < 1e-5 and "FLOOR only" in rho.note       # a resolution floor, labelled as one
+    with pytest.raises(SourceDomainError):
+        TL.water_density(424.0)

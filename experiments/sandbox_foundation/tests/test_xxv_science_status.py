@@ -241,6 +241,20 @@ def test_malformed_qualified_entries_invalidate_and_a_verified_fail_beats_a_pass
     assert sr.measured_lane(h.repo / "absent.json", h.run, repo=h.repo)["status"] == sr.UNVERIFIED
 
 
+def test_a_tier_W_entry_can_never_qualify(history):
+    # XXV runner review finding 11: a tier-W (weak, nuisance-limited) holdout cannot satisfy the 2.0-alpha gate whatever
+    # its outcome, so a registry that marks one qualified is itself malformed -- even when every git check verifies.
+    h = history
+    assert _lane(h, [_entry(h)])["status"] == sr.PASS                          # control: the same entry, no tier
+    for tier in ("W", " w "):
+        lane = _lane(h, [_entry(h, tier=tier)])
+        assert lane["status"] == sr.INVALID_REGISTRY, (tier, lane)
+        assert any("tier" in p for p in lane["invalid_entries"][0]["problems"])
+    assert _lane(h, [_entry(h, tier="W", qualified=False)])["status"] == sr.UNVERIFIED     # recorded, not counted
+    note = json.loads((REPO / "experiments/sandbox_foundation/holdouts/REGISTRY.json").read_text())["schema_note"]
+    assert '\"tier\"' in note and "tier W" in note
+
+
 def test_a_registry_outside_the_repository_cannot_show_a_preregistration(history, tmp_path):
     lane = sr.measured_lane(_registry(tmp_path, [_entry(history)]), history.run, repo=history.repo)
     assert lane["status"] == sr.INVALID_REGISTRY

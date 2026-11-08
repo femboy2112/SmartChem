@@ -81,9 +81,15 @@ POSITIVES = [
     # r2 controls: still inside the safe set after the red-team repair
     ("cyclopentanol -> cyclopentene", "OC1CCCC1", "C1=CCCC1"),
     ("cyclooctanol -> cyclooctene", "OC1CCCCCCC1", "C1=CCCCCCC1"),
-    ("cyclohex-2-en-1-ol -> 1,3-cyclohexadiene", "OC1C=CCCC1", "C1=CC=CCC1"),
     ("cyclohexylmethanol -> methylenecyclohexane", "OCC1CCCCC1", "C=C1CCCCC1"),
     ("3-hydroxybutanal -> crotonaldehyde (beta-hydroxy carbonyl, deliberately in)", "CC(O)CC=O", "CC=CC=O"),
+    # r5 controls: the narrowed domain still vouches the textbook cases (beta-hydroxy carbonyl / nitrile / lactone)
+    ("2-phenylethanol -> styrene", "OCCc1ccccc1", "C=Cc1ccccc1"),
+    ("3-hydroxybutanoic acid -> crotonic acid", "CC(O)CC(=O)O", "CC=CC(=O)O"),
+    ("ethyl 3-hydroxybutanoate -> ethyl crotonate", "CCOC(=O)CC(C)O", "CCOC(=O)C=CC"),
+    ("3-hydroxybutanenitrile -> crotononitrile", "CC(O)CC#N", "CC=CC#N"),
+    ("3-hydroxycyclohexanone -> cyclohex-2-enone", "OC1CCCC(=O)C1", "O=C1C=CCCC1"),
+    ("alpha-(1-hydroxyethyl)-gamma-butyrolactone -> alpha-ethylidene lactone", "CC(O)C1CCOC1=O", "CC=C1CCOC1=O"),
 ]
 
 #: (label, reactants, products) -- every one must ABSTAIN overall, never vouch as dehydration.
@@ -134,6 +140,25 @@ ADVERSARIAL_STEPS = [
     ("beta-silyl alcohol (Peterson territory)", ("CC(O)C[Si](C)(C)C",), ("C=CC[Si](C)(C)C", WATER)),
     ("beta-silyl tertiary alcohol", ("CC(C)(O)C[Si](C)(C)C",), ("C=C(C)C[Si](C)(C)C", WATER)),
     ("beta-boryl alcohol (deboronation territory)", ("CC(O)CB(O)O",), ("C=CCB(O)O", WATER)),
+    # r4 red-team (dalembert): a LATENT leaving group one bond past radius two aromatises the product next step, a
+    # second hydroxyl anywhere, propargylic Meyer-Schuster substrates, a nearly-aromatic ring beside the edit (M, R, S)
+    ("cyclohex-3-ene-1,?-diol -> cyclohexa-2,4-dienol (-> benzene; M)", ("OC1C=CC(O)CC1",), ("OC1C=CC=CC1", WATER)),
+    ("4-chlorocyclohex-2-enol -> 5-chlorocyclohexa-1,3-diene (-> benzene; M)", ("OC1C=CC(Cl)CC1",),
+     ("ClC1C=CC=CC1", WATER)),
+    ("4-bromocyclohex-2-enol (M)", ("OC1C=CC(Br)CC1",), ("BrC1C=CC=CC1", WATER)),
+    ("4-acetoxycyclohex-2-enol (M)", ("OC1C=CC(OC(C)=O)CC1",), ("CC(=O)OC1C=CC=CC1", WATER)),
+    ("4-methoxycyclohex-2-enol (M)", ("OC1C=CC(OC)CC1",), ("COC1C=CC=CC1", WATER)),
+    ("3,5-dihydroxycyclohexanone -> 5-hydroxycyclohex-2-enone (-> phenol; M)", ("O=C1CC(O)CC(O)C1",),
+     ("O=C1C=CCC(O)C1", WATER)),
+    ("pentane-2,4-diol -> pent-4-en-2-ol (1,3-diol, far side; M)", ("CC(O)CC(O)C",), ("C=CCC(O)C", WATER)),
+    ("2-methylpentane-2,4-diol (1,3-diol; M)", ("CC(C)(O)CC(O)C",), ("C=C(C)CC(O)C", WATER)),
+    ("butane-1,4-diol -> but-3-en-1-ol (acid gives THF; M)", ("OCCCCO",), ("C=CCCO", WATER)),
+    ("pent-3-yn-2-ol -> enyne (Meyer-Schuster; S)", ("CC(O)C#CC",), ("C=CC#CC", WATER)),
+    ("oct-1-yn-3-ol -> enyne (Meyer-Schuster; S)", ("CCCCCC(O)C#C",), ("CCCCC=CC#C", WATER)),
+    ("1-(cyclohexa-2,4-dienyl)ethanol -> vinyl diene (-> ethylbenzene; R)", ("CC(O)C1C=CC=CC1",),
+     ("C=CC1C=CC=CC1", WATER)),
+    ("1-cyclooctatetraenylethanol -> vinyl-COT (bond-shift / homotropylium; R)", ("CC(O)C1=CC=CC=CC=C1",),
+     ("C=CC1=CC=CC=CC=C1", WATER)),
 ]
 
 #: ACCEPTED COVERAGE LOSS (r2): real dehydrations now outside the positive safe set.  They must ABSTAIN -- pinned so a
@@ -156,6 +181,13 @@ COVERAGE_LOSS_STEPS = [
     ("1-(2-furyl)ethanol -> 2-vinylfuran (heteroaryl; e')", ("CC(O)c1ccco1",), ("C=Cc1ccco1", WATER)),
     ("tetrahydropyran-4-ol -> 3,6-dihydro-2H-pyran (ring O; e')", ("OC1CCOCC1",), ("C1=CCOCC1", WATER)),
     ("2,2-dimethyl-2H-pyran (e', f')", ("CC1(C)CC(O)C=CO1",), ("CC1(C)C=CC=CO1", WATER)),
+    # r5: (R) / (S) / (M) -- real dehydrations the narrowed domain gives up
+    ("cyclohex-2-en-1-ol -> 1,3-cyclohexadiene (6-ring k=2; R)", ("OC1C=CCCC1",), ("C1=CC=CCC1", WATER)),
+    ("2-methylbut-3-yn-2-ol -> isopropenylacetylene (Rupe intermediate; S)", ("CC(C)(O)C#C",), ("C=C(C)C#C", WATER)),
+    ("1-(2-naphthyl)ethanol -> 2-vinylnaphthalene (fused ring next door; R)", ("CC(O)c1ccc2ccccc2c1",),
+     ("C=Cc1ccc2ccccc2c1", WATER)),
+    ("4-hydroxycyclohexanone -> cyclohex-3-enone (carbonyl not on C_beta; M)", ("OC1CCC(=O)CC1",),
+     ("O=C1CCC=CC1", WATER)),
 ]
 
 
@@ -236,7 +268,7 @@ def test_the_retro_from_benzene_and_allene_is_empty_but_exhaustive():
 
 def test_safe_set_rule_attribution():
     """Each r2 rule fires on the structure it names (so an abstain is the rule, not a mis-drawn SMILES)."""
-    from smartchem.elimination import _Rings, _adjacency, _aromatisable_ring
+    from smartchem.elimination import _Rings, _adjacency, _benzenoid, _ring_saturation_is_safe
 
     def rings(smi):
         m = P(smi)
@@ -254,12 +286,26 @@ def test_safe_set_rule_attribution():
     m = P("C=C1C=CCC=C1")                                   # p-isotoluene ring: one sp3 CH2 short of conjugated
     adj = _adjacency(m)
     ring = {i for i, a in enumerate(m.atoms) if a == "C" and len([n for n, _ in adj[i] if m.atoms[n] == "C"]) >= 2}
-    assert _aromatisable_ring(ring, m.atoms, adj)          # (f')
+    # (R) on a PRODUCT ring (the "precursor" side is the same graph here, so the untouched-benzene allowance cannot
+    # apply unless the ring is benzenoid): one sp3 CH2 short of conjugated -> refused
+    assert not _ring_saturation_is_safe(ring, ring, m.atoms, adj, m.atoms, adj)
     m, r = rings("C=C1C=CC(C)(C)C=C1")                     # semibenzene: the one sp3 ring atom carries no H (r3)
     adj = _adjacency(m)
     ring = next(r.monocycle(i) for i in range(len(m.atoms)) if r.monocycle(i))
     assert len(ring) == 6
-    assert _aromatisable_ring(ring, m.atoms, adj)          # (f')
+    assert not _ring_saturation_is_safe(ring, ring, m.atoms, adj, m.atoms, adj)
+    m, r = rings("C1=CC=CCC1")                             # 1,3-cyclohexadiene: 6-ring with k = 2 -> refused (r5)
+    adj = _adjacency(m)
+    ring = next(r.monocycle(i) for i in range(len(m.atoms)) if r.monocycle(i))
+    assert not _ring_saturation_is_safe(ring, ring, m.atoms, adj, m.atoms, adj)
+    m, r = rings("C1=CCCCC1")                              # cyclohexene: k = 4 -> fine
+    adj = _adjacency(m)
+    ring = next(r.monocycle(i) for i in range(len(m.atoms)) if r.monocycle(i))
+    assert _ring_saturation_is_safe(ring, ring, m.atoms, adj, m.atoms, adj)
+    m, r = rings("Cc1ccccc1")                              # an untouched benzene ring is fine, and is benzenoid
+    adj = _adjacency(m)
+    ring = next(r.monocycle(i) for i in range(len(m.atoms)) if r.monocycle(i))
+    assert _benzenoid(ring, m.atoms, adj) and _ring_saturation_is_safe(ring, ring, m.atoms, adj, m.atoms, adj)
 
 
 def test_rule_e_prime_reads_two_bonds_and_excuses_only_a_beta_carbonyl():
@@ -385,7 +431,7 @@ def test_dehydration_without_a_catalyst_is_demoted_naming_the_role():
 
 @pytest.mark.parametrize("acid", ["conc. H2SO4", "Conc. H2SO4", "conc H2SO4", "concentrated sulfuric acid",
                                   "conc. H3PO4", "85% phosphoric acid", "85% H3PO4", "concentrated phosphoric acid",
-                                  "TsOH", "p-toluenesulfonic acid", "KHSO4", "alumina", "Al2O3"])
+                                  "TsOH", "p-toluenesulfonic acid", "KHSO4"])
 def test_a_whitelisted_acid_catalyst_clears_the_requirement(acid):
     assert ActivatorRole.ACID_DEHYDRATION_CATALYST in classify_activator_roles(acid)
     assert step_activator_blockers(_dehydration_step("OC1CCCCC1", "C1=CCCCC1", catalysts=(acid,))) == ()
@@ -395,13 +441,15 @@ def test_a_whitelisted_acid_catalyst_clears_the_requirement(acid):
                                    "sodium ethoxide", "Pd/C", "POCl3",
                                    # r2: an UNQUALIFIED or dilute mineral acid may be aqueous -- it must not clear
                                    "H2SO4", "sulfuric acid", "h2so4", "H3PO4", "phosphoric acid",
-                                   "dilute sulfuric acid", "CONC. H2SO4"])
+                                   "dilute sulfuric acid", "CONC. H2SO4",
+                                   # r4: bare alumina may be a chromatography adsorbent -- it must not clear
+                                   "alumina", "Al2O3", "aluminum oxide"])
 def test_an_unlisted_reagent_leaves_the_step_blocked(other):
     assert len(step_activator_blockers(_dehydration_step("OC1CCCCC1", "C1=CCCCC1", catalysts=(other,)))) == 1
 
 
 def test_the_acid_role_never_clears_another_classes_requirement():
-    for acid in ("conc. H2SO4", "TsOH", "alumina"):
+    for acid in ("conc. H2SO4", "TsOH", "KHSO4"):
         roles = classify_activator_roles(acid)
         assert roles == frozenset({ActivatorRole.ACID_DEHYDRATION_CATALYST}), acid
 

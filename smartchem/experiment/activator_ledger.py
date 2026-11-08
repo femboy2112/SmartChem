@@ -155,8 +155,9 @@ class ActivatorRole(enum.Enum):
     HYDROGEN_ACTIVATION_CATALYST = "hydrogen_activation_catalyst"
 
     #: A Bronsted / Lewis acid catalyst for the 1,2-dehydration of an alcohol to an alkene (#116) -- CONCENTRATED
-    #: H2SO4 / H3PO4 (never the unqualified or dilute acid), TsOH, KHSO4, or a solid acid such as gamma-alumina at
-    #: elevated temperature.  CATALYTIC, not consumed.  The ionisation / protonation of the hydroxyl that makes it a leaving group is the defining need of
+    #: H2SO4 / H3PO4 (never the unqualified or dilute acid), TsOH or KHSO4.  (Alumina is NOT on the list: the bare name
+    #: does not say activated gamma-alumina at 300-450 C rather than a chromatography adsorbent -- the same ambiguity
+    #: that keeps an unqualified "H2SO4" off it; #116 r4.)  CATALYTIC, not consumed.  The ionisation / protonation of the hydroxyl that makes it a leaving group is the defining need of
     #: the class; an alcohol does not lose water to an alkene at practical temperatures without one.
     ACID_DEHYDRATION_CATALYST = "acid_dehydration_catalyst"
 
@@ -169,7 +170,7 @@ ROLE_PHRASE: dict[ActivatorRole, str] = {
     ActivatorRole.DEPROTONATING_BASE: "stoichiometric base to form the alkoxide nucleophile (alkoxide / metal hydride / metal amide)",
     ActivatorRole.ACIDIC_PROTON_BASE: "stoichiometric base to deprotonate the acidic oxygen nucleophile -- a mild base suffices (carbonate / hydroxide / strong amine, or any alkoxide / hydride / amide)",
     ActivatorRole.HYDROGEN_ACTIVATION_CATALYST: "catalyst that activates molecular H2 for this C=N / C#N reduction -- a transition metal (Pd / Pt / Ni / Rh / Ru) OR an experimentally-validated metal-free frustrated-Lewis-pair catalyst (e.g. B(C6F5)3; Stephan et al. 2007)",
-    ActivatorRole.ACID_DEHYDRATION_CATALYST: "Bronsted/Lewis acid dehydration catalyst (conc. H2SO4 / conc. H3PO4 / TsOH / KHSO4 / alumina)",
+    ActivatorRole.ACID_DEHYDRATION_CATALYST: "Bronsted acid dehydration catalyst (conc. H2SO4 / conc. H3PO4 / TsOH / KHSO4)",
 }
 
 
@@ -197,7 +198,7 @@ _CASE_EXACT_SPELLING: dict[str, str] = {
     "conc. h2so4": "conc. H2SO4", "conc h2so4": "conc H2SO4", "concentrated h2so4": "concentrated H2SO4",
     "conc. h3po4": "conc. H3PO4", "conc h3po4": "conc H3PO4", "concentrated h3po4": "concentrated H3PO4",
     "85% h3po4": "85% H3PO4",
-    "tsoh": "TsOH", "p-tsoh": "p-TsOH", "khso4": "KHSO4", "al2o3": "Al2O3",
+    "tsoh": "TsOH", "p-tsoh": "p-TsOH", "khso4": "KHSO4",
 }
 
 #: Positive whitelist: normalized reagent names recognized as filling ``ENOLIZING_BASE``. Conservative -- every
@@ -284,12 +285,13 @@ _METAL_FREE_H2_CATALYST_NAMES: frozenset[str] = frozenset({
 
 #: Positive whitelist: normalized reagent names recognized as filling ``ACID_DEHYDRATION_CATALYST`` (#116) -- the
 #: textbook acid catalysts of alcohol -> alkene dehydration: CONCENTRATED sulfuric and phosphoric acid, p-toluenesulfonic
-#: acid, potassium bisulfate, and alumina (the vapour-phase solid-acid route).  Exact-match / case-certified like every
+#: acid and potassium bisulfate.  Exact-match / case-certified like every
 #: other set.  Deliberately conservative: an UNQUALIFIED "sulfuric acid" / "H2SO4" / "phosphoric acid" / "H3PO4" does
 #: NOT clear (dilute aqueous acid does not dehydrate an alcohol, and the name does not say which was used); nor does a
 #: dilute or other mineral acid, an arbitrary "acid" label, acetic acid, a stoichiometric dehydrating reagent (POCl3 /
 #: pyridine, Burgess, Martin sulfurane) or a base (the E1cB route of a beta-hydroxy carbonyl) -- each omission is a
-#: SAFE false-EXCLUDE (the step stays REAL_BUT_HARD, recoverable), never a false CLEAR.
+#: SAFE false-EXCLUDE (the step stays REAL_BUT_HARD, recoverable), never a false CLEAR.  Like every role in this
+#: ledger it certifies the ROLE only: it does not read the envelope's temperature, and every listed acid needs heat.
 _ACID_DEHYDRATION_CATALYST_NAMES: frozenset[str] = frozenset({
     "concentrated sulfuric acid", "conc. sulfuric acid", "conc sulfuric acid",
     "conc. h2so4", "conc h2so4", "concentrated h2so4",
@@ -297,7 +299,6 @@ _ACID_DEHYDRATION_CATALYST_NAMES: frozenset[str] = frozenset({
     "conc. h3po4", "conc h3po4", "concentrated h3po4", "85% h3po4",
     "p-toluenesulfonic acid", "para-toluenesulfonic acid", "tosic acid", "tsoh", "p-tsoh",
     "potassium bisulfate", "potassium hydrogen sulfate", "potassium hydrogensulfate", "khso4",
-    "alumina", "aluminium oxide", "aluminum oxide", "al2o3",
 })
 
 #: normalized name -> the roles it positively fills. Keyed so a future role just adds a set.
@@ -593,7 +594,7 @@ _assert_ledger_keys_are_live_classes()
 #: {ACID_DEHYDRATION_CATALYST}. This is deliberately NOT the lactonization / Fischer / imine "no entry" decision:
 #: those are equilibrium condensations that proceed (slowly) without a catalyst, so a requirement there was the
 #: base-rate trap. An alcohol does not lose water to an alkene at practical temperatures uncatalysed -- the hydroxyl
-#: must be protonated or bound to an acid site (conc. H2SO4 / conc. H3PO4, TsOH, KHSO4, hot alumina) before it leaves
+#: must be protonated or bound to an acid site (conc. H2SO4 / conc. H3PO4, TsOH, KHSO4) before it leaves
 #: -- so "no catalyst declared" is genuine absence of a known-necessary condition, and the undeclared step fails
 #: closed to REAL_BUT_HARD. The clearing whitelist is conservative (omission is the safe direction); after red-team
 #: review (2026-11-08, r2) only EXPLICITLY concentrated sulfuric / phosphoric acid spellings clear it -- an

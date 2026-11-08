@@ -20,21 +20,38 @@ THIS WITNESS'S ROUTE (each step deliberately different):
      (:func:`eligible_hydrations`), add H-OH as a raw graph and ask whether it is isomorphic to the precursor by this
      module's own refinement + backtracking matcher -- never ``Molecule.canonical`` / ``resonance_identity``.  An
      orientation is eligible only inside the same POSITIVE SAFE-SET production enforces (both alkene carbons sp2 with no
-     other multiple bond and only C/H substituents, not ring-conjugated; and conditions (a)-(f) of
-     :mod:`smartchem.elimination`: monocyclic-or-acyclic ring context, ring size >= 5, no ring <= 4 next door, no
-     quaternary or hydroxyl-bearing neighbour of the OH carbon, no aromatisable ring; and the r3 conditions (e')
-     carbon-only radius-2 neighbourhood, (f') at most one non-pi ring atom, (g) closed-shell unlabelled species --
-     the last by the witness's own valence table), decided by the witness's OWN
-     algorithms: Tarjan bridges + union-find ring systems, edge-deletion BFS ring sizes and ring paths -- where
-     production uses edge-deletion connectivity, ring-bond flood fill and vertex-deletion BFS.
+     other multiple bond and only C/H substituents, not ring-conjugated; and, read off the TARGET with
+     ``c_oh`` = C_alpha, ``c_h`` = C_beta, A(c_h) = the carbonyl / carboxyl / ester / nitrile carbons on ``c_h``
+     and E = their O/N atoms):
+       (M) a MOLECULE-WIDE heteroatom whitelist -- every non-C/H atom of the target is in E, so a remote OH, ether,
+           ester, halogen, N, S, Si, B, P ... anywhere refuses;
+       (a) monocyclic-or-acyclic ring context of ``c_oh`` / ``c_h``; (b) ring size >= 5; (c) no ring <= 4 next door;
+       (d) no quaternary and (e) no hydroxyl-bearing carbon neighbour of ``c_oh``;
+       (e') carbon-only radius-2 neighbourhood, A(c_h)'s own O/N excepted;
+       (R) RADIUS-1 RING SATURATION (replaces r3's (f')): every ring atom among ``c_oh``, ``c_h`` and their heavy
+           neighbours sits in a MONOCYCLIC system (no fused / bridged / spiro ring next door), and that ring is
+           either a benzenoid (6 C, each with exactly one in-ring double bond) containing neither alkene carbon -- an
+           untouched arene -- or keeps k > 2 (ring size 6 or 7) / k > 1 (any other size) atoms that are NOT
+           pi-capable in the target (pi-capable = any non-carbon heavy atom, or a carbon with a bond of order >= 2);
+       (S) no sp / cumulene carbon next door -- every carbon neighbour of ``c_oh`` / ``c_h`` outside A(c_h) has no
+           triple bond and at most one double bond;
+       (g) closed-shell unlabelled species, by the witness's own valence table),
+     decided by the witness's OWN algorithms: Tarjan bridges + union-find ring systems (a monocyclic system's atom
+     set is its ring), edge-deletion BFS ring sizes -- where production uses edge-deletion connectivity, ring-bond
+     flood fill and vertex-deletion BFS.
 The verdict is the conjunction 1-4; each check is exposed on :class:`DehydrationWitnessResult`.
 
 RESIDUAL SHARED ASSUMPTIONS (not zero): both routes read the same explicit-H Kekule ``Molecule`` graph and share the
 class DEFINITION (H-OH lost across two adjacent carbons, the new C=C carrying only C/H substituents, the safe-set
-conditions (a)-(g)).  Independence is in the direction (retro vs forward), the detection algorithms and
+conditions (a)-(g), (M), (R), (S)).  Independence is in the direction (retro vs forward), the detection algorithms and
 the identity test.  Because the isomorphism is exact on Kekule bond orders, a substituted arene drawn with
 DIFFERENT Kekule assignments in precursor and target can make the witness say False where production (resonance
-identity) says True -- a disagreement in the safe direction, not a false accept.
+identity) says True -- a disagreement in the safe direction, not a false accept.  The round-5 conditions widen the
+shared surface rather than narrow it: the acyl signatures defining A(c_h) and E, the pi-capable predicate, the
+benzenoid predicate and the k thresholds (<= 2 for 6- and 7-rings, <= 1 otherwise) are taken from the same spec
+production implements, so a mistake IN that spec -- an over-generous excuse, a threshold one too low -- is
+common-mode and invisible to this cross-check.  The benzenoid test reads Kekule double bonds, but every Kekule
+spelling of an isolated benzene ring passes it, and fused arenes are refused before it is consulted.
 
 This module imports ONLY ``Molecule`` from ``smartchem.category``.
 """
@@ -246,29 +263,34 @@ class _RingFacts:
         sizes = [z for z in sizes if z is not None]
         return min(sizes) if sizes else None
 
-
-def _ring_atoms_through(g: Graph, a: int, b: int) -> list[int]:
-    """The atoms of the smallest ring through bond ``a--b`` (BFS parent chain from ``a`` to ``b`` without that bond)."""
-    prev = {a: -1}
-    queue = deque([a])
-    while queue:
-        cur = queue.popleft()
-        for nxt in g[cur]:
-            if {cur, nxt} == {a, b} or nxt in prev:
-                continue
-            prev[nxt] = cur
-            if nxt == b:
-                path = [b]
-                while path[-1] != a:
-                    path.append(prev[path[-1]])
-                return path
-            queue.append(nxt)
-    return []
+    def ring_system(self, x: int) -> tuple[frozenset[int], bool] | None:
+        """``(atoms of x's ring system, is_monocyclic)``, or ``None`` when ``x`` lies on no ring.  A monocyclic system's
+        atom set IS its single ring -- no path search needed, the union-find already drew the outline."""
+        if not self.ring_neighbours(x):
+            return None
+        r = self._root[x]
+        return frozenset(self._members[r]), self._edges[r] == len(self._members[r])
 
 
 def _orientation_is_safe(atoms, g: Graph, rf: _RingFacts, pi: set[int], c_oh: int, c_h: int) -> bool:
-    """The safe-set conditions (a)-(f') for hydrating ``c_oh = c_h`` (OH on ``c_oh``), read off the TARGET.  Ring
-    structure and every neighbour other than the two alkene carbons are the same in target and precursor."""
+    """The safe-set conditions for hydrating ``c_oh = c_h`` (OH on ``c_oh``), read off the TARGET.  Ring structure and
+    every neighbour other than the two alkene carbons are the same in target and precursor.
+
+    (M) every non-C/H atom of the molecule is in E, the O/N excused by an acyl carbon in A(c_h)
+        (:func:`_excused_acyl`) -- a remote OH, ether, ester elsewhere, halogen, N, S, Si, B, P ... refuses;
+    (a) ``c_oh`` and ``c_h`` are each acyclic or in a monocyclic ring system; (b) that ring has >= 5 members;
+    (c) no carbon neighbour of either (other than each other) lies on a ring of size <= 4;
+    (d) no quaternary carbon neighbour of ``c_oh``; (e) no hydroxyl-bearing carbon neighbour of ``c_oh``;
+    (R) for every ring atom of S = {c_oh, c_h} + their heavy neighbours: its ring system is monocyclic, and that ring R
+        is either benzenoid without ``c_oh`` / ``c_h`` (an untouched arene) or has k > 2 (|R| in 6, 7) / k > 1 (any
+        other size) atoms that are not pi-capable in the target;
+    (S) every carbon neighbour of ``c_oh`` / ``c_h`` outside A(c_h) (and not the partner) carries no triple bond and
+        at most one double bond -- no sp / cumulene carbon next door;
+    (e') the radius-2 neighbourhood is carbon, A(c_h)'s own O/N excepted (:func:`_radius_two_is_carbon`)."""
+    excused = _excused_acyl(atoms, g, c_oh, c_h)
+    allowed = set().union(*excused.values())
+    if any(el not in ("C", "H") and i not in allowed for i, el in enumerate(atoms)):
+        return False                                   # (M) a heteroatom the class has no excuse for, anywhere
     for x in (c_oh, c_h):
         if not rf.is_monocyclic_or_acyclic(x):
             return False                               # (a) bridgehead / fusion / spiro / polycyclic system
@@ -289,15 +311,61 @@ def _orientation_is_safe(atoms, g: Graph, rf: _RingFacts, pi: set[int], c_oh: in
             return False                               # (d) quaternary neighbour of C_alpha
         if any(atoms[o] == "O" and any(atoms[h] == "H" for h in g[o]) for o in g[n]):
             return False                               # (e) vicinal hydroxyl
-    for x in (c_oh, c_h):
-        nbrs = rf.ring_neighbours(x)
-        if not nbrs:
+    shell = {c_oh, c_h} | {n for x in (c_oh, c_h) for n in g[x] if atoms[n] != "H"}
+    for v in sorted(shell):
+        system = rf.ring_system(v)
+        if system is None:
             continue
-        ring = _ring_atoms_through(g, x, nbrs[0])
-        if sum(1 for v in ring if v not in pi) <= 1:
-            return False                               # (f') all ring atoms but at most one pi-capable
+        ring, monocyclic = system
+        if not monocyclic:
+            return False                               # (R) fused / bridged / spiro system at radius one
+        if c_oh not in ring and c_h not in ring and _is_benzenoid(atoms, g, ring):
+            continue                                   # (R) an untouched arene: a bystander, not a patient
+        k = sum(1 for u in ring if u not in pi)
+        if k <= (2 if len(ring) in (6, 7) else 1):
+            return False                               # (R) too few saturated atoms: aromatisable / tautomer-prone
+    for x in (c_oh, c_h):
+        for n in g[x]:
+            if n in (c_oh, c_h) or atoms[n] != "C" or n in excused:
+                continue
+            orders = list(g[n].values())
+            if 3 in orders or orders.count(2) > 1:
+                return False                           # (S) sp / cumulene carbon next door
     if not _radius_two_is_carbon(atoms, g, c_oh, c_h):
         return False                                   # (e')
+    return True
+
+
+#: The heteroatom signatures (sorted (element, bond order) pairs) of an acyl carbon on ``c_h`` whose O/N are excused:
+#: carbonyl, carboxyl / ester, nitrile.  Anything else on that carbon and it excuses nothing.
+_ACYL_SIGNATURES = ([("O", 2)], [("O", 1), ("O", 2)], [("N", 3)])
+
+
+def _excused_acyl(atoms, g: Graph, c_oh: int, c_h: int) -> dict[int, set[int]]:
+    """A(c_h) on the TARGET: each carbon neighbour of ``c_h`` (``c_oh`` excepted) whose non-C/H neighbours match one
+    of :data:`_ACYL_SIGNATURES`, mapped to exactly those heteroatoms.  The union of the values is E, the only
+    heteroatoms the class tolerates anywhere in the molecule ((M)) -- the whole guest list, checked at the door."""
+    excusers: dict[int, set[int]] = {}
+    for x in g[c_h]:
+        if x == c_oh or atoms[x] != "C":
+            continue
+        hetero = {u: order for u, order in g[x].items() if atoms[u] not in ("C", "H")}
+        orders = sorted((atoms[u], order) for u, order in hetero.items())
+        if orders in _ACYL_SIGNATURES:
+            excusers[x] = set(hetero)
+    return excusers
+
+
+def _is_benzenoid(atoms, g: Graph, ring: frozenset[int]) -> bool:
+    """A benzenoid ring in the TARGET's Kekule graph: six atoms, all carbon, each with exactly one bond of order 2 and
+    that bond to another atom of the same ring.  Every Kekule spelling of an isolated benzene ring satisfies it, so
+    the witness's exact-Kekule habit does not bite here; fused arenes never reach it ((R) refuses polycycles first)."""
+    if len(ring) != 6 or any(atoms[v] != "C" for v in ring):
+        return False
+    for v in ring:
+        doubles = [u for u, order in g[v].items() if order == 2]
+        if len(doubles) != 1 or doubles[0] not in ring:
+            return False
     return True
 
 
@@ -316,14 +384,7 @@ def _radius_two_is_carbon(atoms, g: Graph, c_oh: int, c_h: int) -> bool:
                     dist[u] = depth
                     nxt.append(u)
         frontier = nxt
-    excusers: dict[int, set[int]] = {}                 # acyl carbon on c_h -> the O/N atoms it may excuse
-    for x in g[c_h]:
-        if x == c_oh or atoms[x] != "C":
-            continue
-        hetero = {u: order for u, order in g[x].items() if atoms[u] not in ("C", "H")}
-        orders = sorted((atoms[u], order) for u, order in hetero.items())
-        if orders in ([("O", 2)], [("O", 1), ("O", 2)], [("N", 3)]):
-            excusers[x] = set(hetero)
+    excusers = _excused_acyl(atoms, g, c_oh, c_h)     # acyl carbon on c_h -> the O/N atoms it may excuse
     for v, d in dist.items():
         if d == 0 or atoms[v] == "C":
             continue

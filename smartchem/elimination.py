@@ -25,7 +25,7 @@ SCOPE AND WHAT IS DELIBERATELY NOT CLAIMED.
   * Structural type-validity only (Problem A): an edge never means feasible, favourable or selective.  The acid
     catalyst the class needs is the activator ledger's concern, not this module's.
 
-THE FORWARD CERTIFICATE (:func:`_forward_dehydrations`, shared by the edge and the oracle recognizer).  It re-scans
+THE FORWARD CERTIFICATE (:func:`_dehydrates_to`, shared by the edge and the oracle recognizer).  It re-scans
 the precursor's OWN hydroxyls and applies the graph operation (remove O, its H and one H on C_beta; C_alpha--C_beta
 order 1 -> 2).  It is a POSITIVE SAFE-SET: a site is admitted only when EVERY condition below holds; anything else
 abstains (the standing rule that a hand-enumerated decline list over an unbounded hazard space leaks).
@@ -48,21 +48,35 @@ abstains (the standing rule that a hand-enumerated decline list over an unbounde
   (e) no carbon neighbour of C_alpha bears a hydroxyl -- vicinal diols (pinacol / semipinacol) are out;
   (e') the NEIGHBOURHOOD is whitelisted, not the hazards: every heavy atom within two bonds of C_alpha or C_beta (the
       leaving O excepted) is CARBON, with one allowance -- a carbonyl / carboxyl / ester / nitrile carbon bonded to
-      C_beta, whose own O / N atoms are then allowed (the beta-hydroxy-carbonyl E1cB scope).  A halogen, N, O, S, Si,
-      B, P or any other element within radius two abstains (beta-halo / beta-amino / beta-alkoxy alcohols, Peterson
-      and deboronation substrates, 1,3-diols, heteroaryl or ring-heteroatom neighbours: accepted coverage loss);
-  (f') after the edit, no ring containing C_alpha or C_beta (this covers a C=C exocyclic to that ring) has all of its
-      atoms but AT MOST ONE pi-capable (pi-capable = carrying a multiple bond, or any non-carbon heavy atom) --
-      whatever that one atom carries.  That excludes aromatising closures (cyclohexa-2,4-dien-1-ol -> benzene),
-      aromatic tautomers and their conjugate acids (isotoluenes, semibenzenes, dienone-phenol substrates, the
-      4-picoline anhydrobase, fulvenes, 2H-pyrans incl. 2,2-dimethyl) and, as accepted coverage loss, cyclopentadiene
-      / cycloheptatriene formation.  Only the ring the edit touches is read, so an arene beside an exocyclic C=C
-      (1-phenylethanol -> styrene) is unaffected;
+      C_beta, whose own O / N atoms are then allowed (the beta-hydroxy-carbonyl E1cB scope), reached THROUGH that
+      carbon (checked per bond).  Kept as defence in depth under (M);
+  (M) MOLECULE-WIDE heteroatom whitelist (r5: the radius-bounded census leaked one bond further out every round --
+      radius 1 in r2, 2 in r3, 3 in r4): every non-C/H atom ANYWHERE in the precursor is either the leaving O or an
+      O / N of a carbonyl / carboxyl / ester / nitrile carbon bonded to C_beta.  The class is therefore: an otherwise
+      hydrocarbon mono-alcohol, or a beta-hydroxy carbonyl / nitrile.  A second hydroxyl anywhere (1,3- / 1,4-diols:
+      butane-1,4-diol gives THF under acid, not but-3-en-1-ol), a remote halide / ether / ester / ketone / amine, a
+      latent leaving group that aromatises the product one step later (cyclohex-3-ene-1,... diols, 4-halo- or
+      4-acyloxy-cyclohexenols, 3,5-dihydroxycyclohexanone -> phenol) and every heteroaryl or ring-heteroatom
+      neighbour abstain: accepted coverage loss;
+  (R) RING SATURATION within radius one (replaces r3's (f')): for every ring system containing C_alpha, C_beta or
+      any heavy neighbour of either, the system is a MONOCYCLE (else abstain) and, on the PRODUCT graph, it is either
+      an untouched benzenoid ring (Kekule benzene before and after: 1-phenylethanol -> styrene) or keeps at least
+      THREE non-pi-capable atoms when it has six or seven members and at least TWO otherwise (pi-capable = carrying
+      a multiple bond, or any non-carbon heavy atom).  That excludes aromatising closures and aromatic tautomers
+      (cyclohexadienols -> benzene, isotoluenes, semibenzenes, dienone-phenol substrates, fulvenes, 2H-pyrans), a
+      cyclohexadienyl / cycloheptatrienyl / cyclopentadienyl / cyclooctatetraenyl ring beside the edit (one acid
+      event from an arene, a fulvene or a homotropylium), and any fused or bridged ring next door (naphthyl:
+      accepted coverage loss), plus, as accepted coverage loss, every cyclohexadiene / cycloheptatriene product;
+  (S) no sp or cumulene carbon next door: every carbon neighbour of C_alpha / C_beta (other than each other and the
+      beta acyl carbons, so a beta-hydroxy NITRILE stays in) has no triple bond and at most one double bond.
+      Propargylic alcohols go Meyer-Schuster / Rupe under acid (to enones), and are out;
   (g) both species closed-shell, neutral, stateless and isotopically UNLABELLED (no ``D`` / ``T`` / mass-number atom
       symbol) -- isotopic identity is outside 1.x (#130).
 COST (h).  The retro producer builds each precursor POSITIONALLY (target indices kept, O/H/H appended) and certifies
 only the site it built; every certificate first tries the positional fast path (a safe-set site whose product IS the
-target graph) before the global canonical re-derivation, so a producer edge is certified without canonicalising.
+target graph), and only then the global re-derivation -- which canonicalises a product only when its
+connectivity-only key equals the target's (unequal keys prove non-identity) and stops at the first match, so a
+parsed / replayed step no longer pays one canonicalisation per site (r4: a 160-atom step took 120 s in the oracle).
 Because C_alpha and C_beta are sp3 in the precursor, neither carries another multiple bond in the product, so no
 cumulene (allene) can be formed.  A beta-hydroxy carbonyl (aldol -> enone, often E1cB) is DELIBERATELY inside the
 safe set: its new C=C carries only C/H substituents and none of (a)-(g) applies ((e') excuses exactly the O/N of
@@ -314,7 +328,30 @@ def _site_is_safe(o: int, h_o: int, ca: int, cb: int, atoms, adj, rings: "_Rings
         return None                                    # (a)-(c)
     if not _neighbourhood_is_carbon(o, ca, cb, atoms, adj):
         return None                                    # (e') a heteroatom within two bonds
+    acyl = _beta_acyl_groups(ca, cb, atoms, adj)
+    allowed = {o}.union(*acyl.values())
+    if any(atoms[v] not in ("C", "H") and v not in allowed for v in range(len(atoms))):
+        return None                                    # (M) a heteroatom ANYWHERE that is not the leaving O / beta acyl
+    for v in (ca, cb):
+        for n, _o in adj[v]:
+            if n in (ca, cb) or atoms[n] != "C" or n in acyl:
+                continue
+            orders = [order for _m, order in adj[n]]
+            if 3 in orders or orders.count(2) > 1:
+                return None                            # (S) an sp / cumulene carbon next door (propargylic, allenyl)
     return (o, h_o, ca, cb, h_betas)
+
+
+def _beta_acyl_groups(ca: int, cb: int, atoms, adj) -> "dict[int, frozenset[int]]":
+    """The carbonyl / carboxyl / ester / nitrile carbons bonded to C_beta (other than C_alpha), each mapped to its O/N
+    atoms -- the only heteroatoms (besides the leaving O) the class admits anywhere in the precursor ((M))."""
+    out: dict[int, frozenset[int]] = {}
+    for x, _o in adj[cb]:
+        if x != ca:
+            het = _acyl_heteroatoms(x, atoms, adj)
+            if het is not None:
+                out[x] = het
+    return out
 
 
 def _ring_context_is_safe(ca: int, cb: int, atoms, adj, rings: "_Rings") -> bool:
@@ -334,13 +371,31 @@ def _ring_context_is_safe(ca: int, cb: int, atoms, adj, rings: "_Rings") -> bool
     return True
 
 
-def _aromatisable_ring(ring: set[int], atoms, adj) -> bool:
-    """(f') on the PRODUCT graph: are all atoms of ``ring`` but at most ONE pi-capable (whatever that one carries)?"""
-    return sum(1 for x in ring if not _pi_capable(x, atoms, adj)) <= 1
+def _benzenoid(ring, atoms, adj) -> bool:
+    """Six ring carbons, each with exactly one double bond, and that bond inside the ring (a Kekule benzene ring; an
+    exocyclic C=C, a quinoid or a triple bond disqualifies)."""
+    if len(ring) != 6 or any(atoms[v] != "C" for v in ring):
+        return False
+    for v in ring:
+        doubles = [n for n, order in adj[v] if order == 2]
+        if len(doubles) != 1 or doubles[0] not in ring or any(order == 3 for _n, order in adj[v]):
+            return False
+    return True
+
+
+def _ring_saturation_is_safe(ring: set[int], p_ring: set[int], pre_atoms, pre_adj, p_atoms, p_adj) -> bool:
+    """(R) for one monocycle within radius one of the edit, ``ring`` in precursor indices and ``p_ring`` the same atoms
+    in product indices.  An UNTOUCHED benzenoid ring (benzenoid before and after) is fine.  Otherwise the product ring
+    must keep at least THREE non-pi-capable atoms when it has six or seven members (benzene / tropylium territory:
+    a cyclohexadiene- or cycloheptatriene-level ring is one acid event from aromatic) and at least TWO otherwise."""
+    if _benzenoid(ring, pre_atoms, pre_adj) and _benzenoid(p_ring, p_atoms, p_adj):
+        return True
+    k = sum(1 for v in p_ring if not _pi_capable(v, p_atoms, p_adj))
+    return k > (2 if len(p_ring) in (6, 7) else 1)
 
 
 def _site_product(precursor: Molecule, site, h_beta: int, rings: "_Rings") -> "Molecule | None":
-    """The alkene from one safe-set site with ``h_beta`` removed, or None when (f') refuses it.  Positional: atom
+    """The alkene from one safe-set site with ``h_beta`` removed, or None when (R) refuses it.  Positional: atom
     indices are those of ``precursor`` with the three removed atoms dropped (no canonicalisation)."""
     o, h_o, ca, cb, _h_betas = site
     atoms = precursor.atoms
@@ -351,10 +406,23 @@ def _site_product(precursor: Molecule, site, h_beta: int, rings: "_Rings") -> "M
     keep = [i for i in range(len(atoms)) if i not in {o, h_o, h_beta}]
     remap = {old: new for new, old in enumerate(keep)}
     p_adj = _adjacency(alkene)
-    for x in (ca, cb):
+    # NOT ``rings.adj``: the producer shares one ring-membership object across every hydrated candidate (membership is
+    # identical), but bond orders and the O/H attachment are this precursor's own.
+    pre_adj = _adjacency(precursor)
+    shell ={ca, cb} | {n for v in (ca, cb) for n, _o in pre_adj[v] if atoms[n] != "H" and n != o}
+    checked: set[frozenset[int]] = set()
+    for x in sorted(shell):
+        if not rings.ring_nbrs[x]:
+            continue
         ring = rings.monocycle(x)
-        if ring and _aromatisable_ring({remap[v] for v in ring}, alkene.atoms, p_adj):
-            return None                                # (f') aromatising / aromatic-tautomer ring
+        if ring is None:
+            return None                                # (R) a fused / bridged / spiro system within radius one
+        key = frozenset(ring)
+        if key in checked:
+            continue
+        checked.add(key)
+        if not _ring_saturation_is_safe(ring, {remap[v] for v in ring}, atoms, pre_adj, alkene.atoms, p_adj):
+            return None                                # (R) a (nearly) aromatic ring the step makes or sits beside
     return alkene
 
 
@@ -405,14 +473,30 @@ def _dehydrates_to(precursor: Molecule, target: Molecule) -> bool:
         for h_beta in site[4]:
             alkene = _site_product(precursor, site, h_beta, rings)
             if alkene is None:
-                break                                  # (f') does not depend on which beta H leaves
+                break                                  # (R) does not depend on which beta H leaves
             if alkene == target:
                 return True
-    try:
-        want = resonance_identity(target)
-    except (ValueError, TypeError, NotImplementedError):
-        return False
-    return any(resonance_identity(alkene) == want for alkene in _forward_dehydrations(precursor))
+    # (ii) GLOBAL route, bounded: one product per site (the beta H's of one site are interchangeable terminal atoms,
+    # so their products are isomorphic), skipped unless its connectivity-only key equals the target's -- a resonance
+    # change moves only bond orders, so unequal keys PROVE the two are not resonance-identical -- and the first exact
+    # match wins.  Canonicalisation is paid only for products that can match.
+    want_key = _wl_key(target)
+    want: str | None = None
+    for site in sites:
+        alkene = _site_product(precursor, site, site[4][0], rings)
+        if alkene is None or _wl_key(alkene) != want_key:
+            continue
+        if want is None:
+            try:
+                want = resonance_identity(target)
+            except (ValueError, TypeError, NotImplementedError):
+                return False                           # an unidentifiable target is never vouched
+        try:
+            if resonance_identity(alkene) == want:
+                return True
+        except (ValueError, TypeError, NotImplementedError):
+            continue                                   # an unidentifiable product matches nothing
+    return False
 
 
 # --------------------------------------------------------------------------------------------------------------------

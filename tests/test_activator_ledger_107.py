@@ -409,10 +409,11 @@ def test_diels_alder_is_not_demoted():
 
 
 def test_unrecognized_step_is_not_our_concern():
-    # A conserved, formula-balanced non-reaction: recognized by nothing -> the oracle's route_reaction_type_blockers
+    # A conserved, formula-balanced step that NO recognized class covers -> the oracle's route_reaction_type_blockers
     # demotes it, the activator ledger stays silent (it speaks only about classes it has a requirement for).  (#116:
-    # the former junk step, ethanol -> ethene + water, is now a recognized dehydration; 1-butanol -> 2-butene + water
-    # -- a remote alkene no 1,2-elimination forms -- keeps the probe a genuine non-recognition.)
+    # the former junk step, ethanol -> ethene + water, is now a recognized dehydration.  1-butanol -> 2-butene + water
+    # is NOT a non-reaction -- hot acid does give 2-butene, via isomerisation / a 1,2-hydride shift -- but it is not a
+    # 1,2-elimination, so no class may vouch it: the probe stays a genuine NON-RECOGNITION, which is what it tests.)
     junk = _step(("CCCCO",), ("CC=CC", "O"))
     assert recognize_reaction_type(junk) is None
     assert step_activator_blockers(junk) == ()

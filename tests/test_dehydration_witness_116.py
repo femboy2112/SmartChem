@@ -26,9 +26,12 @@ POSITIVE_PAIRS = [
     ("1-phenylethanol -> styrene", "CC(O)c1ccccc1", "C=Cc1ccccc1"),
     ("cyclopentanol", "OC1CCCC1", "C1=CCCC1"),
     ("cyclooctanol", "OC1CCCCCCC1", "C1=CCCCCCC1"),
-    ("cyclohex-2-en-1-ol -> 1,3-cyclohexadiene", "OC1C=CCCC1", "C1=CC=CCC1"),
     ("cyclohexylmethanol -> methylenecyclohexane", "OCC1CCCCC1", "C=C1CCCCC1"),
-    ("3-hydroxybutanal -> crotonaldehyde", "CC(O)CC=O", "CC=CC=O"),
+    ("3-hydroxybutanal -> crotonaldehyde", "CC(O)CC=O", "CC=CC=O"),    ("3-hydroxybutanoic acid -> crotonic acid", "CC(O)CC(=O)O", "CC=CC(=O)O"),
+    ("ethyl 3-hydroxybutanoate -> ethyl crotonate", "CCOC(=O)CC(C)O", "CCOC(=O)C=CC"),
+    ("3-hydroxybutanenitrile -> crotononitrile", "CC(O)CC#N", "CC=CC#N"),
+    ("3-hydroxycyclohexanone -> cyclohex-2-enone", "OC1CCCC(=O)C1", "O=C1C=CCCC1"),
+    ("alpha-(1-hydroxyethyl)-gamma-butyrolactone -> alpha-ethylidene", "CC(O)C1CCOC1=O", "CC=C1CCOC1=O"),
 ]
 
 NEGATIVE_PAIRS = [
@@ -81,7 +84,15 @@ NEGATIVE_PAIRS = [
     ("beta-boryl", "CC(O)CB(O)O", "C=CCB(O)O"),
     ("1,3-propanediol -> allyl alcohol (coverage loss)", "OCCCO", "C=CCO"),
     ("2-pyridyl (coverage loss)", "CC(O)c1ccccn1", "C=Cc1ccccn1"),
-    ("tetrahydropyran-4-ol (coverage loss)", "OC1CCOCC1", "C1=CCOCC1"),
+    ("tetrahydropyran-4-ol (coverage loss)", "OC1CCOCC1", "C1=CCOCC1"),    # r4 red-team corpus (M / R / S)
+    ("cyclohexenediol -> cyclohexadienol (-> benzene)", "OC1C=CC(O)CC1", "OC1C=CC=CC1"),
+    ("4-chlorocyclohexenol", "OC1C=CC(Cl)CC1", "ClC1C=CC=CC1"),
+    ("3,5-dihydroxycyclohexanone (-> phenol)", "O=C1CC(O)CC(O)C1", "O=C1C=CCC(O)C1"),
+    ("pentane-2,4-diol far side", "CC(O)CC(O)C", "C=CCC(O)C"),
+    ("1,4-butanediol -> but-3-en-1-ol (THF in reality)", "OCCCCO", "C=CCCO"),
+    ("pent-3-yn-2-ol (Meyer-Schuster)", "CC(O)C#CC", "C=CC#CC"),
+    ("cyclohexadienyl carbinol (-> ethylbenzene)", "CC(O)C1C=CC=CC1", "C=CC1C=CC=CC1"),
+    ("cyclohex-2-en-1-ol -> 1,3-cyclohexadiene (r5 coverage loss)", "OC1C=CCCC1", "C1=CC=CCC1"),
 ]
 
 

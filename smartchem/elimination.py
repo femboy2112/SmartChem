@@ -46,24 +46,36 @@ abstains (the standing rule that a hand-enumerated decline list over an unbounde
   (d) no carbon neighbour of C_alpha is quaternary (no H, four heavy neighbours) -- the Wagner-Meerwein / neopentyl
       shift;
   (e) no carbon neighbour of C_alpha bears a hydroxyl -- vicinal diols (pinacol / semipinacol) are out;
-  (f) after the edit, the ring of C_alpha or C_beta (this covers a C=C exocyclic to that ring) is neither fully
-      pi-capable nor pi-capable but for a single sp3 carbon bearing H (pi-capable = carrying a multiple bond, or any
-      non-carbon heavy atom).  That excludes aromatising closures (cyclohexa-2,4-dien-1-ol -> benzene), aromatic
-      tautomers and their conjugate acids (isotoluenes, the 4-picoline anhydrobase, fulvenes) and, as accepted
-      coverage loss, cyclopentadiene / cycloheptatriene / 2H-pyran formation.  Only the ring the edit touches is read,
-      so an arene beside an exocyclic C=C (1-phenylethanol -> styrene) is unaffected.
+  (e') the NEIGHBOURHOOD is whitelisted, not the hazards: every heavy atom within two bonds of C_alpha or C_beta (the
+      leaving O excepted) is CARBON, with one allowance -- a carbonyl / carboxyl / ester / nitrile carbon bonded to
+      C_beta, whose own O / N atoms are then allowed (the beta-hydroxy-carbonyl E1cB scope).  A halogen, N, O, S, Si,
+      B, P or any other element within radius two abstains (beta-halo / beta-amino / beta-alkoxy alcohols, Peterson
+      and deboronation substrates, 1,3-diols, heteroaryl or ring-heteroatom neighbours: accepted coverage loss);
+  (f') after the edit, no ring containing C_alpha or C_beta (this covers a C=C exocyclic to that ring) has all of its
+      atoms but AT MOST ONE pi-capable (pi-capable = carrying a multiple bond, or any non-carbon heavy atom) --
+      whatever that one atom carries.  That excludes aromatising closures (cyclohexa-2,4-dien-1-ol -> benzene),
+      aromatic tautomers and their conjugate acids (isotoluenes, semibenzenes, dienone-phenol substrates, the
+      4-picoline anhydrobase, fulvenes, 2H-pyrans incl. 2,2-dimethyl) and, as accepted coverage loss, cyclopentadiene
+      / cycloheptatriene formation.  Only the ring the edit touches is read, so an arene beside an exocyclic C=C
+      (1-phenylethanol -> styrene) is unaffected;
+  (g) both species closed-shell, neutral, stateless and isotopically UNLABELLED (no ``D`` / ``T`` / mass-number atom
+      symbol) -- isotopic identity is outside 1.x (#130).
+COST (h).  The retro producer builds each precursor POSITIONALLY (target indices kept, O/H/H appended) and certifies
+only the site it built; every certificate first tries the positional fast path (a safe-set site whose product IS the
+target graph) before the global canonical re-derivation, so a producer edge is certified without canonicalising.
 Because C_alpha and C_beta are sp3 in the precursor, neither carries another multiple bond in the product, so no
 cumulene (allene) can be formed.  A beta-hydroxy carbonyl (aldol -> enone, often E1cB) is DELIBERATELY inside the
-safe set: its new C=C carries only C/H substituents and none of (a)-(f) applies.  The result is compared to the
+safe set: its new C=C carries only C/H substituents and none of (a)-(g) applies ((e') excuses exactly the O/N of
+that beta acyl carbon, reached through it).  The result is compared to the
 target by resonance-canonical identity (:func:`~smartchem.smiles.resonance_identity`), so a Kekule spelling of an
 arene substituent cannot mask a match.
 """
 from __future__ import annotations
 
-from collections import deque
+from collections import Counter, deque
 from dataclasses import dataclass
 
-from .category import Bond, Config, ConservationError, Molecule, Reaction
+from .category import Bond, Molecule
 from .contracts import Digestible
 
 #: Edge schema id (its own, not a scission / lateral / lactonization schema).
@@ -197,13 +209,72 @@ def _is_quaternary_carbon(c: int, atoms, adj) -> bool:
     return atoms[c] == "C" and len(adj[c]) == 4 and all(atoms[x] != "H" for x, _o in adj[c])
 
 
-def _dehydration_sites(precursor: Molecule) -> list[tuple[int, int, int, int, int]]:
-    """Every safe-set site as ``(o, h_o, c_alpha, c_beta, h_beta)`` -- conditions 1-3 and (a)-(e) of the module
-    docstring ((f) needs the product graph and is applied in :func:`_forward_dehydrations`)."""
+#: (g) isotope labels the model can carry only as an atom symbol.  Isotopic identity is outside 1.x (#130).
+_ISOTOPE_SYMBOLS = frozenset({"D", "T"})
+
+
+def _unlabelled_closed_shell(mol) -> bool:
+    """(g) A neutral, stateless, closed-shell species whose every atom is a plain element symbol (no ``D`` / ``T`` /
+    mass-number label).  Anything else is outside the class and refused."""
+    if type(mol) is not Molecule or mol.charge != 0 or mol.state:
+        return False
+    if any(not (sym.isalpha() and sym[0].isupper()) or sym in _ISOTOPE_SYMBOLS for sym in mol.atoms):
+        return False
+    from .diels_alder import is_closed_shell_neutral
+    return is_closed_shell_neutral(mol)
+
+
+def _acyl_heteroatoms(x: int, atoms, adj) -> "frozenset[int] | None":
+    """If ``x`` is a carbonyl / carboxyl / ester / nitrile carbon, the O/N atoms bonded to it; else None.  Exactly one
+    of: one ``=O`` plus at most one single-bonded O and otherwise only C/H (aldehyde, ketone, acid, ester); or one
+    ``#N`` and otherwise only C/H (nitrile).  An amide, acyl halide, carbonate, imine ... is not on the list."""
+    if atoms[x] != "C":
+        return None
+    dbl_o = [n for n, o in adj[x] if o == 2 and atoms[n] == "O"]
+    tri_n = [n for n, o in adj[x] if o == 3 and atoms[n] == "N"]
+    single_o = [n for n, o in adj[x] if o == 1 and atoms[n] == "O"]
+    others = [n for n, o in adj[x] if atoms[n] not in ("C", "H") and n not in dbl_o + tri_n + single_o]
+    if others:
+        return None
+    if len(dbl_o) == 1 and not tri_n and len(single_o) <= 1:
+        return frozenset(dbl_o + single_o)
+    if len(tri_n) == 1 and not dbl_o and not single_o:
+        return frozenset(tri_n)
+    return None
+
+
+def _neighbourhood_is_carbon(o: int, ca: int, cb: int, atoms, adj) -> bool:
+    """(e') Every heavy atom within two bonds of C_alpha or C_beta -- the leaving O excepted -- is carbon, save the
+    O/N atoms of a carbonyl / carboxyl / ester / nitrile carbon bonded to C_beta (the beta-hydroxy-carbonyl scope).
+
+    Checked PER BOND, not per atom: a heteroatom is excused only when reached THROUGH that acyl carbon.  The same atom
+    reached through any other first-shell atom (an ester / lactone O two bonds from C_alpha via a ring CH2) is not
+    excused, so the allowance cannot leak to a beta-alkoxy pattern on the far side of the new C=C.  (The per-atom form
+    this replaces was latent, not exploitable: every such path closes a 4- or 5-ring that (a)-(b) / (f') already
+    refuse -- but the definition no longer leans on that masking.)"""
+    core = {ca, cb, o}
+    for v in (ca, cb):
+        for n, _o in adj[v]:
+            if n in core or atoms[n] == "H":
+                continue
+            if atoms[n] != "C":
+                return False                           # a heteroatom bonded to C_alpha / C_beta
+            excused = _acyl_heteroatoms(n, atoms, adj) if v == cb else None
+            for m, _o2 in adj[n]:
+                if m in core or atoms[m] in ("C", "H"):
+                    continue
+                if excused is None or m not in excused:
+                    return False                       # a heteroatom two bonds out, not via a beta acyl carbon
+    return True
+
+
+def _dehydration_sites(precursor: Molecule) -> list[tuple[int, int, int, int, tuple[int, ...]]]:
+    """Every safe-set site as ``(o, h_o, c_alpha, c_beta, h_betas)`` -- conditions 1-3 and (a)-(e') of the module
+    docstring ((f') needs the product graph and is applied per product)."""
     atoms = precursor.atoms
     adj = _adjacency(precursor)
     rings: _Rings | None = None
-    out: list[tuple[int, int, int, int, int]] = []
+    out: list[tuple[int, int, int, int, tuple[int, ...]]] = []
     for o in range(len(atoms)):
         if atoms[o] != "O" or len(adj[o]) != 2 or any(order != 1 for _n, order in adj[o]):
             continue
@@ -212,29 +283,38 @@ def _dehydration_sites(precursor: Molecule) -> list[tuple[int, int, int, int, in
         if len(heavy) != 1 or len(hs) != 1:
             continue                                   # (1) a terminal hydroxyl, not an ether / water / peroxide
         ca = heavy[0]
-        if not _is_sp3_carbon(ca, atoms, adj):
-            continue                                   # (2) sp3 carbinol carbon (no carbonyl / enol / phenol)
-        if any(atoms[x] not in ("C", "H") for x, _o in adj[ca] if x != o):
-            continue                                   # (2) no second heteroatom (masked-carbonyl guard)
-        alpha_carbons = [x for x, _o in adj[ca] if atoms[x] == "C"]
-        if any(_is_quaternary_carbon(x, atoms, adj) for x in alpha_carbons):
-            continue                                   # (d) no quaternary neighbour of C_alpha
-        if any(_bears_hydroxyl(x, atoms, adj) for x in alpha_carbons):
-            continue                                   # (e) no vicinal hydroxyl
         if rings is None:
             rings = _Rings(atoms, adj)
-        for cb in alpha_carbons:
-            if not _is_sp3_carbon(cb, atoms, adj):
-                continue                               # (3) sp3 C_beta (also excludes the cumulene route)
-            if any(atoms[x] not in ("C", "H") for x, _o2 in adj[cb]):
-                continue                               # (3) the new C=C carries only C/H substituents
-            h_beta = [x for x, _o2 in adj[cb] if atoms[x] == "H"]
-            if not h_beta:
-                continue                               # (3) a hydrogen to eliminate
-            if not _ring_context_is_safe(ca, cb, atoms, adj, rings):
-                continue                               # (a)-(c)
-            out.append((o, hs[0], ca, cb, min(h_beta)))
+        for cb, _o in adj[ca]:
+            site = _site_is_safe(o, hs[0], ca, cb, atoms, adj, rings)
+            if site is not None:
+                out.append(site)
     return out
+
+
+def _site_is_safe(o: int, h_o: int, ca: int, cb: int, atoms, adj, rings: "_Rings"):
+    """Conditions 2-3 and (a)-(e') for ONE site; the site tuple when every one holds, else None."""
+    if not _is_sp3_carbon(ca, atoms, adj):
+        return None                                    # (2) sp3 carbinol carbon (no carbonyl / enol / phenol)
+    if any(atoms[x] not in ("C", "H") for x, _o in adj[ca] if x != o):
+        return None                                    # (2) no second heteroatom (masked-carbonyl guard)
+    alpha_carbons = [x for x, _o in adj[ca] if atoms[x] == "C"]
+    if any(_is_quaternary_carbon(x, atoms, adj) for x in alpha_carbons):
+        return None                                    # (d) no quaternary neighbour of C_alpha
+    if any(_bears_hydroxyl(x, atoms, adj) for x in alpha_carbons):
+        return None                                    # (e) no vicinal hydroxyl (also implied by (e'))
+    if cb not in alpha_carbons or not _is_sp3_carbon(cb, atoms, adj):
+        return None                                    # (3) sp3 C_beta (also excludes the cumulene route)
+    if any(atoms[x] not in ("C", "H") for x, _o in adj[cb]):
+        return None                                    # (3) the new C=C carries only C/H substituents
+    h_betas = tuple(sorted(x for x, _o in adj[cb] if atoms[x] == "H"))
+    if not h_betas:
+        return None                                    # (3) a hydrogen to eliminate
+    if not _ring_context_is_safe(ca, cb, atoms, adj, rings):
+        return None                                    # (a)-(c)
+    if not _neighbourhood_is_carbon(o, ca, cb, atoms, adj):
+        return None                                    # (e') a heteroatom within two bonds
+    return (o, h_o, ca, cb, h_betas)
 
 
 def _ring_context_is_safe(ca: int, cb: int, atoms, adj, rings: "_Rings") -> bool:
@@ -255,38 +335,44 @@ def _ring_context_is_safe(ca: int, cb: int, atoms, adj, rings: "_Rings") -> bool
 
 
 def _aromatisable_ring(ring: set[int], atoms, adj) -> bool:
-    """(f) on the PRODUCT graph: is ``ring`` fully pi-capable, or pi-capable but for one sp3 carbon bearing H?"""
-    others = [x for x in ring if not _pi_capable(x, atoms, adj)]
-    if not others:
-        return True
-    return len(others) == 1 and any(atoms[h] == "H" for h, _o in adj[others[0]])
+    """(f') on the PRODUCT graph: are all atoms of ``ring`` but at most ONE pi-capable (whatever that one carries)?"""
+    return sum(1 for x in ring if not _pi_capable(x, atoms, adj)) <= 1
+
+
+def _site_product(precursor: Molecule, site, h_beta: int, rings: "_Rings") -> "Molecule | None":
+    """The alkene from one safe-set site with ``h_beta`` removed, or None when (f') refuses it.  Positional: atom
+    indices are those of ``precursor`` with the three removed atoms dropped (no canonicalisation)."""
+    o, h_o, ca, cb, _h_betas = site
+    atoms = precursor.atoms
+    try:
+        alkene = _rebuild(atoms, precursor.bonds, {o, h_o, h_beta}, (ca, cb))
+    except (ValueError, TypeError):
+        return None
+    keep = [i for i in range(len(atoms)) if i not in {o, h_o, h_beta}]
+    remap = {old: new for new, old in enumerate(keep)}
+    p_adj = _adjacency(alkene)
+    for x in (ca, cb):
+        ring = rings.monocycle(x)
+        if ring and _aromatisable_ring({remap[v] for v in ring}, alkene.atoms, p_adj):
+            return None                                # (f') aromatising / aromatic-tautomer ring
+    return alkene
 
 
 def _forward_dehydrations(precursor: Molecule) -> list[Molecule]:
     """Every alkene ``precursor`` reaches by ONE safe-set 1,2-dehydration (``-> alkene + H2O``), re-derived from the
-    precursor's own hydroxyls.  Distinct by resonance-canonical identity; empty for a charged / stateful species."""
+    precursor's own hydroxyls.  Distinct by resonance-canonical identity; empty outside (g)."""
     from .smiles import resonance_identity
-    if type(precursor) is not Molecule or precursor.charge != 0 or precursor.state:
+    if not _unlabelled_closed_shell(precursor):
         return []
-    atoms = precursor.atoms
-    out: list[Molecule] = []
-    seen: set[str] = set()
     sites = _dehydration_sites(precursor)
     if not sites:
-        return out
-    rings = _Rings(atoms, _adjacency(precursor))
-    for o, h_o, ca, cb, h_beta in sites:
-        try:
-            alkene = _rebuild(atoms, precursor.bonds, {o, h_o, h_beta}, (ca, cb))
-        except (ValueError, TypeError):
-            continue                                   # an invalid rebuild is dropped (fail-closed)
-        # (f) read on the PRODUCT graph, for the ring of C_alpha and of C_beta (ring membership is unchanged by the
-        # edit, so the precursor's monocycles are remapped onto the product).
-        keep = [i for i in range(len(atoms)) if i not in {o, h_o, h_beta}]
-        remap = {old: new for new, old in enumerate(keep)}
-        p_adj = _adjacency(alkene)
-        if any(_aromatisable_ring({remap[v] for v in rings.monocycle(x)}, alkene.atoms, p_adj)
-               for x in (ca, cb) if rings.monocycle(x)):
+        return []
+    rings = _Rings(precursor.atoms, _adjacency(precursor))
+    out: list[Molecule] = []
+    seen: set[str] = set()
+    for site in sites:
+        alkene = _site_product(precursor, site, site[4][0], rings)
+        if alkene is None:
             continue
         try:
             alkene = alkene.canonical()
@@ -300,12 +386,28 @@ def _forward_dehydrations(precursor: Molecule) -> list[Molecule]:
 
 
 def _dehydrates_to(precursor: Molecule, target: Molecule) -> bool:
-    """Load-bearing certificate: does ``precursor`` reach EXACTLY ``target`` (+ one water) by one guarded
-    1,2-dehydration?  Re-derived from the precursor's own groups and compared by resonance-canonical identity, so a
-    fabricated precursor that merely balances mass is refused."""
+    """Load-bearing certificate: does ``precursor`` reach EXACTLY ``target`` (+ one water) by one safe-set
+    1,2-dehydration?  Re-derived from the precursor's own groups, never from how it was produced.
+
+    Two exact routes, the cheap one first: (i) POSITIONAL -- some safe-set site, with some choice of its beta H, yields
+    a graph literally equal to ``target`` (same atoms, same bonds): identical graphs are isomorphic, so this proves the
+    match without canonicalising; (ii) otherwise the GLOBAL re-derivation, comparing every safe-set product to the
+    target by resonance-canonical identity.  (i) is a sufficient condition for (ii), so the verdict is the same; only
+    the cost differs (a producer-built precursor is a positional extension of its target)."""
     from .smiles import resonance_identity
-    if type(target) is not Molecule or target.charge != 0 or target.state:
+    if not (_unlabelled_closed_shell(precursor) and _unlabelled_closed_shell(target)):
+        return False                                   # (g)
+    sites = _dehydration_sites(precursor)
+    if not sites:
         return False
+    rings = _Rings(precursor.atoms, _adjacency(precursor))
+    for site in sites:
+        for h_beta in site[4]:
+            alkene = _site_product(precursor, site, h_beta, rings)
+            if alkene is None:
+                break                                  # (f') does not depend on which beta H leaves
+            if alkene == target:
+                return True
     try:
         want = resonance_identity(target)
     except (ValueError, TypeError, NotImplementedError):
@@ -328,7 +430,8 @@ def _alkene_sites(target: Molecule) -> list[tuple[int, int]]:
 
 def _hydrate(target: Molecule, c_oh: int, c_h: int) -> Molecule:
     """Add H-OH across the ``c_oh = c_h`` double bond: the bond drops to order 1, ``c_oh`` gains -O-H, ``c_h`` gains
-    -H.  Returns the candidate alcohol precursor (canonical)."""
+    -H.  POSITIONAL: the target's atoms keep their indices and O, H(O), H(C) are appended as ``n, n+1, n+2`` -- so the
+    precursor's own dehydration at that site rebuilds the target graph exactly (the certificate's fast path)."""
     atoms = target.atoms
     n = len(atoms)
     o_new, h_o, h_c = n, n + 1, n + 2
@@ -340,7 +443,25 @@ def _hydrate(target: Molecule, c_oh: int, c_h: int) -> Molecule:
         else:
             bonds.add(bd)
     bonds |= {Bond(c_oh, o_new, 1), Bond(o_new, h_o, 1), Bond(c_h, h_c, 1)}
-    return Molecule(atoms + ("O", "H", "H"), frozenset(bonds)).canonical()
+    return Molecule(atoms + ("O", "H", "H"), frozenset(bonds))
+
+
+def _wl_key(mol: Molecule) -> tuple:
+    """A RESONANCE-invariant colour-refinement key over CONNECTIVITY ONLY (element + neighbour colours; bond orders are
+    deliberately ignored).  A Kekule / resonance change moves only bond orders, so two spellings of one compound always
+    get equal keys, and unequal keys prove two candidates are not resonance-identical.  Used only to skip the
+    resonance-identity comparison between candidates that cannot be duplicates; the dedup verdict itself is always
+    :func:`resonance_identity`.  (A bond-order-aware key split meta-divinylbenzene's two Kekule spellings of ONE
+    precursor into two "independent" edges -- one supply counted twice.)  In-process only: ``hash`` is salted."""
+    adj = _adjacency(mol)
+    colour = {i: hash((a, len(adj[i]))) for i, a in enumerate(mol.atoms)}
+    for _round in range(len(mol.atoms)):
+        new = {i: hash((colour[i], tuple(sorted(colour[n] for n, _o in adj[i])))) for i in adj}
+        if len(set(new.values())) == len(set(colour.values())):
+            colour = new
+            break
+        colour = new
+    return tuple(sorted(colour.values()))
 
 
 @dataclass(frozen=True)
@@ -374,10 +495,14 @@ class DehydrationEdge(Digestible):
         if self.reaction_class != DEHYDRATION_CLASS:
             raise EliminationError(f"reaction_class must be {DEHYDRATION_CLASS!r}")
         precursor = self.products[0]
-        try:
-            Reaction(Config.of(self.reactant, *self.reagents), Config.of(*self.products), name="dehydration")
-        except ConservationError as clash:
-            raise EliminationError(f"dehydration does not conserve mass/charge: {clash}") from clash
+        if not (_unlabelled_closed_shell(precursor) and _unlabelled_closed_shell(self.reactant)):
+            raise EliminationError("(g) both species must be closed-shell, neutral and isotopically unlabelled")
+        # Conservation by element and charge arithmetic (precursor = alkene + H2O).  The search's ExperimentStep
+        # re-checks it through a real Reaction; doing it here through Config would canonicalise both species.
+        want = Counter({k: v for k, v in self.reactant.formula.items() if v}) + Counter({"H": 2, "O": 1})
+        have = Counter({k: v for k, v in precursor.formula.items() if v})
+        if want != have or precursor.charge != self.reactant.charge:
+            raise EliminationError("dehydration does not conserve mass/charge (precursor != alkene + H2O)")
         if len(precursor.atoms) > 1 and not precursor.is_connected():
             raise EliminationError("the precursor must be one connected molecule")
         if not _dehydrates_to(precursor, self.reactant):
@@ -421,28 +546,47 @@ def retro_dehydration_enumeration(target: Molecule, *, budget: int = 10_000) -> 
         raise TypeError("target must be a Molecule")
     if not (isinstance(budget, int) and not isinstance(budget, bool) and budget >= 1):
         raise EliminationError("budget must be an int >= 1")
-    if target.charge != 0 or target.state:
-        return DehydrationEnumeration((), True, 0, 0, budget)
+    if not _unlabelled_closed_shell(target):
+        return DehydrationEnumeration((), True, 0, 0, budget)        # (g): nothing in scope to enumerate
     from .smiles import resonance_identity
     sites = _alkene_sites(target)
     sites_total = len(sites)
     sites_examined = min(sites_total, budget)
+    n = len(target.atoms)
     edges: list[DehydrationEdge] = []
-    seen: set[str] = set()
+    kept: list[tuple[tuple, Molecule]] = []                         # (wl_key, precursor) of every emitted edge
+    rings: _Rings | None = None
     for a, b in sites[:budget]:
         for c_oh, c_h in ((a, b), (b, a)):           # BOTH regiochemistries; no selectivity is claimed
             try:
                 precursor = _hydrate(target, c_oh, c_h)
-                key = resonance_identity(precursor)
-            except (ValueError, TypeError, NotImplementedError):
+            except (ValueError, TypeError):
                 continue
-            if key in seen:
+            # (h) certify ONLY the site this candidate was built from (O = n, H(O) = n+1, H(C) = n+2); the
+            # edge constructor then re-derives it independently (its positional fast path hits this same site).
+            p_atoms, p_adj = precursor.atoms, _adjacency(precursor)
+            if rings is None:
+                rings = _Rings(p_atoms, p_adj)        # ring bonds are identical for every hydrated candidate
+            site = _site_is_safe(n, n + 1, c_oh, c_h, p_atoms, p_adj, rings)
+            if site is None or _site_product(precursor, site, n + 2, rings) != target:
+                continue
+            key = _wl_key(precursor)
+            dup = False
+            for other_key, other in kept:
+                if other_key == key:
+                    try:
+                        dup = resonance_identity(other) == resonance_identity(precursor)
+                    except (ValueError, TypeError, NotImplementedError):
+                        dup = False
+                    if dup:
+                        break
+            if dup:
                 continue
             try:
                 edge = DehydrationEdge(DEHYDRATION_SCHEMA, target, (precursor,), (_WATER,), DEHYDRATION_CLASS)
             except EliminationError:
                 continue                               # a candidate whose certificate fails is dropped
-            seen.add(key)
+            kept.append((key, precursor))
             edges.append(edge)
     return DehydrationEnumeration(tuple(edges), sites_examined >= sites_total, sites_total, sites_examined, budget)
 

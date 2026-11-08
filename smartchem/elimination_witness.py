@@ -22,14 +22,16 @@ THIS WITNESS'S ROUTE (each step deliberately different):
      orientation is eligible only inside the same POSITIVE SAFE-SET production enforces (both alkene carbons sp2 with no
      other multiple bond and only C/H substituents, not ring-conjugated; and conditions (a)-(f) of
      :mod:`smartchem.elimination`: monocyclic-or-acyclic ring context, ring size >= 5, no ring <= 4 next door, no
-     quaternary or hydroxyl-bearing neighbour of the OH carbon, no aromatisable ring), decided by the witness's OWN
+     quaternary or hydroxyl-bearing neighbour of the OH carbon, no aromatisable ring; and the r3 conditions (e')
+     carbon-only radius-2 neighbourhood, (f') at most one non-pi ring atom, (g) closed-shell unlabelled species --
+     the last by the witness's own valence table), decided by the witness's OWN
      algorithms: Tarjan bridges + union-find ring systems, edge-deletion BFS ring sizes and ring paths -- where
      production uses edge-deletion connectivity, ring-bond flood fill and vertex-deletion BFS.
 The verdict is the conjunction 1-4; each check is exposed on :class:`DehydrationWitnessResult`.
 
 RESIDUAL SHARED ASSUMPTIONS (not zero): both routes read the same explicit-H Kekule ``Molecule`` graph and share the
 class DEFINITION (H-OH lost across two adjacent carbons, the new C=C carrying only C/H substituents, the safe-set
-conditions (a)-(f)).  Independence is in the direction (retro vs forward), the detection algorithms and
+conditions (a)-(g)).  Independence is in the direction (retro vs forward), the detection algorithms and
 the identity test.  Because the isomorphism is exact on Kekule bond orders, a substituted arene drawn with
 DIFFERENT Kekule assignments in precursor and target can make the witness say False where production (resonance
 identity) says True -- a disagreement in the safe direction, not a false accept.
@@ -265,7 +267,7 @@ def _ring_atoms_through(g: Graph, a: int, b: int) -> list[int]:
 
 
 def _orientation_is_safe(atoms, g: Graph, rf: _RingFacts, pi: set[int], c_oh: int, c_h: int) -> bool:
-    """The safe-set conditions (a)-(f) for hydrating ``c_oh = c_h`` (OH on ``c_oh``), read off the TARGET.  Ring
+    """The safe-set conditions (a)-(f') for hydrating ``c_oh = c_h`` (OH on ``c_oh``), read off the TARGET.  Ring
     structure and every neighbour other than the two alkene carbons are the same in target and precursor."""
     for x in (c_oh, c_h):
         if not rf.is_monocyclic_or_acyclic(x):
@@ -292,9 +294,61 @@ def _orientation_is_safe(atoms, g: Graph, rf: _RingFacts, pi: set[int], c_oh: in
         if not nbrs:
             continue
         ring = _ring_atoms_through(g, x, nbrs[0])
-        outside = [v for v in ring if v not in pi]
-        if not outside or (len(outside) == 1 and any(atoms[h] == "H" for h in g[outside[0]])):
-            return False                               # (f) aromatisable / aromatic-tautomer ring
+        if sum(1 for v in ring if v not in pi) <= 1:
+            return False                               # (f') all ring atoms but at most one pi-capable
+    if not _radius_two_is_carbon(atoms, g, c_oh, c_h):
+        return False                                   # (e')
+    return True
+
+
+def _radius_two_is_carbon(atoms, g: Graph, c_oh: int, c_h: int) -> bool:
+    """(e') on the TARGET, by BFS distance from the alkene pair: every heavy atom at graph distance 1 or 2 from
+    ``c_oh`` / ``c_h`` is carbon, except an O/N bonded to a carbonyl / carboxyl / ester / nitrile carbon that is itself
+    bonded to ``c_h`` (the beta-hydroxy-carbonyl scope).  The hydroxyl to be added is not on the target, so it is
+    excluded by construction."""
+    dist = {c_oh: 0, c_h: 0}
+    frontier = [c_oh, c_h]
+    for depth in (1, 2):
+        nxt = []
+        for v in frontier:
+            for u in g[v]:
+                if atoms[u] != "H" and u not in dist:
+                    dist[u] = depth
+                    nxt.append(u)
+        frontier = nxt
+    excusers: dict[int, set[int]] = {}                 # acyl carbon on c_h -> the O/N atoms it may excuse
+    for x in g[c_h]:
+        if x == c_oh or atoms[x] != "C":
+            continue
+        hetero = {u: order for u, order in g[x].items() if atoms[u] not in ("C", "H")}
+        orders = sorted((atoms[u], order) for u, order in hetero.items())
+        if orders in ([("O", 2)], [("O", 1), ("O", 2)], [("N", 3)]):
+            excusers[x] = set(hetero)
+    for v, d in dist.items():
+        if d == 0 or atoms[v] == "C":
+            continue
+        if d == 1:
+            return False                               # a heteroatom on the alkene carbons
+        # d == 2: excused only if EVERY distance-1 parent it is reached through is an acyl carbon on c_h that excuses
+        # it (parent-set form; production walks bond by bond instead)
+        if not all(p in excusers and v in excusers[p] for p in g[v] if dist.get(p) == 1):
+            return False
+    return True
+
+
+#: (g) closed-shell valences the witness accepts (bond-order sum per element); any other element is out of scope.
+_CLOSED_SHELL_VALENCE = {"C": {4}, "H": {1}, "O": {2}, "N": {3, 5}, "S": {2, 4, 6}, "P": {3, 5},
+                         "F": {1}, "Cl": {1}, "Br": {1}, "I": {1}}
+
+
+def closed_shell_unlabelled(mol: Molecule) -> bool:
+    """(g) neutral, stateless, every atom a plain (unlabelled) element at a closed-shell valence."""
+    if mol.charge != 0 or mol.state:
+        return False
+    g = _graph(mol)
+    for i, el in enumerate(mol.atoms):
+        if el not in _CLOSED_SHELL_VALENCE or sum(g[i].values()) not in _CLOSED_SHELL_VALENCE[el]:
+            return False                               # D / T / "13C" / a radical / an out-of-table element
     return True
 
 
@@ -416,6 +470,7 @@ class DehydrationWitnessResult:
     cycle_rank_unchanged: bool
     census_deltas_match: bool
     hydration_recovers_precursor: bool
+    closed_shell_unlabelled: bool = True
     note: str = ""
 
 
@@ -425,17 +480,19 @@ def witnesses_dehydration(precursor: Molecule, target: Molecule) -> DehydrationW
     cp, ct = dehydration_census(precursor), dehydration_census(target)
     rank = cp.cycle_rank == ct.cycle_rank
     deltas = _census_deltas_match(cp, ct)
+    shell = closed_shell_unlabelled(precursor) and closed_shell_unlabelled(target)
     recovers = False
-    if stoich:
+    if stoich and shell:
         atoms_p, gp = list(precursor.atoms), _graph(precursor)
         for c_oh, c_h in eligible_hydrations(target):
             atoms_h, gh = _hydrated(target, c_oh, c_h)
             if _isomorphic(atoms_h, gh, atoms_p, gp):
                 recovers = True
                 break
-    verdict = stoich and rank and deltas and recovers
+    verdict = stoich and rank and deltas and recovers and shell
     failed = [name for name, ok in (("water_stoichiometry", stoich), ("cycle_rank_unchanged", rank),
                                     ("census_deltas_match", deltas),
-                                    ("hydration_recovers_precursor", recovers)) if not ok]
-    return DehydrationWitnessResult(verdict, stoich, rank, deltas, recovers,
+                                    ("hydration_recovers_precursor", recovers),
+                                    ("closed_shell_unlabelled", shell)) if not ok]
+    return DehydrationWitnessResult(verdict, stoich, rank, deltas, recovers, shell,
                                     "" if verdict else "failed: " + ", ".join(failed))

@@ -111,9 +111,10 @@ def test_the_producer_set_is_closed_and_matched_by_identity(fake):
                             coproduct_producers=(LACTONIZATION_PRODUCER, fake))
 
 
-#: a target both producers can make (the red-team order probe): vinyl-gamma-butyrolactone.
-_ORDER_TARGET = P("C=CC1CCC(=O)O1")
-_ORDER_STOCK = (P("C=CC(O)CCC(=O)O"), P("CC(O)C1CCC(=O)O1"), P("OCCC1CCC(=O)O1"))
+#: a target both producers can make: 5-(but-3-enyl)-gamma-butyrolactone.  (r3: the red-team's vinyl lactone put the
+#: ring O two bonds from C_beta, so rule (e') now leaves it to lactonization alone; the C=C is moved out of reach.)
+_ORDER_TARGET = P("C=CCCC1CCC(=O)O1")
+_ORDER_STOCK = (P("C=CCCC(O)CCC(=O)O"), P("OCCCCC1CCC(=O)O1"), P("CC(O)CCC1CCC(=O)O1"))
 
 
 @pytest.mark.parametrize("max_routes", [100, 1])
@@ -126,6 +127,9 @@ def test_caller_producer_order_cannot_change_routes_or_digests(max_routes):
     assert ld.receipt.digest == dl.receipt.digest
     assert [r.digest for r in ld.routes] == [r.digest for r in dl.routes]
     assert len(ld.routes) == (3 if max_routes == 100 else 1)
+    if max_routes == 100:
+        classes = sorted(recognize_reaction_type(r.steps[0]) for r in ld.routes)
+        assert classes.count(DEHYDRATION_CLASS) == 2 and len(set(classes)) == 2      # both producers contribute
 
 
 # -- no stock, cycles, budgets ---------------------------------------------------------------------------------------
@@ -166,16 +170,17 @@ def test_a_spent_coproduct_budget_with_a_live_successor_is_reported_incomplete()
 # -- a genuine multi-step route from stock, and replay ---------------------------------------------------------------
 
 @pytest.fixture(scope="module")
-def allyl_acetate_search():
-    """allyl acetate from stock 1,3-propanediol + acetic acid (water as the scission reagent), dehydration opted in."""
-    return search_event_routes(P("C=CCOC(C)=O"), reagents=(WATER,), available=(P("OCCCO"), P("CC(=O)O")),
+def butenyl_acetate_search():
+    """but-3-enyl acetate from stock butane-1,4-diol + acetic acid (water as the scission reagent), dehydration opted
+    in.  (r3: the former allyl-acetate demo left the safe set -- 1,3-propanediol puts an O two bonds from C_beta.)"""
+    return search_event_routes(P("C=CCCOC(C)=O"), reagents=(WATER,), available=(P("OCCCCO"), P("CC(=O)O")),
                                coproduct_producers=WITH_DEHYDRATION, max_depth=3)
 
 
-def test_a_two_step_route_from_stock_composes_scission_and_dehydration(allyl_acetate_search):
-    res = allyl_acetate_search
+def test_a_two_step_route_from_stock_composes_scission_and_dehydration(butenyl_acetate_search):
+    res = butenyl_acetate_search
     assert res.receipt.complete and len(res.routes) == 2
-    stock = {resonance_identity(m) for m in (P("OCCCO"), P("CC(=O)O"), WATER)}
+    stock = {resonance_identity(m) for m in (P("OCCCCO"), P("CC(=O)O"), WATER)}
     orders = set()
     for route in res.routes:
         assert len(route.steps) == 2
@@ -185,18 +190,18 @@ def test_a_two_step_route_from_stock_composes_scission_and_dehydration(allyl_ace
         classes = {recognize_reaction_type(s) for s in route.steps}
         assert classes == {DEHYDRATION_CLASS, "acyl condensation (esterification/amidation)"}
         assert {resonance_identity(m) for m in route.leaf_inputs} <= stock
-    # both orders compose: dehydrate-then-esterify (via allyl alcohol) and esterify-then-dehydrate
+    # both orders compose: dehydrate-then-esterify (via but-3-en-1-ol) and esterify-then-dehydrate
     assert len(orders) == 2
 
 
-def test_the_default_grammar_cannot_reach_allyl_acetate_from_the_same_stock():
-    res = search_event_routes(P("C=CCOC(C)=O"), reagents=(WATER,), available=(P("OCCCO"), P("CC(=O)O")),
+def test_the_default_grammar_cannot_reach_butenyl_acetate_from_the_same_stock():
+    res = search_event_routes(P("C=CCCOC(C)=O"), reagents=(WATER,), available=(P("OCCCCO"), P("CC(=O)O")),
                               max_depth=3)
     assert res.routes == () and res.receipt.complete
 
 
-def test_every_searched_dehydration_step_replays_from_its_molecules_alone(allyl_acetate_search):
-    steps = _dehydration_steps(allyl_acetate_search)
+def test_every_searched_dehydration_step_replays_from_its_molecules_alone(butenyl_acetate_search):
+    steps = _dehydration_steps(butenyl_acetate_search)
     assert len(steps) == 2
     for step in steps:
         # rebuild from raw multisets -- no generator, no edge object, no carried centre
@@ -206,7 +211,7 @@ def test_every_searched_dehydration_step_replays_from_its_molecules_alone(allyl_
         assert witnesses_dehydration(precursor, replay.target).is_dehydration
 
 
-def test_a_searched_dehydration_route_is_activator_demoted_until_an_acid_is_declared(allyl_acetate_search):
-    for route in allyl_acetate_search.routes:
+def test_a_searched_dehydration_route_is_activator_demoted_until_an_acid_is_declared(butenyl_acetate_search):
+    for route in butenyl_acetate_search.routes:
         reasons = route_activator_blockers(route)
         assert any("acid dehydration catalyst" in r for r in reasons)

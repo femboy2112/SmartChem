@@ -24,7 +24,6 @@ POSITIVE_PAIRS = [
     ("2-butanol -> 1-butene", "CCC(C)O", "C=CCC"),
     ("2-butanol -> 2-butene", "CCC(C)O", "CC=CC"),
     ("1-phenylethanol -> styrene", "CC(O)c1ccccc1", "C=Cc1ccccc1"),
-    ("1,3-propanediol -> allyl alcohol", "OCCCO", "C=CCO"),
     ("cyclopentanol", "OC1CCCC1", "C1=CCCC1"),
     ("cyclooctanol", "OC1CCCCCCC1", "C1=CCCCCCC1"),
     ("cyclohex-2-en-1-ol -> 1,3-cyclohexadiene", "OC1C=CCCC1", "C1=CC=CCC1"),
@@ -67,6 +66,22 @@ NEGATIVE_PAIRS = [
     ("fulvene", "OCC1C=CC=C1", "C=C1C=CC=C1"),
     ("2-norbornanol -> norbornene (coverage loss)", "OC1CC2CCC1C2", "C1=CC2CCC1C2"),
     ("indanol -> indene (coverage loss)", "OC1CCc2ccccc21", "C1=Cc2ccccc2C1"),
+    # r3 red-team corpus
+    ("dienone-phenol alpha-ketol", "OC1CC(C)(C)C=CC1=O", "CC1(C)C=CC(=O)C=C1"),
+    ("semibenzene", "CC1(O)C=CC(C)(C)C=C1", "C=C1C=CC(C)(C)C=C1"),
+    ("semibenzene 4-Me-4-Et", "CC1(O)C=CC(C)(CC)C=C1", "C=C1C=CC(C)(CC)C=C1"),
+    ("2,2-dimethyl-2H-pyran (coverage loss)", "CC1(C)CC(O)C=CO1", "CC1(C)C=CC=CO1"),
+    ("bromohydrin (coverage loss)", "CC(O)CBr", "C=CCBr"),
+    ("tert chlorohydrin (coverage loss)", "CC(C)(O)CCl", "C=C(C)CCl"),
+    ("beta-amino (coverage loss)", "CC(O)CN", "C=CCN"),
+    ("beta-methoxy (coverage loss)", "CC(O)COC", "C=CCOC"),
+    ("beta-hydroperoxy", "CC(O)C(C)OO", "C=CC(C)OO"),
+    ("beta-sulfonyl", "CC(O)CS(=O)(=O)c1ccccc1", "C=CCS(=O)(=O)c1ccccc1"),
+    ("beta-silyl (Peterson)", "CC(O)C[Si](C)(C)C", "C=CC[Si](C)(C)C"),
+    ("beta-boryl", "CC(O)CB(O)O", "C=CCB(O)O"),
+    ("1,3-propanediol -> allyl alcohol (coverage loss)", "OCCCO", "C=CCO"),
+    ("2-pyridyl (coverage loss)", "CC(O)c1ccccn1", "C=Cc1ccccn1"),
+    ("tetrahydropyran-4-ol (coverage loss)", "OC1CCOCC1", "C1=CCOCC1"),
 ]
 
 
@@ -122,6 +137,19 @@ def test_witness_safe_set_rules_read_off_the_target():
     assert not all(rf.is_monocyclic_or_acyclic(i) for i in range(len(P("C1=C2CCC(C1)C2").atoms)))
 
 
+def test_witness_closed_shell_gate_refuses_labels_radicals_and_unknown_elements():
+    from smartchem.category import Molecule
+    ethanol = P("CCO")
+    h = next(i for i, a in enumerate(ethanol.atoms) if a == "H")
+    for label in ("D", "T", "2H"):
+        atoms = list(ethanol.atoms)
+        atoms[h] = label
+        assert not w.closed_shell_unlabelled(Molecule(tuple(atoms), ethanol.bonds)), label
+    assert not w.closed_shell_unlabelled(P("[CH2]CCC(C)O"))
+    assert not w.closed_shell_unlabelled(P("CC(O)C[Si](C)(C)C"))
+    assert w.closed_shell_unlabelled(ethanol)
+
+
 def test_own_isomorphism_distinguishes_isomers_and_accepts_relabelings():
     a, b, c = P("CCCCO"), P("CCC(C)O"), P("OCCCC")
     ga, gb, gc = (([*m.atoms], w._graph(m)) for m in (a, b, c))
@@ -141,6 +169,8 @@ def test_bridges_within_finds_ring_and_chain_bonds():
 # -- independence audit ----------------------------------------------------------------------------------------------
 
 FORBIDDEN_NAMES = {"_dehydrates_to", "_forward_dehydrations", "_dehydration_sites", "_Rings",
+                   "_unlabelled_closed_shell", "_acyl_heteroatoms", "_neighbourhood_is_carbon", "_site_is_safe",
+                   "_site_product", "_wl_key",
                    "_ring_context_is_safe", "_aromatisable_ring", "_connected_without", "_bears_hydroxyl",
                    "_is_quaternary_carbon",
                    "_alkene_sites", "_hydrate", "DehydrationEdge", "retro_dehydration_edges",

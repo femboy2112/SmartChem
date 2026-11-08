@@ -1,0 +1,14 @@
+{
+  "schema": "smartchem-science-manifest/1",
+  "note": "OPERATION XXV-2 (#166). The designated live-reference-solver and git-history no-tune test files. The science workflow runs exactly these and FAILS (check_junit.py) on any skip or if fewer than expected_executed tests ran. Raise expected_executed only when tests are added here, in the same commit.",
+  "tests": [
+    "experiments/sandbox_foundation/tests/test_ammonia_phreeqc_benchmark_xv.py",
+    "experiments/sandbox_foundation/tests/test_xxi_s6_na_pair_ablation.py",
+    "experiments/sandbox_foundation/tests/test_xxii_s6_factorial.py",
+    "experiments/sandbox_foundation/tests/test_xxiv_pitzer_anomaly.py",
+    "experiments/sandbox_foundation/tests/test_xxv_calcite_live_phreeqc.py",
+    "experiments/sandbox_foundation/tests/test_xxi_s4_three_comparators.py",
+    "experiments/sandbox_foundation/tests/test_xx_s5_unit_convention.py"
+  ],
+  "expected_executed": 60
+}

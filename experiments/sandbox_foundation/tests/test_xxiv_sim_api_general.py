@@ -19,11 +19,13 @@ INIT = (api.SpeciesInventory("cell", "CaCO3(s)", "solid", 0.01),
         api.SpeciesInventory("cell", "H+", "aqueous", 1e-7),
         api.SpeciesInventory("cell", "OH-", "aqueous", 1e-7))
 CA = ("Ca+2", "CaCO3(aq)", "CaHCO3+", "CaOH+")
+# XXV-1 flipped the API default to converted_to_molar; this file pins the XXIII-replay numbers, so it says so explicitly
+LEGACY = api.CalciteParams(standard_state_basis="as_tabulated_molal")
 
 
 def _spec(phases=(("dissolve", 6000.0, 60),), params=None, n_samples=None, initial=INIT):
     sched = api.BoundarySchedule(tuple(api.BoundaryPhase(n, d, k, "closed", False) for n, d, k in phases))
-    return api.SimulationSpec(model=api.ModelSpec(W, params or api.CalciteParams()), initial=initial, schedule=sched,
+    return api.SimulationSpec(model=api.ModelSpec(W, params or LEGACY), initial=initial, schedule=sched,
                               solver=api.SolverOptions(rtol=1e-10, atol=1e-18, n_samples=n_samples))
 
 
@@ -101,7 +103,8 @@ def test_identities_separate_model_run_evidence_observation(base):
     ids_obs = api.run(_spec(n_samples=6)).identities
     assert ids_obs["run_digest"] == ids["run_digest"] and ids_obs["model_digest"] == ids["model_digest"]
     assert ids_obs["observation_digest"] != ids["observation_digest"]
-    ids_k = api.spec_identities(_spec(params=api.CalciteParams(k_diss_molpLps=2e-6)))
+    ids_k = api.spec_identities(_spec(params=api.CalciteParams(k_diss_molpLps=2e-6,
+                                                               standard_state_basis="as_tabulated_molal")))
     assert ids_k["model_digest"] != ids["model_digest"]
     vinegar = api.spec_identities(api.SimulationSpec(
         model=api.ModelSpec(), initial=(api.SpeciesInventory("A", "HAc", "aqueous", 0.1),),

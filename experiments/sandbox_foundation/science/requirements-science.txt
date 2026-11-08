@@ -1,0 +1,17 @@
+# OPERATION XXV-2 (#166): the hash-locked live-reference-solver environment for .github/workflows/science.yml.
+# Installed AFTER `pip install -e '.[dev]'` with:
+#   pip install --require-hashes --no-deps --only-binary :all: -r experiments/sandbox_foundation/science/requirements-science.txt
+#   pip check
+# --no-deps: the dependency closure is listed here explicitly (numpy comes from the core install); `pip check` then
+# proves it is complete.  Wheels only; CPython 3.12 manylinux x86_64 is the ONLY platform phreeqpython 1.6.2 ships a
+# Linux wheel for.
+# Hash source: https://pypi.org/pypi/<name>/<version>/json "digests.sha256", fetched 2026-11-08, and re-hashed locally
+# from the downloaded files (sha256sum) -- both agree.
+#   phreeqpython 1.6.2  Requires-Dist: periodictable, numpy
+#   periodictable 2.1.0 Requires-Dist: pyparsing>=3.0.0, numpy
+phreeqpython==1.6.2 \
+    --hash=sha256:c63b2dcbe504973a16beb057e152617fa51d6337032767f7516751a47ae2938c
+periodictable==2.1.0 \
+    --hash=sha256:e9155d2bf5ac10050abeff2f99096d4f04312c0c8a6bb432e28744367c5064b3
+pyparsing==3.3.3 \
+    --hash=sha256:ece8c00a69cf01b45d0b1dedabb469c90d8caf996d4fda40f147627a122849a4

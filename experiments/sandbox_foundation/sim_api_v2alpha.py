@@ -52,8 +52,10 @@ import hashlib
 import json
 import math
 from dataclasses import dataclass, field
+from enum import Enum
 from types import MappingProxyType
 
+from experiments.sandbox_foundation import admissibility as _adm
 from experiments.sandbox_foundation.carbonate_equilibrium import KH_CO2_25C, R_GAS_L_ATM
 from experiments.sandbox_foundation.claim_tiers import ASSUMED_PARAMETER, weakest
 from experiments.sandbox_foundation.coupled_equilibrium import (
@@ -253,25 +255,57 @@ class _UnifiedBuilder:
     def component_totals(self, state) -> dict:
         return _component_totals(state)
 
-    def validation_ladder(self, params) -> dict:
-        return {"NUMERICALLY_EXECUTABLE": "per-phase receipts (layer 2)",
-                "WITHIN_DECLARED_FORMULA_DOMAIN": "25 C K-set + Davies I-domain, refused outside (XIX-1C / XXIV-2A)",
-                "COMPARED_TO_REFERENCE_IMPLEMENTATION": "PHREEQC acetate/carbonate benchmarks (model-vs-model)",
-                "EMPIRICALLY_VALIDATED_WITHIN_MEASURED_BAND": False}
+    def claim_rungs(self, params) -> dict:
+        # XXV-1: the XXIV-2C claims carried forward unchanged in substance, now structured.  The constants' standard-
+        # state basis was NOT audited for this world in XXV (calcite only); that is recorded, not implied.
+        return {
+            _adm.WITHIN_DECLARED_FORMULA_DOMAIN: {
+                "holds": True, "reason": "DECLARED_DOMAIN_ENFORCED",
+                "detail": "25 C K-set + Davies I-domain, refused outside (XIX-1C / XXIV-2A)",
+                "standard_state_basis_audit": "NOT_PERFORMED"},
+            _adm.COMPARED_TO_REFERENCE_IMPLEMENTATION: {
+                "holds": True, "kind": "MODEL_VS_MODEL", "reason": "CARRIED_FORWARD_NOT_REAUDITED",
+                "detail": "PHREEQC acetate/carbonate benchmarks (model-vs-model)"}}
+
+
+class StandardStateVerdict(str, Enum):
+    """XXV-1 (#165): whether a calcite parameter set feeds constants on the SAME standard state as its molar activity
+    law.  DERIVED from ``CalciteParams.standard_state_basis`` by the builder; no spec/result field accepts it."""
+    SOURCE_CONSISTENT_MOLAR = "SOURCE_CONSISTENT_MOLAR"
+    LEGACY_REPLAY_BASIS_MISMATCH = "LEGACY_REPLAY_BASIS_MISMATCH"
+
+
+_BASIS_VERDICT = {"converted_to_molar": StandardStateVerdict.SOURCE_CONSISTENT_MOLAR,
+                  "as_tabulated_molal": StandardStateVerdict.LEGACY_REPLAY_BASIS_MISMATCH}
+
+#: model-vs-model Ca residuals vs PHREEQC recorded in XXIV-2B (constants_mode='nominal', the XXIII-S4 scenario);
+#: re-measured live by tests/test_xxv_calcite_live_phreeqc.py in the science workflow
+_RECORDED_CA_REL_DIFF = {"converted_to_molar": -7.1e-5, "as_tabulated_molal": 2.98e-3}
 
 
 @dataclass(frozen=True)
 class CalciteParams:
     """XXIV-4: parameters of the closed calcite-dissolution world (benchmarks/solid_equilibrium_xxiii).  Constants come
     from the SHA-pinned PHREEQC databases; the two rate scales are ASSUMED (the equilibrium state is independent of
-    them, the transient is not)."""
+    them, the transient is not).
+
+    XXV-1: new scenarios default to the source-consistent molar basis.  'as_tabulated_molal' stays executable for
+    replay of XXIII/XXIV receipts, and every such result is labelled LEGACY_REPLAY_BASIS_MISMATCH (not formula-domain
+    valid).  The XXIII harness's own default is unchanged, so its committed JSON still replays bit-identically."""
     k_diss_molpLps: float = 1.0e-6
     kf_fast: float = 1.0e8
     constants_mode: str = "nominal"            # nominal (tabulated log_k) | phreeqc_effective (-analytic at 25 C)
     ionic_strength_max: float = 0.1
     allow_precipitation: bool = False
     temperature_K: float = 298.15
-    standard_state_basis: str = "as_tabulated_molal"   # XXIV-2B: | converted_to_molar (see standard_state.py)
+    standard_state_basis: str = "converted_to_molar"   # XXIV-2B: | as_tabulated_molal (legacy replay; see above)
+
+
+def standard_state_verdict(params: CalciteParams) -> StandardStateVerdict:
+    """The derived standard-state verdict of a calcite parameter set (refuses an undeclared basis)."""
+    if type(params) is not CalciteParams or params.standard_state_basis not in _BASIS_VERDICT:
+        raise SimulationSpecError("standard_state_verdict takes CalciteParams with a declared standard_state_basis")
+    return _BASIS_VERDICT[params.standard_state_basis]
 
 
 def _calcite_harness():
@@ -377,16 +411,40 @@ class _CalciteBuilder:
         h = _calcite_harness()
         return {"calcite_evidence_identity": {
             "databases": sorted([pth.name, sha] for pth, sha in h.DB_SHA256.items()),
-            "claim": "model-vs-model verification against PHREEQC on the SAME constants; NOT empirical validation"}}
+            "claim": "model-vs-model verification against PHREEQC on the SAME constants; NOT empirical validation",
+            # XXV-1: the verdict and the params-derived rungs are hashed, so relabelling them moves the evidence digest
+            "standard_state_basis": params.standard_state_basis,
+            "standard_state_verdict": standard_state_verdict(params).value,
+            "claim_rungs": json.loads(json.dumps(self.claim_rungs(params)))}}
 
-    def validation_ladder(self, params) -> dict:
-        ref = ("PHREEQC on the SAME constants (model-vs-model): Ca within 0.007% once log K is transported molal->molar "
-               "(XXIV-2B); 0.30% with the as-tabulated molal basis") if params.standard_state_basis == \
-            "converted_to_molar" else "PHREEQC on the SAME constants (model-vs-model): Ca +0.30% (molal-basis mismatch)"
-        return {"NUMERICALLY_EXECUTABLE": "per-phase receipts (layer 2)",
-                "WITHIN_DECLARED_FORMULA_DOMAIN": "I <= ionic_strength_max (OutOfDomainError above) and T = 298.15 K",
-                "COMPARED_TO_REFERENCE_IMPLEMENTATION": ref,
-                "EMPIRICALLY_VALIDATED_WITHIN_MEASURED_BAND": False}
+    def claim_rungs(self, params) -> dict:
+        """XXV-1: rungs 2-3, computed from the params.  A legacy-basis result is never formula-domain valid."""
+        verdict = standard_state_verdict(params)
+        basis = params.standard_state_basis
+        if verdict is StandardStateVerdict.SOURCE_CONSISTENT_MOLAR:
+            domain = {"holds": True, "reason": verdict.value, "standard_state_verdict": verdict.value,
+                      "standard_state_basis": basis,
+                      "detail": "log K transported molal->molar for the molar activity law (XXIV-2B); "
+                                "I <= ionic_strength_max (OutOfDomainError above); T = 298.15 K (refused at the spec)"}
+        else:
+            domain = {"holds": False, "reason": verdict.value, "standard_state_verdict": verdict.value,
+                      "standard_state_basis": basis,
+                      "detail": "molal-basis log K applied in a MOLAR activity law (dlog K = sum(nu_aq) * "
+                                "log10(0.997047)); executable for replay of XXIII/XXIV receipts only, NOT "
+                                "formula-domain valid"}
+        if params.constants_mode != "nominal":
+            ref = {"holds": False, "kind": "MODEL_VS_MODEL", "reason": "NOT_COMPARED_FOR_THIS_CONFIGURATION",
+                   "detail": f"no recorded PHREEQC comparison for constants_mode={params.constants_mode!r} with "
+                             f"standard_state_basis={basis!r}"}
+        else:
+            ok = verdict is StandardStateVerdict.SOURCE_CONSISTENT_MOLAR
+            ref = {"holds": ok, "kind": "MODEL_VS_MODEL",
+                   "reason": "AGREES_WITH_REFERENCE_SAME_CONSTANTS" if ok else verdict.value,
+                   "recorded_Ca_rel_diff": _RECORDED_CA_REL_DIFF[basis],
+                   "detail": "PHREEQC (phreeqc.dat, the SAME constants) on the XXIII-S4 scenario (calcite in CO2-free "
+                             "water, 25 C); recorded, not re-run per spec" +
+                             ("" if ok else "; the +0.30% gap is the basis mismatch, not chemistry")}
+        return {_adm.WITHIN_DECLARED_FORMULA_DOMAIN: domain, _adm.COMPARED_TO_REFERENCE_IMPLEMENTATION: ref}
 
     def component_totals(self, state) -> dict:
         tot = {}
@@ -574,7 +632,13 @@ class SimulationResult:
     admitted_tier: str                       # weakest over the phase receipts
     identities: MappingProxyType             # model / run / evidence / observation (dicts + digests)
     layers: MappingProxyType = LAYERS
-    validation_ladder: MappingProxyType = MappingProxyType({})   # XXIV-2C: the four claim rungs, kept separate
+    # XXIV-2C the four claim rungs, kept separate.  XXV-1: COMPUTED from spec + structural law + receipts, never
+    # caller-supplied (init=False), so a result cannot carry a ladder its own inputs do not support.
+    validation_ladder: MappingProxyType = field(init=False)
+
+    def __post_init__(self):
+        object.__setattr__(self, "validation_ladder", _freeze_map(
+            compute_validation_ladder(self.spec, self.structural_conservation, self.receipts)))
 
     @property
     def final_frame(self) -> Frame:
@@ -640,6 +704,31 @@ def structural_conservation_check(world) -> dict:
                 bal["charge"] = bal.get("charge", 0) + coeff * s.charge
             out[f"{c.name}:{r.name}"] = all(v == 0 for v in bal.values())
     return {"law": "E.N == 0 (exact integers)", "reactions": out, "holds": all(out.values())}
+
+
+# ============================================================ XXV-1 the computed claim ladder
+def compute_validation_ladder(spec: SimulationSpec, structural, receipts) -> dict:
+    """The four XXIV-2C rungs (admissibility.CLAIM_LADDER order), each {"holds": bool, "reason": str, ...}.
+    Rung 1 from the exact structural law + every phase receipt; rungs 2-3 from the builder's claim_rungs(params);
+    rung 4 is False here for EVERY builder: no qualified independent holdout exists (2.0-alpha gate NOT MET), and no
+    builder can override it."""
+    rc = tuple(receipts)
+    structural_holds = bool(structural is not None and structural["holds"] is True)
+    certified = bool(rc) and all(r.execution_identity_certified for r in rc)
+    closed = bool(rc) and all(r.material_balance_closed and r.positivity_held for r in rc)
+    unresolved = sorted({c for r in rc for c in r.numerically_unresolved_components})
+    exe_ok = structural_holds and certified and closed and not unresolved
+    rung1 = {"holds": exe_ok, "reason": "STRUCTURAL_LAW_AND_CERTIFIED_RECEIPTS" if exe_ok else "EXECUTION_NOT_CERTIFIED",
+             "structural_conservation_holds": structural_holds, "execution_identity_certified": certified,
+             "material_balance_closed_and_positive": closed, "numerically_unresolved_components": tuple(unresolved)}
+    rungs = _builder(spec.model.world).claim_rungs(spec.model.params)
+    rung4 = {"holds": False, "reason": "NO_QUALIFIED_INDEPENDENT_HOLDOUT",
+             "detail": "no qualified independent holdout is registered (XXIV section 6: 2.0-alpha gate NOT MET); "
+                       "model-vs-model agreement is not measurement"}
+    return {_adm.NUMERICALLY_EXECUTABLE: rung1,
+            _adm.WITHIN_DECLARED_FORMULA_DOMAIN: rungs[_adm.WITHIN_DECLARED_FORMULA_DOMAIN],
+            _adm.COMPARED_TO_REFERENCE_IMPLEMENTATION: rungs[_adm.COMPARED_TO_REFERENCE_IMPLEMENTATION],
+            _adm.EMPIRICALLY_VALIDATED_WITHIN_MEASURED_BAND: rung4}
 
 
 # ============================================================ run
@@ -726,7 +815,7 @@ def run(spec: SimulationSpec) -> SimulationResult:
         stitch_events=tuple(events), stitched_final=stitched,
         structural_conservation=_freeze_map(structural),
         admitted_tier=weakest(*[r.admitted_tier for r in receipts]) if receipts else ASSUMED_PARAMETER,
-        identities=_freeze_map(ids), validation_ladder=_freeze_map(b.validation_ladder(params)))
+        identities=_freeze_map(ids))
 
 
 # ============================================================ composition helpers

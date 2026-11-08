@@ -1,0 +1,5 @@
+{
+  "schema": "smartchem-holdout-registry/1",
+  "schema_note": "OPERATION XXV-2 (#166). Independent-measurement holdouts for the measured_validation lane of science/status_record.py. Each entry: {\"id\": str, \"description\": str, \"prereg_commit\": full or abbreviated git SHA of the commit that preregistered the comparison BEFORE it was run, \"qualified\": bool (true only for an independent measurement with a stated uncertainty, preregistered with a fail-capable criterion), \"outcome\": \"PASS\" | \"FAIL\" | \"PENDING\", \"evidence\": repo path of the committed result}. The lane is PASS only if some entry has qualified == true (a JSON boolean), outcome == \"PASS\", and a prereg_commit that is an ancestor of the run commit; a qualified FAIL makes it FAIL; anything else is UNVERIFIED. No entry exists today: OPERATION XXIV section 6 found no qualified independent holdout (2.0-alpha gate NOT MET).",
+  "entries": []
+}

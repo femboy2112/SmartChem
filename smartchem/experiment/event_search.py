@@ -143,6 +143,14 @@ DEHYDRATION_PRODUCER = CoproductProducer("dehydration-v1", retro_dehydration_enu
 #: The default producer set.  With it, the receipt, the grammar digest and every route are byte-identical to the
 #: single-producer grammar that shipped in 1.6.0.
 DEFAULT_COPRODUCT_PRODUCERS: tuple[CoproductProducer, ...] = (LACTONIZATION_PRODUCER,)
+#: The CLOSED set of producers ``search_event_routes`` accepts, matched by object IDENTITY.  A caller cannot register
+#: a new type-3 producer (one would need its own oracle class and review), and a look-alike reusing a built-in
+#: ``provider_id`` is refused, so the grammar digest -- which names producers by id -- always names the code that ran.
+KNOWN_COPRODUCT_PRODUCERS: tuple[CoproductProducer, ...] = (LACTONIZATION_PRODUCER, DEHYDRATION_PRODUCER)
+
+
+class UnknownCoproductProducerError(TypeError):
+    """``coproduct_producers`` named something other than a built-in producer object (closed set, matched by ``is``)."""
 
 
 class EventClassificationError(ValueError):
@@ -368,17 +376,25 @@ def search_event_routes(
 
     ``coproduct_producers`` names the type-3 producers (default ``(LACTONIZATION_PRODUCER,)``, the 1.6.0 grammar).
     Alcohol dehydration (#116) is opt-in: ``coproduct_producers=(LACTONIZATION_PRODUCER, DEHYDRATION_PRODUCER)``.
-    Every producer shares the ONE per-route ``max_coproduct_events`` budget and ``coproduct_match_budget``, so the
-    termination measure is unchanged.  A non-default producer set is folded into the grammar digest; the default set
-    leaves it byte-identical.
+    The set is CLOSED: only the built-in objects in :data:`KNOWN_COPRODUCT_PRODUCERS` are accepted (by identity);
+    anything else raises :class:`UnknownCoproductProducerError`.  The set is canonicalised (sorted by id) before the
+    search, so caller order cannot change routes, truncation or digests.  Every producer shares the ONE per-route
+    ``max_coproduct_events`` budget and ``coproduct_match_budget``, so the termination measure is unchanged.  A
+    non-default producer set is folded into the grammar digest; the default set leaves it byte-identical.
     """
     if type(target) is not Molecule:
         raise TypeError("target must be a Molecule")
-    if (type(coproduct_producers) is not tuple
-            or any(type(p) is not CoproductProducer for p in coproduct_producers)):
-        raise TypeError("coproduct_producers must be a tuple of CoproductProducer")
+    if type(coproduct_producers) is not tuple:
+        raise TypeError("coproduct_producers must be a tuple of built-in CoproductProducer objects")
+    for producer in coproduct_producers:
+        if not any(producer is known for known in KNOWN_COPRODUCT_PRODUCERS):
+            raise UnknownCoproductProducerError(
+                f"coproduct_producers accepts only the built-in producers "
+                f"{tuple(k.provider_id for k in KNOWN_COPRODUCT_PRODUCERS)} (matched by identity); got {producer!r}")
     if len({p.provider_id for p in coproduct_producers}) != len(coproduct_producers):
         raise ValueError("coproduct_producers must not repeat a provider_id")
+    # canonical order: the caller's ordering must not change which routes survive max_routes or the result digest.
+    coproduct_producers = tuple(sorted(coproduct_producers, key=lambda p: p.provider_id))
     assert_registry_supports_use(registry, ProviderUse.LINEAR_ROUTE)
     for name, value in (("max_depth", max_depth), ("max_routes", max_routes), ("cut_budget", cut_budget),
                         ("lateral_match_budget", lateral_match_budget),
@@ -390,7 +406,7 @@ def search_event_routes(
             raise ValueError(f"{name} must be a non-negative integer")
 
     on_hand = {_ident(m) for m in (*available, *reagents, *commodities)}
-    if coproduct_producers == DEFAULT_COPRODUCT_PRODUCERS:
+    if len(coproduct_producers) == 1 and coproduct_producers[0] is LACTONIZATION_PRODUCER:
         coproduct_grammar = ("coproduct", "lactonization-v1", max_coproduct_events)   # the 1.6.0 digest, byte-stable
     else:
         coproduct_grammar = ("coproduct", tuple(sorted(p.provider_id for p in coproduct_producers)),

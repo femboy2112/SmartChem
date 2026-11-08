@@ -77,6 +77,12 @@ POSITIVES = [
     ("2-butanol -> 1-butene", "CCC(C)O", "C=CCC"),
     ("2-butanol -> 2-butene", "CCC(C)O", "CC=CC"),
     ("1-phenylethanol -> styrene", "CC(O)c1ccccc1", "C=Cc1ccccc1"),
+    # r2 controls: still inside the safe set after the red-team repair
+    ("cyclopentanol -> cyclopentene", "OC1CCCC1", "C1=CCCC1"),
+    ("cyclooctanol -> cyclooctene", "OC1CCCCCCC1", "C1=CCCCCCC1"),
+    ("cyclohex-2-en-1-ol -> 1,3-cyclohexadiene", "OC1C=CCCC1", "C1=CC=CCC1"),
+    ("cyclohexylmethanol -> methylenecyclohexane", "OCC1CCCCC1", "C=C1CCCCC1"),
+    ("3-hydroxybutanal -> crotonaldehyde (beta-hydroxy carbonyl, deliberately in)", "CC(O)CC=O", "CC=CC=O"),
 ]
 
 #: (label, reactants, products) -- every one must ABSTAIN overall, never vouch as dehydration.
@@ -99,6 +105,34 @@ ADVERSARIAL_STEPS = [
     ("butane-1,4-diol -> butadiene + 2 H2O (two waters)", ("OCCCCO",), ("C=CC=C", WATER, WATER)),
     ("2-methoxyethanol -> methyl vinyl ether (enol ether)", ("COCCO",), ("C=COC", WATER)),
     ("cyclopropanol -> cyclopropene (3-ring)", ("OC1CC1",), ("C1=CC1", WATER)),
+    # r2 red-team: anti-Bredt (rule a)
+    ("1-norbornanol -> bicyclo[2.2.1]hept-1-ene", ("OC12CCC(CC1)C2",), ("C1=C2CCC(C1)C2", WATER)),
+    ("1-adamantanol -> adamantene", ("OC12CC3CC(CC(C3)C1)C2",), ("C1=C2CC3CC(CC1C3)C2", WATER)),
+    ("bicyclo[1.1.1]pentan-1-ol -> bridgehead alkene", ("OC12CC(C1)C2",), ("C1=C2CC1C2", WATER)),
+    ("cubanol -> cubene", ("OC12C3C4C1C5C2C3C45",), ("C12=C3C4C1C5C2C3C45", WATER)),
+    # r2 red-team: rearrangement-prone under the acid the ledger demands (rules b-e)
+    ("cyclobutanol -> cyclobutene", ("OC1CCC1",), ("C1=CCC1", WATER)),
+    ("cyclopropylmethanol -> methylenecyclopropane", ("OCC1CC1",), ("C=C1CC1", WATER)),
+    ("1-cyclopropylethanol -> vinylcyclopropane", ("CC(O)C1CC1",), ("C=CC1CC1", WATER)),
+    ("pinacol -> 2,3-dimethylbut-3-en-2-ol", ("CC(C)(O)C(C)(C)O",), ("C=C(C)C(C)(C)O", WATER)),
+    ("3,3-dimethylbutan-2-ol -> 3,3-dimethylbut-1-ene (quaternary neighbour)", ("CC(O)C(C)(C)C",),
+     ("C=CC(C)(C)C", WATER)),
+    # r2 red-team: aromatic tautomers / anhydrobase / fulvene (rule f)
+    ("cyclohexa-2,5-dienylmethanol -> p-isotoluene", ("OCC1C=CCC=C1",), ("C=C1C=CCC=C1", WATER)),
+    ("cyclohexa-2,4-dienylmethanol -> o-isotoluene", ("OCC1C=CC=CC1",), ("C=C1C=CC=CC1", WATER)),
+    ("1,4-dihydropyridin-4-ylmethanol -> 4-picoline anhydrobase", ("OCC1C=CNC=C1",), ("C=C1C=CNC=C1", WATER)),
+    ("cyclopentadienylmethanol -> fulvene", ("OCC1C=CC=C1",), ("C=C1C=CC=C1", WATER)),
+]
+
+#: ACCEPTED COVERAGE LOSS (r2): real dehydrations now outside the positive safe set.  They must ABSTAIN -- pinned so a
+#: later widening is a deliberate, reviewed decision rather than drift.
+COVERAGE_LOSS_STEPS = [
+    ("bicyclo[3.3.1]nonan-1-ol -> bicyclo[3.3.1]non-1-ene (bridgehead; rule a)", ("OC12CCCC(CCC1)C2",),
+     ("C1=C2CCCC(C2)CC1", WATER)),
+    ("2-norbornanol -> norbornene (bridged system; rule a)", ("OC1CC2CCC1C2",), ("C1=CC2CCC1C2", WATER)),
+    ("indan-1-ol -> indene (fused system; rules a, f)", ("OC1CCc2ccccc21",), ("C1=Cc2ccccc2C1", WATER)),
+    ("cyclopent-3-en-1-ol -> cyclopentadiene (rule f)", ("OC1CC=CC1",), ("C1=CCC=C1", WATER)),
+    ("cyclohepta-3,5-dien-1-ol -> cycloheptatriene (rule f)", ("OC1CC=CC=CC1",), ("C1=CC=CC=CC1", WATER)),
 ]
 
 
@@ -144,6 +178,13 @@ def test_the_registry_entry_names_the_class_the_generator_stamps():
 
 # -- adversarial -----------------------------------------------------------------------------------------------------
 
+@pytest.mark.parametrize("label,reactants,products", COVERAGE_LOSS_STEPS, ids=[c[0] for c in COVERAGE_LOSS_STEPS])
+def test_accepted_coverage_loss_abstains_in_production_and_witness(label, reactants, products):
+    step = _step(reactants, products)
+    assert recognize_reaction_type_outcome(step).kind == ABSTAIN, label
+    assert not witnesses_dehydration(P(reactants[0]), P(products[0])).is_dehydration, label
+
+
 @pytest.mark.parametrize("label,reactants,products", ADVERSARIAL_STEPS, ids=[a[0] for a in ADVERSARIAL_STEPS])
 def test_adversarial_step_abstains(label, reactants, products):
     step = _step(reactants, products)
@@ -168,6 +209,29 @@ def test_the_retro_from_benzene_and_allene_is_empty_but_exhaustive():
     for smi in ("c1ccccc1", "C=C=C", "C1=CC1", "C=CO"):
         enum = retro_dehydration_enumeration(P(smi))
         assert enum.edges == () and enum.exhaustive, smi
+
+
+def test_safe_set_rule_attribution():
+    """Each r2 rule fires on the structure it names (so an abstain is the rule, not a mis-drawn SMILES)."""
+    from smartchem.elimination import _Rings, _adjacency, _aromatisable_ring
+
+    def rings(smi):
+        m = P(smi)
+        return m, _Rings(m.atoms, _adjacency(m))
+
+    m, r = rings("OC12CCC(CC1)C2")                         # 1-norbornanol: the carbinol C is a bridgehead
+    carbinol = next(i for i, a in enumerate(m.atoms) if a == "C" and any(m.atoms[n] == "O" for n, _ in
+                                                                           _adjacency(m)[i]))
+    assert r.monocycle(carbinol) is None                   # (a)
+    m, r = rings("OC1CCC1")
+    ring_c = next(i for i, a in enumerate(m.atoms) if a == "C")
+    assert len(r.monocycle(ring_c)) == 4                   # (b)
+    m, r = rings("CC(O)C1CC1")
+    assert min(r.smallest_ring_through(i) or 99 for i, a in enumerate(m.atoms) if a == "C") == 3   # (c)
+    m = P("C=C1C=CCC=C1")                                   # p-isotoluene ring: one sp3 CH2 short of conjugated
+    adj = _adjacency(m)
+    ring = {i for i, a in enumerate(m.atoms) if a == "C" and len([n for n, _ in adj[i] if m.atoms[n] == "C"]) >= 2}
+    assert _aromatisable_ring(ring, m.atoms, adj)          # (f)
 
 
 def test_a_fabricated_same_formula_precursor_is_refused_by_the_edge_certificate():
@@ -222,21 +286,25 @@ def test_dehydration_without_a_catalyst_is_demoted_naming_the_role():
     assert "REAL-BUT-HARD" in reason and "NOT a claim of" in reason
 
 
-@pytest.mark.parametrize("acid", ["H2SO4", "conc. H2SO4", "sulfuric acid", "concentrated sulfuric acid", "H3PO4",
-                                  "phosphoric acid", "TsOH", "p-toluenesulfonic acid", "KHSO4", "alumina", "Al2O3"])
+@pytest.mark.parametrize("acid", ["conc. H2SO4", "Conc. H2SO4", "conc H2SO4", "concentrated sulfuric acid",
+                                  "conc. H3PO4", "85% phosphoric acid", "85% H3PO4", "concentrated phosphoric acid",
+                                  "TsOH", "p-toluenesulfonic acid", "KHSO4", "alumina", "Al2O3"])
 def test_a_whitelisted_acid_catalyst_clears_the_requirement(acid):
     assert ActivatorRole.ACID_DEHYDRATION_CATALYST in classify_activator_roles(acid)
     assert step_activator_blockers(_dehydration_step("OC1CCCCC1", "C1=CCCCC1", catalysts=(acid,))) == ()
 
 
 @pytest.mark.parametrize("other", ["hydrochloric acid", "HCl", "nitric acid", "acetic acid", "acid", "NaOH",
-                                   "sodium ethoxide", "Pd/C", "POCl3"])
+                                   "sodium ethoxide", "Pd/C", "POCl3",
+                                   # r2: an UNQUALIFIED or dilute mineral acid may be aqueous -- it must not clear
+                                   "H2SO4", "sulfuric acid", "h2so4", "H3PO4", "phosphoric acid",
+                                   "dilute sulfuric acid", "CONC. H2SO4"])
 def test_an_unlisted_reagent_leaves_the_step_blocked(other):
     assert len(step_activator_blockers(_dehydration_step("OC1CCCCC1", "C1=CCCCC1", catalysts=(other,)))) == 1
 
 
 def test_the_acid_role_never_clears_another_classes_requirement():
-    for acid in ("H2SO4", "TsOH", "alumina"):
+    for acid in ("conc. H2SO4", "TsOH", "alumina"):
         roles = classify_activator_roles(acid)
         assert roles == frozenset({ActivatorRole.ACID_DEHYDRATION_CATALYST}), acid
 

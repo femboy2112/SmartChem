@@ -25,6 +25,11 @@ POSITIVE_PAIRS = [
     ("2-butanol -> 2-butene", "CCC(C)O", "CC=CC"),
     ("1-phenylethanol -> styrene", "CC(O)c1ccccc1", "C=Cc1ccccc1"),
     ("1,3-propanediol -> allyl alcohol", "OCCCO", "C=CCO"),
+    ("cyclopentanol", "OC1CCCC1", "C1=CCCC1"),
+    ("cyclooctanol", "OC1CCCCCCC1", "C1=CCCCCCC1"),
+    ("cyclohex-2-en-1-ol -> 1,3-cyclohexadiene", "OC1C=CCCC1", "C1=CC=CCC1"),
+    ("cyclohexylmethanol -> methylenecyclohexane", "OCC1CCCCC1", "C=C1CCCCC1"),
+    ("3-hydroxybutanal -> crotonaldehyde", "CC(O)CC=O", "CC=CC=O"),
 ]
 
 NEGATIVE_PAIRS = [
@@ -45,6 +50,23 @@ NEGATIVE_PAIRS = [
     ("two waters", "OCCCCO", "C=CC=C"),
     ("enol ether", "COCCO", "C=COC"),
     ("cyclopropene", "OC1CC1", "C1=CC1"),
+    # r2 red-team corpus (identical to the recognizer battery)
+    ("anti-Bredt norbornene", "OC12CCC(CC1)C2", "C1=C2CCC(C1)C2"),
+    ("anti-Bredt adamantene", "OC12CC3CC(CC(C3)C1)C2", "C1=C2CC3CC(CC1C3)C2"),
+    ("anti-Bredt bicyclo[1.1.1]pentene", "OC12CC(C1)C2", "C1=C2CC1C2"),
+    ("anti-Bredt cubene", "OC12C3C4C1C5C2C3C45", "C12=C3C4C1C5C2C3C45"),
+    ("bicyclo[3.3.1]non-1-ene (coverage loss)", "OC12CCCC(CCC1)C2", "C1=C2CCCC(C2)CC1"),
+    ("cyclobutene", "OC1CCC1", "C1=CCC1"),
+    ("methylenecyclopropane", "OCC1CC1", "C=C1CC1"),
+    ("vinylcyclopropane", "CC(O)C1CC1", "C=CC1CC1"),
+    ("pinacol", "CC(C)(O)C(C)(C)O", "C=C(C)C(C)(C)O"),
+    ("quaternary neighbour", "CC(O)C(C)(C)C", "C=CC(C)(C)C"),
+    ("p-isotoluene", "OCC1C=CCC=C1", "C=C1C=CCC=C1"),
+    ("o-isotoluene", "OCC1C=CC=CC1", "C=C1C=CC=CC1"),
+    ("4-picoline anhydrobase", "OCC1C=CNC=C1", "C=C1C=CNC=C1"),
+    ("fulvene", "OCC1C=CC=C1", "C=C1C=CC=C1"),
+    ("2-norbornanol -> norbornene (coverage loss)", "OC1CC2CCC1C2", "C1=CC2CCC1C2"),
+    ("indanol -> indene (coverage loss)", "OC1CCc2ccccc21", "C1=Cc2ccccc2C1"),
 ]
 
 
@@ -90,6 +112,16 @@ def test_eligible_sites_exclude_cumulene_enol_three_ring_and_arene():
     assert len(w.eligible_alkene_sites(P("C=Cc1ccccc1"))) == 1
 
 
+def test_witness_safe_set_rules_read_off_the_target():
+    # the witness reaches the same safe-set verdicts by its own route: every red-team target has NO eligible
+    # hydration orientation, while a control target keeps its own.
+    for smi in ("C1=C2CCC(C1)C2", "C1=CCC1", "C=C1CC1", "C=C1C=CCC=C1", "C=C1C=CNC=C1"):
+        assert w.eligible_hydrations(P(smi)) == (), smi
+    assert w.eligible_hydrations(P("C1=CCCC1"))
+    rf = w._RingFacts(P("C1=C2CCC(C1)C2").atoms, w._graph(P("C1=C2CCC(C1)C2")))
+    assert not all(rf.is_monocyclic_or_acyclic(i) for i in range(len(P("C1=C2CCC(C1)C2").atoms)))
+
+
 def test_own_isomorphism_distinguishes_isomers_and_accepts_relabelings():
     a, b, c = P("CCCCO"), P("CCC(C)O"), P("OCCCC")
     ga, gb, gc = (([*m.atoms], w._graph(m)) for m in (a, b, c))
@@ -108,7 +140,9 @@ def test_bridges_within_finds_ring_and_chain_bonds():
 
 # -- independence audit ----------------------------------------------------------------------------------------------
 
-FORBIDDEN_NAMES = {"_dehydrates_to", "_forward_dehydrations", "_dehydration_sites", "_closes_pi_ring",
+FORBIDDEN_NAMES = {"_dehydrates_to", "_forward_dehydrations", "_dehydration_sites", "_Rings",
+                   "_ring_context_is_safe", "_aromatisable_ring", "_connected_without", "_bears_hydroxyl",
+                   "_is_quaternary_carbon",
                    "_alkene_sites", "_hydrate", "DehydrationEdge", "retro_dehydration_edges",
                    "retro_dehydration_enumeration", "_dehydration", "recognize_reaction_type",
                    "resonance_identity", "canonical"}

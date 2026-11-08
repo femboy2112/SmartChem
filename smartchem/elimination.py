@@ -27,21 +27,36 @@ SCOPE AND WHAT IS DELIBERATELY NOT CLAIMED.
 
 THE FORWARD CERTIFICATE (:func:`_forward_dehydrations`, shared by the edge and the oracle recognizer).  It re-scans
 the precursor's OWN hydroxyls and applies the graph operation (remove O, its H and one H on C_beta; C_alpha--C_beta
-order 1 -> 2), admitting a site only when every guard holds:
+order 1 -> 2).  It is a POSITIVE SAFE-SET: a site is admitted only when EVERY condition below holds; anything else
+abstains (the standing rule that a hand-enumerated decline list over an unbounded hazard space leaks).
   1. the leaving O is a terminal hydroxyl: exactly one heavy neighbour (C_alpha) and exactly one H, all single bonds;
   2. C_alpha is an sp3 carbon (four single bonds -- so not a carbonyl, enol or aryl carbon) carrying no heteroatom
      other than the leaving O (a gem-diol / hemiacetal / hemiaminal / halohydrin carbinol is a masked carbonyl or a
      different class);
   3. C_beta is an sp3 carbon with at least one H and only C/H neighbours, so the new C=C carbons carry only C/H
      substituents (no enol, enol ether or enamine is minted);
-  4. the new C=C is not in a three-membered ring;
-  5. the new C=C does not complete a ring all of whose atoms are pi-capable (a multiply-bonded atom or any non-carbon
-     heavy atom) -- an aromatising closure (cyclohexa-2,4-dien-1-ol -> benzene) is deferred.  The check is LOCAL to
-     the new bond (a ring path between C_alpha and C_beta), so an exocyclic vinyl next to an arene (1-phenylethanol ->
-     styrene) is unaffected.
+  (a) C_alpha and C_beta are each acyclic or lie in a MONOCYCLIC ring system (the ring bonds connected to the atom
+      form exactly one cycle).  This excludes every bridgehead, fusion and spiro atom -- so every anti-Bredt product
+      (1-norbornanol, 1-adamantanol, bicyclo[1.1.1]pentan-1-ol, cubanol, bicyclo[3.3.1]nonan-1-ol) -- and, as an
+      ACCEPTED coverage loss, every dehydration inside a fused or bridged system: decalols -> octalins, indanols,
+      tetralols, 2-norbornanol (the textbook Wagner-Meerwein substrate);
+  (b) that ring, where present, has at least five members (no cyclopropene / cyclobutene / methylenecyclopropane);
+  (c) no carbon neighbour of C_alpha or C_beta (other than each other) lies on a ring of size <= 4 -- the
+      cyclopropyl- / cyclobutyl-carbinyl rearrangement;
+  (d) no carbon neighbour of C_alpha is quaternary (no H, four heavy neighbours) -- the Wagner-Meerwein / neopentyl
+      shift;
+  (e) no carbon neighbour of C_alpha bears a hydroxyl -- vicinal diols (pinacol / semipinacol) are out;
+  (f) after the edit, the ring of C_alpha or C_beta (this covers a C=C exocyclic to that ring) is neither fully
+      pi-capable nor pi-capable but for a single sp3 carbon bearing H (pi-capable = carrying a multiple bond, or any
+      non-carbon heavy atom).  That excludes aromatising closures (cyclohexa-2,4-dien-1-ol -> benzene), aromatic
+      tautomers and their conjugate acids (isotoluenes, the 4-picoline anhydrobase, fulvenes) and, as accepted
+      coverage loss, cyclopentadiene / cycloheptatriene / 2H-pyran formation.  Only the ring the edit touches is read,
+      so an arene beside an exocyclic C=C (1-phenylethanol -> styrene) is unaffected.
 Because C_alpha and C_beta are sp3 in the precursor, neither carries another multiple bond in the product, so no
-cumulene (allene) can be formed.  The result is compared to the target by resonance-canonical identity
-(:func:`~smartchem.smiles.resonance_identity`), so a Kekule spelling of an arene substituent cannot mask a match.
+cumulene (allene) can be formed.  A beta-hydroxy carbonyl (aldol -> enone, often E1cB) is DELIBERATELY inside the
+safe set: its new C=C carries only C/H substituents and none of (a)-(f) applies.  The result is compared to the
+target by resonance-canonical identity (:func:`~smartchem.smiles.resonance_identity`), so a Kekule spelling of an
+arene substituent cannot mask a match.
 """
 from __future__ import annotations
 
@@ -90,23 +105,70 @@ def _pi_capable(x: int, atoms, adj) -> bool:
     return any(order >= 2 for _n, order in adj[x])
 
 
-def _closes_pi_ring(a: int, b: int, atoms, adj) -> bool:
-    """In the PRODUCT adjacency, is there a path ``a -> ... -> b`` that avoids the direct ``a--b`` bond and whose every
-    intermediate atom is pi-capable?  If so the new ``a=b`` completes a fully conjugated ring (aromatisation)."""
-    seen = {a}
+def _connected_without(adj, a: int, b: int, *, skip_edge: tuple[int, int] | None = None,
+                       skip_atom: int | None = None) -> int | None:
+    """BFS distance from ``a`` to ``b`` avoiding the edge ``skip_edge`` and/or the atom ``skip_atom``; None if cut."""
+    dist = {a: 0}
     queue = deque([a])
     while queue:
         cur = queue.popleft()
         for nxt, _order in adj[cur]:
-            if cur == a and nxt == b:
-                continue                               # the new double bond itself is not a ring path
-            if nxt == b:
-                return True
-            if nxt in seen or not _pi_capable(nxt, atoms, adj):
+            if nxt == skip_atom or nxt in dist:
                 continue
-            seen.add(nxt)
+            if skip_edge is not None and {cur, nxt} == set(skip_edge):
+                continue
+            dist[nxt] = dist[cur] + 1
+            if nxt == b:
+                return dist[nxt]
             queue.append(nxt)
-    return False
+    return None
+
+
+class _Rings:
+    """Ring facts of one molecule, by edge-deletion connectivity (a bond is a ring bond iff its endpoints stay
+    connected without it)."""
+
+    def __init__(self, atoms, adj) -> None:
+        self.adj = adj
+        self.ring_nbrs: dict[int, list[int]] = {i: [] for i in adj}
+        for i in adj:
+            if atoms[i] == "H":
+                continue
+            for j, _order in adj[i]:
+                if j > i and atoms[j] != "H" and _connected_without(adj, i, j, skip_edge=(i, j)) is not None:
+                    self.ring_nbrs[i].append(j)
+                    self.ring_nbrs[j].append(i)
+
+    def system(self, x: int) -> tuple[set[int], int]:
+        """``(atoms, ring_bond_count)`` of the ring system reached from ``x`` through ring bonds."""
+        seen = {x}
+        stack = [x]
+        while stack:
+            for nxt in self.ring_nbrs[stack.pop()]:
+                if nxt not in seen:
+                    seen.add(nxt)
+                    stack.append(nxt)
+        edges = sum(len(self.ring_nbrs[v]) for v in seen) // 2
+        return seen, edges
+
+    def monocycle(self, x: int) -> "set[int] | None":
+        """The atoms of ``x``'s ring when its ring system is ONE cycle; ``set()`` when acyclic; None when polycyclic."""
+        if not self.ring_nbrs[x]:
+            return set()
+        members, edges = self.system(x)
+        return members if edges == len(members) else None
+
+    def smallest_ring_through(self, n: int) -> int | None:
+        """Size of the smallest ring through atom ``n`` (min over pairs of its ring neighbours of the path length
+        around ``n`` + 2), or None when ``n`` is on no ring."""
+        nbrs = self.ring_nbrs[n]
+        best = None
+        for k, u in enumerate(nbrs):
+            for v in nbrs[k + 1:]:
+                d = _connected_without(self.adj, u, v, skip_atom=n)
+                if d is not None and (best is None or d + 2 < best):
+                    best = d + 2
+        return best
 
 
 def _rebuild(atoms: tuple[str, ...], bonds: frozenset[Bond], drop: set[int], raise_bond: tuple[int, int]) -> Molecule:
@@ -124,13 +186,23 @@ def _rebuild(atoms: tuple[str, ...], bonds: frozenset[Bond], drop: set[int], rai
 
 
 # --------------------------------------------------------------------------------------------------------------------
-# The FORWARD certificate: every alkene a precursor reaches by ONE guarded 1,2-dehydration.
+# The FORWARD certificate: every alkene a precursor reaches by ONE safe-set 1,2-dehydration.
 # --------------------------------------------------------------------------------------------------------------------
 
+def _bears_hydroxyl(c: int, atoms, adj) -> bool:
+    return any(atoms[o] == "O" and any(atoms[h] == "H" for h, _o2 in adj[o]) for o, _o in adj[c])
+
+
+def _is_quaternary_carbon(c: int, atoms, adj) -> bool:
+    return atoms[c] == "C" and len(adj[c]) == 4 and all(atoms[x] != "H" for x, _o in adj[c])
+
+
 def _dehydration_sites(precursor: Molecule) -> list[tuple[int, int, int, int, int]]:
-    """Every guarded site as ``(o, h_o, c_alpha, c_beta, h_beta)`` (guards 1-3 of the module docstring)."""
+    """Every safe-set site as ``(o, h_o, c_alpha, c_beta, h_beta)`` -- conditions 1-3 and (a)-(e) of the module
+    docstring ((f) needs the product graph and is applied in :func:`_forward_dehydrations`)."""
     atoms = precursor.atoms
     adj = _adjacency(precursor)
+    rings: _Rings | None = None
     out: list[tuple[int, int, int, int, int]] = []
     for o in range(len(atoms)):
         if atoms[o] != "O" or len(adj[o]) != 2 or any(order != 1 for _n, order in adj[o]):
@@ -144,7 +216,14 @@ def _dehydration_sites(precursor: Molecule) -> list[tuple[int, int, int, int, in
             continue                                   # (2) sp3 carbinol carbon (no carbonyl / enol / phenol)
         if any(atoms[x] not in ("C", "H") for x, _o in adj[ca] if x != o):
             continue                                   # (2) no second heteroatom (masked-carbonyl guard)
-        for cb, _o in adj[ca]:
+        alpha_carbons = [x for x, _o in adj[ca] if atoms[x] == "C"]
+        if any(_is_quaternary_carbon(x, atoms, adj) for x in alpha_carbons):
+            continue                                   # (d) no quaternary neighbour of C_alpha
+        if any(_bears_hydroxyl(x, atoms, adj) for x in alpha_carbons):
+            continue                                   # (e) no vicinal hydroxyl
+        if rings is None:
+            rings = _Rings(atoms, adj)
+        for cb in alpha_carbons:
             if not _is_sp3_carbon(cb, atoms, adj):
                 continue                               # (3) sp3 C_beta (also excludes the cumulene route)
             if any(atoms[x] not in ("C", "H") for x, _o2 in adj[cb]):
@@ -152,32 +231,62 @@ def _dehydration_sites(precursor: Molecule) -> list[tuple[int, int, int, int, in
             h_beta = [x for x, _o2 in adj[cb] if atoms[x] == "H"]
             if not h_beta:
                 continue                               # (3) a hydrogen to eliminate
+            if not _ring_context_is_safe(ca, cb, atoms, adj, rings):
+                continue                               # (a)-(c)
             out.append((o, hs[0], ca, cb, min(h_beta)))
     return out
 
 
+def _ring_context_is_safe(ca: int, cb: int, atoms, adj, rings: "_Rings") -> bool:
+    for x in (ca, cb):
+        ring = rings.monocycle(x)
+        if ring is None:
+            return False                               # (a) bridgehead / fusion / spiro / polycyclic system
+        if ring and len(ring) < 5:
+            return False                               # (b) a ring of three or four members
+    for x, partner in ((ca, cb), (cb, ca)):
+        for n, _o in adj[x]:
+            if n == partner or atoms[n] != "C":
+                continue
+            size = rings.smallest_ring_through(n)
+            if size is not None and size <= 4:
+                return False                           # (c) a cyclopropyl / cyclobutyl neighbour
+    return True
+
+
+def _aromatisable_ring(ring: set[int], atoms, adj) -> bool:
+    """(f) on the PRODUCT graph: is ``ring`` fully pi-capable, or pi-capable but for one sp3 carbon bearing H?"""
+    others = [x for x in ring if not _pi_capable(x, atoms, adj)]
+    if not others:
+        return True
+    return len(others) == 1 and any(atoms[h] == "H" for h, _o in adj[others[0]])
+
+
 def _forward_dehydrations(precursor: Molecule) -> list[Molecule]:
-    """Every alkene ``precursor`` reaches by ONE guarded 1,2-dehydration (``-> alkene + H2O``), re-derived from the
+    """Every alkene ``precursor`` reaches by ONE safe-set 1,2-dehydration (``-> alkene + H2O``), re-derived from the
     precursor's own hydroxyls.  Distinct by resonance-canonical identity; empty for a charged / stateful species."""
     from .smiles import resonance_identity
     if type(precursor) is not Molecule or precursor.charge != 0 or precursor.state:
         return []
     atoms = precursor.atoms
-    adj = _adjacency(precursor)
     out: list[Molecule] = []
     seen: set[str] = set()
-    for o, h_o, ca, cb, h_beta in _dehydration_sites(precursor):
-        neighbours_a = {x for x, _o in adj[ca]}
-        if any(x in neighbours_a for x, _o in adj[cb]):
-            continue                                   # (4) C_alpha and C_beta share a neighbour: a 3-membered ring
+    sites = _dehydration_sites(precursor)
+    if not sites:
+        return out
+    rings = _Rings(atoms, _adjacency(precursor))
+    for o, h_o, ca, cb, h_beta in sites:
         try:
             alkene = _rebuild(atoms, precursor.bonds, {o, h_o, h_beta}, (ca, cb))
         except (ValueError, TypeError):
             continue                                   # an invalid rebuild is dropped (fail-closed)
-        # (5) the aromatisation guard, read on the PRODUCT graph around the new bond only.
+        # (f) read on the PRODUCT graph, for the ring of C_alpha and of C_beta (ring membership is unchanged by the
+        # edit, so the precursor's monocycles are remapped onto the product).
         keep = [i for i in range(len(atoms)) if i not in {o, h_o, h_beta}]
         remap = {old: new for new, old in enumerate(keep)}
-        if _closes_pi_ring(remap[ca], remap[cb], alkene.atoms, _adjacency(alkene)):
+        p_adj = _adjacency(alkene)
+        if any(_aromatisable_ring({remap[v] for v in rings.monocycle(x)}, alkene.atoms, p_adj)
+               for x in (ca, cb) if rings.monocycle(x)):
             continue
         try:
             alkene = alkene.canonical()

@@ -16,15 +16,20 @@ THIS WITNESS'S ROUTE (each step deliberately different):
      all unchanged.  "Ring-conjugated" is decided by TARJAN BRIDGE-FINDING on the subgraph of pi-capable atoms (a C=C
      that is not a bridge there lies on a fully pi-capable ring); production instead runs a path search from the new
      bond on the product.
-  4. THE RETRO DIRECTION with an OWN ISOMORPHISM TEST: for each eligible C=C of the TARGET (both carbons sp2 with no
-     other multiple bond, only C/H substituents, not on a three-membered ring by a smallest-cycle BFS, not
-     ring-conjugated), add H-OH in BOTH orientations as a raw graph and ask whether it is isomorphic to the precursor
-     by this module's own refinement + backtracking matcher -- never ``Molecule.canonical`` / ``resonance_identity``.
+  4. THE RETRO DIRECTION with an OWN ISOMORPHISM TEST: for each eligible ORIENTATION of a TARGET C=C
+     (:func:`eligible_hydrations`), add H-OH as a raw graph and ask whether it is isomorphic to the precursor by this
+     module's own refinement + backtracking matcher -- never ``Molecule.canonical`` / ``resonance_identity``.  An
+     orientation is eligible only inside the same POSITIVE SAFE-SET production enforces (both alkene carbons sp2 with no
+     other multiple bond and only C/H substituents, not ring-conjugated; and conditions (a)-(f) of
+     :mod:`smartchem.elimination`: monocyclic-or-acyclic ring context, ring size >= 5, no ring <= 4 next door, no
+     quaternary or hydroxyl-bearing neighbour of the OH carbon, no aromatisable ring), decided by the witness's OWN
+     algorithms: Tarjan bridges + union-find ring systems, edge-deletion BFS ring sizes and ring paths -- where
+     production uses edge-deletion connectivity, ring-bond flood fill and vertex-deletion BFS.
 The verdict is the conjunction 1-4; each check is exposed on :class:`DehydrationWitnessResult`.
 
 RESIDUAL SHARED ASSUMPTIONS (not zero): both routes read the same explicit-H Kekule ``Molecule`` graph and share the
-class DEFINITION (H-OH lost across two adjacent carbons, the new C=C carrying only C/H substituents, no aromatising
-or three-membered-ring closure).  Independence is in the direction (retro vs forward), the detection algorithms and
+class DEFINITION (H-OH lost across two adjacent carbons, the new C=C carrying only C/H substituents, the safe-set
+conditions (a)-(f)).  Independence is in the direction (retro vs forward), the detection algorithms and
 the identity test.  Because the isomorphism is exact on Kekule bond orders, a substituted arene drawn with
 DIFFERENT Kekule assignments in precursor and target can make the witness say False where production (resonance
 identity) says True -- a disagreement in the safe direction, not a false accept.
@@ -196,11 +201,111 @@ def _formula_gap_is_water(precursor: Molecule, target: Molecule) -> bool:
 # Retro hydration of the target's eligible C=C sites, and the witness's own isomorphism test.
 # --------------------------------------------------------------------------------------------------------------------
 
-def eligible_alkene_sites(mol: Molecule) -> tuple[tuple[int, int], ...]:
-    """The target's C=C bonds a 1,2-dehydration could have formed, read off the target alone."""
+class _RingFacts:
+    """Ring facts of one graph by the witness's own route: Tarjan bridges give the ring bonds, a union-find over the
+    ring bonds gives the ring systems (a system is MONOCYCLIC iff its ring-bond count equals its atom count), and
+    ring sizes come from an edge-deletion BFS."""
+
+    def __init__(self, atoms, g: Graph) -> None:
+        self.g = g
+        heavy = {i for i, el in enumerate(atoms) if el != "H"}
+        bridges = _bridges_within(g, heavy)
+        self.ring_bonds = [(i, j) for i in heavy for j in g[i] if j in heavy and i < j
+                           and frozenset((i, j)) not in bridges]
+        parent = {i: i for i in heavy}
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        for i, j in self.ring_bonds:
+            parent[find(i)] = find(j)
+        self._root = {i: find(i) for i in heavy}
+        self._members: dict[int, set[int]] = {}
+        self._edges: Counter = Counter()
+        for i, j in self.ring_bonds:
+            r = self._root[i]
+            self._members.setdefault(r, set()).update((i, j))
+            self._edges[r] += 1
+
+    def ring_neighbours(self, x: int) -> list[int]:
+        return sorted(j for i, j in self.ring_bonds if i == x) + sorted(i for i, j in self.ring_bonds if j == x)
+
+    def is_monocyclic_or_acyclic(self, x: int) -> bool:
+        if not self.ring_neighbours(x):
+            return True
+        r = self._root[x]
+        return self._edges[r] == len(self._members[r])
+
+    def smallest_ring(self, x: int) -> int | None:
+        sizes = [_smallest_ring_size(self.g, x, u) for u in self.ring_neighbours(x)]
+        sizes = [z for z in sizes if z is not None]
+        return min(sizes) if sizes else None
+
+
+def _ring_atoms_through(g: Graph, a: int, b: int) -> list[int]:
+    """The atoms of the smallest ring through bond ``a--b`` (BFS parent chain from ``a`` to ``b`` without that bond)."""
+    prev = {a: -1}
+    queue = deque([a])
+    while queue:
+        cur = queue.popleft()
+        for nxt in g[cur]:
+            if {cur, nxt} == {a, b} or nxt in prev:
+                continue
+            prev[nxt] = cur
+            if nxt == b:
+                path = [b]
+                while path[-1] != a:
+                    path.append(prev[path[-1]])
+                return path
+            queue.append(nxt)
+    return []
+
+
+def _orientation_is_safe(atoms, g: Graph, rf: _RingFacts, pi: set[int], c_oh: int, c_h: int) -> bool:
+    """The safe-set conditions (a)-(f) for hydrating ``c_oh = c_h`` (OH on ``c_oh``), read off the TARGET.  Ring
+    structure and every neighbour other than the two alkene carbons are the same in target and precursor."""
+    for x in (c_oh, c_h):
+        if not rf.is_monocyclic_or_acyclic(x):
+            return False                               # (a) bridgehead / fusion / spiro / polycyclic system
+        size = rf.smallest_ring(x)
+        if size is not None and size < 5:
+            return False                               # (b)
+    for x, partner in ((c_oh, c_h), (c_h, c_oh)):
+        for n in g[x]:
+            if n == partner or atoms[n] != "C":
+                continue
+            size = rf.smallest_ring(n)
+            if size is not None and size <= 4:
+                return False                           # (c)
+    for n in g[c_oh]:
+        if n == c_h or atoms[n] != "C":
+            continue
+        if len(g[n]) == 4 and all(atoms[m] != "H" for m in g[n]):
+            return False                               # (d) quaternary neighbour of C_alpha
+        if any(atoms[o] == "O" and any(atoms[h] == "H" for h in g[o]) for o in g[n]):
+            return False                               # (e) vicinal hydroxyl
+    for x in (c_oh, c_h):
+        nbrs = rf.ring_neighbours(x)
+        if not nbrs:
+            continue
+        ring = _ring_atoms_through(g, x, nbrs[0])
+        outside = [v for v in ring if v not in pi]
+        if not outside or (len(outside) == 1 and any(atoms[h] == "H" for h in g[outside[0]])):
+            return False                               # (f) aromatisable / aromatic-tautomer ring
+    return True
+
+
+def eligible_hydrations(mol: Molecule) -> tuple[tuple[int, int], ...]:
+    """Every ``(c_oh, c_h)`` orientation of a target C=C that a safe-set 1,2-dehydration could have formed (OH placed on
+    ``c_oh``), read off the target alone."""
     atoms = mol.atoms
     g = _graph(mol)
-    bridges = _bridges_within(g, _pi_capable_atoms(atoms, g))
+    pi = _pi_capable_atoms(atoms, g)
+    bridges = _bridges_within(g, pi)
+    rf = _RingFacts(atoms, g)
     out: list[tuple[int, int]] = []
     for d in _cc_doubles(atoms, g):
         a, b = sorted(d)
@@ -213,10 +318,15 @@ def eligible_alkene_sites(mol: Molecule) -> tuple[tuple[int, int], ...]:
                 ok = False                             # the alkene carries only C/H substituents
         if not ok or d not in bridges:
             continue                                   # a ring-conjugated C=C is not a dehydration product here
-        if _smallest_ring_size(g, a, b) == 3:
-            continue
-        out.append((a, b))
+        for c_oh, c_h in ((a, b), (b, a)):
+            if _orientation_is_safe(atoms, g, rf, pi, c_oh, c_h):
+                out.append((c_oh, c_h))
     return tuple(out)
+
+
+def eligible_alkene_sites(mol: Molecule) -> tuple[tuple[int, int], ...]:
+    """The target's C=C bonds (``a < b``) with at least one eligible hydration orientation."""
+    return tuple(sorted({tuple(sorted(pair)) for pair in eligible_hydrations(mol)}))
 
 
 def _hydrated(mol: Molecule, c_oh: int, c_h: int) -> tuple[list[str], Graph]:
@@ -318,13 +428,10 @@ def witnesses_dehydration(precursor: Molecule, target: Molecule) -> DehydrationW
     recovers = False
     if stoich:
         atoms_p, gp = list(precursor.atoms), _graph(precursor)
-        for a, b in eligible_alkene_sites(target):
-            for c_oh, c_h in ((a, b), (b, a)):
-                atoms_h, gh = _hydrated(target, c_oh, c_h)
-                if _isomorphic(atoms_h, gh, atoms_p, gp):
-                    recovers = True
-                    break
-            if recovers:
+        for c_oh, c_h in eligible_hydrations(target):
+            atoms_h, gh = _hydrated(target, c_oh, c_h)
+            if _isomorphic(atoms_h, gh, atoms_p, gp):
+                recovers = True
                 break
     verdict = stoich and rank and deltas and recovers
     failed = [name for name, ok in (("water_stoichiometry", stoich), ("cycle_rank_unchanged", rank),

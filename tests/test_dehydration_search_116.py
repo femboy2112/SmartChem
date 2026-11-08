@@ -13,11 +13,14 @@ import pytest
 from smartchem.elimination import DEHYDRATION_CLASS
 from smartchem.elimination_witness import witnesses_dehydration
 from smartchem.experiment.activator_ledger import route_activator_blockers
+from smartchem.elimination import DehydrationEnumeration, retro_dehydration_enumeration
 from smartchem.experiment.event_search import (
     DEFAULT_COPRODUCT_PRODUCERS,
     DEHYDRATION_PRODUCER,
     LACTONIZATION_PRODUCER,
+    CoproductProducer,
     EventType,
+    UnknownCoproductProducerError,
     classify_event,
     search_event_routes,
 )
@@ -91,6 +94,38 @@ def test_producer_argument_is_validated():
         search_event_routes(CYCLOHEXENE, reagents=(), coproduct_producers=[DEHYDRATION_PRODUCER])
     with pytest.raises(ValueError):
         search_event_routes(CYCLOHEXENE, reagents=(), coproduct_producers=(DEHYDRATION_PRODUCER, DEHYDRATION_PRODUCER))
+
+
+def _nothing(target, *, budget):
+    return DehydrationEnumeration((), True, 0, 0, budget)
+
+
+@pytest.mark.parametrize("fake", [
+    CoproductProducer("dehydration-v1", _nothing),                         # genuine id, enumerates nothing
+    CoproductProducer("dehydration-v1", retro_dehydration_enumeration),    # an equal-valued look-alike, not the object
+    CoproductProducer("my-producer", retro_dehydration_enumeration),
+], ids=["same-id-empty", "equal-lookalike", "new-id"])
+def test_the_producer_set_is_closed_and_matched_by_identity(fake):
+    with pytest.raises(UnknownCoproductProducerError):
+        search_event_routes(CYCLOHEXENE, reagents=(), available=(CYCLOHEXANOL,),
+                            coproduct_producers=(LACTONIZATION_PRODUCER, fake))
+
+
+#: a target both producers can make (the red-team order probe): vinyl-gamma-butyrolactone.
+_ORDER_TARGET = P("C=CC1CCC(=O)O1")
+_ORDER_STOCK = (P("C=CC(O)CCC(=O)O"), P("CC(O)C1CCC(=O)O1"), P("OCCC1CCC(=O)O1"))
+
+
+@pytest.mark.parametrize("max_routes", [100, 1])
+def test_caller_producer_order_cannot_change_routes_or_digests(max_routes):
+    ld = search_event_routes(_ORDER_TARGET, reagents=(), available=_ORDER_STOCK, max_routes=max_routes,
+                             coproduct_producers=(LACTONIZATION_PRODUCER, DEHYDRATION_PRODUCER))
+    dl = search_event_routes(_ORDER_TARGET, reagents=(), available=_ORDER_STOCK, max_routes=max_routes,
+                             coproduct_producers=(DEHYDRATION_PRODUCER, LACTONIZATION_PRODUCER))
+    assert ld.digest == dl.digest
+    assert ld.receipt.digest == dl.receipt.digest
+    assert [r.digest for r in ld.routes] == [r.digest for r in dl.routes]
+    assert len(ld.routes) == (3 if max_routes == 100 else 1)
 
 
 # -- no stock, cycles, budgets ---------------------------------------------------------------------------------------

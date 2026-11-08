@@ -151,7 +151,7 @@ _FILLS_ACIDIC_PROTON_BASE = [
 #: boundary of the acidic-oxygen clearing set (a SAFE under-claim). An entry here fills neither role -> clears nothing.
 _FILLS_NO_ROLE_AT_ALL = [
     "NaHCO3", "sodium bicarbonate", "pyridine", "ammonia", "sodium acetate", "water", "acetic acid",
-    "base-free", "", "   ",   # "sulfuric acid" left this list at #116: it now fills ACID_DEHYDRATION_CATALYST only
+    "sulfuric acid", "base-free", "", "   ",   # unqualified: fills nothing (#116 r2 -- only CONCENTRATED acid clears)
     "n-BuLi", "t-BuLi", "tert-butyllithium", "MeLi", "methyllithium", "PhLi", "EtMgBr", "ethylmagnesium bromide",
 ]
 

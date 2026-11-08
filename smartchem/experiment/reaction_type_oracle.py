@@ -1952,9 +1952,12 @@ def _dehydration(step) -> bool:
 
     SHAPE GATE (each a fail-closed abstain): exactly ONE reactant; the byproducts are exactly ``(water,)`` (so the HX
     slice, a two-water step and an ether -> alkene + alcohol split all abstain); the precursor is exactly three atoms
-    larger than the target (explicit-H O + H + H); both species closed-shell neutral.  STRUCTURAL GUARDS live in the
-    forward certificate (terminal hydroxyl; sp3 C_alpha with no second heteroatom; sp3 C_beta bearing H with only C/H
-    neighbours; no new C=C in a three-membered ring; no aromatising ring closure).  Because the C=C is formed between
+    larger than the target (explicit-H O + H + H); both species closed-shell neutral.  The STRUCTURAL conditions are
+    the forward certificate's POSITIVE SAFE-SET (terminal hydroxyl; sp3 C_alpha with no second heteroatom; sp3 C_beta
+    bearing H with only C/H neighbours; plus the #116 r2 conditions (a)-(f) of :mod:`smartchem.elimination`: no
+    bridgehead / fused / bridged ring context -- so no anti-Bredt alkene --, ring size >= 5, no ring <= 4 next door, no
+    quaternary or hydroxyl-bearing neighbour of C_alpha, no aromatising or aromatic-tautomer ring).  Anything outside
+    that set abstains.  Because the C=C is formed between
     the carbinol carbon and one of its own neighbours, a 1,2-shift or remote-alkene product is never re-derived, and
     BOTH regiochemistries are recognised -- no Zaitsev selectivity is claimed.  Disjoint from lactonization (that
     re-derivation forms a ring ester, never a C=C) and from every >=2-reactant or coproduct-free class."""

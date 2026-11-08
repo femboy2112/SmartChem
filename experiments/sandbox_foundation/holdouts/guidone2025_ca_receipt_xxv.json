@@ -1,0 +1,543 @@
+{
+  "code_closure": {
+    "experiments.sandbox_foundation.admissibility": "48feddddf880533c691b792defe13fc550657d47975c4a05901f334dc5932c85",
+    "experiments.sandbox_foundation.ammonia_equilibrium": "d29b0823291c6270a46383bdfe85f862cea7e42c33f4d60a28057b12e3ea2bf0",
+    "experiments.sandbox_foundation.aqueous_equilibrium": "07f62e4cdbf621f32f3a3f86cf63eae22a932ad4831065c229ef7fcad1544c65",
+    "experiments.sandbox_foundation.benchmarks.solid_equilibrium_xxiii.run_solid_equilibrium_xxiii": "398278f12150ac6c47fe3436660e4d14b6cd23e72c280165101ba2d28bf62795",
+    "experiments.sandbox_foundation.carbonate_equilibrium": "7906c87ec195c1525634d1c893e41eecb38e3b772d4ae2223857f489c20c474f",
+    "experiments.sandbox_foundation.claim_tiers": "a887e310927781fac28b8647e1e6c7c2751b4bc117ead866ef61590802702a41",
+    "experiments.sandbox_foundation.coupled_equilibrium": "41bf3bc89221ea45fa438e1c19164deadc3f0be3fb01a5067b0da967edf19a27",
+    "experiments.sandbox_foundation.coupled_gas_equilibrium": "175edae0f89772ef8f02374793a90eda7c573f7dad580ecd7319be93e4d25e7d",
+    "experiments.sandbox_foundation.gas_boundary_xxv": "3d2c1cddb40cc471afa9c514f11d3ed5eac52b6a037eeb2342983a939bed65b8",
+    "experiments.sandbox_foundation.general_coupled": "29cbaaa0432c03b5972d64741c3bf3b6e13cbc35152aefdba436d44715eca6fc",
+    "experiments.sandbox_foundation.general_equilibrium": "30a045ad98d3b64822818f78bdbc57e4f13ad01e64b53a724fdcd708cf719aed",
+    "experiments.sandbox_foundation.general_kernel": "f1a13d166781d903f6c4f34d059afc58f47213cadc24cb05732c9e85fd89d43d",
+    "experiments.sandbox_foundation.holdout_guidone_xxv": "c3aed503081f0b4cc5a5981d77746c7f9bdb00cb7419d8c5ac43c161e290385f",
+    "experiments.sandbox_foundation.open_calcite_xxv": "8166d8d8020a9d90a0d133d9d27ff6297ae29bfbe0da7378e1f53419dd9a6a3c",
+    "experiments.sandbox_foundation.solid_bicarbonate": "984efb6977a43345387c6bb3ba37bee8f36c6bc0e21840486fc3a0fd17b78737",
+    "experiments.sandbox_foundation.solid_equilibrium": "93db994ae966fc6118777fe8dbd74a87d497bd0fb7d1e2738fb5eb6c93587d24",
+    "experiments.sandbox_foundation.standard_state": "7f1d492ec79f822570d850fd0f46dce33210930a9fbc8331b7984fec27882c10",
+    "experiments.sandbox_foundation.temperature_law_xxv": "d061d4a2647aac30831e4724f5905622aac69abc9af046bd6c3c617991067951",
+    "experiments.sandbox_foundation.twocell": "da85d49f9ab6b088699cac1dcf6065cd4478eca0c322f31b6ee4eb601f68d5d4"
+  },
+  "constants_claim": "log Kc (calcite), K_H (CO2), K1, K2, CaHCO3+ and CaCO3(aq): Plummer & Busenberg (1982) analytic temperature laws, evaluated at the world T; Kw: the phreeqc.dat 'H2O = OH- + H+' -analytic fit (NOT Plummer & Busenberg; the file names no primary source); Davies A: anchored at 0.509 (25 C) and scaled by a Malmberg & Maryott (1956) dielectric-constant / Kell density ratio; rho_w: Kell (1975).  Every log K is transported molal -> molar at the world T.",
+  "controls": [
+    {
+      "as_expected": true,
+      "expected": "FAIL_HIGH",
+      "kind": "LOGKC_SHIFT",
+      "logKc_shift_added": 0.6,
+      "monotonicity": {
+        "holds": true,
+        "pCO2_atm": [
+          0.0004,
+          0.00042562
+        ],
+        "rule": "strictly increasing in pCO2",
+        "violations": []
+      },
+      "name": "C1",
+      "outcome": "FAIL_HIGH",
+      "prediction_interval": [
+        0.0008861698249162959,
+        0.0009987712202747174
+      ],
+      "rescue": null
+    },
+    {
+      "as_expected": true,
+      "expected": "FAIL_LOW",
+      "kind": "LOGKC_SHIFT",
+      "logKc_shift_added": -1.5,
+      "monotonicity": {
+        "holds": true,
+        "pCO2_atm": [
+          0.0004,
+          0.00042562
+        ],
+        "rule": "strictly increasing in pCO2",
+        "violations": []
+      },
+      "name": "C2",
+      "outcome": "FAIL_LOW",
+      "prediction_interval": [
+        0.00015862602541844963,
+        0.00017856918001516188
+      ],
+      "rescue": {
+        "bisection_log10_tol": 0.001,
+        "ceiling_atm": 0.002,
+        "corner": {
+          "T_K": 293.15,
+          "logKc_shift": -1.48
+        },
+        "needed_pco2_atm": "EXCEEDS_CEILING",
+        "status": "NEEDED_EXCEEDS_CEILING",
+        "target": 0.000552,
+        "value_at_ceiling": 0.0003032800202801663
+      }
+    },
+    {
+      "T_K": 295.15,
+      "as_expected": true,
+      "expected": "REFUSED",
+      "kind": "OFF_TEMPERATURE_CONSTANT",
+      "name": "C3",
+      "outcome": "REFUSED",
+      "pCO2_atm": 0.00042562,
+      "per_slot": [
+        {
+          "as_expected": true,
+          "error": {
+            "message": "world temperature 295.15 K: temperature-dependent quantities [('Kc_calcite', 298.15)] (slot, produced-for T_K) are untagged or were produced for another temperature (tol 0.01 K); refusing before any rate law is constructed",
+            "type": "OffTemperatureConstantError"
+          },
+          "injected": {
+            "T_K": 298.15,
+            "name": "Ksp_calcite (25 C calcite world)",
+            "units": "dimensionless (activity, 1 mol/L std)",
+            "value": 3.3113112148259078e-09
+          },
+          "outcome": "REFUSED",
+          "refused": true,
+          "seam_accepts_at_T_constant": true,
+          "slot": "Kc_calcite"
+        },
+        {
+          "as_expected": true,
+          "error": {
+            "message": "world temperature 295.15 K: temperature-dependent quantities [('K HCO3- formation', 298.15)] (slot, produced-for T_K) are untagged or were produced for another temperature (tol 0.01 K); refusing before any rate law is constructed",
+            "type": "OffTemperatureConstantError"
+          },
+          "injected": {
+            "T_K": 298.15,
+            "name": "1/K2_carbonic (25 C)",
+            "units": "dimensionless (molar, ideal reference)",
+            "value": 21379620895.022324
+          },
+          "outcome": "REFUSED",
+          "refused": true,
+          "seam_accepts_at_T_constant": true,
+          "slot": "K HCO3- formation"
+        },
+        {
+          "as_expected": true,
+          "error": {
+            "message": "world temperature 295.15 K: temperature-dependent quantities [('K CO2(aq) formation', 298.15)] (slot, produced-for T_K) are untagged or were produced for another temperature (tol 0.01 K); refusing before any rate law is constructed",
+            "type": "OffTemperatureConstantError"
+          },
+          "injected": {
+            "T_K": 298.15,
+            "name": "1/K1_carbonic (25 C)",
+            "units": "dimensionless (molar, ideal reference)",
+            "value": 2238721.1385683375
+          },
+          "outcome": "REFUSED",
+          "refused": true,
+          "seam_accepts_at_T_constant": true,
+          "slot": "K CO2(aq) formation"
+        },
+        {
+          "as_expected": true,
+          "error": {
+            "message": "world temperature 295.15 K: temperature-dependent quantities [('K water formation', 298.15)] (slot, produced-for T_K) are untagged or were produced for another temperature (tol 0.01 K); refusing before any rate law is constructed",
+            "type": "OffTemperatureConstantError"
+          },
+          "injected": {
+            "T_K": 298.15,
+            "name": "1/Kw (25 C)",
+            "units": "dimensionless (molar, ideal reference)",
+            "value": 100000000000000.0
+          },
+          "outcome": "REFUSED",
+          "refused": true,
+          "seam_accepts_at_T_constant": true,
+          "slot": "K water formation"
+        },
+        {
+          "as_expected": true,
+          "error": {
+            "message": "world temperature 295.15 K: temperature-dependent quantities [('KH_CO2', 298.15)] (slot, produced-for T_K) are untagged or were produced for another temperature (tol 0.01 K); refusing before any rate law is constructed",
+            "type": "OffTemperatureConstantError"
+          },
+          "injected": {
+            "T_K": 298.15,
+            "name": "K_H_CO2",
+            "units": "mol/L/atm (molar Henry solubility)",
+            "value": 0.0344
+          },
+          "outcome": "REFUSED",
+          "refused": true,
+          "seam_accepts_at_T_constant": true,
+          "slot": "KH_CO2"
+        },
+        {
+          "as_expected": true,
+          "error": {
+            "message": "world temperature 295.15 K: temperature-dependent quantities [('davies_A', 298.15)] (slot, produced-for T_K) are untagged or were produced for another temperature (tol 0.01 K); refusing before any rate law is constructed",
+            "type": "OffTemperatureConstantError"
+          },
+          "injected": {
+            "T_K": 298.15,
+            "name": "davies_A",
+            "units": "kg^1/2 mol^-1/2",
+            "value": 0.509
+          },
+          "outcome": "REFUSED",
+          "refused": true,
+          "seam_accepts_at_T_constant": true,
+          "slot": "davies_A"
+        },
+        {
+          "as_expected": true,
+          "error": {
+            "message": "world temperature 295.15 K: temperature-dependent quantities [('rho_w', 298.15)] (slot, produced-for T_K) are untagged or were produced for another temperature (tol 0.01 K); refusing before any rate law is constructed",
+            "type": "OffTemperatureConstantError"
+          },
+          "injected": {
+            "T_K": 298.15,
+            "name": "rho_w",
+            "units": "kg/L (pure water, 1 atm)",
+            "value": 0.9970448954179155
+          },
+          "outcome": "REFUSED",
+          "refused": true,
+          "seam_accepts_at_T_constant": true,
+          "slot": "rho_w"
+        }
+      ]
+    },
+    {
+      "T_K": 370.0,
+      "as_expected": true,
+      "error": {
+        "message": "log_Kc_calcite_PB82: T = 370.0 K is outside the law's domain [273.15, 363.15] K (STATED_BY_SOURCE); refusing to extrapolate",
+        "type": "TemperatureLawDomainError"
+      },
+      "expected": "REFUSED",
+      "kind": "OUT_OF_DOMAIN_TEMPERATURE",
+      "name": "C4",
+      "outcome": "REFUSED",
+      "pCO2_atm": 0.00042562
+    }
+  ],
+  "controls_all_as_expected": true,
+  "evaluations": [
+    {
+      "Ca_total_M": 0.0005687234256296206,
+      "DIC_M": 0.001138171680165238,
+      "HCO3_plus_CO3_M": 0.0011113697043635652,
+      "T_K": 293.15,
+      "logKc_shift": -0.02,
+      "pCO2_atm": 0.0004,
+      "pH_activity": 8.211046701688018,
+      "run_identity_digest": "9480fc634315661660cb019e0419c1eea8c1e87855d1bab1eac4423fa7830b62"
+    },
+    {
+      "Ca_total_M": 0.0005808586724124104,
+      "DIC_M": 0.0011636398855241704,
+      "HCO3_plus_CO3_M": 0.0011355829315835323,
+      "T_K": 293.15,
+      "logKc_shift": -0.02,
+      "pCO2_atm": 0.00042562,
+      "pH_activity": 8.193378937990174,
+      "run_identity_digest": "77bd5e25fa70a4ae2638d53fc650197f39ba4819c293f998306601247d6d0f58"
+    },
+    {
+      "Ca_total_M": 0.0005782442865708131,
+      "DIC_M": 0.001156665766368621,
+      "HCO3_plus_CO3_M": 0.0011294337108350484,
+      "T_K": 293.15,
+      "logKc_shift": 0.0,
+      "pCO2_atm": 0.0004,
+      "pH_activity": 8.217839673074915,
+      "run_identity_digest": "00dcabd5a8ccb17ba99870ea32bc92b1fe43a23fd5131df50a46952dd5d6d806"
+    },
+    {
+      "Ca_total_M": 0.0005905805744512749,
+      "DIC_M": 0.0011825415098977768,
+      "HCO3_plus_CO3_M": 0.0011540466019444456,
+      "T_K": 293.15,
+      "logKc_shift": 0.0,
+      "pCO2_atm": 0.00042562,
+      "pH_activity": 8.2001749248605,
+      "run_identity_digest": "dba164fbcbe400d4fd0d6d89da7a654ddd6477b8e71b9f582e3252de514862a8"
+    },
+    {
+      "Ca_total_M": 0.0005879351297170506,
+      "DIC_M": 0.0011754784432012756,
+      "HCO3_plus_CO3_M": 0.0011477990204991663,
+      "T_K": 293.15,
+      "logKc_shift": 0.02,
+      "pCO2_atm": 0.0004,
+      "pH_activity": 8.224633367278349,
+      "run_identity_digest": "994f9ed4f7b421abc64eae913694e0ba72b942d093514bec86c7725dbffb05fa"
+    },
+    {
+      "Ca_total_M": 0.0006004758920691601,
+      "DIC_M": 0.001201768752995398,
+      "HCO3_plus_CO3_M": 0.0011728183584544878,
+      "T_K": 293.15,
+      "logKc_shift": 0.02,
+      "pCO2_atm": 0.00042562,
+      "pH_activity": 8.206971668656603,
+      "run_identity_digest": "c7b1de23b4c3ab7c8beff8a35b16a3938204348fac08905e3154f06eca720012"
+    },
+    {
+      "Ca_total_M": 0.0005504461895997002,
+      "DIC_M": 0.001100454140594556,
+      "HCO3_plus_CO3_M": 0.0010746492438518044,
+      "T_K": 295.15,
+      "logKc_shift": -0.02,
+      "pCO2_atm": 0.0004,
+      "pH_activity": 8.209150354258082,
+      "run_identity_digest": "d2d4a8a59ce183b3761e09878292d7f53f4b123d8523b4e92e321c26b96e83f0"
+    },
+    {
+      "Ca_total_M": 0.0005621672816820383,
+      "DIC_M": 0.0011250458717502862,
+      "HCO3_plus_CO3_M": 0.001098049586155136,
+      "T_K": 295.15,
+      "logKc_shift": -0.02,
+      "pCO2_atm": 0.00042562,
+      "pH_activity": 8.191485203967908,
+      "run_identity_digest": "10d5a6d3eb7f7e1368bb78fd287835fae8f6319cccc260ea60880e6fa7dde72c"
+    },
+    {
+      "Ca_total_M": 0.0005596671810063908,
+      "DIC_M": 0.001118341977912556,
+      "HCO3_plus_CO3_M": 0.0010921097537597716,
+      "T_K": 295.15,
+      "logKc_shift": 0.0,
+      "pCO2_atm": 0.0004,
+      "pH_activity": 8.21594027764803,
+      "run_identity_digest": "4eeff6ad94aebfc365c362eda9fc5204bc7cabade0551a4a7e8d6c3622586f89"
+    },
+    {
+      "Ca_total_M": 0.0005715822681196138,
+      "DIC_M": 0.0011433272940190177,
+      "HCO3_plus_CO3_M": 0.0011158960281843103,
+      "T_K": 295.15,
+      "logKc_shift": 0.0,
+      "pCO2_atm": 0.00042562,
+      "pH_activity": 8.198278174996288,
+      "run_identity_digest": "68d5b0da67f959752b72ca3def18f7a1733f5b812cf800afd22aef931880aae0"
+    },
+    {
+      "Ca_total_M": 0.0005690531306362151,
+      "DIC_M": 0.001136538170048594,
+      "HCO3_plus_CO3_M": 0.0011098613771832293,
+      "T_K": 295.15,
+      "logKc_shift": 0.02,
+      "pCO2_atm": 0.0004,
+      "pH_activity": 8.22273089213188,
+      "run_identity_digest": "2130dfbdf324665032cfb77a05e45374cb3b38911e824bf956cdb180482d02b4"
+    },
+    {
+      "Ca_total_M": 0.0005811655213714117,
+      "DIC_M": 0.001161923851964021,
+      "HCO3_plus_CO3_M": 0.001134040126341706,
+      "T_K": 295.15,
+      "logKc_shift": 0.02,
+      "pCO2_atm": 0.00042562,
+      "pH_activity": 8.205071871863671,
+      "run_identity_digest": "668966075c3829eaeee7e9257d4f8d41d1484e8897d5a31a7e3a4f4a5f2b7cf6"
+    },
+    {
+      "Ca_total_M": 0.0005328153807230086,
+      "DIC_M": 0.0010640769505585942,
+      "HCO3_plus_CO3_M": 0.0010391961121566898,
+      "T_K": 297.15,
+      "logKc_shift": -0.02,
+      "pCO2_atm": 0.0004,
+      "pH_activity": 8.207601347758343,
+      "run_identity_digest": "883121dd6e4df5958bc67471f375f4247c17f9a3c732989d683538b137f92f56"
+    },
+    {
+      "Ca_total_M": 0.0005441363176488666,
+      "DIC_M": 0.0010878258180709577,
+      "HCO3_plus_CO3_M": 0.0010618129117829396,
+      "T_K": 297.15,
+      "logKc_shift": -0.02,
+      "pCO2_atm": 0.00042562,
+      "pH_activity": 8.189939134268759,
+      "run_identity_digest": "79c2045f16317ce1a4d3ae8ef0e9282c8c3ed5663d37f758a5644a42b08a10c5"
+    },
+    {
+      "Ca_total_M": 0.0005417473888108086,
+      "DIC_M": 0.0010813797738077851,
+      "HCO3_plus_CO3_M": 0.0010560742257656765,
+      "T_K": 297.15,
+      "logKc_shift": 0.0,
+      "pCO2_atm": 0.0004,
+      "pH_activity": 8.214388226098254,
+      "run_identity_digest": "5d2939c4ce6d26990aa8b89a9e89df60c5ea1adcccd44c519809acac58b91d9b"
+    },
+    {
+      "Ca_total_M": 0.0005532555150774187,
+      "DIC_M": 0.0011055087641550299,
+      "HCO3_plus_CO3_M": 0.0010790637312480006,
+      "T_K": 297.15,
+      "logKc_shift": 0.0,
+      "pCO2_atm": 0.00042562,
+      "pH_activity": 8.196729091556795,
+      "run_identity_digest": "e3a172b3ba646030d49c1a82a81cafaa5550049862b13a4f3fd7e325fbfe3123"
+    },
+    {
+      "Ca_total_M": 0.0005508395256827349,
+      "DIC_M": 0.00109898108833933,
+      "HCO3_plus_CO3_M": 0.0010732336237048925,
+      "T_K": 297.15,
+      "logKc_shift": 0.02,
+      "pCO2_atm": 0.0004,
+      "pH_activity": 8.22117576366069,
+      "run_identity_digest": "92b0c42f0913f427ce859b1614c38f6f9e2f8352b28a5105cda98f752d71491b"
+    },
+    {
+      "Ca_total_M": 0.000562538029368365,
+      "DIC_M": 0.0011234967437367977,
+      "HCO3_plus_CO3_M": 0.0010966021463529067,
+      "T_K": 297.15,
+      "logKc_shift": 0.02,
+      "pCO2_atm": 0.00042562,
+      "pH_activity": 8.203519743429744,
+      "run_identity_digest": "68fd2ae9dec003cdff1c656ce0bb03241265d3f0927c7d95d069eb0475c7ebc8"
+    }
+  ],
+  "execution": {
+    "environment": {
+      "executable": "/home/leah/SmartChem/.venv/bin/python",
+      "git_head": "312fb0a5b12cc3e85ec99be36bf7070d58fc9351",
+      "git_status_porcelain": [],
+      "git_tree_clean": true,
+      "numpy": "2.5.1",
+      "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+      "scipy": "1.18.0"
+    },
+    "mode": "FRESH_ISOLATED_INTERPRETER, EMPTY_BYTECODE_CACHE, RUNNING_CODE_BOUND_TO_DIGESTS",
+    "pinned_run": true,
+    "pycache_prefix": "/tmp/smartchem_holdout_pyc_u6urerwo",
+    "residual": "in-process: code executing inside this interpreter after the check is not seen"
+  },
+  "holdout_id": "GUIDONE2025-CA-XXV",
+  "informational": {
+    "HCO3_plus_CO3_vs_measured_C_tot": {
+      "measured": {
+        "u_2sigma": 0.0001,
+        "value": 0.00121
+      },
+      "model_DIC_M_not_comparable": 0.0011433272940190177,
+      "model_HCO3_plus_CO3_M": 0.0011158960281843103,
+      "note": "the caption defines C_tot = [HCO3-] + [CO3 2-], so DIC is NOT the comparable quantity"
+    },
+    "dlnObs_dT_percent_per_K": -1.632153254214712,
+    "obs_relative_span_over_shift_range": {
+      "rel_span": 0.03379463783898906,
+      "shifts": [
+        -0.02,
+        0.02
+      ]
+    },
+    "pCO2_exponent": 0.33932552023935975,
+    "pH_vs_measured": {
+      "measured": {
+        "u_2sigma": 0.1,
+        "value": 8.3
+      },
+      "model_pH_activity": 8.198278174996288,
+      "note": "electrode convention unstated"
+    },
+    "point": {
+      "Ca_total_M": 0.0005715822681196138,
+      "DIC_M": 0.0011433272940190177,
+      "HCO3_plus_CO3_M": 0.0011158960281843103,
+      "T_K": 295.15,
+      "logKc_shift": 0.0,
+      "pCO2_atm": 0.00042562,
+      "pH_activity": 8.198278174996288,
+      "run_identity_digest": "68d5b0da67f959752b72ca3def18f7a1733f5b812cf800afd22aef931880aae0"
+    },
+    "rel_deviation_from_measured_value": -0.012811281313274914,
+    "weight": "NONE (prereg section 7: reported, not verdict-bearing)"
+  },
+  "measured": {
+    "informational_quantities": {
+      "C_tot_M": {
+        "u_2sigma": 0.0001,
+        "value": 0.00121
+      },
+      "pH": {
+        "u_2sigma": 0.1,
+        "value": 8.3
+      }
+    },
+    "interval": [
+      0.000552,
+      0.000606
+    ],
+    "interval_rule": "value +/- u_2sigma, computed by the runner",
+    "quantity": "Ca_tot_M",
+    "transcription_path": "experiments/sandbox_foundation/holdouts/guidone2025_table1_transcription.json",
+    "transcription_sha256": "9f33b5407bf775bc4cf18afbf43961fb9e1011e45796fca2c51f5ac912a819ea",
+    "u_2sigma": 2.7e-05,
+    "value": 0.000579
+  },
+  "measured_interval": [
+    0.000552,
+    0.000606
+  ],
+  "model_config": {},
+  "model_identity_digest": "0f89db30b9f161d4174876bc2489152726349ce039bd3c495a40a2bc7b5be3e4",
+  "monotonicity": {
+    "holds": true,
+    "pCO2_atm": [
+      0.0004,
+      0.00042562
+    ],
+    "rule": "strictly increasing in pCO2",
+    "violations": []
+  },
+  "observable": "Ca_total_M",
+  "outcome_meaning": "CORROBORATED (weak): not falsified at this state; does not validate Kc, a temperature slope or the activity model separately",
+  "power_statement": "prereg section 8 (registered for the Guidone 2025 Table 1 holdout; a synthetic preregistration does not inherit it): roughly, only a model biased high by about 15% or low by about 40% could fail this rule",
+  "prediction_interval": [
+    0.0005328153807230086,
+    0.0006004758920691601
+  ],
+  "preregistration_path": "experiments/sandbox_foundation/holdouts/guidone2025_ca_prereg_xxv.json",
+  "preregistration_sha256": "9f054d207f6a25397a4e39797fdd319aaeaa76419a8877775e1fb721c8ac9485",
+  "rescue": null,
+  "runner_sha256": "c3aed503081f0b4cc5a5981d77746c7f9bdb00cb7419d8c5ac43c161e290385f",
+  "schema": "smartchem.xxv.holdout_receipt/2",
+  "state_grid": {
+    "T_K": [
+      293.15,
+      295.15,
+      297.15
+    ],
+    "logKc_shift": [
+      -0.02,
+      0.0,
+      0.02
+    ],
+    "pCO2_atm": [
+      0.0004,
+      0.00042562
+    ]
+  },
+  "tier": "W (weak, nuisance-limited): cannot by itself satisfy the 2.0-alpha gate",
+  "uncertainty_statement": "P is a lower bound on the model's own uncertainty (K_H, K1, K2 uncertainties unstated, not propagated)",
+  "verdict": "PASS",
+  "verdict_rule": {
+    "bisection_log10_tol": 0.001,
+    "fail_high": "min_P_strictly_above_max_M",
+    "fail_low": "max_P_strictly_below_min_M_and_needed_pCO2_strictly_above_ceiling",
+    "fail_low_pco2_ceiling_atm": 0.002,
+    "kind": "interval_overlap_with_pco2_rescue",
+    "pass": "closed_interval_intersection_inclusive",
+    "rescue_corner": {
+      "T_K": 293.15,
+      "logKc_shift": 0.02
+    }
+  }
+}

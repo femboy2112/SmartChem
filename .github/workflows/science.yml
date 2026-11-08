@@ -1,0 +1,182 @@
+name: Science reproduction
+
+# OPERATION XXV-2 (#166).  SEPARATE from ci.yml, which stays the unchanged 1.x production gate.
+# ci.yml cannot verify the scientific claims: it has no phreeqpython (the live PHREEQC tests importorskip) and its
+# shallow checkout skips the git-history no-tune guards.  This workflow installs a hash-locked phreeqpython, fetches
+# full history, and FAILS on any skip in the designated science tests rather than reporting a skip as green.
+# It writes a four-lane receipt (production / sandbox / live reference solver / measured validation); a pass in one
+# lane implies nothing about another.  Live-solver agreement is MODEL-vs-MODEL, never measured validation.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 1"          # weekly, Monday 05:17 UTC
+  pull_request:
+    paths:
+      - "experiments/sandbox_foundation/**"
+      - "smartchem/**"                # the sandbox imports the core package; a core change can move a science result
+      - ".github/workflows/science.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  science:
+    name: Live reference solver + history guards (CPython 3.12)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SCI: experiments/sandbox_foundation/science
+      OUT: ${{ github.workspace }}/science-out
+      # the PR head (what ci.yml reports as headSha) for the production lane; github.sha for push/schedule/dispatch.
+      # The receipt counts a ci.yml run only if this equals the run commit ($GITHUB_SHA), so on a pull_request (where
+      # $GITHUB_SHA is the test merge commit) the production lane is NOT_EVALUATED by construction, never borrowed.
+      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0            # the no-tune guards diff historical commits (774429e, 07afeff, 0d2ab65, ...)
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"    # phreeqpython 1.6.2 ships a Linux wheel for cp312 only
+
+      - name: Install (core + hash-locked reference solver)
+        run: |
+          mkdir -p "$OUT"
+          python -m pip install --upgrade pip
+          pip install -e '.[dev]'
+          pip install --require-hashes --no-deps --only-binary :all: -r "$SCI/requirements-science.txt"
+          pip check
+          pip freeze > "$OUT/pip-freeze.txt"
+
+      # Red-team residual (a): a PR may not lower the manifest floors or drop a designated file in the same change
+      # unless science/MANIFEST_CHANGE_JUSTIFICATION.md is updated in it and names each drop verbatim.
+      - name: Manifest floors vs the PR base (no silent lowering)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          M="$SCI/manifest.json"
+          J="$SCI/MANIFEST_CHANGE_JUSTIFICATION.md"
+          BASE="origin/$BASE_REF"
+          if ! git rev-parse --verify --quiet "$BASE^{commit}" > /dev/null; then
+            echo "::error::PR base $BASE is not available in this checkout; cannot compare the manifest"
+            exit 1
+          fi
+          if ! git cat-file -e "$BASE:$M" 2> /dev/null; then
+            echo "the PR base has no science manifest yet; nothing to compare"
+            exit 0
+          fi
+          git show "$BASE:$M" > "$RUNNER_TEMP/base-manifest.json"
+          args=(--base "$RUNNER_TEMP/base-manifest.json" --head "$M" --justification "$J")
+          if git cat-file -e "$BASE:$J" 2> /dev/null; then
+            git show "$BASE:$J" > "$RUNNER_TEMP/base-justification.md"
+            args+=(--base-justification "$RUNNER_TEMP/base-justification.md")
+          fi
+          python -m experiments.sandbox_foundation.science.manifest_guard "${args[@]}"
+
+      - name: Gate -- the reference solver must import (no silent skip)
+        run: |
+          python -c "import importlib.metadata as m, phreeqpython; v = m.version('phreeqpython'); print('phreeqpython', v); assert v == '1.6.2', v"
+
+      - name: Pinned database bytes (vendored + installed phreeqpython), before tests
+        run: python -m experiments.sandbox_foundation.science.verify_hashes --report "$OUT/hashes-before.json"
+
+      - name: Expected-red control -- one flipped byte in a COPY must fail the pin check
+        run: |
+          MUT="$RUNNER_TEMP/pin-mutant"
+          mkdir -p "$MUT/experiments/sandbox_foundation"
+          cp -r experiments/sandbox_foundation/benchmarks "$MUT/experiments/sandbox_foundation/"
+          # the unmutated copy must pass, so the red below is caused by the flipped byte and nothing else
+          python -m experiments.sandbox_foundation.science.verify_hashes --root "$MUT" --vendored-only
+          python - "$MUT/experiments/sandbox_foundation/benchmarks/solid_equilibrium_xxiii/db/phreeqc.dat" <<'EOF'
+          import sys
+          p = sys.argv[1]
+          b = bytearray(open(p, "rb").read())
+          b[0] ^= 0x01
+          open(p, "wb").write(bytes(b))
+          EOF
+          set +e
+          python -m experiments.sandbox_foundation.science.verify_hashes --root "$MUT" --vendored-only
+          rc=$?
+          set -e
+          if [ "$rc" -ne 1 ]; then echo "::error::pin check returned $rc on a flipped byte (expected 1)"; exit 1; fi
+          echo "control OK: the pin check went red on the mutated copy"
+
+      - name: Expected-red control -- a junit with one skip must fail check_junit
+        run: |
+          CTL="$RUNNER_TEMP/junit-control"
+          mkdir -p "$CTL"
+          python - "$CTL" <<'EOF'
+          import sys
+          d = sys.argv[1]
+          head = '<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" tests="2">'
+          ok = '<testcase classname="c" name="a"/><testcase classname="c" name="b"/>'
+          sk = '<testcase classname="c" name="a"/><testcase classname="c" name="b"><skipped message="x"/></testcase>'
+          open(f"{d}/clean.xml", "w").write(head + ok + "</testsuite></testsuites>")
+          open(f"{d}/skip.xml", "w").write(head + sk + "</testsuite></testsuites>")
+          EOF
+          python -m experiments.sandbox_foundation.science.check_junit "$CTL/clean.xml" --expected-executed 1
+          set +e
+          python -m experiments.sandbox_foundation.science.check_junit "$CTL/skip.xml" --expected-executed 1
+          rc=$?
+          set -e
+          if [ "$rc" -ne 1 ]; then echo "::error::check_junit returned $rc on a skipped test (expected 1)"; exit 1; fi
+          echo "control OK: check_junit went red on the synthetic skip"
+
+      # The designated files re-run the committed harnesses live: XXI-6 ablation (evaluate), XXII-6b factorial
+      # (evaluate, byte-compared to the committed JSON), XXIV pitzer anomaly (run), and the calcite world vs PHREEQC on
+      # both standard-state bases.  The calcite harness main() is NOT re-run here: it rewrites its committed JSON and
+      # its refinement grid is the slow part; the live calcite test covers its PHREEQC reference and both bases.
+      - name: Science tests (designated list, junit)
+        run: |
+          TESTS=$(python -c "import json; print(' '.join(json.load(open('$SCI/manifest.json'))['tests']))")
+          python -m pytest -p no:cacheprovider -q -rs --junit-xml "$OUT/science-junit.xml" $TESTS
+
+      - name: Science junit -- no skip, executed >= manifest count
+        run: python -m experiments.sandbox_foundation.science.check_junit "$OUT/science-junit.xml" --manifest "$SCI/manifest.json"
+
+      - name: Sandbox suite with the reference solver present (junit)
+        if: always()
+        timeout-minutes: 25
+        run: python -m pytest experiments/sandbox_foundation/tests -p no:cacheprovider -q -rs --junit-xml "$OUT/sandbox-junit.xml"
+
+      - name: Sandbox junit -- no skip, unique cases, executed >= manifest sandbox floor
+        if: always()
+        run: |
+          N=$(python -c "import json, sys; print(json.load(open(sys.argv[1]))['sandbox_expected_executed'])" "$SCI/manifest.json")
+          python -m experiments.sandbox_foundation.science.check_junit "$OUT/sandbox-junit.xml" --expected-executed "$N"
+
+      - name: Pinned database bytes, after tests (nothing rewrote a vendored file)
+        if: always()
+        run: python -m experiments.sandbox_foundation.science.verify_hashes --report "$OUT/hashes-after.json"
+
+      # Read-only lookup of the ci.yml run for this head.  With this token it may be refused or still running; the
+      # receipt then says NOT_EVALUATED / PENDING.  It is never inferred from this workflow's own result.
+      - name: Production lane input (best effort)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$HEAD_SHA" --limit 20 \
+            --json databaseId,headSha,status,conclusion,workflowName,url > "$OUT/production-runs.json" \
+            || { echo "gh run list unavailable; production lane will be NOT_EVALUATED"; rm -f "$OUT/production-runs.json"; }
+
+      - name: Four-lane receipt
+        if: always()
+        run: |
+          python -m experiments.sandbox_foundation.science.status_record \
+            --run-commit "$GITHUB_SHA" --production-head-sha "$HEAD_SHA" \
+            --science-junit "$OUT/science-junit.xml" --sandbox-junit "$OUT/sandbox-junit.xml" \
+            --production-runs "$OUT/production-runs.json" --hashes-report "$OUT/hashes-after.json" \
+            --out "$OUT/science-receipt.json"
+
+      - name: Upload receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: science-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: science-out
+          if-no-files-found: warn

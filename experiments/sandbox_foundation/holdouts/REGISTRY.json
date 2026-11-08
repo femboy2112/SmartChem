@@ -1,0 +1,16 @@
+{
+  "schema": "smartchem-holdout-registry/1",
+  "schema_note": "OPERATION XXV-2 (#166), hardened by the XXV red-team (finding 3). Independent-measurement holdouts for the measured_validation lane of science/status_record.py. Each entry: {\"id\": str, \"description\": str, \"prereg_commit\": the FULL 40-hex lowercase SHA of the commit that preregistered the comparison BEFORE it was run (abbreviations, refs such as HEAD/main, and the run commit itself are refused), \"qualified\": JSON bool (true only for an independent measurement with a stated uncertainty, preregistered with a fail-capable criterion), \"outcome\": \"PASS\" | \"FAIL\" | \"PENDING\", \"evidence\": repo-relative path of the committed result, \"evidence_sha256\": 64-hex lowercase sha256 of that file's bytes, \"tier\": optional str; \"W\" = weak, nuisance-limited (e.g. an unmeasured nuisance such as pCO2, or an unstated replicate count): tier W can never qualify, so a qualified entry of tier W makes the lane INVALID_REGISTRY (it may be recorded with qualified false)}. A qualified entry is VERIFIED only if, with git: prereg_commit resolves to a commit that is a STRICT ancestor of the run commit and of every commit that added the evidence path; this registry AT prereg_commit already holds the same id as a qualified PENDING entry; and the evidence file exists at the run commit with exactly evidence_sha256. ANY malformed or unverifiable entry (including a non-boolean 'qualified') makes the lane INVALID_REGISTRY (fail closed, never silently dropped); any verified qualified FAIL makes it FAIL regardless of other PASS entries; PASS needs a verified qualified PASS; anything else is UNVERIFIED. No entry exists today: OPERATION XXIV section 6 found no qualified independent holdout (2.0-alpha gate NOT MET).",
+  "entries": [
+    {
+      "id": "GUIDONE2025-CA-XXV",
+      "description": "Calcite-saturated solution under air, 22 +/- 2 C: measured [Ca]tot (Guidone et al. 2025, RSC Adv. 15, 38762, Table 1) vs the open-air P&B calcite model. Preregistered rules: docs/research/OPERATION_XXV_PREREGISTRATION.md sections 1-8; pins: section 9. Run 2026-11-08 at 312fb0a: PASS (tier W, qualified false: CORROBORATED-weak; cannot satisfy the 2.0-alpha gate).",
+      "prereg_commit": "150225022e703c2f14a766c637b1552309d58a64",
+      "qualified": false,
+      "tier": "W",
+      "outcome": "PASS",
+      "evidence": "experiments/sandbox_foundation/holdouts/guidone2025_ca_receipt_xxv.json",
+      "evidence_sha256": "00c7bcf3eede67bd0a8569b3d936a77a4437ff6125e4bd6719ea4dc6f693b2de"
+    }
+  ]
+}

@@ -1,5 +1,41 @@
 # SmartChem roadmap
 
+> ## ▶ PRESENT STATE (2026-11-08) — OPERATION XXV: the general chemical universe (research)
+> This block supersedes only the research-lane status lines of the OPERATION XXIV block below. Dossier:
+> `docs/research/OPERATION_XXV_HANDOFF.md`.
+>
+> - **Production 1.x.** 1.6.0 is the release and is unchanged. A 1.7 candidate (the 26th class, alcohol dehydration,
+>   #116) lives on its own branch and ships only through its full gate. Its outcome is recorded in the follow-up
+>   record, not here.
+> - **Compiler (Phase I).**
+>   - A live, machine-readable coverage gap map (`experiments/coverage_gap_map_xxv.json`, seven categories).
+>   - Three route invariants that had no test are now pinned.
+>   - #130 design and controls. New finding: an unmarked stereocentre reads as configuration-complete.
+> - **Provenance (Phase II).**
+>   - #165: a typed, derived standard-state verdict; the API default for new scenarios is source-consistent.
+>   - #166: a separate `science.yml` with hash-locked PHREEQC, designated tests that may not skip, and a four-lane
+>     receipt in which a skip is never PASS.
+> - **Measurement (Phase III).**
+>   - Plummer & Busenberg temperature laws, a generic Henry boundary and an open-air calcite world.
+>   - The Guidone 2025 calcite holdout was preregistered (rules, then pins, each pushed first) and returned **PASS,
+>     tier W (CORROBORATED-weak)**. pCO₂ was not measured, so it cannot satisfy the 2.0-alpha gate.
+> - **Spatial 3.0 (Phase IV).**
+>   - A reaction–transport engine (SYNTHETIC kinetics), checked against an independent `expm` reference.
+>   - Splitting orders 1.08 / 1.97 and spatial O(dx²) convergence.
+>   - An exact `Fraction` grain ledger with an illustrative granular automaton.
+> - **LibGibson (Phase V).**
+>   - A producer-side typed frame with units, kinds, faces and receipts.
+>   - The wire-v1 loss list is posted on libgibson#290; no integration is claimed.
+>   - Explorer P1 schema prototype only.
+> - **Adversarial review.** Four attackers. Every HIGH and MEDIUM finding was repaired before merge or pin; the open
+>   residuals are listed in handoff §2.
+> - **Milestones.**
+>   - 2.0-alpha NOT MET.
+>   - 2.0 stable not started.
+>   - 3.0 research prototype, not accepted.
+>   - Post-3.0 explorer planned.
+>
+
 > ## ▶ PRESENT STATE (2026-11-07) — OPERATION XXIV: the honest universe (research only)
 > This block supersedes only the research-lane status lines of the OPERATION XXIII block below, which stays
 > authoritative for the 1.6.0 release record. It reflects merged code and current evidence.

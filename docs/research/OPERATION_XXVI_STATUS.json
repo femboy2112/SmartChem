@@ -1,0 +1,39 @@
+{
+  "operation": "XXVI",
+  "title": "maximum-throughput autonomous engineering campaign",
+  "closed_utc": "2026-11-09",
+  "baseline_main": "4d8149a25a237a94acf9e1d7fb13dcc5221b7737",
+  "final_main": "007cb36c3e96fa49903bf8f46a812b8648aa707b",
+  "released_version": "1.6.0",
+  "release_commit": "ac8bdde03893da8522efba04929da3fe29aa62a1",
+  "production_version_unchanged": true,
+  "main_ci": {"on_3354d6e": "42569643986 success", "on_007cb36": "42609213336 (confirm run)"},
+  "branch_protection": {"strict_up_to_date": true, "required_checks": ["test (3.10)", "test (3.12)", "Wheel install matrix (3.10)", "Wheel install matrix (3.11)", "Wheel install matrix (3.12)", "Wheel install matrix (3.13)", "Optional PySCF backend (smoke)"], "note": "Sandbox NOT required; never bypassed; test job = full batched suite ~1h"},
+  "merged_waves": [
+    {"wave": 1, "pr": 177, "into": "3354d6e", "packets": [
+      {"id": "P-F1", "pr": 171, "head": "bd854b4", "desc": "route-search invariant salvage (dehydration-free)", "observed": "12 passed"},
+      {"id": "P-A", "pr": 172, "head": "42c2a04", "desc": "smartchem doctor + Makefile + contract re-freeze", "observed": "63 passed; doctor json ok"},
+      {"id": "P-D", "pr": 173, "head": "0b6e6c1", "desc": "CURRENT.md + exit-code/architecture doc fixes", "observed": "docs accurate vs ground truth"},
+      {"id": "P-C", "pr": 174, "head": "adb6bc2", "desc": "runnable API examples + subprocess test", "observed": "6 passed"},
+      {"id": "P-F2", "pr": 175, "head": "8e1fdff", "desc": "pluggable coproduct-producer registry (byte-identical default)", "observed": "122 passed; no golden diff"},
+      {"id": "P-I", "pr": 176, "head": "a082735", "desc": "#168 COT identity pin + versioned design (research-only)", "observed": "5 passed"}
+    ], "verify": "merge tree == tested head tree; #171-176 auto-closed"},
+    {"wave": "2+3", "pr": 180, "into": "007cb36", "packets": [
+      {"id": "P-J", "pr": 178, "head": "1bfdc23", "desc": "#130 config/isotope SEARCH-KEY collapse pin + migration (research-only)", "observed": "11 passed"},
+      {"id": "P-H", "pr": 179, "head": "667af58", "desc": "#109 must-not-vouch pins (6 fictions demote + 2 controls vouch)", "observed": "8 passed; no false-vouch finding"},
+      {"id": "P-FIX", "pr": 181, "head": "11bd4f7", "desc": "#109 etherification acetal false-VOUCH FIX + R58 re-freeze (PRODUCTION)", "observed": "adversary-found; reproduced; product-side masked-carbonyl guard; 3 acetal DEMOTE + 3 ether VOUCH; 260 goldens zero drift; frozen-hash consciously re-frozen 368->448 benign (payload-diff verified)", "reachability": "LATENT in tested frontier (false_vouch_count 0 pre-fix); full-frontier reachability = PROBE-GAP"}
+    ], "verify": "merge tree == tested head tree; #178/#179/#181 auto-closed"}
+  ],
+  "probed_non_defect": {"id": "P-K", "desc": "#105 per-atom charge: charge-IDENTITY is SOUND within scope (resonance pair collapses, real charge diffs separate, net-neutral local charge fail-closes via local_charge_loss). #105 is a represent-more-info PROTOTYPE ask, NOT a defect. No fabricated pin shipped. Deferred to next round as a real prototype build."},
+  "not_started_next_round": [
+    {"id": "P-K", "desc": "#105 per-atom charge PROTOTYPE (carrier + charge-changing rules) on research branch; audit migration/digest/valence"},
+    {"id": "ADV-2", "desc": "adversary at the WEAKEST-locked recognizers (d'Alembert boundary): the `products==want`-only re-derivations -- activated acyl transfer, sulfonate ester transfer, oxoacid ester"},
+    {"id": "REACH", "desc": "daniel reachability probe: does the production frontier EMIT an acetal-forming single-cut C-O condensation (target carbon bears a 2nd O/N)? decides v1.6.1 severity"},
+    {"id": "P-N/O/P", "desc": "reaction-transport composition in spatial_grid; particle/material ledger; measured-pCO2 calcite holdout (2.0-alpha gate OPEN)"}
+  ],
+  "release": {
+    "v1_6_1": "HELD by user decision 2026-11-09 pending the reachability probe. Real patch defect in shipped v1.6.0 fixed (#109 etherification false-VOUCH), release gate PERMITS it, but the defect is LATENT in the tested frontier and the user chose to hold. Fix stays on main as correctness hardening; cut v1.6.1 only if the reachability probe confirms a live shipped wrong-route, or on explicit user go-ahead.",
+    "v1_7_0": "not triggered (dehydration #116 DEFERRED; no additive class qualified)",
+    "pypi": "out of scope", "libgibson_merge": "out of scope", "v1_6_0_tag": "untouched"
+  }
+}

@@ -63,7 +63,12 @@ from experiments.poor_man_step_validity_demoter_defer_probe import _routes_of, r
 import experiments.poor_man_reaction_type_oracle_probe as p56
 import experiments.poor_man_etherification_recognizer_probe as p57
 
-FROZEN_HASH = "ae50fae24d0644a547c095fe0512e14797c8b92a69d2cf8fe645e941fea3350d"
+# Re-frozen (OPERATION XXVI) after the etherification acetal false-VOUCH fix: `_ether_oxygen_counts` now excludes an
+# acetal/orthoester O (masked carbonyl), so 80 more k>=2 acetal-bearing bundles pass the loose whole-molecule census
+# and the span-local recognizer demotes all of them -- the ONLY payload delta is ether_k2_census_vouched /
+# ether_k2_span_demoted_bundles 368 -> 448 (their equality invariant, false_vouch_count==0, coverage + replay + ship
+# verdict all unchanged; verified by a pre/post payload diff). Previous: ae50fae24d0644a547c095fe0512e14797c8b92a69d2cf8fe645e941fea3350d
+FROZEN_HASH = "131979af4a1138a4729f6b77faf9cae5daa01737fa31d065a1282a3e4b0a7785"
 
 _ETHER = "etherification"
 _ACYL = "acyl condensation"

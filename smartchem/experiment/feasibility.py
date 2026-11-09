@@ -350,12 +350,32 @@ def _oxygen_heavy_neighbours(molecule: Molecule) -> "tuple[tuple, dict]":
     return molecule.atoms, adjacency
 
 
+def _carbon_bears_other_heteroatom(carbon: int, via_oxygen: int, atoms, adjacency) -> bool:
+    """True iff ``carbon`` bears a heavy neighbour -- other than ``via_oxygen`` -- that is NOT carbon, i.e. a SECOND
+    heteroatom (O/N/S...) geminal on the same carbon.
+
+    Such a carbon sits at (or above) the carbonyl oxidation level: an O-C(-O) acetal/orthoester carbon, an O-C(-N)
+    hemiaminal-ether, etc. -- a MASKED CARBONYL, never a genuine dialkyl-ether carbon.  Mirrors the alpha-heteroatom
+    discipline :func:`_alkyl_carbinol_alcohol_count` already applies to the alcohol donor, transported here to the
+    ether oxygen's carbons (the dalembert KILL that acetalisation ``hemiacetal + alcohol -> acetal + water`` had been
+    false-VOUCHING as an etherification -- the central acetal carbon is a masked carbonyl, so its two C-O bonds are
+    NOT dialkyl ether bonds and an oxocarbenium acetalisation is a different reaction class)."""
+    for m, _order in adjacency.get(carbon, ()):
+        if atoms[m] == "H" or m == via_oxygen:
+            continue
+        if atoms[m] != "C":
+            return True
+    return False
+
+
 def _ether_oxygen_counts(molecule: Molecule) -> int:
     """The number of dialkyl ETHER oxygens: an O with exactly two heavy neighbours, BOTH single-bonded sp3
-    non-aromatic carbons.  This EXCLUDES an ester's -O- (one neighbour is the carbonyl C, which bears a C=O),
-    an anhydride's bridging O (its neighbour is a carbonyl C), and an aryl ether's aromatic-C neighbour -- so an
-    ester/acid is never miscounted as an ether.  Heavy-neighbour census only (no explicit-H dependence, mirroring
-    :func:`_acyl_group_counts`)."""
+    non-aromatic carbons, NEITHER of which bears a SECOND heteroatom (an acetal/orthoester carbon is excluded).
+    This EXCLUDES an ester's -O- (one neighbour is the carbonyl C, which bears a C=O), an anhydride's bridging O
+    (its neighbour is a carbonyl C), an aryl ether's aromatic-C neighbour -- so an ester/acid is never miscounted as
+    an ether -- AND an acetal/orthoester O (its carbon bears another O/N: a MASKED CARBONYL, not a genuine dialkyl
+    ether), the discipline :func:`_carbon_bears_other_heteroatom` enforces.  Heavy-neighbour census only (no
+    explicit-H dependence, mirroring :func:`_acyl_group_counts`)."""
     atoms, adjacency = _oxygen_heavy_neighbours(molecule)
     ethers = 0
     for o, element in enumerate(atoms):
@@ -364,6 +384,8 @@ def _ether_oxygen_counts(molecule: Molecule) -> int:
         heavy = [(n, order) for n, order in adjacency.get(o, ()) if atoms[n] != "H"]
         if len(heavy) == 2 and all(order == 1 for _n, order in heavy) and all(
             _is_sp3_nonaromatic_carbon(n, atoms, adjacency) for n, _o in heavy
+        ) and not any(
+            _carbon_bears_other_heteroatom(n, o, atoms, adjacency) for n, _o in heavy
         ):
             ethers += 1
     return ethers

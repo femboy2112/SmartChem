@@ -16,8 +16,9 @@ DISCLOSED (stated limitation), DARK (not examined), REFUTED.
 | production release at start | `v1.6.0` → `ac8bdde03893da8522efba04929da3fe29aa62a1` (unchanged by this operation) |
 | PR #164 (post-3.0 explorer milestone, docs only) | merged as `39f1479c80d2a0ea5be5e2d651ff93d0fb6d0641` at 2026-11-08T10:40:56Z; merge tree `a0e4ac7` equals the tested head tree; PR CI 9/9 on `7eae7b4`; main CI run `42472451045` 9/9 |
 | research branch | `research/operation-xxv`: PR #167, merged as `3a1c46f62d1f1d925ebb82ac02e72ea5f67ce141` at 2026-11-08T19:58:56Z (`--match-head-commit 0717085`). The merge tree `727031ce…` equals the tested head tree. PR CI run `42481486695`: 9/9 on `0717085`. First `science.yml` run `42481486906`: success. Main CI run `42517734963`: 9/9 on `3a1c46f` |
+| record PR | #169 (docs only: this handoff, the defer record, ROADMAP), merged as `4978c66441218b2a696e84349ca9506094eaf2d4` at 2026-11-08T23:39:47Z (`--match-head-commit ef86c22`). The merge tree `4f6ced5e…` equals the tested head tree. PR CI run `42530029361`: 9/9 on `ef86c22`. Main CI run `42536242669`: 9/9 on `4978c66` |
 | issue filed | #168: the SMILES parser and `resonance_identity` merge cyclooctatetraene bond-shift isomers (pre-existing, repo-wide) |
-| production branch | `feat/1.7-dehydration-116-r2` (pushed, unmerged): **1.7.0 DEFERRED**. See §5, §13 and [`V1_7_DEHYDRATION_DEFER.md`](V1_7_DEHYDRATION_DEFER.md) |
+| production branch | `feat/1.7-dehydration-116-r2` (pushed, unmerged; head `4a14043`, which adds the attack-5 corpus pin): **1.7.0 DEFERRED**. See §5, §13 and [`V1_7_DEHYDRATION_DEFER.md`](V1_7_DEHYDRATION_DEFER.md) |
 
 Research commits (linear, in order):
 
@@ -285,4 +286,4 @@ Local runs (dev venv; a superset of the CI venv, so these are not CI results):
 2. **Stereogenic-element perception independent of SMILES marks**, calibrated against an independent oracle. It
    blocks any honest #130 implementation.
 3. **The dehydration successor design** (maintainer decision; §5 options). Whichever option is chosen, its first
-   probe is the same: replay all five attack corpora against it before any new adversary runs.
+   probe is the same: replay the four reported attack corpora (attack 2's report was lost) against it before any new adversary runs.

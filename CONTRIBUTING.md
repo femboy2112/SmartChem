@@ -31,7 +31,17 @@ scripts/run_suite.sh
 ```
 
 It runs heavy files solo, uses a fresh pytest process per batch, and exits non-zero iff
-any batch failed. While developing, run the **targeted** tests for the area you touched
+any batch failed. By default it uses `PY=.venv/bin/python`; if your virtualenv is named
+differently, override it (`PY=/path/to/python scripts/run_suite.sh`).
+
+The experimental 2.0 physical-simulation tree under `experiments/sandbox_foundation/` is
+not part of the released package; run its tests directly against your dev interpreter:
+
+```bash
+.venv/bin/python -m pytest experiments/sandbox_foundation/tests -q -p no:cacheprovider
+```
+
+While developing, run the **targeted** tests for the area you touched
 first — they are fast and specific:
 
 ```bash

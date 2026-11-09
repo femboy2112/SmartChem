@@ -17,8 +17,9 @@ deferred. The rule exists so that the standard of proof cannot be lowered after 
 
 | | value |
 |---|---|
-| candidate branch | `feat/1.7-dehydration-116-r2` (unmerged) |
+| candidate branch | `feat/1.7-dehydration-116-r2` (unmerged); head `4a14043` |
 | implementations 1–4 | `cee2ab3` / `bdd2bd7` / `081837c` / `8796ee3` (commit messages label the repairs r2, r3 and r5) |
+| attack-5 corpus pin | `4a14043` (test only, added after this record first merged): `tests/test_dehydration_attack5_corpus_116.py`, targeted run 24 passed |
 | version bump + goldens (unreleased) | `00c6a64`: `__version__` 1.7.0; five CLI goldens, where only `tool_version` and `result_digest` moved |
 | full OOM-safe suite | `cee2ab3`: 8417 collected / 8367 passed / 0 failed / 50 skipped. `00c6a64`: 8572 / 8522 / 0 / 50. `8796ee3`: 8645 / 8595 / 0 / 50 |
 | default grammar | byte-identical to 1.6.0 on every candidate (pinned digests; re-verified by attacks 4 and 5) |
@@ -94,6 +95,12 @@ Any one of these would be a new design, needing its own gate and a fresh adversa
 - The **independent witness**: retro direction, its own ring algorithms; the fourth implementation's conditions were
   written from the spec by a separate author.
 - The **adversarial corpora** of every reported attack, as tests on the branch. Any successor must pass them all.
+  - The chemistry cases of attacks 1, 3 and 4 are in the recognizer, witness and search tests (spot-checked case
+    by case). Attack 4's 120 s oracle call is not pinned as a timing test; only the producer's wall time is.
+  - Attack 5's reproductions first lived only in a session scratchpad. They were committed after this record
+    was first merged, as `tests/test_dehydration_attack5_corpus_116.py` (`4a14043`). That file pins the defect:
+    17 false VOUCHes, 3 suspected-open cases, 1 control, and the false VOUCH reaching the public route search.
+    A successor must flip those assertions.
 - **#168** (filed from attack 4): the parser and `resonance_identity` merge cyclooctatetraene bond-shift isomers. This
   is a pre-existing, repo-wide identity defect.
 - The branch carries an **unreleased** `__version__ = "1.7.0"` and regenerated goldens. A real 1.7.x must redo the bump

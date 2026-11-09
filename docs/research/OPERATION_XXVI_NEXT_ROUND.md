@@ -25,10 +25,11 @@
 - No PyPI. No LibGibson main merge. Never overwrite v1.6.0 tag. v1.6.1/v1.7.0 permitted-not-mandatory.
 
 ## The open decision carried into next round
-- **v1.6.1 is a live CANDIDATE.** A real patch defect in shipped v1.6.0 was fixed this round (#109 etherification
-  false-VOUCH of acetalization, on main). The defect is **latent within the tested frontier** (R58 probe
-  `false_vouch_count` was 0 pre-fix). Decide v1.6.1 ONLY after the reachability probe below and/or explicit user
-  go-ahead. Do NOT force a minor version to show progress.
+- **v1.6.1: the user DECIDED to HOLD (2026-11-09) pending the reachability probe.** A real patch defect in shipped
+  v1.6.0 was fixed this round (#109 etherification false-VOUCH of acetalization, on main `007cb36`), but it is
+  **latent within the tested frontier** (R58 probe `false_vouch_count` was 0 pre-fix). Do NOT re-ask the user up
+  front: **run the REACH probe (item 1) first**, then cut v1.6.1 only if it confirms a live shipped wrong-route, or
+  on explicit user go-ahead. Do NOT force a minor version to show progress.
 
 ## Highest-value next packets
 1. **REACH (do first — gates v1.6.1):** a daniel reachability probe. Does the production capped-scission frontier

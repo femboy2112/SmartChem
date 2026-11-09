@@ -69,5 +69,6 @@ source lost.
 ## Release
 No v1.7.0 (dehydration #116 still DEFERRED; no additive class qualified). **v1.6.1 is a real CANDIDATE** (a genuine
 patch defect in shipped v1.6.0 was fixed) but was **not cut this round**: the defect is latent within the tested
-frontier, the prompt says don't force a minor version, and the decision is surfaced to the user. v1.6.0 tag
-untouched. No PyPI. No LibGibson main merge.
+frontier, the prompt says don't force a minor version. **The user DECIDED to HOLD v1.6.1 (2026-11-09) pending the
+reachability probe** — cut it only if the probe confirms a live shipped wrong-route, or on explicit user go-ahead.
+The fix stays on main as correctness hardening. v1.6.0 tag untouched. No PyPI. No LibGibson main merge.

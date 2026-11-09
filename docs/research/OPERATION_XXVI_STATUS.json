@@ -32,7 +32,7 @@
     {"id": "P-N/O/P", "desc": "reaction-transport composition in spatial_grid; particle/material ledger; measured-pCO2 calcite holdout (2.0-alpha gate OPEN)"}
   ],
   "release": {
-    "v1_6_1": "CANDIDATE, decision surfaced to user, NOT cut unilaterally. Real patch defect in shipped v1.6.0 fixed (#109 etherification false-VOUCH). Release gate PERMITS it. Lean: land as correctness hardening; cut only if reachability confirmed or user wants the patch released (defect is LATENT in tested frontier).",
+    "v1_6_1": "HELD by user decision 2026-11-09 pending the reachability probe. Real patch defect in shipped v1.6.0 fixed (#109 etherification false-VOUCH), release gate PERMITS it, but the defect is LATENT in the tested frontier and the user chose to hold. Fix stays on main as correctness hardening; cut v1.6.1 only if the reachability probe confirms a live shipped wrong-route, or on explicit user go-ahead.",
     "v1_7_0": "not triggered (dehydration #116 DEFERRED; no additive class qualified)",
     "pypi": "out of scope", "libgibson_merge": "out of scope", "v1_6_0_tag": "untouched"
   }

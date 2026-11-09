@@ -56,6 +56,7 @@ commands:
   synthesize TARGET     [deprecated alias] retrosynthesis routes with the sourced-data levers
   audit PATH            audit a probe-evidence manifest (or directory)
   graph VIEW TARGET     render a decomposition/synthesis graph (json/dot/mermaid/svg/html)
+  doctor                diagnose the environment: deps, optional backends, runnable test lanes (--json/--strict)
 
 Run `python -m smartchem <command> --help` for a command's options.
 Depth and background: {_WIKI}
@@ -713,6 +714,125 @@ def _cmd_plan(argv: list[str]) -> int:
     return result.exit_code
 
 
+# --- doctor: environment diagnostic (additive, fail-soft) ------------------------------------------------------
+_DOCTOR_REQUIRED = (("numpy", "numpy"), ("scipy", "scipy"))
+# (import name, distribution name, what it is for) -- availability is probed with find_spec, never an eager import
+_DOCTOR_OPTIONAL = (
+    ("pyscf", "pyscf", "qc extra: quantum-chemistry oracle"),
+    ("rdkit", "rdkit", "depiction extra: structure drawing / test oracle"),
+    ("pytest", "pytest", "dev extra: test runner"),
+    ("hypothesis", "hypothesis", "dev extra: property tests"),
+    ("phreeqpython", "phreeqpython", "science lane: PHREEQC bindings (not a packaged extra)"),
+)
+
+
+def _doctor_probe(module: str, dist: str) -> dict:
+    """Is ``module`` importable, and which version -- WITHOUT importing it (a heavy backend stays unloaded)."""
+    from importlib import metadata, util
+
+    try:
+        present = util.find_spec(module) is not None
+    except Exception:  # noqa: BLE001 -- a broken half-installed package is "absent", never a crash
+        present = False
+    version = None
+    if present:
+        try:
+            version = metadata.version(dist)
+        except Exception:  # noqa: BLE001 -- importable but no dist metadata (vendored / path install)
+            version = None
+    return {"present": present, "version": version}
+
+
+def _doctor_git_commit(root: str) -> str:
+    import subprocess
+
+    try:
+        out = subprocess.run(["git", "-C", root, "rev-parse", "--short", "HEAD"],
+                             capture_output=True, text=True, timeout=10)
+    except Exception:  # noqa: BLE001 -- no git binary / timeout: best-effort only
+        return "not a git checkout"
+    commit = out.stdout.strip()
+    return commit if out.returncode == 0 and commit else "not a git checkout"
+
+
+def _doctor_report() -> dict:
+    import os
+
+    import smartchem
+    from . import __version__
+
+    src = os.path.abspath(getattr(smartchem, "__file__", "") or "")
+    root = os.path.dirname(os.path.dirname(src)) if src else ""
+    required = {name: _doctor_probe(name, dist) for name, dist in _DOCTOR_REQUIRED}
+    optional = {name: dict(_doctor_probe(name, dist), purpose=purpose) for name, dist, purpose in _DOCTOR_OPTIONAL}
+    sandbox = os.path.join(root, "experiments", "sandbox_foundation", "tests") if root else ""
+    sandbox_ok = bool(sandbox) and os.path.isdir(sandbox)
+    suite = os.path.join(root, "scripts", "run_suite.sh") if root else ""
+    science_ok = optional["phreeqpython"]["present"]
+    lanes = {
+        "full suite (scripts/run_suite.sh)": {
+            "available": True, "path": suite,
+            "note": "always available; batched runner (never run bare pytest -- it OOM-kills small boxes)"},
+        "sandbox research tests": {
+            "available": sandbox_ok, "path": sandbox,
+            "note": "experiments/sandbox_foundation/tests" if sandbox_ok else "directory not found (installed, not a checkout?)"},
+        "science lane (PHREEQC)": {
+            "available": science_ok,
+            "note": "phreeqpython present" if science_ok else "UNAVAILABLE: phreeqpython is not installed"},
+    }
+    return {
+        "python": {"version": sys.version.split()[0], "executable": sys.executable},
+        "smartchem": {"version": __version__, "source": src},
+        "required": required,
+        "optional": optional,
+        "test_lanes": lanes,
+        "git": {"commit": _doctor_git_commit(root) if root else "not a git checkout"},
+        "missing_required": sorted(n for n, r in required.items() if not r["present"]),
+    }
+
+
+def _doctor_render(rep: dict) -> str:
+    def dep(name: str, r: dict) -> str:
+        return f"  {name:<13}{'ok' if r['present'] else 'MISSING'}" + (f"  {r['version']}" if r["version"] else "")
+
+    lines = [
+        f"Python:     {rep['python']['version']}  ({rep['python']['executable']})",
+        f"SmartChem:  {rep['smartchem']['version']}  ({rep['smartchem']['source']})",
+        "Required dependencies:",
+        *(dep(n, r) for n, r in rep["required"].items()),
+        "Optional backends/tools:",
+        *(dep(n, r) + f"  -- {r['purpose']}" for n, r in rep["optional"].items()),
+        "Test lanes:",
+    ]
+    for name, lane in rep["test_lanes"].items():
+        lines.append(f"  {name}: {'available' if lane['available'] else 'UNAVAILABLE'} -- {lane['note']}"
+                     + (f" [{lane['path']}]" if lane.get("path") and lane["available"] else ""))
+    lines.append(f"Git commit: {rep['git']['commit']}")
+    if rep["missing_required"]:
+        lines.append("MISSING REQUIRED: " + ", ".join(rep["missing_required"]))
+    return "\n".join(lines)
+
+
+def _cmd_doctor(rest: list[str]) -> int:
+    """``doctor`` -- print an environment diagnostic.  Fail-soft: exit 0 always unless ``--strict`` AND a required
+    dependency is missing (then 1).  Never touches the section-14.4 route/refusal codes."""
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="python -m smartchem doctor",
+                                     description="Diagnose the SmartChem environment.")
+    parser.add_argument("--json", action="store_true", help="machine-readable JSON report")
+    parser.add_argument("--strict", action="store_true", help="exit 1 if a REQUIRED dependency is missing")
+    args = parser.parse_args(rest)
+    rep = _doctor_report()
+    if args.json:
+        import json
+
+        print(json.dumps(rep, indent=2, sort_keys=True))
+    else:
+        print(_doctor_render(rep))
+    return 1 if args.strict and rep["missing_required"] else 0
+
+
 def _dispatch(command: str, rest: list[str]) -> int:
     """Route one command to its handler, returning its section-14.4 exit code (2 for an unknown command)."""
     if command == "plan":
@@ -732,6 +852,8 @@ def _dispatch(command: str, rest: list[str]) -> int:
     if command == "graph":
         from .graph_cli import main as graph_main
         return graph_main(rest)
+    if command == "doctor":
+        return _cmd_doctor(rest)
     print(f"python -m smartchem: unknown command {command!r}\n", file=sys.stderr)
     print(_USAGE, file=sys.stderr)
     return 2

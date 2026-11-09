@@ -127,8 +127,9 @@ python -m smartchem plan 'smiles:CO'
 python -m smartchem recompile 'smiles:CC(=O)OCCC(C)C' --capability-profile poor-man --json
 ```
 
-Exit codes are meaningful: `0` success · `5` a complete search with no admitted route · `4`
-incomplete · `2` invalid input · `70` internal error.
+Exit codes are meaningful: `0` success · `2` invalid input · `3` a complete search with no
+admitted route · `4` incomplete search (budget/depth truncated) · `5` refused at an
+identity/chemistry-model boundary · `70` internal error.
 
 ```bash
 # A Unicode hydrate paste → composition + retained component boundary:
@@ -296,7 +297,8 @@ claims.
 
 ## Documentation
 
-**Start here** · this README → [COMPATIBILITY.md](COMPATIBILITY.md) (what it guarantees) →
+**Start here** · [CURRENT.md](CURRENT.md) (current state at a glance) → this README →
+[COMPATIBILITY.md](COMPATIBILITY.md) (what it guarantees) →
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (the stage map).
 
 | User-facing | Engineering / release | Research record |
